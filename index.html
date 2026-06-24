@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAVOR — A Game of Royal Succession</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
+</head>
+<body>
+
+    <!-- ═══ TITLE SCREEN ═══ -->
+    <div id="title-screen">
+        <img src="assets/ui/cover.jpg" alt="FAVOR" class="title-cover" id="coverArt">
+        <p class="title-subtitle">A Game of Royal Succession</p>
+
+        <div class="title-buttons">
+            <button class="btn-royal primary" onclick="startGame()">
+                <span>Play</span>
+            </button>
+            <button class="btn-royal" onclick="showRules()">
+                <span>How to Play</span>
+            </button>
+        </div>
+
+        <p class="title-footer">3–5 Players &bull; 45–90 Minutes &bull; 1st Edition</p>
+    </div>
+
+    <!-- Music Toggle -->
+    <button class="music-toggle" id="musicBtn" onclick="toggleMusic()" title="Toggle Music">
+        &#9835;
+    </button>
+    <button class="log-toggle" id="logBtn" onclick="toggleLog()" title="Game Log">&#128220;</button>
+
+    <!-- Notifications -->
+    <div id="notifications"></div>
+
+    <!-- ═══ CHARACTER SELECT ═══ -->
+    <div id="character-select">
+        <h1 class="select-title">Choose Your Hero</h1>
+        <div class="character-grid" id="characterGrid"></div>
+        <div style="margin-top: 30px; display: flex; gap: 16px; align-items: center;">
+            <label style="font-family: 'Cinzel', serif; color: var(--gold);">Players:</label>
+            <select id="playerCountSelect" style="font-family: 'Cinzel', serif; font-size: 16px; padding: 8px 16px; background: var(--royal-deep); color: var(--gold); border: 1px solid var(--gold); border-radius: 4px;">
+                <option value="3">3 Players</option>
+                <option value="4">4 Players</option>
+                <option value="5">5 Players</option>
+            </select>
+            <button class="btn-royal primary" onclick="confirmCharacter()" id="confirmBtn" style="display:none;">
+                <span>Begin Your Journey</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ═══ GAME SCREEN — Final Cut Layout ═══ -->
+    <div id="game-screen">
+
+        <!-- Board Expand Overlay -->
+        <div class="board-overlay" id="boardOverlay" onclick="closeBoardOverlay()">
+            <img class="board-ov-full" id="boardOvImg" src="" onclick="event.stopPropagation()">
+            <div class="board-ov-name" id="boardOvName"></div>
+            <div class="board-ov-sub">Character Board</div>
+            <div class="board-ov-slider" id="boardOvSlider" onclick="event.stopPropagation()"></div>
+            <div class="board-ov-strip" id="boardOvStrip" onclick="event.stopPropagation()"></div>
+            <div class="ov-close" onclick="closeBoardOverlay()">ESC</div>
+        </div>
+
+        <!-- Hand Inspect Overlay -->
+        <div class="hand-inspect-overlay" id="handInspectOv" onclick="closeHandInspect()">
+            <div class="hand-ov-spread" id="handOvSpread" onclick="event.stopPropagation()"></div>
+            <div class="hand-ov-label" id="handOvLabel"></div>
+            <div class="ov-close" onclick="closeHandInspect()">ESC</div>
+        </div>
+
+        <!-- Opponent Inspect Overlay -->
+        <div class="opp-overlay" id="oppOverlay" onclick="closeOppOverlay()">
+            <div class="opp-ov-inner" onclick="event.stopPropagation()">
+                <div class="opp-ov-header">
+                    <img class="opp-ov-avatar" id="oppOvAvatar" src="">
+                    <div>
+                        <div class="opp-ov-name" id="oppOvName"></div>
+                        <div class="opp-ov-stats" id="oppOvStats"></div>
+                    </div>
+                </div>
+                <img class="opp-ov-board" id="oppOvBoard" src="">
+                <div class="opp-ov-section-label">Played Cards — Click to Lend Skills</div>
+                <div class="opp-ov-cards" id="oppOvCards"></div>
+            </div>
+            <div class="ov-close" onclick="closeOppOverlay()">ESC</div>
+        </div>
+
+        <!-- Mission Lightbox -->
+        <div class="mission-lb" id="missionLB" onclick="closeMissionLB()">
+            <img class="mission-lb-card" id="missionLBImg" src="" onclick="event.stopPropagation()">
+            <div class="ov-close" onclick="closeMissionLB()">ESC</div>
+            <div class="mission-lb-label" id="missionLBLabel"></div>
+        </div>
+
+        <!-- Lend Toast -->
+        <div class="lend-toast" id="lendToast"></div>
+
+        <!-- ═══ MAIN GAME GRID ═══ -->
+        <div class="game-layout">
+
+            <!-- Play Area (left/center) -->
+            <div class="play-area">
+                <!-- Phase indicator -->
+                <div class="phase-bar" id="phaseBar"></div>
+
+                <!-- Board thumbnail — top-left -->
+                <div class="board-thumb" id="boardThumb"></div>
+
+                <!-- Stats panel — under board -->
+                <div class="stats-panel" id="statsPanel"></div>
+
+                <!-- Mission strip — under stats -->
+                <div class="mission-strip" id="missionStrip"></div>
+
+                <!-- Card stacks — center -->
+                <div class="card-stacks" id="cardStacks"></div>
+            </div>
+
+            <!-- Sidebar — Opponents -->
+            <div class="game-sidebar" id="gameSidebar"></div>
+
+            <!-- Hand zone — bottom -->
+            <div class="hand-zone" id="handZone"></div>
+        </div>
+
+        <!-- Bottom stats bar (used by stat animation system) -->
+        <div class="bottom-stats" id="bottomStats"></div>
+    </div>
+
+    <!-- ═══ ACTION PANEL ═══ -->
+    <div class="action-panel" id="actionPanel"></div>
+
+    <!-- ═══ GAME LOG ═══ -->
+    <div id="gameLog" class="game-log">
+        <div style="font-family: Cinzel, serif; color: var(--gold); margin-bottom: 12px; font-size: 14px;">Game Log</div>
+        <div id="logEntries"></div>
+    </div>
+
+    <!-- ═══ MISSION SELECT ═══ -->
+    <div id="missionSelect" class="mission-select-overlay"></div>
+
+    <!-- ═══ CARD SPOTLIGHT (Cinematic Reveal) ═══ -->
+    <div id="cardSpotlight" class="card-spotlight"></div>
+
+    <!-- ═══ EFFECT FLOATS CONTAINER ═══ -->
+    <div id="effectFloats" class="effect-floats-container"></div>
+
+    <!-- ═══ CARD ZOOM ═══ -->
+    <div class="card-zoom" id="cardZoom" onclick="closeZoom()">
+        <img id="zoomImg" src="" alt="Card">
+    </div>
+
+    <!-- ═══ SCORING SCREEN ═══ -->
+    <div id="scoring-screen">
+        <h1 class="select-title">The Queen Has Decided</h1>
+        <div id="scoringContent"></div>
+    </div>
+
+    <!-- ═══ AUDIO ═══ -->
+    <audio id="themeMusic" preload="auto">
+        <source src="assets/audio/favor_theme.mp3" type="audio/mpeg">
+    </audio>
+
+    <!-- ═══ SCRIPTS ═══ -->
+    <script src="data/cards.js"></script>
+    <script src="data/missions.js"></script>
+    <script src="data/characters.js"></script>
+    <script src="engine/gameState.js"></script>
+    <script src="js/ui.js"></script>
+</body>
+</html>
