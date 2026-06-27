@@ -56,13 +56,19 @@ const SPECIAL_DESCRIPTIONS = {
 // ─── SLOT SPECIAL LABELS (Character Board) ───────────────
 const SLOT_SPECIAL_LABELS = {
     "steal_2_prestige_each":       "Steal 2 Prestige",
-    "steal_1_gold_each":           "Steal 1 Gold each",
+    "steal_2_gold_each":           "Steal 2 Gold each",
     "give_1_gold_each":            "Give 1 Gold each",
     "all_others_1_scorn":          "Others +1 Scorn",
     "convert_gold_to_prestige":    "Gold \u2192 Prestige",
     "philosopher_stone":           "Philosopher\u2019s Stone",
+    "philosopher_stone_x2":        "2\u00D7 Philosopher\u2019s Stone",
     "minds_eye":                   "Mind\u2019s Eye",
+    "minds_eye_x3":                "3\u00D7 Mind\u2019s Eye",
+    "minds_eye_and_philosopher":   "Mind\u2019s Eye + Phil. Stone",
     "pick_one":                    "Choose a Skill",
+    "borrow_any_player":           "Borrow from any player",
+    "mission_fail_10_gold":        "Fail mission \u2192 +10 Gold",
+    "choose_mission":              "Choose a Mission",
 };
 
 /**
@@ -83,6 +89,9 @@ function buildSlotLabel(slot) {
 
     // One-time gold
     if (slot.gold) parts.push(`+${slot.gold} Gold`);
+
+    // One-time scorn
+    if (slot.scorn) parts.push(`+${slot.scorn} Scorn`);
 
     // Favor
     if (slot.favor) parts.push(`${slot.favor} Favor`);
@@ -1352,7 +1361,7 @@ function discardToSlide(cardIndex, direction) {
 }
 
 // Pay 5 Gold to move slider (can do anytime during gameplay)
-function payToSlide(direction) {
+async function payToSlide(direction) {
     if (!game || game.phase !== 'gameplay') return;
 
     const player = game.players[0];
@@ -1367,6 +1376,15 @@ function payToSlide(direction) {
         showNotification(`Slider moved to ${posNames[player.sliderPosition]} (\u22125g)`, 'play');
         addLogEntry(`You pay 5g to slide to ${posNames[player.sliderPosition]}`);
         renderGameState();
+        renderBoardOvSlider();
+
+        // Magician slot 2: choose a mission from the pool
+        if (player._pendingSlotMission) {
+            player._pendingSlotMission = false;
+            await showMissionSelectAsync();
+            renderGameState();
+            renderBoardOvSlider();
+        }
     } else {
         showNotification(result.error, 'error');
     }
@@ -1430,6 +1448,13 @@ async function activateAllCards(humanAction) {
                     const direction = game.players[0]._discardSlideNext;
                     game.activateCard(0, card.id, 'discard_slide', direction);
                     game.players[0]._discardSlideNext = undefined;
+
+                    // Magician slot 2: choose_mission triggered by slider move
+                    if (game.players[0]._pendingSlotMission) {
+                        game.players[0]._pendingSlotMission = false;
+                        renderGameState();
+                        await showMissionSelectAsync();
+                    }
                 } else if (humanAction === 'discard' && cardIdx === 0 && game.players[0]._discardNext) {
                     await showMiniSpotlight(card, 'discard');
 

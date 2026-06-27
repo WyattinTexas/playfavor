@@ -9,12 +9,13 @@
  *   - skills: {} — ongoing skill bonuses while ring is on this slot
  *   - gold: N — one-time gold bonus (activated once when arriving)
  *   - favor: N — end-of-game Favor (blue badge value)
- *   - special: "string" — one-time event effect
+ *   - scorn: N — one-time scorn penalty (activated once when arriving)
+ *   - special: "string" — one-time event effect or ongoing ability
  *   - pickOptions: [] — for "pick_one" specials
  *
  * Rules (from rulebook p.10):
  *   - Skills are available every turn while ring is at that position
- *   - Gold & Events activate ONLY ONCE (tracked by claimedSlots)
+ *   - Gold, Scorn & Events activate ONLY ONCE (tracked by claimedSlots)
  *   - Favor is tallied at end of game based on final ring position
  *   - "The free skill activates immediately each movement"
  *
@@ -33,11 +34,11 @@ window.FAVOR_DATA.characters = [
         subtitle: "Renaissance Man",
         startingGold: 3,
         slots: [
-            { favor: 10, skills: { power: 1 } },
-            { gold: 4, skills: { charisma: 3 } },
-            { skills: { survival: 1 } },                    // center — start
-            { skills: { knowledge: 2 } },
-            { favor: 15, skills: { alchemy: 1 } }
+            { favor: 9, skills: { power: 3 } },
+            { gold: 4, skills: { prospecting: 3 } },
+            { skills: { survival: 2 } },                        // center — start
+            { special: "minds_eye" },
+            { favor: 15, special: "philosopher_stone" }
         ]
     },
     {
@@ -49,11 +50,11 @@ window.FAVOR_DATA.characters = [
         subtitle: "Deadly Duelist",
         startingGold: 3,
         slots: [
-            { favor: 22 },
-            { gold: 5 },
-            { },                                              // center — start
-            { skills: { knowledge: 2 } },
-            { skills: { power: 4 } }
+            { favor: 18 },
+            { gold: 4 },
+            { skills: { power: 1 } },                           // center — start
+            { skills: { knowledge: 3 } },
+            { skills: { power: 5 } }
         ]
     },
     {
@@ -65,11 +66,11 @@ window.FAVOR_DATA.characters = [
         subtitle: "Opportunist",
         startingGold: 3,
         slots: [
-            { special: "steal_2_prestige_each" },
-            { special: "steal_1_gold_each" },
-            { skills: { power: 1 } },                        // center — start
-            { gold: 8 },
-            { skills: { alchemy: 3 } }
+            { scorn: 5, special: "steal_2_prestige_each" },
+            { scorn: 5, special: "steal_2_gold_each" },
+            { skills: { power: 2 } },                           // center — start
+            { gold: 7 },
+            { special: "philosopher_stone_x2" }
         ]
     },
     {
@@ -81,12 +82,11 @@ window.FAVOR_DATA.characters = [
         subtitle: "Ultimate Trader",
         startingGold: 3,
         slots: [
-            { gold: 5, skills: { alchemy: 1 } },
-            { skills: { charisma: 2 } },
-            { skills: { prospecting: 1 },                    // center — start
-              special: "convert_gold_to_prestige" },
-            { favor: 15 },
-            { gold: 7 }
+            { gold: 5, special: "philosopher_stone" },
+            { gold: 5, skills: { prospecting: 2 } },
+            { special: "borrow_any_player" },                    // center — start
+            { special: "convert_gold_to_prestige", skills: { charisma: 3 } },
+            { gold: 7, favor: 10 }
         ]
     },
     {
@@ -98,11 +98,11 @@ window.FAVOR_DATA.characters = [
         subtitle: "The Mindful",
         startingGold: 3,
         slots: [
-            { favor: 12 },
-            { skills: { alchemy: 1 } },
-            { skills: { charisma: 3 } },                     // center — start
-            { skills: { survival: 5 } },
-            { favor: 15 }
+            { favor: 10, special: "philosopher_stone" },
+            { skills: { prospecting: 3, charisma: 4 } },
+            { skills: { survival: 1 } },                        // center — start
+            { skills: { knowledge: 3 } },
+            { skills: { survival: 8 } }
         ]
     },
     {
@@ -112,13 +112,13 @@ window.FAVOR_DATA.characters = [
         difficulty: 2.5,
         tip: "Your Generosity will be Rewarded.",
         subtitle: "Philanthropist",
-        startingGold: 8,                                      // 3 base + 5 center gold
+        startingGold: 8,                                         // 3 base + 5 center gold
         slots: [
-            { favor: 12, special: "give_1_gold_each" },
-            { skills: { knowledge: 2 } },
-            { gold: 5 },                                      // center — start (gold pre-claimed)
-            { skills: { charisma: 4 } },
-            { favor: 18, special: "all_others_1_scorn" }
+            { gold: 12, special: "give_1_gold_each" },
+            { skills: { knowledge: 4 } },
+            { gold: 5 },                                         // center — start (gold pre-claimed)
+            { skills: { prospecting: 4 } },
+            { favor: 16, special: "all_others_1_scorn" }
         ]
     },
     {
@@ -130,11 +130,11 @@ window.FAVOR_DATA.characters = [
         subtitle: "Grandmaster Alchemist",
         startingGold: 3,
         slots: [
-            { special: "minds_eye", skills: { knowledge: 5 } },
-            { skills: { alchemy: 1 } },
-            { skills: { knowledge: 1 } },                    // center — start
-            { special: "philosopher_stone", skills: { knowledge: 5 } },
-            { favor: 18 }
+            { special: "minds_eye", skills: { knowledge: 8 } },
+            { special: "philosopher_stone" },
+            { skills: { knowledge: 2 } },                       // center — start
+            { skills: { alchemy: 6 } },
+            { favor: 14 }
         ]
     },
     {
@@ -146,11 +146,11 @@ window.FAVOR_DATA.characters = [
         subtitle: "Medical Expert",
         startingGold: 3,
         slots: [
-            { favor: 15, gold: 3 },
+            { favor: 13, gold: 3 },
             { skills: { survival: 3 } },
-            { skills: { alchemy: 1 } },                      // center — start
-            { gold: 5 },
-            { special: "philosopher_stone", skills: { knowledge: 3 } }
+            { skills: { alchemy: 1 } },                         // center — start
+            { gold: 4, skills: { knowledge: 3 } },
+            { skills: { alchemy: 5, knowledge: 5 } }
         ]
     },
     {
@@ -161,13 +161,12 @@ window.FAVOR_DATA.characters = [
         tip: "The Key is in the Cards.",
         subtitle: "The Wildcard",
         startingGold: 3,
-        specialNote: "Failing any Mission Grants 10 Gold",
         slots: [
-            { gold: 5 },
-            { skills: { charisma: 15 } },
-            { special: "minds_eye", skills: { knowledge: 2 } }, // center — start
-            { skills: { charisma: 2 } },
-            { favor: 16 }
+            { gold: 5, skills: { charisma: 16 } },
+            { special: "minds_eye_x3" },
+            { skills: { charisma: 2 } },                        // center — start
+            { gold: 2, special: "mission_fail_10_gold" },
+            { favor: 12, skills: { knowledge: 2 } }
         ]
     },
     {
@@ -179,12 +178,12 @@ window.FAVOR_DATA.characters = [
         subtitle: "Virtuoso",
         startingGold: 3,
         slots: [
-            { gold: 8, skills: { knowledge: 3 } },
-            { skills: { prospecting: 3 } },
-            { skills: { charisma: 1 } },                     // center — start
+            { gold: 5, skills: { knowledge: 3 } },
+            { special: "choose_mission" },
+            { skills: { charisma: 1 } },                        // center — start
             { special: "pick_one",
-              pickOptions: ["survival", "charisma", "alchemy", "knowledge"] },
-            { special: "minds_eye", skills: { alchemy: 1 } }
+              pickOptions: ["survival", "charisma", "prospecting", "alchemy"] },
+            { special: "minds_eye_and_philosopher" }
         ]
     }
 ];

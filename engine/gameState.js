@@ -269,11 +269,27 @@ class FavorGame {
      * Get borrowable skills from neighbors.
      */
     getBorrowableSkills(playerIndex) {
-        const leftNeighbor = (playerIndex - 1 + this.playerCount) % this.playerCount;
-        const rightNeighbor = (playerIndex + 1) % this.playerCount;
-        const borrowable = {};
+        const player = this.players[playerIndex];
 
-        [leftNeighbor, rightNeighbor].forEach(ni => {
+        // Merchant's "borrow_any_player" slot: can borrow from ALL players
+        const char = player.character;
+        const currentSlot = char && char.slots ? char.slots[player.sliderPosition] : null;
+        const canBorrowAny = currentSlot && currentSlot.special === 'borrow_any_player';
+
+        let sources;
+        if (canBorrowAny) {
+            sources = [];
+            for (let i = 0; i < this.playerCount; i++) {
+                if (i !== playerIndex) sources.push(i);
+            }
+        } else {
+            const leftNeighbor = (playerIndex - 1 + this.playerCount) % this.playerCount;
+            const rightNeighbor = (playerIndex + 1) % this.playerCount;
+            sources = [leftNeighbor, rightNeighbor];
+        }
+
+        const borrowable = {};
+        sources.forEach(ni => {
             SKILLS.forEach(skill => {
                 // Only skills from played cards can be borrowed (not slider proficiency)
                 if (this.playerHasSkillOnCards(ni, skill)) {
@@ -446,6 +462,12 @@ class FavorGame {
                 this.addLog(`${player.name} receives ${slot.gold} Gold from slot ${pos + 1}`);
             }
 
+            // One-time scorn
+            if (slot.scorn) {
+                player.scorn += slot.scorn;
+                this.addLog(`${player.name} takes ${slot.scorn} Scorn from slot ${pos + 1}`);
+            }
+
             // One-time special events
             if (slot.special) {
                 this.resolveSlotSpecial(player, slot.special, slot);
@@ -475,6 +497,17 @@ class FavorGame {
                     player.skills[skill] = (player.skills[skill] || 0) + value;
                 }
             });
+        }
+
+        // Add ongoing knowledge from slot Mind's Eye specials
+        if (slot && slot.special) {
+            if (slot.special === 'minds_eye') {
+                player.skills.knowledge = (player.skills.knowledge || 0) + 1;
+            } else if (slot.special === 'minds_eye_x3') {
+                player.skills.knowledge = (player.skills.knowledge || 0) + 3;
+            } else if (slot.special === 'minds_eye_and_philosopher') {
+                player.skills.knowledge = (player.skills.knowledge || 0) + 1;
+            }
         }
 
         // Re-add skills from all played cards
@@ -530,10 +563,10 @@ class FavorGame {
                 }
                 break;
 
-            case 'steal_1_gold_each':
+            case 'steal_2_gold_each':
                 for (let i = 0; i < this.playerCount; i++) {
                     if (i !== player.index) {
-                        const stolen = Math.min(1, this.players[i].gold);
+                        const stolen = Math.min(2, this.players[i].gold);
                         this.players[i].gold -= stolen;
                         player.gold += stolen;
                         this.addLog(`${player.name} steals ${stolen} Gold from ${this.players[i].name}`);
@@ -572,12 +605,60 @@ class FavorGame {
             case 'philosopher_stone':
                 if (!player.philosopherStone) player.philosopherStone = 0;
                 player.philosopherStone = Math.max(player.philosopherStone, 1);
-                this.addLog(`${player.name} gains Philosopher's Stone (1:1 gold→favor) from character board`);
+                this.addLog(`${player.name} gains Philosopher's Stone (1:1 gold\u2192favor)`);
+                break;
+
+            case 'philosopher_stone_x2':
+                if (!player.philosopherStone) player.philosopherStone = 0;
+                player.philosopherStone = Math.max(player.philosopherStone, 2);
+                this.addLog(`${player.name} gains 2\u00D7 Philosopher's Stone (2:1 gold\u2192favor)`);
                 break;
 
             case 'minds_eye':
-                // Mind's Eye grants ongoing knowledge via the slot's skills
+                // Mind's Eye: ongoing +1 knowledge (handled in applySlotSkills)
                 this.addLog(`${player.name} gains Mind's Eye from character board`);
+                break;
+
+            case 'minds_eye_x3':
+                // 3 Mind's Eyes: ongoing +3 knowledge (handled in applySlotSkills)
+                this.addLog(`${player.name} gains 3\u00D7 Mind's Eye from character board`);
+                break;
+
+            case 'minds_eye_and_philosopher':
+                // Mind's Eye (+1 knowledge ongoing) + Philosopher's Stone (1:1)
+                if (!player.philosopherStone) player.philosopherStone = 0;
+                player.philosopherStone = Math.max(player.philosopherStone, 1);
+                this.addLog(`${player.name} gains Mind's Eye + Philosopher's Stone from character board`);
+                break;
+
+            case 'borrow_any_player':
+                // Ongoing: while on this slot, can borrow from any player (handled in getBorrowableSkills)
+                this.addLog(`${player.name} can now borrow skills from any player`);
+                break;
+
+            case 'mission_fail_10_gold':
+                // Ongoing: while on this slot, failing a mission grants 10 gold (handled in applyMissionFailure)
+                this.addLog(`${player.name}'s slot: failing a mission grants 10 Gold`);
+                break;
+
+            case 'choose_mission':
+                // One-time: choose a mission from the visible pool (free, no gold cost)
+                if (this.visibleMissions.length > 0) {
+                    if (player.index === 0) {
+                        // Human player: flag for UI to show mission select
+                        player._pendingSlotMission = true;
+                    } else {
+                        // AI: auto-pick best mission
+                        let bestIdx = 0;
+                        let bestFavor = -1;
+                        this.visibleMissions.forEach((m, i) => {
+                            const favor = m.favor || (m.successRewards ? m.successRewards.favor : 0) || 0;
+                            if (favor > bestFavor) { bestFavor = favor; bestIdx = i; }
+                        });
+                        this.chooseMission(player.index, bestIdx);
+                    }
+                    this.addLog(`${player.name} chooses a mission from the pool`);
+                }
                 break;
 
             case 'pick_one':
@@ -590,7 +671,7 @@ class FavorGame {
                         if (val < bestVal) { bestSkill = s; bestVal = val; }
                     });
                     player.skills[bestSkill] = (player.skills[bestSkill] || 0) + 1;
-                    this.addLog(`${player.name} picks ${bestSkill} from Magician's board`);
+                    this.addLog(`${player.name} picks ${bestSkill} from board`);
                 }
                 break;
         }
@@ -1161,6 +1242,17 @@ class FavorGame {
                 player.gold = Math.max(0, player.gold - mission.failurePenalties.goldLoss);
             }
         }
+
+        // Fiddler slot 4: gain 10 gold on mission failure while on that slot
+        const char = player.character;
+        if (char && char.slots) {
+            const currentSlot = char.slots[player.sliderPosition];
+            if (currentSlot && currentSlot.special === 'mission_fail_10_gold') {
+                player.gold += 10;
+                this.addLog(`${player.name}'s board bonus: +10 Gold from mission failure`);
+            }
+        }
+
         this.addLog(`${player.name} fails mission: ${mission.name}`);
     }
 
