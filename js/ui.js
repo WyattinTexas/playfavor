@@ -53,6 +53,49 @@ const SPECIAL_DESCRIPTIONS = {
     "defend_the_throne":             "Defends the throne from all challengers!",
 };
 
+// ─── SLOT SPECIAL LABELS (Character Board) ───────────────
+const SLOT_SPECIAL_LABELS = {
+    "steal_2_prestige_each":       "Steal 2 Prestige",
+    "steal_1_gold_each":           "Steal 1 Gold each",
+    "give_1_gold_each":            "Give 1 Gold each",
+    "all_others_1_scorn":          "Others +1 Scorn",
+    "convert_gold_to_prestige":    "Gold \u2192 Prestige",
+    "philosopher_stone":           "Philosopher\u2019s Stone",
+    "minds_eye":                   "Mind\u2019s Eye",
+    "pick_one":                    "Choose a Skill",
+};
+
+/**
+ * Build a compact label array for a character board slot.
+ * Returns an array of short strings like ["+5 Gold", "Power +1", "15 Favor"].
+ */
+function buildSlotLabel(slot) {
+    if (!slot) return ['(empty)'];
+    const parts = [];
+
+    // Skills
+    if (slot.skills) {
+        Object.entries(slot.skills).forEach(([skill, val]) => {
+            const name = skill.charAt(0).toUpperCase() + skill.slice(1);
+            parts.push(`${name} +${val}`);
+        });
+    }
+
+    // One-time gold
+    if (slot.gold) parts.push(`+${slot.gold} Gold`);
+
+    // Favor
+    if (slot.favor) parts.push(`${slot.favor} Favor`);
+
+    // Special
+    if (slot.special && SLOT_SPECIAL_LABELS[slot.special]) {
+        parts.push(SLOT_SPECIAL_LABELS[slot.special]);
+    }
+
+    if (parts.length === 0) parts.push('\u2014');
+    return parts;
+}
+
 // ─── ANIMATION QUEUE ─────────────────────────────────────
 
 class AnimationQueue {
@@ -93,92 +136,140 @@ const animationQueue = new AnimationQueue();
 
 // ─── CARD SPOTLIGHT SYSTEM ───────────────────────────────
 
-function buildSpotlightContent(playerName, card, action) {
+/**
+ * Build a read-only mini slot track for an opponent's character board.
+ */
+function buildMiniSlotTrack(playerIndex) {
+    const player = game.players[playerIndex];
+    const char = player.character;
+    if (!char || !char.slots) return '';
+
+    const posNames = ['1', '2', '3', '4', '5'];
+    const claimed = player.claimedSlots || new Set([2]);
+
+    let cells = '';
+    for (let i = 0; i < 5; i++) {
+        const isCurrent = i === player.sliderPosition;
+        const isClaimed = claimed.has(i) && !isCurrent;
+        const stateClass = isCurrent ? 'current' : isClaimed ? 'claimed' : 'unclaimed';
+        const labels = buildSlotLabel(char.slots[i]);
+
+        cells += `<div class="opp-slot-cell ${stateClass}">
+            <div class="opp-slot-num">${posNames[i]}</div>
+            <div class="opp-slot-rewards">${labels.map(l => `<div class="opp-slot-line">${l}</div>`).join('')}</div>
+        </div>`;
+    }
+
+    return `<div class="opp-slot-track">
+        ${cells}
+        <div class="opp-slot-ring" style="transform: translateX(${player.sliderPosition * 100}%)"></div>
+    </div>`;
+}
+
+function buildSpotlightContent(playerIndex, card, action) {
     const isDiscard = (action === 'discard' || action === 'discard_slide');
-    const typeName = (card.type || 'card').replace(/_/g, ' ');
-    const typeLabel = typeName.charAt(0).toUpperCase() + typeName.slice(1);
+    const player = game.players[playerIndex];
+    const playerName = player.name;
+    const char = player.character;
+    const avatarSrc = char ? `assets/characters/${char.filename}` : '';
+    const charName = char ? char.name : '';
 
-    // Build effect description
-    let effectParts = [];
-
-    // Skills granted
-    const skills = card.skills || [];
-
-    // Rewards
-    if (card.rewards) {
-        if (card.rewards.gold) effectParts.push(`+${card.rewards.gold} Gold`);
-        if (card.rewards.prestige) effectParts.push(`+${card.rewards.prestige} Prestige`);
-        if (card.rewards.favor) effectParts.push(`+${card.rewards.favor} Favor`);
-        if (card.rewards.scorn) effectParts.push(`+${card.rewards.scorn} Scorn`);
-    }
-
-    // Favor from card directly
-    if (card.favor) effectParts.push(`+${card.favor} Favor`);
-
-    // Cost
-    if (card.cost && card.cost > 0 && !isDiscard) effectParts.push(`Costs ${card.cost} Gold`);
-
-    // Special ability
-    let specialText = '';
-    if (card.special && SPECIAL_DESCRIPTIONS[card.special]) {
-        specialText = SPECIAL_DESCRIPTIONS[card.special];
-    }
-
-    // Discard text
-    let actionText = '';
-    if (isDiscard) {
-        if (action === 'discard_slide') {
-            actionText = 'Discarded to move slider';
-        } else {
-            actionText = 'Discarded for +3 Gold';
-        }
-    }
-
-    // Build HTML
-    const imgSrc = `assets/cards/regular/${card.filename}`;
     const actionLabel = isDiscard
         ? `${playerName} discards...`
         : `${playerName} plays...`;
 
-    let html = `<div class="spotlight-backdrop"></div>`;
-    html += `<div class="spotlight-player">${actionLabel}</div>`;
+    // Build new card display
+    const imgSrc = `assets/cards/regular/${card.filename}`;
     const safeCardName = card.name.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
-    html += `<div class="spotlight-card"><img src="${imgSrc}" alt="${safeCardName}" onerror="this.style.display='none';this.parentElement.insertAdjacentHTML('beforeend','<div class=spotlight-card-fallback>${safeCardName}</div>')"></div>`;
-    html += `<div class="spotlight-name">${card.name}</div>`;
-    html += `<div class="spotlight-type">${typeLabel}</div>`;
+    const actionTag = isDiscard ? 'DISCARDING' : 'NOW PLAYING';
 
-    // Effect text (rewards + special)
-    if (actionText) {
-        html += `<div class="spotlight-effect">${actionText}</div>`;
-    } else if (specialText) {
-        html += `<div class="spotlight-effect">${specialText}</div>`;
-    } else if (effectParts.length > 0) {
-        html += `<div class="spotlight-effect">${effectParts.join(' &middot; ')}</div>`;
+    // Build effect description for the new card
+    let effectText = '';
+    if (isDiscard) {
+        effectText = action === 'discard_slide' ? 'Slider move' : '+3 Gold';
+    } else if (card.special && SPECIAL_DESCRIPTIONS[card.special]) {
+        effectText = SPECIAL_DESCRIPTIONS[card.special];
+    } else {
+        const parts = [];
+        if (card.rewards) {
+            if (card.rewards.gold) parts.push(`+${card.rewards.gold}g`);
+            if (card.rewards.prestige) parts.push(`+${card.rewards.prestige} Pres`);
+            if (card.rewards.favor) parts.push(`+${card.rewards.favor} Fav`);
+        }
+        if (card.favor) parts.push(`+${card.favor} Fav`);
+        if (card.skills && card.skills.length > 0) parts.push(card.skills.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', '));
+        effectText = parts.join(' \u00B7 ');
     }
 
-    // Skill chips
-    if (skills.length > 0 && !isDiscard) {
-        html += `<div class="spotlight-skills">${skills.map(s =>
-            `<span class="spotlight-skill-chip">${s}</span>`
-        ).join('')}</div>`;
+    // Stats
+    const state = game.getState(0);
+    const ps = state.players[playerIndex];
+
+    // Previously played cards (before this card is added)
+    const playedCards = player.playedCards || [];
+    let playedHtml = '';
+    if (playedCards.length > 0) {
+        playedHtml = `<div class="opp-turn-played">
+            ${playedCards.slice(-8).map(c =>
+                `<img class="opp-turn-played-card" src="assets/cards/regular/${c.filename}" alt="${c.name}">`
+            ).join('')}
+        </div>`;
     }
+
+    let html = `<div class="spotlight-backdrop"></div>`;
+    html += `<div class="opp-turn-inner">`;
+
+    // Header
+    html += `<div class="opp-turn-header">
+        <img class="opp-turn-avatar" src="${avatarSrc}" alt="${charName}">
+        <div class="opp-turn-header-info">
+            <div class="opp-turn-name">${playerName}</div>
+            <div class="opp-turn-char">${charName}</div>
+        </div>
+    </div>`;
+
+    // Ring track
+    html += `<div class="opp-turn-ring">${buildMiniSlotTrack(playerIndex)}</div>`;
+
+    // Stats
+    html += `<div class="opp-turn-stats">
+        <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${ps.gold}</span>
+        <span class="stat-pill prestige">\u2B50 ${ps.prestige}</span>
+        <span class="stat-pill favor">${ps.favor || 0} Favor</span>
+        <span class="stat-pill scorn">${ps.scorn} Scorn</span>
+    </div>`;
+
+    // Action label
+    html += `<div class="spotlight-player">${actionLabel}</div>`;
+
+    // New card + previously played
+    html += `<div class="opp-turn-cards-area">`;
+    html += playedHtml;
+    html += `<div class="opp-turn-new-card ${isDiscard ? 'discard' : 'play'}">
+        <div class="opp-turn-new-tag">${actionTag}</div>
+        <img src="${imgSrc}" alt="${safeCardName}" onerror="this.style.display='none'">
+        <div class="opp-turn-new-name">${card.name}</div>
+        ${effectText ? `<div class="opp-turn-new-effect">${effectText}</div>` : ''}
+    </div>`;
+    html += `</div>`;
 
     html += `<div class="spotlight-dismiss">click to continue</div>`;
+    html += `</div>`;
 
     return { html, isDiscard };
 }
 
 /**
  * Full cinematic spotlight — used for AI plays.
- * Big dramatic reveal: dark backdrop, card zoom, effect text.
+ * Shows opponent's full board context with the new card highlighted.
  */
-function showCardSpotlight(playerName, card, action) {
+function showCardSpotlight(playerIndex, card, action) {
     const speed = window.CINEMATIC_SPEED;
     const autoDismissMs = 2500 * speed;
 
     return new Promise((resolve) => {
         const el = document.getElementById('cardSpotlight');
-        const { html, isDiscard } = buildSpotlightContent(playerName, card, action);
+        const { html, isDiscard } = buildSpotlightContent(playerIndex, card, action);
 
         el.innerHTML = html;
         el.className = 'card-spotlight active' + (isDiscard ? ' discard-variant' : '');
@@ -667,9 +758,11 @@ function renderStatsPanel(state) {
         ${resourcesHtml}
         ${skillsHtml}
         <div class="ring-indicator">
-            Ring: ${[0,1,2,3,4].map(pos =>
-                `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}">${posNames[pos]}</span>`
-            ).join('')}
+            Ring: ${[0,1,2,3,4].map(pos => {
+                const charData = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
+                const tip = charData ? buildSlotLabel(charData.slots[pos]).join(', ') : '';
+                return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posNames[pos]}</span>`;
+            }).join('')}
         </div>
         ${emblem}
     `;
@@ -804,9 +897,10 @@ function renderSidebar(state) {
                 <div class="opp-details">
                     <span class="opp-name">${p.name}${emblem}</span>
                     <div class="opp-ring-row">
-                        ${[0,1,2,3,4].map(pos =>
-                            `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}">${posLabels[pos]}</span>`
-                        ).join('')}
+                        ${[0,1,2,3,4].map(pos => {
+                            const tip = char ? buildSlotLabel(char.slots[pos]).join(', ') : '';
+                            return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posLabels[pos]}</span>`;
+                        }).join('')}
                     </div>
                     <div class="opp-stats-row">
                         <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${p.gold}</span>
@@ -903,14 +997,43 @@ function closeBoardOverlay() {
 
 function renderBoardOvSlider() {
     const player = game.players[0];
+    const char = player.character;
+    if (!char || !char.slots) return;
+
     const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
     const canLeft = player.sliderPosition > 0 && player.gold >= 5;
     const canRight = player.sliderPosition < 4 && player.gold >= 5;
+    const claimed = player.claimedSlots || new Set([2]);
+
+    let cellsHtml = '';
+    for (let i = 0; i < 5; i++) {
+        const slot = char.slots[i];
+        const isCurrent = i === player.sliderPosition;
+        const isClaimed = claimed.has(i) && !isCurrent;
+        const stateClass = isCurrent ? 'current' : isClaimed ? 'claimed' : 'unclaimed';
+        const labels = buildSlotLabel(slot);
+
+        cellsHtml += `
+            <div class="slot-cell ${stateClass}" data-slot="${i}">
+                <div class="slot-pos-name">${posNames[i]}</div>
+                <div class="slot-rewards">
+                    ${labels.map(l => `<div class="slot-reward-line">${l}</div>`).join('')}
+                </div>
+                ${isClaimed ? '<div class="slot-claimed-check">\u2713</div>' : ''}
+            </div>`;
+    }
 
     document.getElementById('boardOvSlider').innerHTML = `
-        <button class="slider-btn${canLeft ? '' : ' disabled'}" onclick="payToSlide(-1); renderBoardOvSlider()">\u25C0</button>
-        <span class="slider-pos">Slot ${player.sliderPosition + 1} — ${posNames[player.sliderPosition]}</span>
-        <button class="slider-btn${canRight ? '' : ' disabled'}" onclick="payToSlide(1); renderBoardOvSlider()">\u25B6</button>
+        <button class="slider-btn${canLeft ? '' : ' disabled'}" onclick="payToSlide(-1); renderBoardOvSlider(); renderGameState()">
+            \u25C0 <span class="slider-cost">5g</span>
+        </button>
+        <div class="slot-track">
+            ${cellsHtml}
+            <div class="slot-ring" style="transform: translateX(${player.sliderPosition * 100}%)"></div>
+        </div>
+        <button class="slider-btn${canRight ? '' : ' disabled'}" onclick="payToSlide(1); renderBoardOvSlider(); renderGameState()">
+            <span class="slider-cost">5g</span> \u25B6
+        </button>
     `;
 }
 
@@ -1158,7 +1281,7 @@ function discardSelectedCard(cardIndex) {
     processRound('discard');
 }
 
-function playMissionLetter(cardIndex) {
+async function playMissionLetter(cardIndex) {
     if (!game || game.phase !== 'gameplay') return;
 
     const card = game.players[0].hand[cardIndex];
@@ -1167,11 +1290,23 @@ function playMissionLetter(cardIndex) {
     game.pickCard(0, cardIndex);
     hideActionPanel();
 
-    game.players[0]._missionLetterNext = true;
-
     addLogEntry('You play a Mission Letter');
 
-    processRound('mission_letter');
+    // Immediately activate the mission letter (deducts 1g, discards the card)
+    const result = game.activateCard(0, card.id, 'mission_letter');
+
+    // Show mini spotlight for visual feedback
+    await showMiniSpotlight(card, 'play');
+
+    if (result && result.chooseMission) {
+        // Show mission select immediately and wait for the player's choice
+        renderGameState();
+        await showMissionSelectAsync();
+    }
+
+    // Now continue the round (AI picks, hand passing, activations)
+    // pendingActivations[0] is already null since the letter was activated above
+    processRound('mission_letter_done');
 }
 
 function playWithBorrow(cardIndex) {
@@ -1247,7 +1382,13 @@ async function processRound(humanAction) {
         }
     }
 
-    if (!game.allPlayersPicked()) {
+    // For mission_letter_done, player 0's pending is already null (activated immediately).
+    // Check that all OTHER players have picked.
+    const allReady = humanAction === 'mission_letter_done'
+        ? game.pendingActivations.every((a, i) => i === 0 || a !== null)
+        : game.allPlayersPicked();
+
+    if (!allReady) {
         renderGameState();
         return;
     }
@@ -1274,7 +1415,6 @@ async function activateAllCards(humanAction) {
         if (!pending) continue;
 
         const cards = Array.isArray(pending) ? pending : [pending];
-        const playerName = pi === 0 ? 'You' : game.players[pi].name;
 
         for (let cardIdx = 0; cardIdx < cards.length; cardIdx++) {
             const card = cards[cardIdx];
@@ -1284,15 +1424,7 @@ async function activateAllCards(humanAction) {
 
             if (pi === 0) {
                 // Human player — quick mini-spotlight (you already know what you picked)
-                if (humanAction === 'mission_letter' && cardIdx === 0 && game.players[0]._missionLetterNext) {
-                    await showMiniSpotlight(card, 'play');
-
-                    const result = game.activateCard(0, card.id, 'mission_letter');
-                    game.players[0]._missionLetterNext = false;
-                    if (result && result.chooseMission) {
-                        needsMissionSelect = true;
-                    }
-                } else if (humanAction === 'discard_slide' && cardIdx === 0 && game.players[0]._discardSlideNext !== undefined) {
+                if (humanAction === 'discard_slide' && cardIdx === 0 && game.players[0]._discardSlideNext !== undefined) {
                     await showMiniSpotlight(card, 'discard_slide');
 
                     const direction = game.players[0]._discardSlideNext;
@@ -1347,7 +1479,7 @@ async function activateAllCards(humanAction) {
                 if (isMissionLetter) {
                     // AI mission letter: use it if they have gold and missions available, else discard
                     if (game.players[pi].gold >= 1 && game.visibleMissions.length > 0) {
-                        await showCardSpotlight(playerName, card, 'play');
+                        await showCardSpotlight(pi, card, 'play');
                         const result = game.activateCard(pi, card.id, 'mission_letter');
                         if (result && result.chooseMission) {
                             // AI picks the best mission they can complete
@@ -1356,18 +1488,18 @@ async function activateAllCards(humanAction) {
                             addLogEntry(`${game.players[pi].name} uses a Mission Letter`);
                         }
                     } else {
-                        await showCardSpotlight(playerName, card, 'discard');
+                        await showCardSpotlight(pi, card, 'discard');
                         game.activateCard(pi, card.id, 'discard');
                         addLogEntry(`${game.players[pi].name} discards ${card.name}`);
                     }
                 } else {
                     const { canPlay } = game.checkRequirements(pi, card);
                     if (canPlay) {
-                        await showCardSpotlight(playerName, card, 'play');
+                        await showCardSpotlight(pi, card, 'play');
                         game.activateCard(pi, card.id, 'play');
                         addLogEntry(`${game.players[pi].name} plays ${card.name}`);
                     } else {
-                        await showCardSpotlight(playerName, card, 'discard');
+                        await showCardSpotlight(pi, card, 'discard');
                         game.activateCard(pi, card.id, 'discard');
                         addLogEntry(`${game.players[pi].name} discards ${card.name}`);
                     }
@@ -1423,12 +1555,27 @@ function showMissionSelectUI() {
     overlay.classList.add('active');
 }
 
+function showMissionSelectAsync() {
+    return new Promise((resolve) => {
+        window._missionSelectResolve = resolve;
+        showMissionSelectUI();
+    });
+}
+
 function selectMission(index) {
     game.chooseMission(0, index);
     document.getElementById('missionSelect').classList.remove('active');
     showNotification('Mission acquired!', 'mission');
     addLogEntry('You take a mission');
-    finishRound();
+
+    // If called from immediate mission letter flow, resolve the Promise
+    if (window._missionSelectResolve) {
+        const resolve = window._missionSelectResolve;
+        window._missionSelectResolve = null;
+        resolve();
+    } else {
+        finishRound();
+    }
 }
 
 // ─── AI ────────────────────────────────────────────────────
