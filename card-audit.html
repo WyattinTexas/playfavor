@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FAVOR Card Audit</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a2e; color: #e0d5c1; font-family: 'Segoe UI', sans-serif; padding: 20px; }
+  h1 { text-align: center; color: #d4a843; font-size: 28px; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #8a7a60; margin-bottom: 20px; font-size: 14px; }
+
+  .controls { text-align: center; margin-bottom: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .controls button {
+    background: #d4a843; color: #1a1a2e; border: none; padding: 10px 24px;
+    font-size: 14px; font-weight: 700; border-radius: 6px; cursor: pointer;
+  }
+  .controls button:hover { background: #e8c15a; }
+  .controls button.secondary { background: #3a3a5e; color: #e0d5c1; }
+  .controls button.secondary:hover { background: #4a4a7e; }
+
+  .filter-bar { text-align: center; margin-bottom: 20px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .filter-btn {
+    padding: 6px 14px; border-radius: 4px; border: 1px solid #3a3a5e;
+    background: #2a2a4e; color: #e0d5c1; cursor: pointer; font-size: 13px;
+  }
+  .filter-btn.active { background: #d4a843; color: #1a1a2e; border-color: #d4a843; font-weight: 700; }
+
+  .card-grid { display: flex; flex-direction: column; gap: 12px; max-width: 1000px; margin: 0 auto; }
+
+  .card-row {
+    display: flex; gap: 16px; align-items: flex-start;
+    background: #22223a; border-radius: 8px; padding: 12px;
+    border: 2px solid #3a3a5e; transition: opacity 0.3s;
+  }
+  .card-row.has-data { border-color: #4a8a4a; }
+  .card-row.checked { border-color: #2a5a2a; opacity: 0.55; }
+  .card-row.checked:hover { opacity: 1; }
+
+  .card-img-wrap { flex-shrink: 0; width: 160px; }
+  .card-img-wrap img {
+    width: 160px; border-radius: 6px; display: block;
+    cursor: pointer; transition: transform 0.2s;
+  }
+  .card-img-wrap img:hover { transform: scale(1.05); }
+
+  .card-info { flex: 1; min-width: 0; }
+  .card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
+  .card-name { font-size: 18px; font-weight: 700; color: #d4a843; }
+  .check-btn {
+    padding: 3px 10px; border-radius: 4px; font-size: 12px; font-weight: 700;
+    cursor: pointer; border: 1px solid #3a5a3a; background: #1a3a1a; color: #6a9a6a;
+    flex-shrink: 0;
+  }
+  .check-btn.done { background: #2a6a2a; color: #aaffaa; border-color: #4a8a4a; }
+  .card-meta { font-size: 12px; color: #8a7a60; margin-bottom: 8px; }
+  .card-meta span { margin-right: 12px; }
+
+  .card-current { font-size: 12px; color: #6a6a8a; margin-bottom: 8px; line-height: 1.4; }
+  .card-current b { color: #8a8aaa; }
+
+  textarea {
+    width: 100%; min-height: 80px; background: #16162a; color: #e0d5c1;
+    border: 1px solid #3a3a5e; border-radius: 4px; padding: 8px;
+    font-family: 'Segoe UI', sans-serif; font-size: 13px; resize: vertical;
+  }
+  textarea:focus { outline: none; border-color: #d4a843; }
+  textarea::placeholder { color: #4a4a6a; }
+
+  .type-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 3px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+  }
+  .type-endeavor { background: #2a6a3a; color: #8fdf8f; }
+  .type-potion { background: #6a2a6a; color: #df8fdf; }
+  .type-weapon { background: #5a5a5a; color: #c0c0c0; }
+  .type-artifact { background: #6a5a2a; color: #dfcf8f; }
+  .type-wisdom { background: #2a4a6a; color: #8fbfdf; }
+  .type-adventure { background: #6a3a2a; color: #df9f8f; }
+  .type-mission { background: #8a6a2a; color: #ffe08a; }
+
+  .section-header {
+    font-size: 20px; font-weight: 700; color: #d4a843; margin: 30px 0 10px;
+    text-align: center; max-width: 1000px; margin-left: auto; margin-right: auto;
+    border-bottom: 1px solid #3a3a5e; padding-bottom: 8px;
+  }
+
+  .lightbox {
+    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center;
+    cursor: pointer;
+  }
+  .lightbox.active { display: flex; }
+  .lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+
+  .counter { text-align: center; color: #8a7a60; font-size: 13px; margin-bottom: 16px; }
+  .progress-bar { max-width: 400px; margin: 0 auto 16px; height: 8px; background: #2a2a4e; border-radius: 4px; overflow: hidden; }
+  .progress-fill { height: 100%; background: #4a8a4a; transition: width 0.3s; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<h1>FAVOR Card Audit</h1>
+<p class="subtitle">Click card image to enlarge. Fill in corrections. Mark done when verified. Export when finished.</p>
+
+<div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+<div class="filter-bar" id="filterBar"></div>
+<div class="counter" id="counter"></div>
+
+<div class="controls">
+  <button onclick="exportData()">Export JSON</button>
+  <button class="secondary" onclick="importData()">Import JSON</button>
+  <button class="secondary" onclick="clearAll()">Clear All</button>
+  <button class="secondary" onclick="toggleChecked()">Show/Hide Done</button>
+</div>
+
+<div id="cardSections"></div>
+
+<div class="lightbox" id="lightbox" onclick="this.classList.remove('active')">
+  <img id="lightboxImg" src="">
+</div>
+
+<script>
+const CARDS = [
+  { name: "Concoction", filename: "Cauldron Card.jpg", act: 1, type: "potion", cost: null, skills: ["alchemy"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Cooking", filename: "Cooking Card.jpg", act: 1, type: "endeavor", cost: null, skills: ["knowledge", "survival", "alchemy"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Dark Cauldron", filename: "Dark Cauldron Card.jpg", act: 2, type: "endeavor", cost: 1, skills: ["alchemy", "alchemy"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Herbal Remedies", filename: "Meado Weed Card.jpg", act: 2, type: "endeavor", cost: 1, skills: ["survival", "survival", "survival"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Hunting", filename: "Hunting Card.jpg", act: 1, type: "endeavor", cost: null, skills: ["power", "survival", "survival"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Maester's Favor", filename: "Golden Feather Card.jpg", act: 2, type: "endeavor", cost: 1, skills: ["charisma", "charisma", "charisma"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Hermit's Lab", filename: "Forest Lab Card.jpg", act: 1, type: "endeavor", cost: 1, skills: ["alchemy", "survival"], requirements: [], rewards: {}, special: "or_choice", imgDir: "regular" },
+  { name: "Father's Lab", filename: "Potion Lab Card.jpg", act: 2, type: "endeavor", cost: 3, skills: ["alchemy", "alchemy", "alchemy"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Mining Guild", filename: "Scorched Roost Card.jpg", act: 1, type: "endeavor", cost: 2, skills: [], requirements: [], rewards: {}, special: "charisma_or_prospecting", imgDir: "regular" },
+  { name: "Pearl Diving", filename: "Obsidian Card.jpg", act: 1, type: "endeavor", cost: null, skills: ["survival", "prospecting"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Gemstone Mine", filename: "Obsidian Source Card.jpg", act: 2, type: "endeavor", cost: 2, skills: ["prospecting", "prospecting", "prospecting"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Forbidden Lab", filename: "The Outcast_s Hut Card.jpg", act: 1, type: "endeavor", cost: null, skills: ["knowledge"], requirements: [], rewards: { scorn: 2 }, special: "alchemy_or_prospecting", imgDir: "regular" },
+  { name: "First Aid", filename: "Talking Sprout Card.jpg", act: 1, type: "endeavor", cost: null, skills: ["survival"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Trapping", filename: "Trapping Card.jpg", act: 1, type: "endeavor", cost: null, skills: ["survival"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Negotiate", filename: "Negotiate Card.jpg", act: 1, type: "wisdom", cost: null, skills: ["charisma"], requirements: [], rewards: { prestige: 1 }, special: null, imgDir: "regular" },
+  { name: "Diplomacy", filename: "Roost Feather Card.jpg", act: 1, type: "wisdom", cost: null, skills: ["charisma"], requirements: [], rewards: { prestige: 1 }, special: null, imgDir: "regular" },
+  { name: "New Frontier", filename: "New Frontier Card.jpg", act: 2, type: "adventure", cost: null, skills: ["survival", "survival"], requirements: [], rewards: { prestige: 1 }, special: "minds_eye", imgDir: "regular" },
+  { name: "Favor of the Princess", filename: "Nimbus 2000 Card.jpg", act: 3, type: "adventure", cost: null, skills: ["alchemy","alchemy","survival","survival","charisma","charisma","prospecting","prospecting","power","power"], requirements: ["charisma","charisma","charisma"], rewards: {}, special: "philosopher_stone", imgDir: "regular" },
+  { name: "Fierce Rival", filename: "Rigorous Training Card.jpg", act: 3, type: "adventure", cost: null, skills: ["power","power","power","knowledge"], requirements: [], rewards: { gold: 2 }, special: null, imgDir: "regular" },
+  { name: "Alchemist Apprentice", filename: "Alchemist Apprentice Card.jpg", act: 1, type: "endeavor", cost: null, skills: ["alchemy","alchemy","alchemy"], requirements: [], rewards: {}, special: "minds_eye", imgDir: "regular" },
+  { name: "Moment of Reflection", filename: "A Moment with the Stars Card.jpg", act: 1, type: "adventure", cost: null, skills: ["power","knowledge"], requirements: [], rewards: {}, special: "map_lost_north", favor: 2, imgDir: "regular" },
+  { name: "Melee Spectacular", filename: "Aerial Spectacular Card.jpg", act: 2, type: "adventure", cost: null, skills: ["power"], requirements: ["power"], rewards: {}, special: "power_x2", imgDir: "regular" },
+  { name: "Settling Claims", filename: "Befriending Eagles Card.jpg", act: 2, type: "adventure", cost: 3, skills: ["charisma"], requirements: ["charisma","charisma"], rewards: {}, special: null, favor: 5, imgDir: "regular" },
+  { name: "Chemical X", filename: "Chemical D1 Card.jpg", act: 3, type: "potion", cost: 2, skills: ["alchemy"], requirements: [], rewards: {}, special: "move_slider_any", combo: "1/2", imgDir: "regular" },
+  { name: "Chemical Y", filename: "Chemical D2 Card.jpg", act: 3, type: "potion", cost: 6, skills: ["alchemy","prospecting"], requirements: [], rewards: {}, special: "double_adventure_favor", combo: "2/2", favor: 15, imgDir: "regular" },
+  { name: "Fuzzy Head", filename: "Cursed Coating Card.jpg", act: 2, type: "potion", cost: 3, skills: ["alchemy"], requirements: [], rewards: {}, special: "minus_3_power_all_others", imgDir: "regular" },
+  { name: "Endless Sparring", filename: "Dual of Novices.jpg", act: 1, type: "adventure", cost: null, skills: ["power","knowledge","knowledge"], requirements: [], rewards: { scorn: 5 }, special: null, imgDir: "regular" },
+  { name: "Leading the Charge", filename: "Enter the Tree Card.jpg", act: 3, type: "adventure", cost: 8, skills: ["charisma","survival","survival"], requirements: [], rewards: {}, special: null, favor: 10, imgDir: "regular" },
+  { name: "Mind Warper", filename: "Experiment 66 Card.jpg", act: 3, type: "potion", cost: 6, skills: [], requirements: ["alchemy","prospecting"], rewards: {}, special: "scorn_to_prestige", imgDir: "regular" },
+  { name: "Facing the River Fiend", filename: "Facing Fiendfyre Card.jpg", act: 3, type: "adventure", cost: null, skills: ["survival","survival","survival","survival","power","power","power","power","power","power"], requirements: [], rewards: { prestige: 5 }, special: null, favor: 18, combo: "The Minister's Plan", imgDir: "regular" },
+  { name: "Finding the Lost Corridor", filename: "Finding the Lost Corridor Card.jpg", act: 2, type: "adventure", cost: 2, skills: ["knowledge"], requirements: [], rewards: {}, special: "minds_eye", favor: 10, combo: "Reunited", imgDir: "regular" },
+  { name: "Forming a Bond", filename: "Forming a Bond Card.jpg", act: 1, type: "adventure", cost: null, skills: ["charisma","survival"], requirements: [], rewards: {}, special: null, favor: 7, imgDir: "regular" },
+  { name: "The Tree Tunnels", filename: "Friends in the Sky Card.jpg", act: 3, type: "adventure", cost: null, skills: ["survival","knowledge","knowledge","knowledge"], requirements: [], rewards: {}, special: "minds_eye", favor: 5, imgDir: "regular" },
+  { name: "Fur Trading", filename: "Fur Trading Card.jpg", act: 1, type: "adventure", cost: null, skills: ["charisma"], requirements: [], rewards: { gold: 8 }, special: null, favor: 3, imgDir: "regular" },
+  { name: "Generous Donations", filename: "Generous Donation Card.jpg", act: 2, type: "adventure", cost: 18, skills: ["knowledge"], requirements: [], rewards: {}, special: null, favor: 25, imgDir: "regular" },
+  { name: "A Hidden Door", filename: "Ghost Studies Card.jpg", act: 2, type: "adventure", cost: 3, skills: [], requirements: ["survival","knowledge"], rewards: {}, special: "The Shadow Guide", favor: 5, imgDir: "regular" },
+  { name: "Gold Luster", filename: "Glowing Manipulation Card.jpg", act: 2, type: "potion", cost: 3, skills: [], requirements: ["alchemy","prospecting"], rewards: {}, special: "gold_to_prestige", imgDir: "regular" },
+  { name: "Her Lost Father", filename: "Her Lost Father Card.jpg", act: 1, type: "adventure", cost: null, skills: [], requirements: [], rewards: {}, special: "map_finding_lost_corridor", favor: 3, imgDir: "regular" },
+  { name: "Chemical Z", filename: "Liquid Doom Card.jpg", act: 3, type: "potion", cost: null, skills: [], requirements: ["prospecting","prospecting","prospecting","prospecting","alchemy","alchemy","alchemy","alchemy"], rewards: { prestige: 5 }, special: "others_5_scorn", imgDir: "regular" },
+  { name: "Duplicating Goo", filename: "Liquid Gold Card.jpg", act: 2, type: "potion", cost: null, skills: [], requirements: ["alchemy","prospecting"], rewards: {}, special: "multiply_gold_x2", imgDir: "regular" },
+  { name: "Shot of Courage", filename: "Stream of Life Card.jpg", act: 3, type: "potion", cost: null, skills: [], requirements: ["prospecting","prospecting","prospecting","alchemy","alchemy","alchemy"], rewards: {}, special: "coin_flip_4_power", imgDir: "regular" },
+  { name: "Life Essence", filename: "Liquid Wind Card.jpg", act: 3, type: "potion", cost: null, skills: ["alchemy"], requirements: [], rewards: {}, special: "remove_mission_requirements", imgDir: "regular" },
+  { name: "Mind Eraser", filename: "Trouble Brew Card.jpg", act: 2, type: "potion", cost: null, skills: [], requirements: ["prospecting","alchemy"], rewards: {}, special: "remove_13_scorn", imgDir: "regular" },
+  { name: "Marketplace Sales", filename: "Perscription Elixers Card.jpg", act: 2, type: "potion", cost: null, skills: ["alchemy","charisma"], requirements: [], rewards: {}, special: "philosopher_stone", combo: "x2", imgDir: "regular" },
+  { name: "Market Trade Exchange", filename: "Market Trade Exhange Card.jpg", act: 3, type: "adventure", cost: null, skills: [], requirements: ["charisma","charisma","charisma","charisma","charisma","charisma","charisma","charisma","knowledge","knowledge"], rewards: { gold: 15 }, special: "trade_route", imgDir: "regular" },
+  { name: "Prospecting Journal", filename: "Prospecting Journal Card.jpg", act: 1, type: "wisdom", cost: null, skills: ["knowledge","prospecting"], requirements: ["prospecting"], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Badge of Courage", filename: "Badge of Courage Card.jpg", act: 1, type: "artifact", cost: 5, skills: [], requirements: ["knowledge","knowledge","knowledge","knowledge","knowledge"], rewards: {}, special: null, favor: 5, imgDir: "regular" },
+  { name: "Thorns of Treachery", filename: "Mystery Dueling Culb Card.jpg", act: 2, type: "endeavor", cost: 3, skills: ["knowledge","knowledge","knowledge"], requirements: [], rewards: { prestige: 1 }, special: null, imgDir: "regular" },
+  { name: "Fang's Truce", filename: "nduring Hardship Card.jpg", act: 3, type: "endeavor", cost: 4, skills: ["survival","survival"], requirements: [], rewards: {}, special: null, favor: 2, imgDir: "regular" },
+  { name: "Mystery Intrigue Club", filename: "Protecting Your Friends Card.jpg", act: 3, type: "endeavor", cost: 5, skills: ["knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge"], requirements: ["prospecting","prospecting"], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Reckless Training", filename: "Reckless Training Card.jpg", act: 1, type: "endeavor", cost: null, skills: ["power","power"], requirements: [], rewards: { scorn: 5 }, special: null, imgDir: "regular" },
+  { name: "Reunited", filename: "Reunited Card.jpg", act: 3, type: "adventure", cost: null, skills: ["prospecting"], requirements: ["knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge"], rewards: {}, special: null, favor: 22, combo: "Finding the Lost Corridor", imgDir: "regular" },
+  { name: "Great North Connection", filename: "The Great Nort Connection Card.jpg", act: 2, type: "adventure", cost: null, skills: ["survival","prospecting"], requirements: ["charisma","power"], rewards: { prestige: 5 }, special: "trade_route", imgDir: "regular" },
+  { name: "The Alchemist's Daughter", filename: "The Great Eagle Rider Card.jpg", act: 3, type: "adventure", cost: null, skills: ["alchemy"], requirements: ["charisma","charisma","charisma","charisma","charisma","alchemy","alchemy","alchemy","alchemy","alchemy","power","power","power","power","power"], rewards: {}, special: "minds_eye", favor: 18, imgDir: "regular" },
+  { name: "Shattering the Mirror Prison", filename: "Shattering the Mirror Prison Card.jpg", act: 3, type: "adventure", cost: null, skills: ["knowledge"], requirements: ["knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge"], rewards: {}, special: "minds_eye", favor: 5, imgDir: "regular" },
+  { name: "Tribute to the Fallen", filename: "Tribute to the Fallen Card.jpg", act: 2, type: "adventure", cost: null, skills: [], requirements: [], rewards: {}, special: null, favor: 10, imgDir: "regular" },
+  { name: "Warm Mentorship", filename: "Warm Mentorship Card.jpg", act: 1, type: "adventure", cost: null, skills: [], requirements: [], rewards: {}, special: null, favor: 8, imgDir: "regular" },
+  { name: "Enchanted Flames", filename: "Flash Enchantment Card.jpg", act: 3, type: "weapon", cost: null, skills: ["power","power","alchemy","alchemy","alchemy"], requirements: ["knowledge","knowledge","knowledge","prospecting","prospecting","prospecting"], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Eight Stances", filename: "Eight Stances.jpg", act: 1, type: "wisdom", cost: null, skills: ["knowledge"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Philosopher's Stone", filename: "Elder Wand Card.jpg", act: 2, type: "artifact", cost: null, skills: ["knowledge","prospecting"], requirements: ["alchemy","prospecting","knowledge"], rewards: {}, special: "philosopher_stone", imgDir: "regular" },
+  { name: "Fortune Teller", filename: "Fortune Teller Card.jpg", act: 2, type: "artifact", cost: null, skills: [], requirements: [], rewards: { prestige: 3 }, special: "minds_eye", imgDir: "regular" },
+  { name: "Forgotten Temple", filename: "Forgotten Temple.jpg", act: 1, type: "adventure", cost: null, skills: ["knowledge"], requirements: [], rewards: { prestige: 2 }, special: "sacred_chest", imgDir: "regular" },
+  { name: "Philosopher's Scepter", filename: "Apprentice Wand Card.jpg", act: 3, type: "artifact", cost: null, skills: ["knowledge","prospecting"], requirements: [], rewards: {}, special: "philosopher_stone", favor: 2, imgDir: "regular" },
+  { name: "Oaths of the Crown", filename: "Oaths Crown.jpg", act: 1, type: "wisdom", cost: null, skills: ["knowledge"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Father's Teachings", filename: "Herbology 101 Card.jpg", act: 1, type: "wisdom", cost: null, skills: ["knowledge"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Lens of Truth", filename: "Lens of Truth Card.jpg", act: 3, type: "wisdom", cost: null, skills: ["survival"], requirements: [], rewards: {}, special: "minds_eye", imgDir: "regular" },
+  { name: "Mind's Eye", filename: "Mind_s Eye Card.jpg", act: 2, type: "artifact", cost: null, skills: ["alchemy"], requirements: ["alchemy","alchemy","prospecting","knowledge"], rewards: {}, special: "minds_eye", imgDir: "regular" },
+  { name: "Royal Library", filename: "Royal Library.jpg", act: 3, type: "endeavor", cost: null, skills: ["knowledge"], requirements: [], rewards: {}, special: "knowledge_x5", imgDir: "regular" },
+  { name: "Sacred Stone", filename: "Sacred Stone Card.jpg", act: 2, type: "artifact", cost: null, skills: ["prospecting"], requirements: [], rewards: { prestige: 5 }, special: "philosopher_stone", imgDir: "regular" },
+  { name: "Family Ring", filename: "Time Turner Card.jpg", act: 3, type: "artifact", cost: 3, skills: ["knowledge","prospecting"], requirements: [], rewards: {}, special: "knowledge_x2", imgDir: "regular" },
+  { name: "Lucky Pendant", filename: "Lucky Pendant Card.jpg", act: 3, type: "artifact", cost: 5, skills: [], requirements: [], rewards: {}, special: null, favor: 5, imgDir: "regular" },
+  { name: "Great Vault Key", filename: "Great Vault Key Card.jpg", act: 3, type: "artifact", cost: 4, skills: ["survival","charisma","prospecting"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Sacred Chest", filename: "Sacred Chest Card.jpg", act: 3, type: "artifact", cost: 12, skills: [], requirements: [], rewards: {}, special: "philosopher_stone_x8", imgDir: "regular" },
+  { name: "Secret Lab", filename: "Secret Lab Card.jpg", act: 3, type: "artifact", cost: null, skills: [], requirements: [], rewards: {}, special: "minds_eye_x2_philosopher_stone_x5", imgDir: "regular" },
+  { name: "Royal Hilt", filename: "Golden Snitch Card.jpg", act: 3, type: "weapon", cost: 2, skills: ["power"], requirements: [], rewards: {}, special: "minds_eye", imgDir: "regular" },
+  { name: "Lost North Map", filename: "Lost North Map.jpg", act: 2, type: "adventure", cost: null, skills: [], requirements: ["survival","prospecting"], rewards: {}, special: "map", favor: 5, combo: "1/2", imgDir: "regular" },
+  { name: "Lost South Map", filename: "Lost South Map.jpg", act: 2, type: "adventure", cost: null, skills: [], requirements: ["survival","charisma"], rewards: { gold: 20 }, special: "map", favor: 5, combo: "2/2", imgDir: "regular" },
+  { name: "Tombstone", filename: "Beat Stick Card.jpg", act: 1, type: "weapon", cost: null, skills: ["power"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Shark Tooth", filename: "Dusty Card.jpg", act: 1, type: "weapon", cost: 1, skills: ["power","power"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Ol' Bessy", filename: "Ol_ Bessy Card.jpg", act: 1, type: "weapon", cost: null, skills: ["power"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Training Friend", filename: "Training Friend.jpg", act: 1, type: "weapon", cost: null, skills: ["power"], requirements: [], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Deadeye", filename: "All Seer Card.jpg", act: 3, type: "weapon", cost: null, skills: ["power"], requirements: ["survival","survival","survival","survival","survival"], rewards: {}, special: "minds_eye", imgDir: "regular" },
+  { name: "Blind Faith", filename: "Griffin Boots Card.jpg", act: 2, type: "weapon", cost: null, skills: ["power"], requirements: ["power"], rewards: {}, special: null, combo: "1/2", imgDir: "regular" },
+  { name: "Heaven's Blade", filename: "Griffin Talons Card.jpg", act: 3, type: "weapon", cost: 2, skills: ["power"], requirements: ["knowledge","knowledge"], rewards: {}, special: null, favor: 6, combo: "2/2", imgDir: "regular" },
+  { name: "Archeus", filename: "Griffin Wings Card.jpg", act: 3, type: "weapon", cost: null, skills: ["power"], requirements: ["survival","knowledge"], rewards: {}, special: "discard_opponent_weapon", favor: 5, combo: "2/2", imgDir: "regular" },
+  { name: "Wild Steel", filename: "Seeker Goggles Card.jpg", act: 2, type: "weapon", cost: 2, skills: ["power","power","survival","survival"], requirements: ["prospecting"], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Dawnharbinger", filename: "Keeper Gloves Card.jpg", act: 2, type: "weapon", cost: null, skills: ["power","charisma","charisma"], requirements: ["survival","prospecting"], rewards: {}, special: "king_of_the_sky", imgDir: "regular" },
+  { name: "Destroyer", filename: "Angry Beaters Card.jpg", act: 2, type: "weapon", cost: 3, skills: ["power","power","power","power"], requirements: ["prospecting"], rewards: {}, special: null, imgDir: "regular" },
+  { name: "Guardian", filename: "Guardian Card.jpg", act: 2, type: "weapon", cost: null, skills: ["power","power","prospecting"], requirements: ["power","prospecting"], rewards: {}, special: "defend_the_throne", imgDir: "regular" },
+  { name: "Blackbird", filename: "Teather Bark Card.jpg", act: 1, type: "weapon", cost: null, skills: ["power","power"], requirements: ["survival"], rewards: {}, special: null, imgDir: "regular" },
+];
+
+const MISSIONS = [
+  { name: "The Minister's Plan", filename: "Act 1_The Minister_s Plan Card.jpg", act: 1, type: "mission", activationRound: 2, requirements: ["alchemy","knowledge"], successRewards: { favor: 5, prestige: 5 }, failurePenalties: { scorn: 5 }, flavorText: "Facing the River Fiend", imgDir: "missions" },
+  { name: "A Day With the Birds", filename: "Act 1_A Day With the Birds Card.jpg", act: 1, type: "mission", activationRound: 1, requirements: ["survival","charisma"], successRewards: { favor: 5, gold: 3 }, failurePenalties: { scorn: 3 }, imgDir: "missions" },
+  { name: "Burst of Fulfillment", filename: "Act 1_Burst of Fulfillment Card.jpg", act: 1, type: "mission", activationRound: 1, requirements: ["charisma"], successRewards: { favor: 5, prestige: 3 }, failurePenalties: { scorn: 2 }, imgDir: "missions" },
+  { name: "Helping the Merchant", filename: "Act 1_Helping the Merchant Card.jpg", act: 1, type: "mission", activationRound: 1, requirements: ["prospecting","charisma"], successRewards: { favor: 5, gold: 5 }, failurePenalties: { scorn: 3 }, imgDir: "missions" },
+  { name: "Protecting Family", filename: "Act 1_Protecting Family Card.jpg", act: 1, type: "mission", activationRound: 1, requirements: ["power","survival"], successRewards: { favor: 5, prestige: 3 }, failurePenalties: { scorn: 3 }, imgDir: "missions" },
+  { name: "Talking Thomas", filename: "Act 1_Talking Thomas Card.jpg", act: 1, type: "mission", activationRound: 1, requirements: ["knowledge"], successRewards: { favor: 5, gold: 3 }, failurePenalties: { scorn: 2 }, imgDir: "missions" },
+  { name: "Taming a Dragon", filename: "Act 1_Taming a Dragon Card.jpg", act: 1, type: "mission", activationRound: 1, requirements: ["survival","power"], successRewards: { favor: 5, prestige: 5 }, failurePenalties: { scorn: 5 }, imgDir: "missions" },
+  { name: "Testament to Courage", filename: "Act 1_Testament to Courage Card.jpg", act: 1, type: "mission", activationRound: 1, requirements: ["power","charisma"], successRewards: { favor: 5, prestige: 3 }, failurePenalties: { scorn: 3 }, imgDir: "missions" },
+  { name: "The Door Knob", filename: "Act 1_The Door Knob Card.jpg", act: 1, type: "mission", activationRound: 1, requirements: ["knowledge","prospecting"], successRewards: { favor: 5, gold: 3 }, failurePenalties: { scorn: 2 }, imgDir: "missions" },
+  { name: "The Midnight Crash", filename: "Act 1_The Midnight Crash Card.jpg", act: 1, type: "mission", activationRound: 1, requirements: ["survival","alchemy"], successRewards: { favor: 5, gold: 3 }, failurePenalties: { scorn: 3 }, imgDir: "missions" },
+  { name: "Trust of the Elders", filename: "Act 1_Trust of the Elders Card.jpg", act: 1, type: "mission", activationRound: 1, requirements: ["knowledge","charisma"], successRewards: { favor: 5, prestige: 3 }, failurePenalties: { scorn: 3 }, imgDir: "missions" },
+  { name: "Tunnel of Trinkets", filename: "Act 1_Tunnel of Trinkets Card.jpg", act: 1, type: "mission", activationRound: 1, requirements: ["prospecting","survival"], successRewards: { favor: 5, gold: 5 }, failurePenalties: { scorn: 3 }, imgDir: "missions" },
+  { name: "A Dance with Dragons", filename: "Act 2_A Dance with Dragons Card.jpg", act: 2, type: "mission", activationRound: 2, requirements: ["power","survival","alchemy"], successRewards: { favor: 10, prestige: 5 }, failurePenalties: { scorn: 5 }, imgDir: "missions" },
+  { name: "A Surprise Light in the Night", filename: "Act 2_A Surprise Light in the Night Card.jpg", act: 2, type: "mission", activationRound: 2, requirements: ["knowledge","alchemy"], successRewards: { favor: 8, gold: 5 }, failurePenalties: { scorn: 4 }, imgDir: "missions" },
+  { name: "Facing the Hard Truth", filename: "Act 2_Facing the Hard Truth Card.jpg", act: 2, type: "mission", activationRound: 2, requirements: ["knowledge","charisma"], successRewards: { favor: 8, prestige: 5 }, failurePenalties: { scorn: 5 }, imgDir: "missions" },
+  { name: "Ghosts in the Mirror", filename: "Act 2_Ghosts in the Mirror Card.jpg", act: 2, type: "mission", activationRound: 2, requirements: ["knowledge","alchemy","survival"], successRewards: { favor: 10, prestige: 3 }, failurePenalties: { scorn: 5 }, imgDir: "missions" },
+  { name: "Hogsmade Holdup", filename: "Act 2_Hogsmade Holdup Card.jpg", act: 2, type: "mission", activationRound: 2, requirements: ["power","prospecting"], successRewards: { favor: 8, gold: 5 }, failurePenalties: { scorn: 5 }, imgDir: "missions" },
+  { name: "Hogwarts Valedictorian", filename: "Act 2_Hogwarts Valdictorian Card.jpg", act: 2, type: "mission", activationRound: 2, requirements: ["knowledge","knowledge"], successRewards: { favor: 10, prestige: 5 }, failurePenalties: { scorn: 5 }, imgDir: "missions" },
+  { name: "Negotiations with Villains", filename: "Act 2_Negotiations with Villains Card.jpg", act: 2, type: "mission", activationRound: 2, requirements: ["charisma","power"], successRewards: { favor: 8, prestige: 3 }, failurePenalties: { scorn: 4 }, imgDir: "missions" },
+  { name: "Protecting Family II", filename: "Act 2_Protecting Family Card copy.jpg", act: 2, type: "mission", activationRound: 2, requirements: ["power","survival","charisma"], successRewards: { favor: 10, prestige: 5 }, failurePenalties: { scorn: 5 }, imgDir: "missions" },
+  { name: "Rescuing the Soon to be Devoured", filename: "Act 2_Rescuing the Soon to be Devoured Card.jpg", act: 2, type: "mission", activationRound: 2, requirements: ["power","survival"], successRewards: { favor: 10, prestige: 5 }, failurePenalties: { scorn: 5 }, imgDir: "missions" },
+  { name: "Teaching a Natural", filename: "Act 2_Teaching a Natural Card.jpg", act: 2, type: "mission", activationRound: 2, requirements: ["knowledge","charisma"], successRewards: { favor: 8, prestige: 3 }, failurePenalties: { scorn: 4 }, imgDir: "missions" },
+  { name: "To Believe in Someone", filename: "Act 2_To Believe in Someone Card.jpg", act: 2, type: "mission", activationRound: 2, requirements: ["charisma","survival"], successRewards: { favor: 8, gold: 5 }, failurePenalties: { scorn: 4 }, imgDir: "missions" },
+  { name: "Facing the Hard Truth (copy)", filename: "Act 2_Facing the Hard Truth Card copy.jpg", act: 2, type: "mission", activationRound: 2, requirements: ["knowledge","charisma"], successRewards: { favor: 8, prestige: 5 }, failurePenalties: { scorn: 5 }, imgDir: "missions" },
+  { name: "Burst of Fulfillment III", filename: "Act 3_Burst of Fulfillment Card.jpg", act: 3, type: "mission", activationRound: 3, requirements: ["charisma","charisma","knowledge"], successRewards: { favor: 15, prestige: 10 }, failurePenalties: { scorn: 8 }, imgDir: "missions" },
+  { name: "Capturing the Golden Horcrux", filename: "Act 3_Capturing of the Golden Horcrux Card.jpg", act: 3, type: "mission", activationRound: 3, requirements: ["knowledge","alchemy","prospecting"], successRewards: { favor: 20, prestige: 10 }, failurePenalties: { scorn: 10 }, imgDir: "missions" },
+  { name: "Fiery Pillaging", filename: "Act 3_Fiery Pillaging Card.jpg", act: 3, type: "mission", activationRound: 3, requirements: ["power","power","survival"], successRewards: { favor: 15, prestige: 10 }, failurePenalties: { scorn: 8 }, imgDir: "missions" },
+  { name: "Honoring a Fallen Friend", filename: "Act 3_Honoring a Fallen Friend Card.jpg", act: 3, type: "mission", activationRound: 3, requirements: ["charisma","knowledge","survival"], successRewards: { favor: 15, prestige: 5 }, failurePenalties: { scorn: 8 }, imgDir: "missions" },
+  { name: "Passing the Mirror Gate", filename: "Act 3_Passing the Mirror Gate Card.jpg", act: 3, type: "mission", activationRound: 3, requirements: ["knowledge","alchemy","survival"], successRewards: { favor: 18, prestige: 10 }, failurePenalties: { scorn: 10 }, imgDir: "missions" },
+  { name: "Rescuing the Devoured III", filename: "Act 3_Rescuing the Soon to be Devoured Card copy.jpg", act: 3, type: "mission", activationRound: 3, requirements: ["power","survival","charisma"], successRewards: { favor: 15, prestige: 10 }, failurePenalties: { scorn: 8 }, imgDir: "missions" },
+  { name: "Singing a Farewell Together", filename: "Act 3_Singing a Farewell Together Card.jpg", act: 3, type: "mission", activationRound: 3, requirements: ["charisma","charisma"], successRewards: { favor: 12, prestige: 5 }, failurePenalties: { scorn: 7 }, imgDir: "missions" },
+  { name: "Solving the Forest Puzzle", filename: "Act 3_Solving the Forest Puzzle Card.jpg", act: 3, type: "mission", activationRound: 3, requirements: ["knowledge","survival","alchemy"], successRewards: { favor: 15, prestige: 5 }, failurePenalties: { scorn: 8 }, imgDir: "missions" },
+  { name: "Solving the Riddle", filename: "Act 3_Solving the Riddle Card.jpg", act: 3, type: "mission", activationRound: 3, requirements: ["knowledge","knowledge"], successRewards: { favor: 12, prestige: 10 }, failurePenalties: { scorn: 7 }, imgDir: "missions" },
+  { name: "Splitting Personalities", filename: "Act 3_Splitting Personalities Card.jpg", act: 3, type: "mission", activationRound: 3, requirements: ["alchemy","knowledge","charisma"], successRewards: { favor: 15, prestige: 5 }, failurePenalties: { scorn: 8 }, imgDir: "missions" },
+  { name: "Taking on Wizard Outlaws", filename: "Act 3_Taking on Wizard Outlaws Card.jpg", act: 3, type: "mission", activationRound: 3, requirements: ["power","power","knowledge"], successRewards: { favor: 18, prestige: 10 }, failurePenalties: { scorn: 10 }, imgDir: "missions" },
+  { name: "World Cup Champions", filename: "Act 3_World Cup Champions Card.jpg", act: 3, type: "mission", activationRound: 3, requirements: ["power","power","charisma"], successRewards: { favor: 20, prestige: 15 }, failurePenalties: { scorn: 10 }, imgDir: "missions" },
+];
+
+const ALL_ITEMS = [...CARDS, ...MISSIONS];
+const TYPES = ["all", "endeavor", "potion", "weapon", "artifact", "wisdom", "adventure", "mission"];
+let activeFilter = "all";
+let hideChecked = false;
+let userData = {};
+let checkedCards = {};
+
+// Load saved data from localStorage
+try {
+  const saved = localStorage.getItem('favor_card_audit');
+  if (saved) userData = JSON.parse(saved);
+  const savedChecked = localStorage.getItem('favor_card_checked');
+  if (savedChecked) checkedCards = JSON.parse(savedChecked);
+} catch(e) {}
+
+// Pre-load the imported audit data (map card names to filenames)
+const PRELOADED = {
+  "Concoction": "1 Alchemy. Act 1. No Req.",
+  "Cooking": "1 Survival, 1 Alchemy. Req: 1 Knowledge, Act 1",
+  "Dark Cauldron": "2 Alchemy, Cost 1 Gold to play. Act 2",
+  "Herbal Remedies": "3 Survival, Cost 1 Gold to play. Act 2",
+  "Hunting": "2 Survival, Req: 1 Power. Act 1",
+  "Maester's Favor": "3 Charisma, Cost 1 Gold to play. Act 2",
+  "Hermit's Lab": "1 Alchemy OR 1 Survival, Cost 1 Gold to play. Act 1",
+  "Father's Lab": "3 Alchemy, Cost 3 Gold to play. Act 2",
+  "Mining Guild": "1 Charisma OR 1 Prospecting, Cost 2 Gold to play. Act 1",
+  "Pearl Diving": "2 Prospecting, Req: 1 Survival. Act 1",
+  "Gemstone Mine": "3 Prospecting, Cost 2 Gold to play. Act 2",
+  "Forbidden Lab": "2 Scorn, 1 Alchemy OR 1 Prospecting, Req: 1 Knowledge. Act 1",
+  "First Aid": "1 Survival. Act 1. No Req.",
+  "Trapping": "1 Survival. Act 1. No Req.",
+  "Negotiate": "1 Charisma. Act 1. No Req.",
+  "Diplomacy": "1 Charisma. Act 1. No Req.",
+  "New Frontier": "4 Survival, 2 Charisma, Req: 1 Mind's Eye, Act 2",
+  "Favor of the Princess": "2 Alchemy, 2 Survival, 2 Charisma, 2 Prospecting, 2 Power, Req: 3 Charisma, Act 3",
+  "Fierce Rival": "2 Knowledge, 2 Power, Req: 2 Power, Act 3",
+  "Alchemist Apprentice": "2 Alchemy, Req: 1 Alchemy, Act 1",
+  "Moment of Reflection": "1 Knowledge, 2 Favor, Lost North Map Map, Req: 1 Power, Act 1",
+  "Melee Spectacular": "Gain 2 Gold for each Power that both of your two neighboring players currently have. Req: 1 Power, Act 2",
+  "Settling Claims": "3 Charisma, 5 Favor Req: 2 Charisma, Act 2",
+  "Chemical X": "Move Character Slider to any slot, Req: 3 Alchemy, Act 3,",
+  "Chemical Y": "Choose an Adventure card you have, multiply its Favor amount by 2. Req: 6 Alchemy & 1 Philosopher's Stone. If you own Chemical X: 15 Favor, Act 3",
+  "Fuzzy Head": "Reduce the power of other players during this melee round by 3. Req: 2 Alchemy, Act 2",
+  "Endless Sparring": "2 Knowledge, 5 Scorn, Req: 1 Power, Act 1",
+  "Leading the Charge": "2 Survival, 10 Favor Req: 8 Charisma, Act 3",
+  "Mind Warper": "Turns your Scorn into Prestige when played, Req: 6 Alchemy & 1 Philosopher's Stone, Act 3",
+  "Facing the River Fiend": "15 Favor, Req: 7 Survival & 7 Power OR The Minister's Plan Map, Act 3",
+  "Finding the Lost Corridor": "10 Favor & Reunited Map, Req: 2 Mind's Eye OR Her Lost Father Map OR The Magic Fiddle Map, Act 2",
+  "Forming a Bond": "1 Survival, 7 Favor, Req: 1 Charisma, Act 1",
+  "The Tree Tunnels": "5 Survival, 2 Knowledge, 1 Philosopher's Stone, 3 Favor, Req: 1 Mind's Eye, Act 3",
+  "Fur Trading": "8 Gold, 3 Favor, Req: 1 Charisma, Act 1",
+  "Generous Donations": "3 Knowledge, 25 Favor, Req: 18 Gold, Act 2",
+  "A Hidden Door": "5 Favor, Req: 3 Survival & 1 Knowledge, The Shadow Guide Map, Act 2",
+  "Gold Luster": "Req: 3 Alchemy & 1 Philosopher's Stone, Turn all your gold into prestige, Act 2",
+  "Her Lost Father": "1 Prospecting & 3 Gold & 3 Scorn & Finding the Lost Corridor Map, No Req, Act 1",
+  "Chemical Z": "1 Philosopher's Stone & 5 Scorn & 15 Scorn to all other players, Req: 5 Alchemy & 5 Prospecting, Act 3",
+  "Duplicating Goo": "Gain gold equal to the amount of gold you have, Req: 3 Alchemy & 1 Philosopher's Stone, Act 2",
+  "Shot of Courage": "Pick one of your missions to no longer have a requirement to succeed, Req: 4 Alchemy & 1 Minds Eye, Act 3",
+  "Mind Eraser": "Remove 15 Scorn, Req: 1 Prospecting & 1 Alchemy, Act 3",
+  "Life Essence": "Next Melee Flip a coin if the result is heads gain +5 Power, Req: 3 Alchemy & 3 Prospecting, Act 3",
+  "Marketplace Sales": "Gain 2 Gold for each Alchemy that both of your two neighboring players and yourself currently have. Req: 1 Alchemy & 1 Charisma, Act 2",
+  "Market Trade Exchange": "6 Charisma & 10 Gold Req: 4 Charisma & 4 Knowledge OR The Great North Connection Map, Act 3",
+  "Prospecting Journal": "1 Knowledge & 1 Prospecting, Req: 1 Prospecting, Act 1",
+  "Badge of Courage": "1 Knowledge * 5 Favor, Req: 5 Favor, Act 1",
+  "Thorns of Treachery": "4 Knowledge, Req: 3 Charisma, Act 2",
+  "Fang's Truce": "4 Survival & 2 Favor for each Survival you have, Req: 4 Survival, Act 3",
+  "Mystery Intrigue Club": "7 Knowledge, Req: 2 Prospecting & 5 Gold, Act 3",
+  "Reckless Training": "2 Power & 5 Scorn, Req none, Act 1",
+  "Reunited": "22 Favor & 1 Philosopher's Stone, Req: 12 Knowledge & 1 Mind's Eye & 1 Philosopher's Stone OR Finding the Lost Corridor Map, Act 3",
+  "Great North Connection": "You may borrow Survival/Alchemy/Charisma/Prospecting from any player & 5 Favor & Market Trade Exchange Map, Req: 1 Charisma & 1 Power OR Helping the Merchant Map, Act 2",
+  "The Alchemist's Daughter": "1 Alchemy & 1 Mind's Eye & 18 Favor, Req: 5 Charisma, 5 Alchemy, 5 Power, Act 3",
+  "Tribute to the Fallen": "10 Favor, Act 2,Req: None",
+  "Warm Mentorship": "8 Favor, Act 1,Req: None",
+  "Shattering the Mirror Prison": "4 Mind's Eye & 5 Favor, Req: 9 Knowledge OR The Shadow Guide Map, Act 3",
+  "Enchanted Flames": "3 Charisma & 2 Power, Req: 3 Prospecting & 3 Knowledge, Act 3",
+  "Eight Stances": "1 Knowledge, Req: none, Act 1",
+  "Father's Teachings": "1 Knowledge, Req: none, Act 1",
+  "Oaths of the Crown": "1 Knowledge, Req: none, Act 1",
+  "Philosopher's Stone": "1 Knowledge & 1 Philosopher's Stone, Req: 1 Knowledge & 1 Prospecting & 1 Alchemy, Act 2",
+  "Fortune Teller": "1 Mind's Eye & 3 Scorn, Req: None, Act 2",
+  "Forgotten Temple": "Map of Sacred Chest & 1 Knowledge & 2 Scorn, Req: None, Act 1",
+  "Philosopher's Scepter": "Map of Sacred Chest & 1 Knowledge & 2 Scorn, Req: None, Act 1",
+  "Lens of Truth": "3 Survival & 1 Mind's Eye, Req: None, Act 3",
+  "Mind's Eye": "1 Alchemy & 1 Mind's Eye, Req: 1 Alchemy & 1 Prospecting & 1 Knowledge, Act 2",
+  "Royal Library": "5 Knowledge, Req: None, Act 3",
+  "Sacred Stone": "1 Philosopher's Stone & 5 Scorn, Req: None, Act 2",
+  "Family Ring": "Favor equal to your total Knowledge x2,Req: 3 Knowledge & 1 Philosopher's Stone, Act 3",
+  "Lucky Pendant": "Favor equal to your total Successful Quests x5,Req: 5 Prospecting, Act 3"
+};
+
+// Apply preloaded data if not already in userData
+(function applyPreloaded() {
+  let changed = false;
+  for (const [name, val] of Object.entries(PRELOADED)) {
+    const card = ALL_ITEMS.find(c => c.name === name);
+    if (card && !userData[card.filename]) {
+      userData[card.filename] = val;
+      checkedCards[card.filename] = true;
+      changed = true;
+    }
+  }
+  if (changed) { save(); saveChecked(); }
+})();
+
+function save() {
+  localStorage.setItem('favor_card_audit', JSON.stringify(userData));
+}
+function saveChecked() {
+  localStorage.setItem('favor_card_checked', JSON.stringify(checkedCards));
+}
+
+function buildFilterBar() {
+  const bar = document.getElementById('filterBar');
+  bar.innerHTML = TYPES.map(t => {
+    const label = t === 'all' ? 'All Cards' : t.charAt(0).toUpperCase() + t.slice(1) + 's';
+    const count = t === 'all' ? ALL_ITEMS.length : ALL_ITEMS.filter(c => c.type === t).length;
+    return `<button class="filter-btn ${t === activeFilter ? 'active' : ''}" onclick="setFilter('${t}')">${label} (${count})</button>`;
+  }).join('');
+}
+
+function setFilter(type) {
+  activeFilter = type;
+  buildFilterBar();
+  render();
+}
+
+function toggleChecked() {
+  hideChecked = !hideChecked;
+  render();
+}
+
+function toggleCheck(filename) {
+  checkedCards[filename] = !checkedCards[filename];
+  saveChecked();
+  render();
+}
+
+function fmtSkills(skills) {
+  if (!skills || skills.length === 0) return 'none';
+  const counts = {};
+  skills.forEach(s => counts[s] = (counts[s]||0) + 1);
+  return Object.entries(counts).map(([s,c]) => c > 1 ? `${c}x ${s}` : s).join(', ');
+}
+
+function fmtReqs(reqs) {
+  if (!reqs || reqs.length === 0) return 'none';
+  const counts = {};
+  reqs.forEach(s => counts[s] = (counts[s]||0) + 1);
+  return Object.entries(counts).map(([s,c]) => c > 1 ? `${c}x ${s}` : s).join(', ');
+}
+
+function fmtRewards(r, card) {
+  const parts = [];
+  if (r && r.gold) parts.push(`${r.gold}g`);
+  if (r && r.prestige) parts.push(`${r.prestige} prestige`);
+  if (r && r.scorn) parts.push(`${r.scorn} scorn`);
+  if (r && r.favor) parts.push(`${r.favor} favor`);
+  if (card.favor) parts.push(`${card.favor} favor`);
+  return parts.length ? parts.join(', ') : 'none';
+}
+
+function renderCard(card) {
+  const val = userData[card.filename] || '';
+  const hasData = val.trim().length > 0;
+  const isChecked = !!checkedCards[card.filename];
+  const fnEsc = card.filename.replace(/'/g, "\\'");
+  const imgPath = `assets/cards/${card.imgDir}/${encodeURIComponent(card.filename)}`;
+
+  let currentInfo = '';
+  if (card.type === 'mission') {
+    currentInfo = `
+      <b>Reqs:</b> ${fmtReqs(card.requirements)} &nbsp;|&nbsp;
+      <b>Activation:</b> Round ${card.activationRound}<br>
+      <b>Success:</b> ${fmtRewards(card.successRewards, {})} &nbsp;|&nbsp;
+      <b>Failure:</b> ${card.failurePenalties.scorn} scorn
+      ${card.flavorText ? `<br><b>Combo:</b> ${card.flavorText}` : ''}
+    `;
+  } else {
+    currentInfo = `
+      <b>Skills:</b> ${fmtSkills(card.skills)} &nbsp;|&nbsp;
+      <b>Reqs:</b> ${fmtReqs(card.requirements)} &nbsp;|&nbsp;
+      <b>Rewards:</b> ${fmtRewards(card.rewards, card)}
+      ${card.special ? `<br><b>Special:</b> ${card.special}` : ''}
+    `;
+  }
+
+  return `
+    <div class="card-row ${hasData ? 'has-data' : ''} ${isChecked ? 'checked' : ''}">
+      <div class="card-img-wrap">
+        <img src="${imgPath}" alt="${card.name}"
+             onclick="document.getElementById('lightboxImg').src=this.src; document.getElementById('lightbox').classList.add('active');">
+      </div>
+      <div class="card-info">
+        <div class="card-header">
+          <div class="card-name">${card.name}</div>
+          <button class="check-btn ${isChecked ? 'done' : ''}" onclick="toggleCheck('${fnEsc}')">
+            ${isChecked ? 'DONE' : 'Mark Done'}
+          </button>
+        </div>
+        <div class="card-meta">
+          <span class="type-badge type-${card.type}">${card.type}</span>
+          <span>Act ${card.act}</span>
+          ${card.cost !== null && card.cost !== undefined ? `<span>Cost: ${card.cost}g</span>` : ''}
+          ${card.combo ? `<span>Combo: ${card.combo}</span>` : ''}
+        </div>
+        <div class="card-current">${currentInfo}</div>
+        <textarea placeholder="Corrections / notes for ${card.name}..."
+                  onchange="userData['${fnEsc}'] = this.value; save();"
+                  oninput="userData['${fnEsc}'] = this.value; save();"
+        >${val}</textarea>
+      </div>
+    </div>
+  `;
+}
+
+function render() {
+  const sections = document.getElementById('cardSections');
+  let filtered = activeFilter === 'all' ? ALL_ITEMS : ALL_ITEMS.filter(c => c.type === activeFilter);
+  if (hideChecked) filtered = filtered.filter(c => !checkedCards[c.filename]);
+
+  const totalAll = ALL_ITEMS.length;
+  const checkedCount = ALL_ITEMS.filter(c => checkedCards[c.filename]).length;
+  const filledCount = filtered.filter(c => userData[c.filename] && userData[c.filename].trim()).length;
+  const checkedFiltered = filtered.filter(c => checkedCards[c.filename]).length;
+
+  document.getElementById('counter').textContent =
+    `Showing ${filtered.length} cards | ${filledCount} with data | ${checkedFiltered} done | Overall: ${checkedCount}/${totalAll} complete`;
+  document.getElementById('progressFill').style.width = `${(checkedCount / totalAll * 100).toFixed(1)}%`;
+
+  // Split into regular cards and missions
+  const regularCards = filtered.filter(c => c.type !== 'mission');
+  const missionCards = filtered.filter(c => c.type === 'mission');
+
+  let html = '';
+
+  if (regularCards.length > 0) {
+    html += '<div class="section-header">Regular Cards</div>';
+    html += '<div class="card-grid">' + regularCards.map(renderCard).join('') + '</div>';
+  }
+
+  if (missionCards.length > 0) {
+    html += '<div class="section-header">Mission Cards</div>';
+    html += '<div class="card-grid">' + missionCards.map(renderCard).join('') + '</div>';
+  }
+
+  sections.innerHTML = html;
+}
+
+function exportData() {
+  const filled = {};
+  Object.entries(userData).forEach(([k, v]) => {
+    if (v && v.trim()) {
+      const card = ALL_ITEMS.find(c => c.filename === k);
+      filled[card ? card.name : k] = v.trim();
+    }
+  });
+  const json = JSON.stringify(filled, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'favor-card-audit.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importData() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        Object.entries(data).forEach(([name, val]) => {
+          const card = ALL_ITEMS.find(c => c.name === name);
+          if (card) userData[card.filename] = val;
+          else userData[name] = val;
+        });
+        save();
+        render();
+      } catch(err) { alert('Invalid JSON file'); }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+function clearAll() {
+  if (!confirm('Clear all audit data and checked states?')) return;
+  userData = {};
+  checkedCards = {};
+  save();
+  saveChecked();
+  render();
+}
+
+buildFilterBar();
+render();
+</script>
+</body>
+</html>
