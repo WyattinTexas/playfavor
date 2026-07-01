@@ -1097,6 +1097,72 @@ function renderTvHand(state) {
     zone.innerHTML = html;
 }
 
+// ── Left drawer: your skills / ring / act ──
+function renderTvLeft(state) {
+    const el = document.getElementById('tvLeftContent');
+    if (!el) return;
+    const player = state.players[0];
+    const gp = game.players[0];
+    const skills = player.skills || {};
+    const skillEntries = [
+        { key: 'survival',    label: 'Survival',    icon: SKILL_ICONS.survival },
+        { key: 'charisma',    label: 'Charisma',    icon: SKILL_ICONS.charisma },
+        { key: 'alchemy',     label: 'Alchemy',     icon: SKILL_ICONS.alchemy },
+        { key: 'prospecting', label: 'Prospecting', icon: SKILL_ICONS.prospecting },
+        { key: 'knowledge',   label: 'Knowledge',   icon: SKILL_ICONS.knowledge },
+        { key: 'power',       label: 'Power',       icon: SKILL_ICONS.power },
+    ];
+    let skillsHtml = '<div class="skills-grid">';
+    skillEntries.forEach(s => {
+        const val = skills[s.key] || 0;
+        skillsHtml += `<div class="skill-row">
+            <span class="skill-icon">${s.icon}</span>
+            <span class="skill-label">${s.label}</span>
+            <span class="skill-value${val > 0 ? ' has-skill' : ''}">${val}</span>
+        </div>`;
+    });
+    const hasPhil = gp.philosopherStone && gp.philosopherStone > 0;
+    const hasMindsEye = (gp.playedCards || []).some(c =>
+        c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_x2_philosopher_stone_x5');
+    if (hasPhil) skillsHtml += `<div class="skill-row special-ability">
+        <span class="skill-icon">${SKILL_ICONS.philosopher}</span>
+        <span class="skill-label">Phil. Stone</span>
+        <span class="skill-value has-skill">${gp.philosopherStone}:1</span></div>`;
+    if (hasMindsEye) skillsHtml += `<div class="skill-row special-ability">
+        <span class="skill-icon">${SKILL_ICONS.minds_eye}</span>
+        <span class="skill-label">Mind's Eye</span>
+        <span class="skill-value has-skill">✓</span></div>`;
+    skillsHtml += '</div>';
+
+    const sliderPos = gp.sliderPosition;
+    const posNames = ['1', '2', '3', '4', '5'];
+    const ringHtml = `<div class="ring-indicator">Ring: ${[0,1,2,3,4].map(pos => {
+        const charData = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
+        const tip = charData ? buildSlotLabel(charData.slots[pos]).join(', ') : '';
+        return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posNames[pos]}</span>`;
+    }).join('')}</div>`;
+
+    el.innerHTML = `<div class="tv-left-title">Your Skills</div><div class="act-badge">Act ${state.currentAct}</div>${skillsHtml}${ringHtml}`;
+}
+
+// ── Drawer state (hand auto-opens on your turn; both have manual arrows) ──
+let tvHandOpen = true;
+let tvLeftOpen = false;
+let _tvTurnSig = null;
+
+function applyDrawerStates() {
+    const hd = document.getElementById('tvHandDrawer');
+    const ld = document.getElementById('tvLeftDrawer');
+    const ht = document.getElementById('tvHandTab');
+    const lt = document.getElementById('tvLeftTab');
+    if (hd) hd.classList.toggle('open', tvHandOpen);
+    if (ld) ld.classList.toggle('open', tvLeftOpen);
+    if (ht) ht.textContent = tvHandOpen ? '▾' : '▴';
+    if (lt) lt.textContent = tvLeftOpen ? '◂' : '▸';
+}
+function toggleHandDrawer(e) { if (e) e.stopPropagation(); tvHandOpen = !tvHandOpen; applyDrawerStates(); }
+function toggleLeftDrawer(e) { if (e) e.stopPropagation(); tvLeftOpen = !tvLeftOpen; applyDrawerStates(); }
+
 function renderTableView(state) {
     if (!game) return;
     const opp = document.getElementById('tvOpponents');
@@ -1109,6 +1175,20 @@ function renderTableView(state) {
     renderTvCenter(state);
     document.getElementById('tvYouMat').innerHTML = buildPlayerMat(0, state, true);
     renderTvHand(state);
+    renderTvLeft(state);
+
+    // Auto-open the hand when the turn context changes to the human's turn to
+    // act; tuck it otherwise. Manual arrow toggles persist within a turn.
+    const sig = state.phase + ':' + state.activePlayerIndex;
+    if (sig !== _tvTurnSig) {
+        _tvTurnSig = sig;
+        const hand = state.players[0].hand;
+        const myTurn = state.activePlayerIndex === 0
+            && hand && hand.length > 0
+            && state.phase !== 'scoring' && state.phase !== 'game_over';
+        tvHandOpen = myTurn;
+    }
+    applyDrawerStates();
 }
 
 // ═══ OVERLAY FUNCTIONS ═══════════════════════════════════════

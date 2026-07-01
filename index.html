@@ -139,17 +139,31 @@
 
         <!-- ═══ TABLE VIEW (phone landscape only) ═══ -->
         <div id="table-view">
-            <!-- Opponents' mats — around the top of the table -->
-            <div class="tv-opponents" id="tvOpponents"></div>
+            <!-- The table itself — always visible -->
+            <div class="tv-table">
+                <!-- Opponents' mats — around the top of the table -->
+                <div class="tv-opponents" id="tvOpponents"></div>
 
-            <!-- Center — available missions -->
-            <div class="tv-center" id="tvCenter"></div>
+                <!-- Center — available missions -->
+                <div class="tv-center" id="tvCenter"></div>
 
-            <!-- Your mat — board + tokens + tucked cards -->
-            <div class="tv-you-mat" id="tvYouMat"></div>
+                <!-- Your mat — board + tokens + tucked cards -->
+                <div class="tv-you-mat" id="tvYouMat"></div>
+            </div>
 
-            <!-- Your hand — bottom (Phase B: becomes an auto/manual drawer) -->
-            <div class="tv-hand" id="tvHand"></div>
+            <!-- Left drawer — your skills / ring / act (arrow to open) -->
+            <div class="tv-left-drawer" id="tvLeftDrawer">
+                <div class="tv-left-content" id="tvLeftContent"></div>
+                <button class="tv-drawer-tab left" id="tvLeftTab"
+                        onclick="toggleLeftDrawer(event)" title="Your skills">▸</button>
+            </div>
+
+            <!-- Hand drawer — auto-opens on your turn, arrow to open/close -->
+            <div class="tv-hand-drawer open" id="tvHandDrawer">
+                <button class="tv-drawer-tab hand" id="tvHandTab"
+                        onclick="toggleHandDrawer(event)" title="Your hand">▾</button>
+                <div class="tv-hand" id="tvHand"></div>
+            </div>
         </div>
 
         <!-- Bottom stats bar (used by stat animation system) -->

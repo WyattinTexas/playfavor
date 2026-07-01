@@ -2675,13 +2675,20 @@ html, body {
     /* Swap desktop layout for the table view. */
     .game-layout { display: none !important; }
     #table-view {
-        display: flex;
-        flex-direction: column;
+        display: block;
         position: absolute;
         inset: 0;
         z-index: 1;
         height: 100dvh;
-        padding: 6px 8px 4px;
+        overflow: hidden;
+    }
+
+    /* The table itself fills the screen; the hand drawer peeks over its base. */
+    .tv-table {
+        display: flex;
+        flex-direction: column;
+        height: 100dvh;
+        padding: 6px 8px 30px; /* bottom = closed-hand peek height */
         gap: 4px;
     }
 
@@ -2774,14 +2781,15 @@ html, body {
         align-self: center;
     }
 
-    /* ── Center — available missions ── */
+    /* ── Center — available missions (fills the middle band) ── */
     .tv-center {
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         gap: 3px;
-        flex-shrink: 0;
+        flex: 1;
+        min-height: 0;
     }
     .tv-center-label {
         font-family: 'Cinzel', serif;
@@ -2803,26 +2811,118 @@ html, body {
     }
     .tv-mission:hover { transform: scale(1.12); border-color: var(--gold); }
 
-    /* ── Your mat — sits just above the hand ── */
+    /* ── Your mat — sits just above the hand peek ── */
     .tv-you-mat {
         display: flex;
         justify-content: center;
         flex-shrink: 0;
     }
 
-    /* ── Your hand — bottom (Phase B makes this an auto/manual drawer) ── */
+    /* ═══ DRAWERS ═══ */
+    .tv-drawer-tab {
+        position: absolute;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(180deg, var(--wood-dark), var(--wood-deepest));
+        border: 2px solid var(--gold-dark);
+        color: var(--gold);
+        cursor: pointer;
+        z-index: 2;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+    .tv-drawer-tab:hover { color: var(--gold-light); border-color: var(--gold); }
+
+    /* ── Left drawer: your skills / ring / act ── */
+    .tv-left-drawer {
+        position: absolute;
+        top: 28px;
+        bottom: 34px;
+        left: 0;
+        width: 150px;
+        z-index: 45;
+        transform: translateX(-100%);
+        transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .tv-left-drawer.open { transform: translateX(0); }
+    .tv-left-content {
+        height: 100%;
+        overflow-y: auto;
+        padding: 8px 8px 10px;
+        background: linear-gradient(160deg, var(--wood-darker) 0%, var(--wood-deepest) 100%);
+        border: 2px solid var(--gold-dark);
+        border-left: none;
+        border-radius: 0 12px 12px 0;
+        box-shadow: 6px 0 20px rgba(0,0,0,0.5);
+    }
+    .tv-left-title {
+        font-family: 'Cinzel', serif;
+        font-size: 9px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: var(--gold);
+        text-align: center;
+        margin-bottom: 4px;
+    }
+    .tv-left-content .act-badge {
+        font-size: 8px; text-align: center; color: var(--gold-dark);
+        padding-bottom: 4px; margin-bottom: 4px; letter-spacing: 2px;
+        text-transform: uppercase;
+        border-bottom: 1px solid rgba(201,168,76,0.12);
+    }
+    .tv-left-content .skills-grid { gap: 1px; }
+    .tv-left-content .skill-row { padding: 1px 3px; gap: 5px; }
+    .tv-left-content .skill-svg { width: 16px; height: 16px; }
+    .tv-left-content .skill-label { font-size: 8px; }
+    .tv-left-content .skill-value { font-size: 12px; }
+    .tv-left-content .ring-indicator { font-size: 8px; margin-top: 6px; }
+    .tv-drawer-tab.left {
+        top: 50%; right: -24px;
+        transform: translateY(-50%);
+        width: 24px; height: 58px;
+        border-left: none;
+        border-radius: 0 10px 10px 0;
+        font-size: 12px;
+    }
+
+    /* ── Hand drawer: auto/manual, slides up from the bottom ── */
+    .tv-hand-drawer {
+        position: absolute;
+        left: 0; right: 0; bottom: 0;
+        height: 120px;
+        z-index: 45;
+        transform: translateY(calc(100% - 30px)); /* closed: 30px card-tops peek */
+        transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .tv-hand-drawer.open { transform: translateY(0); }
+    .tv-hand-drawer::before {
+        content: '';
+        position: absolute; inset: 0;
+        background: linear-gradient(0deg,
+            rgba(22,10,3,0.98) 0%, rgba(35,18,7,0.9) 55%, rgba(42,22,10,0.35) 100%);
+        box-shadow: inset 0 6px 18px rgba(0,0,0,0.4);
+        z-index: 0;
+    }
+    .tv-drawer-tab.hand {
+        top: -22px; left: 50%;
+        transform: translateX(-50%);
+        width: 70px; height: 22px;
+        border-bottom: none;
+        border-radius: 10px 10px 0 0;
+        font-size: 12px;
+    }
     .tv-hand {
+        position: relative;
+        z-index: 1;
+        height: 100%;
         display: flex;
         justify-content: center;
         align-items: flex-end;
-        flex: 1;
-        min-height: 0;
-        padding-bottom: 2px;
+        padding-bottom: 6px;
     }
     .tv-hand .hand-arc { display: flex; align-items: flex-end; }
     .tv-hand .hand-card {
-        width: 66px;
-        height: 92px;
+        width: 66px; height: 92px;
         margin: 0 -8px;
         border-radius: 5px;
     }
@@ -2833,14 +2933,12 @@ html, body {
         z-index: 30;
     }
     .tv-hand-waiting {
-        color: var(--gold);
-        opacity: 0.4;
+        color: var(--gold); opacity: 0.4;
         font-family: 'Cinzel', serif;
-        font-size: 11px;
-        letter-spacing: 2px;
+        font-size: 11px; letter-spacing: 2px;
         align-self: center;
     }
 
-    /* Action panel sits above the hand. */
-    .action-panel { bottom: 100px; padding: 12px 18px; min-width: 220px; }
+    /* Action panel sits above the hand drawer. */
+    .action-panel { bottom: 130px; padding: 12px 18px; min-width: 220px; }
 }
