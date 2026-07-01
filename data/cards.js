@@ -119,7 +119,7 @@ window.FAVOR_DATA.cards = [
     requirements: [], rewards: { prestige: 5 }, favor: 18,
     combo: "The Minister's Plan" },
 
-  { id: cid(), name: "Finding the Lost Corridor", grantsMap: "Reunited", reqMaps: ["Her Lost Father"], reqMapsUnresolved: ["The Magic Fiddle"], audit: "10 Favor & Reunited Map, Req: 2 Mind's Eye OR Her Lost Father Map OR The Magic Fiddle Map, Act 2", filename: "Finding the Lost Corridor Card.jpg", act: 2, type: "adventure",
+  { id: cid(), name: "Finding the Lost Corridor", grantsMap: "Reunited", reqMaps: ["Her Lost Father", "Golden Fiddle"], audit: "10 Favor & Reunited Map, Req: 2 Mind's Eye OR Her Lost Father Map OR The Magic Fiddle Map, Act 2", filename: "Finding the Lost Corridor Card.jpg", act: 2, type: "adventure",
     cost: 2, skills: ["knowledge"], requirements: [], rewards: {}, favor: 10,
     special: "minds_eye", combo: "Reunited" },
 
@@ -286,11 +286,11 @@ window.FAVOR_DATA.cards = [
   { id: cid(), name: "Royal Hilt", audit: "1 Favor for each Power your left & right neighbor have, Req: 2 Power & 1 Mind's Eye, Act 3", filename: "Golden Snitch Card.jpg", act: 3, type: "weapon",
     cost: 2, skills: ["power"], requirements: [], rewards: {}, special: "minds_eye" },
 
-  { id: cid(), name: "Lost North Map", reqMaps: ["Moment of Reflection"], reqMapsUnresolved: ["Man's Best Friend"], audit: "5 Favor, Req: 3 Survival & 3 Prospecting & 1 Mind's Eye OR Man's Best Friend Map OR Moment of Reflection Map, Act 2", filename: "Lost North Map.jpg", act: 2, type: "adventure",
+  { id: cid(), name: "Lost North Map", reqMaps: ["Man's Best Friend", "Moment of Reflection"], audit: "5 Favor, Req: 3 Survival & 3 Prospecting & 1 Mind's Eye OR Man's Best Friend Map OR Moment of Reflection Map, Act 2", filename: "Lost North Map.jpg", act: 2, type: "adventure",
     cost: null, skills: [], requirements: ["survival", "prospecting"], rewards: {}, favor: 5,
     combo: "1/2", special: "map" },
 
-  { id: cid(), name: "Lost South Map", reqMaps: ["Tunnel of Trinkets"], reqMapsUnresolved: ["The Thinking Tree"], audit: "5 Favor & If you have the Lost North Map 20 additional Favor, Req: 3 Survival & 3 Charisma & 1 Mind's Eye OR The Thinking Tree Map OR Tunnel of Trinkets Map, Act 2", filename: "Lost South Map.jpg", act: 2, type: "adventure",
+  { id: cid(), name: "Lost South Map", reqMaps: ["Cameron's Expedition", "Tunnel of Trinkets"], audit: "5 Favor & If you have the Lost North Map 20 additional Favor, Req: 3 Survival & 3 Charisma & 1 Mind's Eye OR The Thinking Tree Map OR Tunnel of Trinkets Map, Act 2", filename: "Lost South Map.jpg", act: 2, type: "adventure",
     cost: null, skills: [], requirements: ["survival", "charisma"], rewards: { gold: 20 }, favor: 5,
     combo: "2/2", special: "map" },
 

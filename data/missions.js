@@ -28,7 +28,7 @@ window.FAVOR_DATA.missions = [
       successRewards: { favor: 5, gold: 3 },
       failurePenalties: { scorn: 3 } },
 
-    { id: mid(), name: "Burst of Fulfillment", grantsMap: "Lost North Map", audit: "Success Req: 3 Survival & 2 Charisma, Act 1 Success Reward: 10 Favor, 1 Knowledge, Lost North Map Map Failure Reward: 4 Gold & All other players receive 5 Gold", filename: "Act 1_Burst of Fulfillment Card.jpg",
+    { id: mid(), name: "Man's Best Friend", placeholderName: "Burst of Fulfillment", grantsMap: "Lost North Map", audit: "Success Req: 3 Survival & 2 Charisma, Act 1 Success Reward: 10 Favor, 1 Knowledge, Lost North Map Map Failure Reward: 4 Gold & All other players receive 5 Gold", filename: "Act 1_Burst of Fulfillment Card.jpg",
       act: 1, activationRound: 1, favorValue: 8,
       requirements: ["charisma"],
       successRewards: { favor: 5, prestige: 3 },
