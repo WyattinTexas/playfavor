@@ -607,6 +607,21 @@ const SKILL_GROUPS = {
     power:       { label: 'Power',       order: 5 },
 };
 
+// True on phones/short viewports in landscape, where the left panels flow
+// in a flex rail (.left-rail) instead of the desktop JS-pinned absolute stack.
+function isCompactLandscape() {
+    return window.matchMedia('(orientation: landscape) and (max-height: 540px)').matches;
+}
+
+// Re-render on rotate/resize so left-rail panels re-flow or re-pin correctly.
+let _reflowTimer = null;
+window.addEventListener('resize', () => {
+    clearTimeout(_reflowTimer);
+    _reflowTimer = setTimeout(() => {
+        if (typeof game !== 'undefined' && game) renderGameState();
+    }, 120);
+});
+
 function getCardSkillGroup(card) {
     if (card.skills && card.skills.length > 0) {
         return card.skills[0]; // Primary skill
@@ -776,13 +791,19 @@ function renderStatsPanel(state) {
         ${emblem}
     `;
 
-    // Position dynamically after board thumb loads
-    requestAnimationFrame(() => {
-        const thumb = document.getElementById('boardThumb');
-        if (thumb && thumb.offsetHeight > 20) {
-            panel.style.top = (thumb.offsetTop + thumb.offsetHeight + 6) + 'px';
-        }
-    });
+    // Position dynamically after board thumb loads (desktop only — in compact
+    // landscape the .left-rail flex flow handles stacking, so clear inline top).
+    if (isCompactLandscape()) {
+        panel.style.top = '';
+    } else {
+        requestAnimationFrame(() => {
+            if (isCompactLandscape()) { panel.style.top = ''; return; }
+            const thumb = document.getElementById('boardThumb');
+            if (thumb && thumb.offsetHeight > 20) {
+                panel.style.top = (thumb.offsetTop + thumb.offsetHeight + 6) + 'px';
+            }
+        });
+    }
 }
 
 // ── Mission Strip ──
@@ -830,13 +851,18 @@ function renderMissionStrip(state) {
 
     strip.innerHTML = html;
 
-    // Position below stats panel
-    requestAnimationFrame(() => {
-        const statsPanel = document.getElementById('statsPanel');
-        if (statsPanel && statsPanel.offsetHeight > 10) {
-            strip.style.top = (statsPanel.offsetTop + statsPanel.offsetHeight + 6) + 'px';
-        }
-    });
+    // Position below stats panel (desktop only — compact landscape uses flex flow)
+    if (isCompactLandscape()) {
+        strip.style.top = '';
+    } else {
+        requestAnimationFrame(() => {
+            if (isCompactLandscape()) { strip.style.top = ''; return; }
+            const statsPanel = document.getElementById('statsPanel');
+            if (statsPanel && statsPanel.offsetHeight > 10) {
+                strip.style.top = (statsPanel.offsetTop + statsPanel.offsetHeight + 6) + 'px';
+            }
+        });
+    }
 }
 
 // ── Card Stacks (played cards grouped by skill) ──

@@ -9,6 +9,13 @@
 </head>
 <body>
 
+    <!-- ═══ ROTATE GATE (phones held in portrait) ═══ -->
+    <div id="rotate-gate">
+        <div class="rotate-icon">&#128241;</div>
+        <div class="rotate-title">Turn Your Device</div>
+        <p class="rotate-text">FAVOR is played at the table &mdash; rotate to landscape to take your seat.</p>
+    </div>
+
     <!-- ═══ TITLE SCREEN ═══ -->
     <div id="title-screen">
         <img src="assets/ui/cover.jpg" alt="FAVOR" class="title-cover" id="coverArt">
@@ -107,14 +114,17 @@
                 <!-- Phase indicator -->
                 <div class="phase-bar" id="phaseBar"></div>
 
-                <!-- Board thumbnail — top-left -->
-                <div class="board-thumb" id="boardThumb"></div>
+                <!-- Left rail — display:contents on desktop, flex column in landscape -->
+                <div class="left-rail">
+                    <!-- Board thumbnail — top-left -->
+                    <div class="board-thumb" id="boardThumb"></div>
 
-                <!-- Stats panel — under board -->
-                <div class="stats-panel" id="statsPanel"></div>
+                    <!-- Stats panel — under board -->
+                    <div class="stats-panel" id="statsPanel"></div>
 
-                <!-- Mission strip — under stats -->
-                <div class="mission-strip" id="missionStrip"></div>
+                    <!-- Mission strip — under stats -->
+                    <div class="mission-strip" id="missionStrip"></div>
+                </div>
 
                 <!-- Card stacks — center -->
                 <div class="card-stacks" id="cardStacks"></div>

@@ -2603,33 +2603,161 @@ html, body {
     }
 }
 
-/* ─── RESPONSIVE ───────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════
+   RESPONSIVE  —  Rotate gate + Landscape-phone table layout
+   ═══════════════════════════════════════════════════════════ */
 
-@media (max-width: 768px) {
-    .hand-card {
-        width: 90px;
-        height: 130px;
+/* Left rail is transparent on desktop: children act as direct .play-area
+   children, so the existing absolute positioning + JS-set tops are unchanged. */
+.left-rail { display: contents; }
+
+/* ─── ROTATE GATE ──────────────────────────────────────────
+   Only phones/tablets (coarse pointer, no hover) held in portrait. */
+#rotate-gate { display: none; }
+
+@media (hover: none) and (pointer: coarse) and (orientation: portrait) {
+    #rotate-gate {
+        display: flex;
+        position: fixed;
+        inset: 0;
+        z-index: 100000;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 40px;
+        background:
+            radial-gradient(ellipse at 50% 40%, #6b4a30 0%, #3a2214 55%, #1e1208 100%);
+        color: var(--gold-light);
     }
-
-    .character-board-display {
-        width: 200px;
+    .rotate-icon {
+        font-size: 64px;
+        animation: rotateHint 2.4s ease-in-out infinite;
     }
+    .rotate-title {
+        font-family: 'Cinzel', serif;
+        font-weight: 900;
+        font-size: 26px;
+        letter-spacing: 4px;
+        color: var(--gold);
+        margin-top: 20px;
+    }
+    .rotate-text {
+        font-family: 'EB Garamond', serif;
+        font-style: italic;
+        font-size: 16px;
+        color: var(--text-light);
+        opacity: 0.75;
+        max-width: 340px;
+        margin-top: 12px;
+        line-height: 1.5;
+    }
+}
 
-    .opponents-area {
+@keyframes rotateHint {
+    0%, 55%, 100% { transform: rotate(0deg); }
+    75%, 90%      { transform: rotate(-90deg); }
+}
+
+/* ─── LANDSCAPE PHONE TABLE ────────────────────────────────
+   Short viewports in landscape: reflow the desktop layout into a
+   compact table that fits ~390–430px of height. */
+@media (orientation: landscape) and (max-height: 540px) {
+
+    /* Use dynamic viewport height so mobile browser chrome doesn't clip. */
+    html, body { height: 100dvh; }
+    .game-layout { height: 100dvh; grid-template-columns: 1fr 132px; }
+
+    /* Play area becomes a row: [left rail] [table]. */
+    .play-area {
+        padding: 8px 10px 116px 8px;
         gap: 10px;
+        align-items: stretch;
     }
 
-    .opponent-slot {
-        min-width: 100px;
-        padding: 6px 10px;
+    /* Left rail flows as a real, independently-scrolling flex column. */
+    .left-rail {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 138px;
+        flex-shrink: 0;
+        max-height: calc(100dvh - 124px);
+        overflow-y: auto;
+        padding-right: 2px;
     }
 
-    .mission-option img {
-        width: 100px;
+    /* Keep natural size — let the rail scroll instead of crushing items. */
+    .left-rail > * { flex-shrink: 0; }
+
+    /* Neutralize desktop absolute positioning / JS-set inline tops. */
+    .board-thumb,
+    .stats-panel,
+    .mission-strip {
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        width: 100% !important;
     }
 
-    .game-toast {
-        font-size: 12px;
-        padding: 8px 16px;
+    /* Slim board thumbnail: crop to a banner so it doesn't dominate the rail. */
+    .board-thumb { border-width: 2px; }
+    .board-thumb img { height: 44px; object-fit: cover; object-position: 50% 30%; }
+    .board-thumb .thumb-footer { padding: 3px 6px; }
+    .board-thumb .thumb-name { font-size: 9px; }
+    .board-thumb .thumb-hint { display: none; }
+
+    /* Compact stats: tighter rows, smaller type. */
+    .stats-panel { padding: 6px; gap: 3px; }
+    .stats-panel .act-badge { font-size: 8px; padding-bottom: 3px; }
+    .resource-tokens { gap: 4px; padding: 4px 0; }
+    .token-img { width: 16px; height: 16px; }
+    .token-val { font-size: 11px; }
+    /* Single column keeps skill names + values fully readable; the rail
+       scrolls a touch to reach missions, which is fine on a touch device. */
+    .skills-grid { gap: 0; }
+    .skill-row { padding: 0 3px; gap: 5px; }
+    .skill-svg { width: 16px; height: 16px; }
+    .skill-label { font-size: 8px; }
+    .skill-value { font-size: 11px; }
+    .ring-indicator { font-size: 8px; margin-top: 2px; }
+
+    .mission-strip { padding: 6px 7px; gap: 5px; }
+    .mission-strip .mission-pip { width: 24px; height: 33px; }
+
+    /* Card table: smaller cards, tighter stacks, scrolls if it overflows. */
+    .card-stacks {
+        gap: 12px;
+        min-height: 0;
+        align-content: flex-start;
+        overflow-y: auto;
+        max-height: calc(100dvh - 124px);
     }
+    .card-stack { min-width: 92px; }
+    .card-stack .stack-card { width: 92px; height: 129px; }
+    .card-stack .stack-card + .stack-card { margin-top: -101px; } /* h - 28 peek */
+    .card-stack:hover .stack-card + .stack-card { margin-top: -89px; }
+
+    /* Opponent sidebar: narrower, tighter entries. */
+    .game-sidebar .sidebar-header { padding: 8px 8px 5px; font-size: 7px; }
+    .opp-entry { padding: 6px 8px; gap: 6px; }
+    .opp-entry .opp-avatar { width: 28px; height: 28px; }
+    .opp-entry .opp-name { font-size: 10px; }
+    .opp-entry .mini-card { width: 16px; height: 22px; }
+    .ring-dot { width: 12px; height: 12px; font-size: 6px; }
+
+    /* Hand tray: shorter, smaller cards, aligned to the narrower sidebar. */
+    .hand-zone { height: 112px; right: 132px; padding: 0 16px 8px; }
+    .hand-card { width: 72px; height: 101px; margin: 0 -8px; }
+    .hand-card:hover,
+    .hand-card.selected {
+        transform: translateY(-22px) scale(1.12) !important;
+        margin: 0 3px;
+    }
+
+    /* Phase bar: slimmer. */
+    .phase-bar { top: 6px; padding: 4px 14px; gap: 8px; }
+
+    /* Action panel sits just above the shorter hand tray. */
+    .action-panel { bottom: 122px; padding: 12px 18px; min-width: 220px; }
 }
