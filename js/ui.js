@@ -649,6 +649,7 @@ function renderGameState() {
     renderSidebar(state);
     renderHand(state);
     renderBottomStats(state);
+    renderTableView(state);
 }
 
 function formatPhase(phase) {
@@ -1007,6 +1008,107 @@ function renderBottomStats(state) {
         <div class="stat scorn">${player.scorn}</div>
         <div class="stat favor">${player.favor}</div>
     `;
+}
+
+// ═══ TABLE VIEW (phone landscape) ═══════════════════════════
+// A shared-table layout: each player is a "mat" (board + tokens on the
+// board + played cards tucked underneath), arranged around a center
+// missions area. Desktop is untouched (#table-view is display:none there).
+
+function buildPlayerMat(i, state, isYou) {
+    const p = state.players[i];
+    const char = game.players[i] ? game.players[i].character : null;
+    const boardSrc = char ? `assets/characters/${char.filename}` : '';
+    const isActive = state.activePlayerIndex === i;
+    const crown = state.emblemHolder === i ? ' 👑' : '';
+
+    // Tokens shown on the mat. Gold + Favor always; Prestige/Scorn when > 0.
+    let tokens = `<span class="stat-pill gold"><i class="coin-icon">🪙</i> ${p.gold}</span>`
+               + `<span class="stat-pill favor">${p.favor || 0}</span>`;
+    if (p.prestige) tokens += `<span class="stat-pill prestige">${p.prestige}</span>`;
+    if (p.scorn)    tokens += `<span class="stat-pill scorn">${p.scorn}</span>`;
+
+    // Played cards tucked under the mat (peeking, overlapped). Click mat to expand.
+    const cards = p.playedCards || [];
+    let tucked = cards.map(c =>
+        `<img class="pmat-card" src="assets/cards/regular/${c.filename}" alt="${c.name}">`
+    ).join('');
+    if (!tucked) tucked = '<span class="pmat-empty">No cards played</span>';
+
+    return `
+        <div class="pmat ${isYou ? 'you' : 'opp'}${isActive ? ' active' : ''}"
+             onclick="openOppOverlay(${i})">
+            <div class="pmat-boardwrap">
+                <img class="pmat-board" src="${boardSrc}" alt="${p.name}">
+                <span class="pmat-name">${p.name}${crown}</span>
+                <div class="pmat-tokens">${tokens}</div>
+            </div>
+            <div class="pmat-cards">${tucked}</div>
+        </div>`;
+}
+
+function renderTvCenter(state) {
+    const c = document.getElementById('tvCenter');
+    if (!c) return;
+    const ms = state.visibleMissions || [];
+    let h = '<span class="tv-center-label">Available Missions</span><div class="tv-missions">';
+    if (ms.length) {
+        ms.forEach(m => {
+            h += `<img class="tv-mission" src="assets/cards/missions/${m.filename}"
+                       alt="${m.name}"
+                       onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
+        });
+    } else {
+        h += '<span class="pmat-empty">None</span>';
+    }
+    h += '</div>';
+    c.innerHTML = h;
+}
+
+function renderTvHand(state) {
+    const zone = document.getElementById('tvHand');
+    if (!zone) return;
+    const hand = state.players[0].hand;
+
+    if (!hand || hand.length === 0) {
+        zone.innerHTML = game.phase === 'gameplay'
+            ? '<div class="tv-hand-waiting">Waiting for next phase…</div>' : '';
+        return;
+    }
+
+    const count = hand.length;
+    const maxAngle = Math.min(count * 3, 12);
+    const step = count > 1 ? (maxAngle * 2) / (count - 1) : 0;
+    const startAngle = -maxAngle;
+
+    let html = '<div class="hand-arc">';
+    hand.forEach((card, i) => {
+        const angle = startAngle + step * i;
+        const lift = -Math.abs(angle) * 0.4;
+        const isSelected = selectedHandCard === i;
+        html += `<div class="hand-card${isSelected ? ' selected' : ''}"
+                    style="transform: rotate(${angle}deg) translateY(${lift}px)"
+                    onclick="event.stopPropagation(); selectHandCard(${i})"
+                    ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
+                    <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
+                </div>`;
+    });
+    html += '</div>';
+    zone.innerHTML = html;
+}
+
+function renderTableView(state) {
+    if (!game) return;
+    const opp = document.getElementById('tvOpponents');
+    if (!opp) return;
+
+    let oh = '';
+    state.players.forEach((p, i) => { if (i !== 0) oh += buildPlayerMat(i, state, false); });
+    opp.innerHTML = oh;
+
+    renderTvCenter(state);
+    document.getElementById('tvYouMat').innerHTML = buildPlayerMat(0, state, true);
+    renderTvHand(state);
 }
 
 // ═══ OVERLAY FUNCTIONS ═══════════════════════════════════════
