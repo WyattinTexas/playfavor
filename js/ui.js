@@ -1030,6 +1030,10 @@ function buildPlayerMat(i, state, isYou, seat) {
     const isActive = state.activePlayerIndex === i;
     const crown = state.emblemHolder === i ? ' 👑' : '';
 
+    // Ring indicator on the board's slider track (5 slots, evenly spaced).
+    const sliderPos = game.players[i] ? game.players[i].sliderPosition : 2;
+    const slotLeft = [16, 33, 50, 67, 84][sliderPos] != null ? [16, 33, 50, 67, 84][sliderPos] : 50;
+
     // Tokens laid out on the board (corner cluster). Gold always; others if > 0.
     let tokens = tvTokenChip('gold', p.gold);
     if (p.prestige) tokens += tvTokenChip('prestige', p.prestige);
@@ -1049,6 +1053,7 @@ function buildPlayerMat(i, state, isYou, seat) {
              onclick="openOppOverlay(${i})">
             <div class="pmat-boardwrap">
                 <img class="pmat-board" src="${boardSrc}" alt="${p.name}">
+                <img class="pmat-ring" src="assets/ui/slider-ring.png" style="left:${slotLeft}%" alt="">
                 <span class="pmat-name">${p.name}${crown}</span>
                 <div class="pmat-tokens">${tokens}</div>
             </div>
@@ -1493,11 +1498,25 @@ function openOppOverlay(playerIndex) {
         cardsEl.appendChild(wrap);
     });
 
-    document.getElementById('oppOverlay').classList.add('active');
+    // Toggle button label (used on landscape); start on the board view.
+    const n = p.playedCards.length;
+    const toggle = document.getElementById('oppOvToggle');
+    if (toggle) toggle.textContent = n ? `View Played Cards (${n})` : 'No Cards Played';
+    const ov = document.getElementById('oppOverlay');
+    ov.classList.remove('cards-open');
+    ov.classList.add('active');
+}
+
+// Landscape: reveal/hide the played-cards panel (keeps the board readable
+// instead of one long scroll). No-op behavior on desktop (panel shows inline).
+function toggleOppCards(e) {
+    if (e) e.stopPropagation();
+    document.getElementById('oppOverlay').classList.toggle('cards-open');
 }
 
 function closeOppOverlay() {
-    document.getElementById('oppOverlay').classList.remove('active');
+    const ov = document.getElementById('oppOverlay');
+    ov.classList.remove('active', 'cards-open');
 }
 
 function requestLend(oppIndex, cardName) {
