@@ -1015,18 +1015,26 @@ function renderBottomStats(state) {
 // board + played cards tucked underneath), arranged around a center
 // missions area. Desktop is untouched (#table-view is display:none there).
 
-function buildPlayerMat(i, state, isYou) {
+// One token "chip" resting on the mat: real token art (or a favor star) + count.
+function tvTokenChip(kind, amount) {
+    const face = TOKEN_IMG[kind]
+        ? `<img src="${TOKEN_IMG[kind]}" alt="">`
+        : `<span class="pmat-tok-favor">★</span>`;
+    return `<span class="pmat-tok ${kind}">${face}<b>${amount}</b></span>`;
+}
+
+function buildPlayerMat(i, state, isYou, seat) {
     const p = state.players[i];
     const char = game.players[i] ? game.players[i].character : null;
     const boardSrc = char ? `assets/characters/${char.filename}` : '';
     const isActive = state.activePlayerIndex === i;
     const crown = state.emblemHolder === i ? ' 👑' : '';
 
-    // Tokens shown on the mat. Gold + Favor always; Prestige/Scorn when > 0.
-    let tokens = `<span class="stat-pill gold"><i class="coin-icon">🪙</i> ${p.gold}</span>`
-               + `<span class="stat-pill favor">${p.favor || 0}</span>`;
-    if (p.prestige) tokens += `<span class="stat-pill prestige">${p.prestige}</span>`;
-    if (p.scorn)    tokens += `<span class="stat-pill scorn">${p.scorn}</span>`;
+    // Tokens laid out on the board (corner cluster). Gold always; others if > 0.
+    let tokens = tvTokenChip('gold', p.gold);
+    if (p.prestige) tokens += tvTokenChip('prestige', p.prestige);
+    if (p.scorn)    tokens += tvTokenChip('scorn', p.scorn);
+    if (p.favor)    tokens += tvTokenChip('favor', p.favor);
 
     // Played cards tucked under the mat (peeking, overlapped). Click mat to expand.
     const cards = p.playedCards || [];
@@ -1036,7 +1044,7 @@ function buildPlayerMat(i, state, isYou) {
     if (!tucked) tucked = '<span class="pmat-empty">No cards played</span>';
 
     return `
-        <div class="pmat ${isYou ? 'you' : 'opp'}${isActive ? ' active' : ''}"
+        <div class="pmat ${isYou ? 'you' : 'opp'} seat-${seat}${isActive ? ' active' : ''}"
              data-pi="${i}"
              onclick="openOppOverlay(${i})">
             <div class="pmat-boardwrap">
@@ -1046,6 +1054,17 @@ function buildPlayerMat(i, state, isYou) {
             </div>
             <div class="pmat-cards">${tucked}</div>
         </div>`;
+}
+
+// Seat assignment for OPPONENTS (you are always seat "bottom"), arranged
+// around the central missions. Keyed by opponent count.
+function tvOpponentSeats(opponentCount) {
+    switch (opponentCount) {
+        case 1:  return ['top'];                              // 2-player: across
+        case 2:  return ['left', 'right'];                    // 3-player: sides
+        case 3:  return ['left', 'top', 'right'];             // 4-player: ring
+        default: return ['left', 'topleft', 'topright', 'right']; // 5-player
+    }
 }
 
 function renderTvCenter(state) {
@@ -1300,15 +1319,16 @@ function tvAnimateDeltas(state) {
 
 function renderTableView(state) {
     if (!game) return;
-    const opp = document.getElementById('tvOpponents');
-    if (!opp) return;
+    const seatsEl = document.getElementById('tvSeats');
+    if (!seatsEl) return;
 
-    let oh = '';
-    state.players.forEach((p, i) => { if (i !== 0) oh += buildPlayerMat(i, state, false); });
-    opp.innerHTML = oh;
+    const seats = tvOpponentSeats(state.players.length - 1);
+    let html = buildPlayerMat(0, state, true, 'bottom');
+    let s = 0;
+    state.players.forEach((p, i) => { if (i !== 0) html += buildPlayerMat(i, state, false, seats[s++]); });
+    seatsEl.innerHTML = html;
 
     renderTvCenter(state);
-    document.getElementById('tvYouMat').innerHTML = buildPlayerMat(0, state, true);
     renderTvHand(state);
     renderTvLeft(state);
     renderTvRight(state);

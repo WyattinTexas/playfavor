@@ -2683,37 +2683,24 @@ html, body {
         overflow: hidden;
     }
 
-    /* The table itself fills the screen; the hand drawer peeks over its base. */
-    .tv-table {
-        display: flex;
-        flex-direction: column;
-        height: 100dvh;
-        padding: 6px 8px 30px; /* bottom = closed-hand peek height */
-        gap: 4px;
-    }
+    /* The table is a positioning canvas; mats seat around the center. */
+    .tv-table { position: relative; height: 100dvh; }
 
     /* Slimmer phase bar. */
     .phase-bar { top: 4px; padding: 3px 12px; gap: 8px; }
 
-    /* ── Opponent mats — row across the top ── */
-    .tv-opponents {
-        display: flex;
-        justify-content: center;
-        align-items: flex-start;
-        gap: 10px;
-        flex-shrink: 0;
-        padding-top: 22px; /* clear the phase bar */
-    }
+    /* All mats live in an absolute layer, seated around the center. */
+    .tv-seats { position: absolute; inset: 0; z-index: 2; }
 
     /* ── Player mat (shared: you + opponents) ── */
     .pmat {
+        position: absolute;
         display: flex;
         flex-direction: column;
         align-items: center;
         cursor: pointer;
-        transition: transform 0.2s ease;
     }
-    .pmat:hover { transform: translateY(-2px); }
+    .pmat:hover .pmat-boardwrap { border-color: var(--gold); }
 
     .pmat-boardwrap {
         position: relative;
@@ -2723,14 +2710,15 @@ html, body {
         box-shadow: 0 3px 12px rgba(0,0,0,0.6);
         z-index: 2;
         background: var(--wood-deepest);
+        transition: border-color 0.2s;
     }
     .pmat.active .pmat-boardwrap {
         border-color: var(--gold-light);
-        box-shadow: 0 0 14px rgba(201,168,76,0.45), 0 3px 12px rgba(0,0,0,0.6);
+        box-shadow: 0 0 14px rgba(201,168,76,0.55), 0 3px 12px rgba(0,0,0,0.6);
     }
     .pmat-board { display: block; object-fit: cover; object-position: 50% 34%; }
     .pmat.opp .pmat-board { width: 132px; height: 62px; }
-    .pmat.you .pmat-board { width: 168px; height: 74px; }
+    .pmat.you .pmat-board { width: 176px; height: 78px; }
 
     .pmat-name {
         position: absolute;
@@ -2743,15 +2731,39 @@ html, body {
         border-radius: 4px;
         padding: 1px 6px;
     }
+
+    /* ── Tokens laid out on the board (bottom-left corner cluster) ── */
     .pmat-tokens {
         position: absolute;
-        bottom: 2px; left: 0; right: 0;
+        left: 3px; bottom: 3px;
         display: flex;
-        justify-content: center;
         gap: 3px;
     }
-    /* Compact chips on the mat. */
-    #table-view .stat-pill { font-size: 8px; padding: 1px 5px; gap: 2px; }
+    .pmat-tok {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 1px 4px 1px 1px;
+        border-radius: 9px;
+        background: rgba(10,6,3,0.62);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    }
+    .pmat-tok img {
+        width: 14px; height: 14px; border-radius: 50%;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    }
+    .pmat-tok-favor {
+        width: 14px; height: 14px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        background: radial-gradient(circle at 40% 35%, #8cc8ff, #2f6bb0);
+        color: #fff; font-size: 9px;
+    }
+    .pmat-tok b {
+        font-family: 'Cinzel', serif; font-weight: 900; font-size: 9px;
+        color: var(--gold-light); line-height: 1;
+    }
+    .pmat-tok.scorn b { color: #f0a0a0; }
+    .pmat-tok.favor b { color: #a9d4ff; }
 
     /* Played cards tucked under the board (peek up from behind it). */
     .pmat-cards {
@@ -2759,7 +2771,7 @@ html, body {
         justify-content: center;
         margin-top: -8px;
         padding-top: 8px;
-        min-height: 26px;
+        min-height: 24px;
         z-index: 1;
     }
     .pmat-card {
@@ -2781,15 +2793,16 @@ html, body {
         align-self: center;
     }
 
-    /* ── Center — available missions (fills the middle band) ── */
+    /* ── Center — available missions (dead center of the table) ── */
     .tv-center {
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
         gap: 3px;
-        flex: 1;
-        min-height: 0;
+        z-index: 1;
     }
     .tv-center-label {
         font-family: 'Cinzel', serif;
@@ -2811,12 +2824,13 @@ html, body {
     }
     .tv-mission:hover { transform: scale(1.12); border-color: var(--gold); }
 
-    /* ── Your mat — sits just above the hand peek ── */
-    .tv-you-mat {
-        display: flex;
-        justify-content: center;
-        flex-shrink: 0;
-    }
+    /* ── Seats around the center ── */
+    .pmat.seat-bottom   { bottom: 34px; left: 50%;  transform: translateX(-50%); }
+    .pmat.seat-top      { top: 22px;    left: 50%;  transform: translateX(-50%); }
+    .pmat.seat-topleft  { top: 22px;    left: 24%;  transform: translateX(-50%); }
+    .pmat.seat-topright { top: 22px;    right: 24%; transform: translateX(50%); }
+    .pmat.seat-left  { top: 46%; left: 2px;  transform: translateY(-50%) rotate(-90deg); }
+    .pmat.seat-right { top: 46%; right: 2px; transform: translateY(-50%) rotate(90deg); }
 
     /* ═══ DRAWERS ═══ */
     .tv-drawer-tab {
