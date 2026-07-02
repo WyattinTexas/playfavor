@@ -2672,6 +2672,26 @@ html, body {
     /* Dynamic viewport height so mobile browser chrome doesn't clip. */
     html, body { height: 100dvh; }
 
+    /* ── Title screen: fit landscape — shrink cover so Play is on-screen ── */
+    #title-screen {
+        justify-content: center;
+        padding: 8px 20px;
+        overflow-y: auto; /* safety: Play always reachable */
+    }
+    .title-cover { width: auto; max-height: 44dvh; margin: 0; }
+    .title-subtitle { margin-top: 8px; font-size: 12px; letter-spacing: 3px; }
+    .title-buttons { margin-top: 12px; gap: 9px; }
+    #title-screen .btn-royal { padding: 9px 26px; min-width: 190px; font-size: 13px; }
+    .title-footer { position: static; margin-top: 10px; bottom: auto; }
+
+    /* ── Character select: compact + scrollable ── */
+    #character-select { padding: 14px 16px 22px; }
+    #character-select .select-title { font-size: 20px; margin-bottom: 6px; }
+    .character-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .character-info h3 { font-size: 14px; }
+    .character-info .difficulty { font-size: 11px; }
+    .character-info .tip { font-size: 10px; margin-top: 3px; }
+
     /* Swap desktop layout for the table view. */
     .game-layout { display: none !important; }
     #table-view {
