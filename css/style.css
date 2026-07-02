@@ -3011,6 +3011,35 @@ html, body {
         z-index: 60;
         overflow: hidden;
     }
+
+    /* ── Card-play reveal: fit the whole thing on a short screen (no scroll) ── */
+    .opp-turn-inner {
+        max-height: 100dvh;
+        overflow: visible;
+        gap: 4px;
+        width: 96vw;
+        padding: 4px 0;
+    }
+    .opp-turn-header { gap: 8px; }
+    .opp-turn-avatar { width: 32px; height: 32px; }
+    .opp-turn-name { font-size: 13px; letter-spacing: 1px; }
+    .opp-turn-char { font-size: 9px; }
+    .opp-turn-ring { margin: 0; }
+    .opp-slot-cell { min-width: 44px; padding: 2px 4px; }
+    .opp-slot-num { font-size: 6px; }
+    .opp-slot-line { font-size: 7px; }
+    .opp-turn-stats .stat-pill { font-size: 9px; padding: 1px 7px; }
+    .opp-turn-cards-area { gap: 4px; }
+    .opp-turn-played-card { width: 22px; height: 31px; }
+    .opp-turn-new-card { gap: 3px; }
+    .opp-turn-new-card img { width: 104px; height: 146px; }
+    .opp-turn-new-tag { font-size: 8px; padding: 1px 8px; letter-spacing: 2px; }
+    .opp-turn-new-name { font-size: 13px; letter-spacing: 1px; }
+    .opp-turn-new-effect { font-size: 11px; max-width: 88vw; line-height: 1.35; }
+    .spotlight-player { font-size: 12px !important; letter-spacing: 1px !important; }
+    .spotlight-dismiss { font-size: 9px; }
+    /* Human's own quick banner clears the hand drawer. */
+    .mini-spotlight { bottom: 128px; }
 }
 
 /* ─── PHASE C ANIMATIONS (global keyframes + FX element styles) ─── */
