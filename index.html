@@ -158,6 +158,16 @@
                         onclick="toggleLeftDrawer(event)" title="Your skills">▸</button>
             </div>
 
+            <!-- Right drawer — your acquired missions (arrow to open) -->
+            <div class="tv-right-drawer" id="tvRightDrawer">
+                <div class="tv-right-content" id="tvRightContent"></div>
+                <button class="tv-drawer-tab right" id="tvRightTab"
+                        onclick="toggleRightDrawer(event)" title="Your missions">◂</button>
+            </div>
+
+            <!-- FX layer — token drops, card tucks, mission reveals (survives re-renders) -->
+            <div id="tvFx"></div>
+
             <!-- Hand drawer — auto-opens on your turn, arrow to open/close -->
             <div class="tv-hand-drawer open" id="tvHandDrawer">
                 <button class="tv-drawer-tab hand" id="tvHandTab"

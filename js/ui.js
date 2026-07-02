@@ -1037,6 +1037,7 @@ function buildPlayerMat(i, state, isYou) {
 
     return `
         <div class="pmat ${isYou ? 'you' : 'opp'}${isActive ? ' active' : ''}"
+             data-pi="${i}"
              onclick="openOppOverlay(${i})">
             <div class="pmat-boardwrap">
                 <img class="pmat-board" src="${boardSrc}" alt="${p.name}">
@@ -1145,23 +1146,157 @@ function renderTvLeft(state) {
     el.innerHTML = `<div class="tv-left-title">Your Skills</div><div class="act-badge">Act ${state.currentAct}</div>${skillsHtml}${ringHtml}`;
 }
 
-// ── Drawer state (hand auto-opens on your turn; both have manual arrows) ──
+// ── Right drawer: your acquired missions + status ──
+const SKILL_ABBR = { survival:'SUR', charisma:'CHA', alchemy:'ALC', prospecting:'PRO', knowledge:'KNO', power:'POW' };
+
+function renderTvRight(state) {
+    const el = document.getElementById('tvRightContent');
+    if (!el) return;
+    const gp = game.players[0];
+    const active = gp.missions || [];
+    const done = gp.completedMissions || [];
+    const failed = gp.failedMissions || [];
+
+    let rows = '';
+    const entry = (m, cls, tag) => {
+        const reqs = (m.requirements || []).map(r => SKILL_ABBR[r] || r.slice(0,3).toUpperCase()).join(' + ') || '—';
+        return `<div class="tv-mission-row ${cls}"
+                     onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">
+            <img class="tv-mission-thumb" src="assets/cards/missions/${m.filename}" alt="${m.name}">
+            <div class="tv-mission-info">
+                <span class="tv-mission-name">${m.name}</span>
+                <span class="tv-mission-meta">${m.favorValue || 0} Favor · ${reqs}</span>
+            </div>
+            <span class="tv-mission-tag">${tag}</span>
+        </div>`;
+    };
+    active.forEach(m => rows += entry(m, 'active', '●'));
+    done.forEach(m => rows += entry(m, 'done', '✓'));
+    failed.forEach(m => rows += entry(m, 'failed', '✕'));
+    if (!rows) rows = '<div class="tv-right-empty">No missions taken yet.<br>Play a mission card to acquire one.</div>';
+
+    el.innerHTML = `<div class="tv-right-title">Your Missions</div>${rows}`;
+}
+
+// ── Drawer state (hand auto-opens on your turn; all have manual arrows) ──
 let tvHandOpen = true;
 let tvLeftOpen = false;
+let tvRightOpen = false;
 let _tvTurnSig = null;
 
 function applyDrawerStates() {
     const hd = document.getElementById('tvHandDrawer');
     const ld = document.getElementById('tvLeftDrawer');
+    const rd = document.getElementById('tvRightDrawer');
     const ht = document.getElementById('tvHandTab');
     const lt = document.getElementById('tvLeftTab');
+    const rt = document.getElementById('tvRightTab');
     if (hd) hd.classList.toggle('open', tvHandOpen);
     if (ld) ld.classList.toggle('open', tvLeftOpen);
+    if (rd) rd.classList.toggle('open', tvRightOpen);
     if (ht) ht.textContent = tvHandOpen ? '▾' : '▴';
     if (lt) lt.textContent = tvLeftOpen ? '◂' : '▸';
+    if (rt) rt.textContent = tvRightOpen ? '▸' : '◂';
 }
 function toggleHandDrawer(e) { if (e) e.stopPropagation(); tvHandOpen = !tvHandOpen; applyDrawerStates(); }
 function toggleLeftDrawer(e) { if (e) e.stopPropagation(); tvLeftOpen = !tvLeftOpen; applyDrawerStates(); }
+function toggleRightDrawer(e) { if (e) e.stopPropagation(); tvRightOpen = !tvRightOpen; applyDrawerStates(); }
+
+// ═══ PHASE C — tabletop motion via per-player state diffing ═══
+// No engine edits: each render we compare each player's tokens / played-card
+// count / acquired missions against the last render and animate the deltas.
+// FX elements go in #tvFx (never wiped by mat re-renders).
+
+const TOKEN_IMG = {
+    gold:     'assets/tokens/Copy of Tokens_Design_v1_Gold_1_v1.jpg',
+    prestige: 'assets/tokens/Copy of Tokens_Design_v1_Prestige_1_v1.jpg',
+    scorn:    'assets/tokens/Copy of Tokens_Design_v1_Scorn_1_v1.jpg'
+};
+let _tvGameRef = null;
+let _tvPrev = {};
+
+function tvMatEl(i) {
+    return document.querySelector(`#table-view .pmat[data-pi="${i}"]`);
+}
+
+function tvDropToken(matEl, key, amount) {
+    const fx = document.getElementById('tvFx');
+    if (!fx || !matEl) return;
+    const tokRow = matEl.querySelector('.pmat-tokens') || matEl;
+    const r = tokRow.getBoundingClientRect();
+    const el = document.createElement('div');
+    el.className = `tv-token-drop ${key}`;
+    const face = TOKEN_IMG[key]
+        ? `<img src="${TOKEN_IMG[key]}" alt="">`
+        : `<span class="tv-token-favor">★</span>`;
+    el.innerHTML = `${face}<span class="tv-token-amt">+${amount}</span>`;
+    el.style.left = `${r.left + r.width / 2}px`;
+    el.style.top = `${r.top}px`;
+    fx.appendChild(el);
+    setTimeout(() => el.remove(), 1100 * window.CINEMATIC_SPEED);
+}
+
+function tvAnimateNewCard(matEl, card) {
+    const fx = document.getElementById('tvFx');
+    if (!fx || !matEl || !card) return;
+    const cardsEl = matEl.querySelector('.pmat-cards') || matEl;
+    const r = cardsEl.getBoundingClientRect();
+    const img = document.createElement('img');
+    img.className = 'tv-card-drop';
+    img.src = `assets/cards/regular/${card.filename}`;
+    img.style.left = `${r.left + r.width / 2}px`;
+    img.style.top = `${r.top}px`;
+    fx.appendChild(img);
+    setTimeout(() => img.remove(), 850 * window.CINEMATIC_SPEED);
+}
+
+function tvMissionReveal(playerName, mission) {
+    const fx = document.getElementById('tvFx');
+    if (!fx || !mission) return;
+    const el = document.createElement('div');
+    el.className = 'tv-mission-reveal';
+    el.innerHTML = `
+        <div class="tv-mr-who">${playerName} takes a mission</div>
+        <img class="tv-mr-card" src="assets/cards/missions/${mission.filename}" alt="${mission.name}">
+        <div class="tv-mr-name">${mission.name}</div>`;
+    fx.appendChild(el);
+    setTimeout(() => el.classList.add('out'), 1400 * window.CINEMATIC_SPEED);
+    setTimeout(() => el.remove(), 1900 * window.CINEMATIC_SPEED);
+}
+
+function tvAnimateDeltas(state) {
+    if (game !== _tvGameRef) { _tvGameRef = game; _tvPrev = {}; } // new game → reset baseline
+    const animate = isCompactLandscape();
+
+    state.players.forEach((p, i) => {
+        const acquired = (p.missions || []).concat(p.completedMissions || [], p.failedMissions || []);
+        const curr = {
+            gold: p.gold, prestige: p.prestige, scorn: p.scorn, favor: p.favor || 0,
+            cardCount: (p.playedCards || []).length,
+            missionNames: acquired.map(m => m.name)
+        };
+        const prev = _tvPrev[i];
+
+        if (prev && animate) {
+            const matEl = tvMatEl(i);
+            if (matEl) {
+                ['gold', 'prestige', 'scorn', 'favor'].forEach(k => {
+                    if (curr[k] > prev[k]) tvDropToken(matEl, k, curr[k] - prev[k]);
+                });
+                if (curr.cardCount > prev.cardCount) {
+                    const newest = (p.playedCards || [])[p.playedCards.length - 1];
+                    tvAnimateNewCard(matEl, newest);
+                }
+            }
+            const fresh = curr.missionNames.filter(n => !prev.missionNames.includes(n));
+            fresh.forEach(name => {
+                const m = acquired.find(x => x.name === name);
+                if (m) tvMissionReveal(i === 0 ? 'You' : p.name, m);
+            });
+        }
+        _tvPrev[i] = curr;
+    });
+}
 
 function renderTableView(state) {
     if (!game) return;
@@ -1176,6 +1311,10 @@ function renderTableView(state) {
     document.getElementById('tvYouMat').innerHTML = buildPlayerMat(0, state, true);
     renderTvHand(state);
     renderTvLeft(state);
+    renderTvRight(state);
+
+    // Tabletop motion: animate any per-player deltas since the last render.
+    tvAnimateDeltas(state);
 
     // Auto-open the hand when the turn context changes to the human's turn to
     // act; tuck it otherwise. Manual arrow toggles persist within a turn.
