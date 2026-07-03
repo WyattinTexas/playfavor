@@ -2755,14 +2755,14 @@ html, body {
     .pmat-ring {
         position: absolute;
         top: 88%;
-        width: 15%;
+        width: 11%;
         aspect-ratio: 1;
         transform: translate(-50%, -50%);
         pointer-events: none;
         filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
         z-index: 3;
     }
-    .pmat.you .pmat-ring { width: 12.5%; }
+    .pmat.you .pmat-ring { width: 9.5%; }
 
     .pmat-name {
         position: absolute;
@@ -2837,7 +2837,7 @@ html, body {
         align-self: center;
     }
 
-    /* ── Center — available missions (raised so the bottom mat has room) ── */
+    /* ── Center — available missions (raised; above mats so taps land) ── */
     .tv-center {
         position: absolute;
         top: 43%; left: 50%;
@@ -2846,7 +2846,7 @@ html, body {
         flex-direction: column;
         align-items: center;
         gap: 3px;
-        z-index: 1;
+        z-index: 4; /* above .tv-seats (2) so missions are tappable */
     }
     .tv-center-label {
         font-family: 'Cinzel', serif;
@@ -2855,10 +2855,10 @@ html, body {
         text-transform: uppercase;
         color: var(--gold-dark);
     }
-    .tv-missions { display: flex; gap: 6px; }
+    .tv-missions { display: flex; gap: 7px; }
     .tv-mission {
-        width: 38px;
-        height: 53px;
+        width: 46px;
+        height: 64px;
         border-radius: 3px;
         object-fit: cover;
         border: 1px solid rgba(201,168,76,0.25);
@@ -2868,13 +2868,23 @@ html, body {
     }
     .tv-mission:hover { transform: scale(1.12); border-color: var(--gold); }
 
-    /* ── Seats around the center (sides pulled inward toward the missions) ── */
+    /* ── Seats in a ring around the center, each mat FACING the center ──
+       You stay upright; top/left/right flip so their boards face inward. */
     .pmat.seat-bottom   { bottom: 36px; left: 50%;  transform: translateX(-50%); }
-    .pmat.seat-top      { top: 18px;    left: 50%;  transform: translateX(-50%); }
-    .pmat.seat-topleft  { top: 18px;    left: 26%;  transform: translateX(-50%); }
-    .pmat.seat-topright { top: 18px;    right: 26%; transform: translateX(50%); }
-    .pmat.seat-left  { top: 44%; left: 14%;  transform: translate(-50%, -50%) rotate(-90deg); }
-    .pmat.seat-right { top: 44%; right: 14%; transform: translate(50%, -50%) rotate(90deg); }
+    .pmat.seat-top      { top: 18px;    left: 50%;  transform: translateX(-50%) rotate(180deg); }
+    .pmat.seat-topleft  { top: 18px;    left: 28%;  transform: translateX(-50%) rotate(180deg); }
+    .pmat.seat-topright { top: 18px;    right: 28%; transform: translateX(50%) rotate(180deg); }
+    .pmat.seat-left  { top: 45%; left: 30%;  transform: translate(-50%, -50%) rotate(90deg); }
+    .pmat.seat-right { top: 45%; right: 30%; transform: translate(50%, -50%) rotate(-90deg); }
+
+    /* Facing-center mats reverse their stack so cards still tuck toward center. */
+    .pmat.seat-top, .pmat.seat-topleft, .pmat.seat-topright,
+    .pmat.seat-left, .pmat.seat-right { flex-direction: column-reverse; }
+    .pmat.seat-top .pmat-cards, .pmat.seat-topleft .pmat-cards, .pmat.seat-topright .pmat-cards,
+    .pmat.seat-left .pmat-cards, .pmat.seat-right .pmat-cards {
+        margin-top: 0; margin-bottom: -18px;
+        padding-top: 0; padding-bottom: 18px;
+    }
 
     /* ═══ DRAWERS ═══ */
     .tv-drawer-tab {
