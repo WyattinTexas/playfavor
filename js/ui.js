@@ -63,7 +63,7 @@ const SLOT_SPECIAL_LABELS = {
     "philosopher_stone":           "Philosopher\u2019s Stone",
     "philosopher_stone_x2":        "2\u00D7 Philosopher\u2019s Stone",
     "minds_eye":                   "Mind\u2019s Eye",
-    "minds_eye_x3":                "3\u00D7 Mind\u2019s Eye",
+    "minds_eye_x5":                "5\u00D7 Mind\u2019s Eye",
     "minds_eye_and_philosopher":   "Mind\u2019s Eye + Phil. Stone",
     "pick_one":                    "Choose a Skill",
     "borrow_any_player":           "Borrow from any player",

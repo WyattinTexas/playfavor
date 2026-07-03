@@ -282,11 +282,11 @@ class FavorGame {
         const slot = char && char.slots ? char.slots[player.sliderPosition] : null;
         if (slot && slot.special) {
             if (slot.special === 'minds_eye' || slot.special === 'minds_eye_and_philosopher') count += 1;
-            if (slot.special === 'minds_eye_x3') count += 3;
+            if (slot.special === 'minds_eye_x5') count += 5;
         }
         for (const c of player.playedCards) {
             if (c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_and_philosopher') count += 1;
-            if (c.special === 'minds_eye_x3') count += 3;
+            if (c.special === 'minds_eye_x5') count += 5;
             if (c.special === 'minds_eye_x2_philosopher_stone_x5') count += 2;
         }
         return count;
@@ -577,8 +577,8 @@ class FavorGame {
         if (slot && slot.special) {
             if (slot.special === 'minds_eye') {
                 player.skills.knowledge = (player.skills.knowledge || 0) + 1;
-            } else if (slot.special === 'minds_eye_x3') {
-                player.skills.knowledge = (player.skills.knowledge || 0) + 3;
+            } else if (slot.special === 'minds_eye_x5') {
+                player.skills.knowledge = (player.skills.knowledge || 0) + 5;
             } else if (slot.special === 'minds_eye_and_philosopher') {
                 player.skills.knowledge = (player.skills.knowledge || 0) + 1;
             }
@@ -693,9 +693,9 @@ class FavorGame {
                 this.addLog(`${player.name} gains Mind's Eye from character board`);
                 break;
 
-            case 'minds_eye_x3':
-                // 3 Mind's Eyes: ongoing +3 knowledge (handled in applySlotSkills)
-                this.addLog(`${player.name} gains 3\u00D7 Mind's Eye from character board`);
+            case 'minds_eye_x5':
+                // 5 Mind's Eyes: ongoing +5 knowledge (handled in applySlotSkills)
+                this.addLog(`${player.name} gains 5\u00D7 Mind's Eye from character board`);
                 break;
 
             case 'minds_eye_and_philosopher':

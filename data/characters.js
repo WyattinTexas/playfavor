@@ -69,7 +69,7 @@ window.FAVOR_DATA.characters = [
             { scorn: 5, special: "steal_2_prestige_each" },
             { scorn: 5, special: "steal_2_gold_each" },
             { skills: { power: 2 } },                           // center — start
-            { gold: 7 },
+            { gold: 8 },
             { special: "philosopher_stone_x2" }
         ]
     },
@@ -83,7 +83,7 @@ window.FAVOR_DATA.characters = [
         startingGold: 3,
         slots: [
             { gold: 5, special: "philosopher_stone" },
-            { gold: 5, skills: { prospecting: 2 } },
+            { gold: 5, skills: { prospecting: 5 } },
             { special: "borrow_any_player" },                    // center — start
             { special: "convert_gold_to_prestige", skills: { charisma: 3 } },
             { gold: 7, favor: 10 }
@@ -163,7 +163,7 @@ window.FAVOR_DATA.characters = [
         startingGold: 3,
         slots: [
             { gold: 5, skills: { charisma: 16 } },
-            { special: "minds_eye_x3" },
+            { special: "minds_eye_x5" },
             { skills: { charisma: 2 } },                        // center — start
             { gold: 2, special: "mission_fail_10_gold" },
             { favor: 12, skills: { knowledge: 2 } }
@@ -178,7 +178,7 @@ window.FAVOR_DATA.characters = [
         subtitle: "Virtuoso",
         startingGold: 3,
         slots: [
-            { gold: 5, skills: { knowledge: 3 } },
+            { gold: 3, skills: { knowledge: 5 } },
             { special: "choose_mission" },
             { skills: { charisma: 1 } },                        // center — start
             { special: "pick_one",
