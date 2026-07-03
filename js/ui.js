@@ -55,7 +55,7 @@ const SPECIAL_DESCRIPTIONS = {
 
 // ─── SLOT SPECIAL LABELS (Character Board) ───────────────
 const SLOT_SPECIAL_LABELS = {
-    "steal_2_prestige_each":       "Steal 2 Prestige",
+    "steal_3_prestige_each":       "Steal 3 Prestige",
     "steal_2_gold_each":           "Steal 2 Gold each",
     "give_1_gold_each":            "Give 1 Gold each",
     "all_others_1_scorn":          "Others +1 Scorn",

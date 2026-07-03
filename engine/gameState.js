@@ -626,10 +626,10 @@ class FavorGame {
      */
     resolveSlotSpecial(player, special, slot) {
         switch (special) {
-            case 'steal_2_prestige_each':
+            case 'steal_3_prestige_each':
                 for (let i = 0; i < this.playerCount; i++) {
                     if (i !== player.index) {
-                        const stolen = Math.min(2, this.players[i].prestige);
+                        const stolen = Math.min(3, this.players[i].prestige);
                         this.players[i].prestige -= stolen;
                         player.prestige += stolen;
                         this.addLog(`${player.name} steals ${stolen} Prestige from ${this.players[i].name}`);

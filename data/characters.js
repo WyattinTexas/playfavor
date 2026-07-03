@@ -66,7 +66,7 @@ window.FAVOR_DATA.characters = [
         subtitle: "Opportunist",
         startingGold: 3,
         slots: [
-            { scorn: 5, special: "steal_2_prestige_each" },
+            { scorn: 5, special: "steal_3_prestige_each" },
             { scorn: 5, special: "steal_2_gold_each" },
             { skills: { power: 2 } },                           // center — start
             { gold: 8 },
@@ -85,7 +85,7 @@ window.FAVOR_DATA.characters = [
             { gold: 5, special: "philosopher_stone" },
             { gold: 5, skills: { prospecting: 5 } },
             { special: "borrow_any_player" },                    // center — start
-            { special: "convert_gold_to_prestige", skills: { charisma: 3 } },
+            { special: "convert_gold_to_prestige", skills: { charisma: 4 } },
             { gold: 7, favor: 10 }
         ]
     },
@@ -98,7 +98,7 @@ window.FAVOR_DATA.characters = [
         subtitle: "The Mindful",
         startingGold: 3,
         slots: [
-            { favor: 10, special: "philosopher_stone" },
+            { favor: 12, special: "philosopher_stone" },
             { skills: { prospecting: 3, charisma: 4 } },
             { skills: { survival: 1 } },                        // center — start
             { skills: { knowledge: 3 } },
