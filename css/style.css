@@ -3356,3 +3356,95 @@ html, body {
     .howto-dots { margin: 8px 0 8px; }
     .howto-btn { padding: 7px 16px; font-size: 12px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   COACH-MARKS — Prong 2: in-game contextual tips (SAP-style)
+   A single small bubble points at a real UI element, fires once
+   per idea on first encounter, ✕ to dismiss. Non-blocking.
+   ═══════════════════════════════════════════════════════════════ */
+#coach {
+    position: fixed;
+    z-index: 9990;                 /* above table (<=950), below action panel/overlays */
+    max-width: 248px;
+    display: none;
+    pointer-events: auto;
+}
+#coach.show { display: block; animation: coachIn 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+@keyframes coachIn {
+    from { opacity: 0; transform: translateY(5px) scale(0.95); }
+    to   { opacity: 1; transform: none; }
+}
+
+.coach-bubble {
+    position: relative;
+    background: linear-gradient(180deg, #2c1c11 0%, #1a0f08 100%);
+    border: 1.5px solid var(--gold);
+    border-radius: 13px;
+    padding: 12px 32px 11px 14px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.45), inset 0 1px 0 rgba(232,212,139,0.12);
+    color: var(--parchment);
+    font-family: 'EB Garamond', serif;
+    font-size: 13.5px;
+    line-height: 1.42;
+}
+.coach-bubble b { color: var(--gold-light); font-weight: 600; }
+
+.coach-text { position: relative; z-index: 2; }
+
+.coach-x {
+    position: absolute;
+    top: 7px; right: 8px;
+    width: 20px; height: 20px;
+    padding: 0; margin: 0;
+    border: 1px solid var(--gold-dark);
+    border-radius: 50%;
+    background: rgba(0,0,0,0.35);
+    color: var(--gold);
+    font-size: 11px; line-height: 17px;
+    text-align: center;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    z-index: 3;
+}
+.coach-x:hover { color: var(--gold-light); border-color: var(--gold); background: rgba(0,0,0,0.55); }
+
+.coach-skip {
+    display: inline-block;
+    margin-top: 9px;
+    font-family: 'Cinzel', serif;
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--gold-dark);
+    cursor: pointer;
+    transition: color 0.15s;
+    position: relative; z-index: 3;
+}
+.coach-skip:hover { color: var(--gold); text-decoration: underline; }
+
+/* Caret — a rotated square with two borders trimmed so it merges with the bubble */
+.coach-arrow {
+    position: absolute;
+    width: 12px; height: 12px;
+    background: #221509;
+    border: 1.5px solid var(--gold);
+    transform: rotate(45deg);
+    z-index: 1;
+}
+.coach-arrow.pd-down  { border-top: none;    border-left: none;  background: #1a0f08; }
+.coach-arrow.pd-up    { border-bottom: none; border-right: none; background: #2c1c11; }
+.coach-arrow.pd-right { border-top: none;    border-right: none; }
+.coach-arrow.pd-left  { border-bottom: none; border-left: none;  }
+
+/* Soft glow that frames whatever element the tip points at */
+#coach-glow {
+    position: fixed;
+    z-index: 9989;
+    pointer-events: none;
+    border: 2px solid var(--gold-light);
+    border-radius: 12px;
+    box-shadow: 0 0 0 3px rgba(201,168,76,0.22), 0 0 20px rgba(232,212,139,0.5);
+    display: none;
+}
+#coach-glow.show { display: block; animation: coachPulse 1.7s ease-in-out infinite; }
+@keyframes coachPulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }

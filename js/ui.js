@@ -590,6 +590,224 @@ function renderHowto() {
         HOWTO_CARDS.map((_, i) => `<span class="ht-dot${i === howtoIndex ? ' on' : ''}"></span>`).join('');
 }
 
+// ═══ COACH-MARKS — Prong 2: in-game contextual tips ═══════════════
+// SAP-style nudges that point at the real UI. One idea per bubble,
+// fires once on first encounter, ✕ to dismiss, never blocks play.
+// Strictly linear: step N only becomes eligible once step N-1 is
+// dismissed AND step N's own moment arrives — so they pace themselves
+// to the natural flow of a first game rather than dogpiling at once.
+// Phone table-view only (desktop players have the How-to-Play deck).
+
+function coachSumSkills(sk) {
+    if (!sk) return 0;
+    return Object.values(sk).reduce((a, b) => a + (b || 0), 0);
+}
+function coachMyTurn(s) {
+    const hand = s.players[0].hand;
+    return s.activePlayerIndex === 0 && hand && hand.length > 0
+        && s.phase !== 'scoring' && s.phase !== 'game_over';
+}
+
+const COACH_STEPS = [
+    { id: 'welcome',
+      text: `This is <b>your board</b>, seated at the bottom. Your rivals fill the table around you.`,
+      anchor: () => document.querySelector('#tvSeats .pmat.you'),
+      place: 'top',
+      when: () => true },
+    { id: 'missions',
+      text: `The cards in the center are <b>Missions</b> — complete them for <b>Favor</b>, the points that win the crown. Tap one to read it.`,
+      anchor: () => document.getElementById('tvCenter'),
+      place: 'bottom',
+      when: (s) => (s.visibleMissions || []).length > 0 },
+    { id: 'hand',
+      text: `Your turn! <b>Tap a card</b> in your hand to see what you can do with it — play it, or discard it for gold.`,
+      anchor: () => document.getElementById('tvHandDrawer'),
+      place: 'top',
+      when: (s) => coachMyTurn(s) },
+    { id: 'rivals',
+      text: `Tap any <b>rival's board</b> to see their skills — and borrow one when you're short a skill to play a card.`,
+      anchor: () => document.querySelector('#tvSeats .pmat.opp'),
+      place: 'auto',
+      when: (s) => s.players.some((p, i) => i !== 0 && coachSumSkills(p.skills) > 0) },
+    { id: 'skills',
+      text: `Your <b>skills</b>, ring position and current Act live in this drawer. Tap the arrow to check them anytime.`,
+      anchor: () => document.getElementById('tvLeftTab'),
+      place: 'right',
+      when: (s) => coachSumSkills(s.players[0].skills) > 0 },
+];
+
+let _coachSeen = coachLoadSeen();
+let _coachActive = null;
+
+function coachLoadSeen() {
+    try { return new Set(JSON.parse(localStorage.getItem('favor_coach_seen') || '[]')); }
+    catch (e) { return new Set(); }
+}
+function coachSaveSeen() {
+    try { localStorage.setItem('favor_coach_seen', JSON.stringify([..._coachSeen])); } catch (e) {}
+}
+// Console helper: window.resetCoach() to replay the tips.
+function resetCoach() {
+    _coachSeen = new Set(); coachSaveSeen(); _coachActive = null; hideCoach();
+    if (typeof game !== 'undefined' && game) renderGameState();
+}
+window.resetCoach = resetCoach;
+
+// Never surface a tip while a full-screen modal / action panel is up.
+function coachOverlayOpen() {
+    return ['howto-overlay', 'boardOverlay', 'handInspectOv', 'oppOverlay',
+            'missionLB', 'cardZoom', 'scoring-screen', 'missionSelect', 'actionPanel']
+        .some(id => { const el = document.getElementById(id); return el && el.classList.contains('active'); });
+}
+
+function coachVisibleEl(el) {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return false;
+    return r.bottom > 0 && r.right > 0 && r.top < window.innerHeight && r.left < window.innerWidth;
+}
+
+// The heartbeat: called after every table render / panel change.
+function coachTick() {
+    const coach = document.getElementById('coach');
+    if (!coach) return;
+    if (!isCompactLandscape() || typeof game === 'undefined' || !game || coachOverlayOpen()) {
+        hideCoach(); return;
+    }
+    let state;
+    try { state = game.getState(0); } catch (e) { hideCoach(); return; }
+
+    // Only ever consider the first not-yet-seen step (strict linear order).
+    const step = COACH_STEPS.find(s => !_coachSeen.has(s.id));
+    if (!step) { hideCoach(); return; }
+
+    let anchor = null;
+    try { anchor = step.when(state) ? step.anchor() : null; } catch (e) { anchor = null; }
+    if (!coachVisibleEl(anchor)) { hideCoach(); return; }
+
+    showCoach(step, anchor);
+}
+
+function showCoach(step, anchor) {
+    const coach = document.getElementById('coach');
+    const glow = document.getElementById('coach-glow');
+    if (_coachActive !== step.id) {
+        _coachActive = step.id;
+        coach.innerHTML =
+            `<div class="coach-bubble">
+                <button class="coach-x" onclick="dismissCoach()" aria-label="Dismiss">✕</button>
+                <div class="coach-text">${step.text}</div>
+                <span class="coach-skip" onclick="skipAllCoach()">Skip tips</span>
+                <span class="coach-arrow"></span>
+            </div>`;
+    }
+    coach.classList.add('show');
+    glow.classList.add('show');
+    positionCoach(anchor, step.place);
+}
+
+function positionCoach(anchor, place) {
+    const coach = document.getElementById('coach');
+    const glow = document.getElementById('coach-glow');
+    const arrow = coach.querySelector('.coach-arrow');
+    const a = anchor.getBoundingClientRect();
+    const vw = window.innerWidth, vh = window.innerHeight;
+
+    // Frame the target.
+    const gp = 4;
+    glow.style.left = (a.left - gp) + 'px';
+    glow.style.top = (a.top - gp) + 'px';
+    glow.style.width = (a.width + gp * 2) + 'px';
+    glow.style.height = (a.height + gp * 2) + 'px';
+
+    // Measure the bubble off-screen, then place it.
+    coach.style.left = '-9999px';
+    coach.style.top = '0px';
+    const bw = coach.offsetWidth, bh = coach.offsetHeight;
+    const gap = 12;
+    const acx = a.left + a.width / 2, acy = a.top + a.height / 2;
+
+    if (place === 'auto') {
+        const room = { top: a.top, bottom: vh - a.bottom, left: a.left, right: vw - a.right };
+        place = Object.keys(room).sort((x, y) => room[y] - room[x])[0];
+    }
+
+    let x, y;
+    if (place === 'top')         { x = acx - bw / 2; y = a.top - bh - gap; }
+    else if (place === 'bottom') { x = acx - bw / 2; y = a.bottom + gap; }
+    else if (place === 'left')   { x = a.left - bw - gap; y = acy - bh / 2; }
+    else                         { x = a.right + gap; y = acy - bh / 2; }
+
+    x = Math.max(8, Math.min(x, vw - bw - 8));
+    y = Math.max(8, Math.min(y, vh - bh - 8));
+    coach.style.left = x + 'px';
+    coach.style.top = y + 'px';
+
+    positionCoachArrow(arrow, place, x, y, bw, bh, acx, acy);
+}
+
+function positionCoachArrow(arrow, place, x, y, bw, bh, acx, acy) {
+    const sz = 12, half = sz / 2;
+    let pd, left = '', top = '';
+    if (place === 'top') {          // bubble above anchor → caret points down
+        pd = 'down'; top = (bh - half) + 'px';
+        left = Math.max(10, Math.min(acx - x - half, bw - 10 - sz)) + 'px';
+    } else if (place === 'bottom') { // bubble below → caret points up
+        pd = 'up'; top = (-half) + 'px';
+        left = Math.max(10, Math.min(acx - x - half, bw - 10 - sz)) + 'px';
+    } else if (place === 'left') {   // bubble left of anchor → caret points right
+        pd = 'right'; left = (bw - half) + 'px';
+        top = Math.max(10, Math.min(acy - y - half, bh - 10 - sz)) + 'px';
+    } else {                         // bubble right of anchor → caret points left
+        pd = 'left'; left = (-half) + 'px';
+        top = Math.max(10, Math.min(acy - y - half, bh - 10 - sz)) + 'px';
+    }
+    arrow.className = 'coach-arrow pd-' + pd;
+    arrow.style.left = left; arrow.style.right = '';
+    arrow.style.top = top; arrow.style.bottom = '';
+}
+
+function dismissCoach() {
+    if (_coachActive) { _coachSeen.add(_coachActive); coachSaveSeen(); }
+    _coachActive = null;
+    hideCoach();
+    // Re-evaluate; the next tip only appears once its own moment arrives.
+    setTimeout(coachTick, 40);
+}
+function skipAllCoach() {
+    COACH_STEPS.forEach(s => _coachSeen.add(s.id));
+    coachSaveSeen();
+    _coachActive = null;
+    hideCoach();
+}
+function hideCoach() {
+    // Only hides the bubble; keeps _coachActive so an unchanged step that
+    // reappears (e.g. after a re-render) doesn't rebuild and flicker.
+    const c = document.getElementById('coach'), g = document.getElementById('coach-glow');
+    if (c) c.classList.remove('show');
+    if (g) g.classList.remove('show');
+}
+
+// Mark a tip done because the player actually engaged its element (tapped a
+// card, opened a rival, etc.) — so it never nags after they've "got it".
+function coachMarkSeen(id) {
+    if (_coachSeen.has(id)) return;
+    _coachSeen.add(id);
+    coachSaveSeen();
+    if (_coachActive === id) { _coachActive = null; hideCoach(); }
+    setTimeout(coachTick, 40);
+}
+
+// Safety-net heartbeat: some modals open/close without a table re-render, so
+// poll a few times a second to keep the bubble correctly shown/hidden. Costs
+// almost nothing (early-returns) and stops itself once every tip is seen.
+let _coachHeartbeat = setInterval(() => {
+    if (COACH_STEPS.every(s => _coachSeen.has(s.id))) {
+        clearInterval(_coachHeartbeat); _coachHeartbeat = null; hideCoach(); return;
+    }
+    coachTick();
+}, 400);
+
 // ─── CHARACTER SELECT ──────────────────────────────────────
 
 function showCharacterSelect() {
@@ -1289,9 +1507,10 @@ function applyDrawerStates() {
     if (ht) ht.textContent = tvHandOpen ? '▾' : '▴';
     if (lt) lt.textContent = tvLeftOpen ? '◂' : '▸';
     if (rt) rt.textContent = tvRightOpen ? '▸' : '◂';
+    if (typeof coachTick === 'function') coachTick();
 }
 function toggleHandDrawer(e) { if (e) e.stopPropagation(); tvHandOpen = !tvHandOpen; applyDrawerStates(); }
-function toggleLeftDrawer(e) { if (e) e.stopPropagation(); tvLeftOpen = !tvLeftOpen; applyDrawerStates(); }
+function toggleLeftDrawer(e) { if (e) e.stopPropagation(); tvLeftOpen = !tvLeftOpen; if (tvLeftOpen && typeof coachMarkSeen === 'function') coachMarkSeen('skills'); applyDrawerStates(); }
 function toggleRightDrawer(e) { if (e) e.stopPropagation(); tvRightOpen = !tvRightOpen; applyDrawerStates(); }
 
 // ═══ PHASE C — tabletop motion via per-player state diffing ═══
@@ -1421,6 +1640,9 @@ function renderTableView(state) {
         tvHandOpen = myTurn;
     }
     applyDrawerStates();
+
+    // Prong 2: re-evaluate contextual coach-marks after each table render.
+    coachTick();
 }
 
 // ═══ OVERLAY FUNCTIONS ═══════════════════════════════════════
@@ -1541,6 +1763,7 @@ function openOppOverlay(playerIndex) {
     const p = state.players[playerIndex];
     const char = game.players[playerIndex].character;
     if (!char) return;
+    if (playerIndex !== 0 && typeof coachMarkSeen === 'function') coachMarkSeen('rivals');
 
     document.getElementById('oppOvAvatar').src = `assets/characters/${char.filename}`;
     document.getElementById('oppOvName').textContent = p.name;
@@ -1598,6 +1821,7 @@ function requestLend(oppIndex, cardName) {
 // ── Mission Lightbox ──
 
 function openMissionLB(src, name) {
+    if (typeof coachMarkSeen === 'function') coachMarkSeen('missions');
     document.getElementById('missionLBImg').src = src;
     document.getElementById('missionLBLabel').textContent = name;
     document.getElementById('missionLB').classList.add('active');
@@ -1619,6 +1843,7 @@ function closeAllOverlays() {
 function selectHandCard(index) {
     if (game.phase !== 'gameplay') return;
 
+    if (typeof coachMarkSeen === 'function') coachMarkSeen('hand');
     selectedHandCard = index;
     renderHand(game.getState(0));
     showActionPanel(index);
@@ -1698,11 +1923,13 @@ function showActionPanel(cardIndex) {
 
     panel.innerHTML = html;
     panel.classList.add('active');
+    if (typeof coachTick === 'function') coachTick();
 }
 
 function hideActionPanel() {
     document.getElementById('actionPanel').classList.remove('active');
     selectedHandCard = null;
+    if (typeof coachTick === 'function') coachTick();
 }
 
 // ─── CARD ACTIONS ──────────────────────────────────────────
@@ -2043,6 +2270,7 @@ function showMissionSelectUI() {
     html += '</div></div>';
     overlay.innerHTML = html;
     overlay.classList.add('active');
+    if (typeof coachTick === 'function') coachTick();
 }
 
 function showMissionSelectAsync() {
@@ -2055,6 +2283,7 @@ function showMissionSelectAsync() {
 function selectMission(index) {
     game.chooseMission(0, index);
     document.getElementById('missionSelect').classList.remove('active');
+    if (typeof coachTick === 'function') coachTick();
     showNotification('Mission acquired!', 'mission');
     addLogEntry('You take a mission');
 
