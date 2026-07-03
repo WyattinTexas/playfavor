@@ -150,6 +150,32 @@ html, body {
     color: var(--royal-deep);
 }
 
+/* Prompt Test — dev toggle to replay the in-game tutorial prompts */
+.prompt-test-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin-top: 16px;
+    padding: 8px 16px;
+    border: 1px solid rgba(201, 168, 76, 0.28);
+    border-radius: 22px;
+    background: rgba(0, 0, 0, 0.28);
+    font-family: 'Cinzel', serif;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: rgba(201, 168, 76, 0.72);
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s, border-color 0.15s;
+}
+.prompt-test-toggle:hover { color: var(--gold); border-color: var(--gold); }
+.prompt-test-toggle input {
+    width: 18px; height: 18px;
+    margin: 0;
+    accent-color: var(--gold);
+    cursor: pointer;
+}
+
 .title-footer {
     position: absolute;
     bottom: 30px;
@@ -2692,7 +2718,8 @@ html, body {
     .title-subtitle { margin-top: 8px; font-size: 12px; letter-spacing: 3px; }
     .title-buttons { margin-top: 12px; gap: 9px; }
     #title-screen .btn-royal { padding: 9px 26px; min-width: 190px; font-size: 13px; }
-    .title-footer { position: static; margin-top: 10px; bottom: auto; }
+    .prompt-test-toggle { margin-top: 10px; padding: 6px 14px; font-size: 11px; }
+    .title-footer { position: static; margin-top: 8px; bottom: auto; }
 
     /* ── Character select: compact + scrollable ── */
     #character-select { padding: 14px 16px 22px; }

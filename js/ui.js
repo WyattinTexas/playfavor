@@ -649,6 +649,7 @@ function coachSaveSeen() {
 // Console helper: window.resetCoach() to replay the tips.
 function resetCoach() {
     _coachSeen = new Set(); coachSaveSeen(); _coachActive = null; hideCoach();
+    if (typeof coachStartHeartbeat === 'function') coachStartHeartbeat();
     if (typeof game !== 'undefined' && game) renderGameState();
 }
 window.resetCoach = resetCoach;
@@ -801,12 +802,39 @@ function coachMarkSeen(id) {
 // Safety-net heartbeat: some modals open/close without a table re-render, so
 // poll a few times a second to keep the bubble correctly shown/hidden. Costs
 // almost nothing (early-returns) and stops itself once every tip is seen.
-let _coachHeartbeat = setInterval(() => {
-    if (COACH_STEPS.every(s => _coachSeen.has(s.id))) {
-        clearInterval(_coachHeartbeat); _coachHeartbeat = null; hideCoach(); return;
-    }
-    coachTick();
-}, 400);
+let _coachHeartbeat = null;
+function coachStartHeartbeat() {
+    if (_coachHeartbeat) clearInterval(_coachHeartbeat);
+    _coachHeartbeat = setInterval(() => {
+        if (COACH_STEPS.every(s => _coachSeen.has(s.id))) {
+            clearInterval(_coachHeartbeat); _coachHeartbeat = null; hideCoach(); return;
+        }
+        coachTick();
+    }, 400);
+}
+coachStartHeartbeat();
+
+// ── Prompt Test toggle (title screen) ──
+// When on, the tutorial prompts replay every game — handy for testing without
+// clearing tab storage. State persists in localStorage.
+function togglePromptTest(on) {
+    try { localStorage.setItem('favor_prompt_test', on ? '1' : '0'); } catch (e) {}
+    if (on) resetCoach();   // clear seen now so prompts fire on the next play
+}
+function coachPromptTestOn() {
+    try { return localStorage.getItem('favor_prompt_test') === '1'; } catch (e) { return false; }
+}
+// If Prompt Test is on, wipe seen-state at the start of each game so tips replay.
+function coachApplyPromptTest() {
+    if (coachPromptTestOn()) { _coachSeen = new Set(); coachSaveSeen(); _coachActive = null; coachStartHeartbeat(); }
+}
+// Restore the checkbox to its saved state on load (scripts run after the DOM).
+(function () {
+    try {
+        const cb = document.getElementById('promptTestToggle');
+        if (cb) cb.checked = coachPromptTestOn();
+    } catch (e) {}
+})();
 
 // ─── CHARACTER SELECT ──────────────────────────────────────
 
@@ -876,6 +904,9 @@ function confirmCharacter() {
     game.startAct(1);
     addLogEntry('\u2550\u2550\u2550 Act 1 begins \u2550\u2550\u2550');
     showNotification('Act 1 Begins \u2014 Choose wisely.', 'act');
+
+    // If Prompt Test is checked, replay the tutorial prompts this game.
+    if (typeof coachApplyPromptTest === 'function') coachApplyPromptTest();
 
     showGameScreen();
 }
