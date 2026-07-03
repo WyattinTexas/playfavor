@@ -1631,7 +1631,7 @@ function showActionPanel(cardIndex) {
     const card = game.players[0].hand[cardIndex];
     if (!card) return;
 
-    const { canPlay, missingSkills } = game.checkRequirements(0, card);
+    const { canPlay, missingSkills, missingSpecial = [] } = game.checkRequirements(0, card);
     const isMissionLetter = card.type === 'mission_letter';
     const skills = card.skills || [];
     const typeName = (card.type || 'card').replace(/_/g, ' ');
@@ -1666,14 +1666,18 @@ function showActionPanel(cardIndex) {
         if (canPlay) {
             html += `<button class="btn-royal primary action-btn" onclick="playSelectedCard(${cardIndex})"><span>\u25B6 Play</span></button>`;
         } else {
-            html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>\u25B6 Need: ${missingSkills.join(', ')}</span></button>`;
+            const needed = [...missingSkills, ...missingSpecial];
+            html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>\u25B6 Need: ${needed.join(', ')}</span></button>`;
 
-            // Borrow option
-            const borrowable = game.getBorrowableSkills(0);
-            const canBorrowAll = missingSkills.every(s => borrowable[s] && borrowable[s].length > 0);
-            const borrowCost = missingSkills.length * 2;
-            if (canBorrowAll && game.players[0].gold >= borrowCost) {
-                html += `<button class="btn-royal primary action-btn" onclick="playWithBorrow(${cardIndex})"><span>Borrow & Play (\u2212${borrowCost}g)</span></button>`;
+            // Borrow option \u2014 only skill gaps are borrowable; Mind's Eye / Philosopher's
+            // Stone / Gold / Favor requirements can never be borrowed (see tutorial).
+            if (missingSpecial.length === 0 && missingSkills.length > 0) {
+                const borrowable = game.getBorrowableSkills(0);
+                const canBorrowAll = missingSkills.every(s => borrowable[s] && borrowable[s].length > 0);
+                const borrowCost = missingSkills.length * 2;
+                if (canBorrowAll && game.players[0].gold >= borrowCost) {
+                    html += `<button class="btn-royal primary action-btn" onclick="playWithBorrow(${cardIndex})"><span>Borrow & Play (\u2212${borrowCost}g)</span></button>`;
+                }
             }
         }
     }
@@ -1777,6 +1781,13 @@ function playWithBorrow(cardIndex) {
 
     const card = game.players[0].hand[cardIndex];
     if (!card) return;
+
+    // Special requirements (Mind's Eye / Philosopher's Stone / Gold / Favor) can't be borrowed
+    const { missingSpecial = [] } = game.checkRequirements(0, card);
+    if (missingSpecial.length > 0) {
+        showNotification(`Cannot borrow for: ${missingSpecial.join(', ')}`, 'error');
+        return;
+    }
 
     game.pickCard(0, cardIndex);
     hideActionPanel();

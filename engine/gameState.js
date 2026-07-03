@@ -194,12 +194,15 @@ class FavorGame {
 
         cards.forEach(card => {
             // Check if player can play the card
-            const { canPlay, missingSkills } = this.checkRequirements(playerIndex, card);
+            const { canPlay, missingSkills, missingSpecial } = this.checkRequirements(playerIndex, card);
 
             actions.push({
                 card,
                 canPlay,
                 missingSkills,
+                missingSpecial,
+                // Mind's Eye / Philosopher's Stone / Gold / Favor gaps can't be borrowed
+                canBorrow: !canPlay && missingSpecial.length === 0 && missingSkills.length > 0,
                 borrowCost: missingSkills.length * BORROW_SKILL_COST,
                 canDiscard: true  // Always allowed — gain 3 gold or move slider
             });
@@ -209,35 +212,92 @@ class FavorGame {
     }
 
     /**
-     * Check if a player has the required skills for a card.
+     * Check if a player meets a card's requirements.
+     * - Skill requirements (borrowable) → missingSkills
+     * - Mind's Eye / Philosopher's Stone / Gold / Favor (NOT borrowable) → missingSpecial
+     * - reqMaps: holding any listed map waives the whole requirement clause ("... OR [X] Map")
      */
     checkRequirements(playerIndex, card) {
         const player = this.players[playerIndex];
         const missing = [];
+        const missingSpecial = [];
+
+        // Map waiver: audit clauses read "Req: <skills/gold> OR [Source] Map" —
+        // holding the map satisfies the entire clause.
+        if (card.reqMaps && card.reqMaps.length > 0) {
+            const held = this.getPlayerMaps(playerIndex);
+            if (card.reqMaps.some(m => held.includes(m))) {
+                return { canPlay: true, missingSkills: [], missingSpecial: [] };
+            }
+        }
 
         if (card.requirements && card.requirements.length > 0) {
-            // Tally required quantities per skill
+            // Tally required quantities per entry
             const reqCounts = {};
             card.requirements.forEach(req => {
                 reqCounts[req] = (reqCounts[req] || 0) + 1;
             });
 
-            // Check each skill against player's total
-            for (const [skill, needed] of Object.entries(reqCounts)) {
-                const have = this.getPlayerSkillTotal(playerIndex, skill);
-                if (have < needed) {
-                    // Add the shortfall to missing array
-                    for (let i = 0; i < needed - have; i++) {
-                        missing.push(skill);
+            for (const [req, needed] of Object.entries(reqCounts)) {
+                if (req === 'minds_eye') {
+                    const have = this.getMindsEyeCount(playerIndex);
+                    for (let i = 0; i < needed - have; i++) missingSpecial.push("Mind's Eye");
+                } else if (req === 'philosopher_stone') {
+                    const have = player.philosopherStone || 0;
+                    for (let i = 0; i < needed - have; i++) missingSpecial.push("Philosopher's Stone");
+                } else {
+                    const have = this.getPlayerSkillTotal(playerIndex, req);
+                    if (have < needed) {
+                        // Add the shortfall to missing array
+                        for (let i = 0; i < needed - have; i++) {
+                            missing.push(req);
+                        }
                     }
                 }
             }
         }
 
+        // Gold / Favor floor requirements (having, not spending)
+        if (card.reqGold && player.gold < card.reqGold) {
+            missingSpecial.push(`${card.reqGold} Gold`);
+        }
+        if (card.reqFavor && player.favor < card.reqFavor) {
+            missingSpecial.push(`${card.reqFavor} Favor`);
+        }
+
         return {
-            canPlay: missing.length === 0,
-            missingSkills: missing
+            canPlay: missing.length === 0 && missingSpecial.length === 0,
+            missingSkills: missing,
+            missingSpecial
         };
+    }
+
+    /**
+     * Count Mind's Eye sources a player holds (played cards + character slot specials).
+     */
+    getMindsEyeCount(playerIndex) {
+        const player = this.players[playerIndex];
+        let count = 0;
+        const char = player.character;
+        const slot = char && char.slots ? char.slots[player.sliderPosition] : null;
+        if (slot && slot.special) {
+            if (slot.special === 'minds_eye' || slot.special === 'minds_eye_and_philosopher') count += 1;
+            if (slot.special === 'minds_eye_x3') count += 3;
+        }
+        for (const c of player.playedCards) {
+            if (c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_and_philosopher') count += 1;
+            if (c.special === 'minds_eye_x3') count += 3;
+            if (c.special === 'minds_eye_x2_philosopher_stone_x5') count += 2;
+        }
+        return count;
+    }
+
+    /**
+     * Maps a player holds — granted by playing source cards with grantsMap.
+     */
+    getPlayerMaps(playerIndex) {
+        const player = this.players[playerIndex];
+        return player.playedCards.filter(c => c.grantsMap).map(c => c.grantsMap);
     }
 
     /**
@@ -323,6 +383,20 @@ class FavorGame {
 
         if (action === 'play') {
             const card = this.findPendingCard(playerIndex, cardId);
+
+            // Enforce requirements at the engine level — borrowed skills cover skill gaps only;
+            // Mind's Eye / Philosopher's Stone / Gold / Favor requirements can never be borrowed.
+            const req = this.checkRequirements(playerIndex, card);
+            if (!req.canPlay) {
+                const uncovered = req.missingSkills.slice();
+                borrowFrom.forEach(b => {
+                    const i = uncovered.indexOf(b.skill);
+                    if (i !== -1) uncovered.splice(i, 1);
+                });
+                if (uncovered.length > 0 || req.missingSpecial.length > 0) {
+                    return { success: false, error: 'Requirements not met: ' + [...uncovered, ...req.missingSpecial].join(', ') };
+                }
+            }
 
             // Pay borrow costs
             let borrowCost = 0;
