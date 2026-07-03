@@ -623,7 +623,10 @@ const COACH_STEPS = [
       text: `Your turn! <b>Tap a card</b> in your hand to see what you can do with it — play it, or discard it for gold.`,
       anchor: () => document.getElementById('tvHandDrawer'),
       place: 'top',
-      when: (s) => coachMyTurn(s) },
+      when: (s) => coachMyTurn(s),
+      // Reveal the hand drawer right as this tip appears (it was tucked for the
+      // earlier board/missions tips).
+      onActivate: () => { tvHandOpen = true; applyDrawerStates(); } },
     { id: 'rivals',
       text: `Tap any <b>rival's board</b> to see their skills — and borrow one when you're short a skill to play a card.`,
       anchor: () => document.querySelector('#tvSeats .pmat.opp'),
@@ -659,6 +662,21 @@ function coachOverlayOpen() {
     return ['howto-overlay', 'boardOverlay', 'handInspectOv', 'oppOverlay',
             'missionLB', 'cardZoom', 'scoring-screen', 'missionSelect', 'actionPanel']
         .some(id => { const el = document.getElementById(id); return el && el.classList.contains('active'); });
+}
+
+function coachFirstUnseen() {
+    const s = COACH_STEPS.find(st => !_coachSeen.has(st.id));
+    return s ? s.id : null;
+}
+// True while a tip *earlier* than 'hand' (board, missions) is still pending —
+// used to keep the hand drawer tucked so those prompts aren't blocked by it.
+function coachTuckHand() {
+    if (!isCompactLandscape()) return false;
+    const first = coachFirstUnseen();
+    if (!first) return false;
+    const handIdx = COACH_STEPS.findIndex(s => s.id === 'hand');
+    const firstIdx = COACH_STEPS.findIndex(s => s.id === first);
+    return firstIdx > -1 && firstIdx < handIdx;
 }
 
 function coachVisibleEl(el) {
@@ -701,6 +719,7 @@ function showCoach(step, anchor) {
                 <span class="coach-skip" onclick="skipAllCoach()">Skip tips</span>
                 <span class="coach-arrow"></span>
             </div>`;
+        if (typeof step.onActivate === 'function') step.onActivate();
     }
     coach.classList.add('show');
     glow.classList.add('show');
@@ -1670,6 +1689,10 @@ function renderTableView(state) {
             && state.phase !== 'scoring' && state.phase !== 'game_over';
         tvHandOpen = myTurn;
     }
+    // Tutorial: while the early tips (board, missions) are still up, keep the
+    // hand tucked so the "this is your board" prompt isn't blocked. The 'hand'
+    // tip itself opens the drawer when it's reached.
+    if (typeof coachTuckHand === 'function' && coachTuckHand()) tvHandOpen = false;
     applyDrawerStates();
 
     // Prong 2: re-evaluate contextual coach-marks after each table render.
