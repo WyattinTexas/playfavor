@@ -3260,3 +3260,99 @@ html, body {
 @keyframes tvMrOut {
     to { transform: translate(-50%, -70%) scale(0.9); opacity: 0; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   HOW TO PLAY — card-deck tutorial (Prong 1)
+   ═══════════════════════════════════════════════════════════ */
+#howto-overlay {
+    position: fixed; inset: 0; z-index: 2000;
+    display: none; align-items: center; justify-content: center;
+    padding: 20px;
+    background: rgba(10,6,3,0.9);
+    backdrop-filter: blur(8px);
+}
+#howto-overlay.active { display: flex; }
+
+.howto-card {
+    position: relative;
+    width: min(460px, 92vw);
+    background: linear-gradient(160deg, #2e1d11 0%, #1e1208 100%);
+    border: 2px solid var(--gold);
+    border-radius: 16px;
+    box-shadow: 0 0 60px rgba(201,168,76,0.15), 0 20px 60px rgba(0,0,0,0.7);
+    padding: 24px 24px 18px;
+    display: flex; flex-direction: column; align-items: center;
+    text-align: center;
+    animation: fadeIn 0.35s ease;
+}
+.howto-counter {
+    position: absolute; top: 12px; right: 16px;
+    font-family: 'Cinzel', serif; font-size: 12px;
+    color: var(--gold-dark); letter-spacing: 1px;
+}
+
+.howto-art {
+    height: 165px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 8px 0 16px;
+}
+.ht-hero { max-height: 165px; max-width: 100%; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.55); }
+.ht-cardimg { max-height: 165px; border-radius: 6px; box-shadow: 0 6px 20px rgba(0,0,0,0.6); border: 1px solid rgba(201,168,76,0.3); }
+.ht-icon { width: 56px; height: 56px; object-fit: contain; filter: drop-shadow(0 3px 6px rgba(0,0,0,0.5)); }
+.ht-icons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; align-items: center; }
+.ht-icons .ht-icon { width: 48px; height: 48px; }
+.ht-token { width: 96px; height: 96px; border-radius: 50%; box-shadow: 0 6px 18px rgba(0,0,0,0.55); }
+.ht-fan { display: flex; align-items: center; }
+.ht-fan img { width: 74px; height: 104px; border-radius: 5px; object-fit: cover; border: 1px solid rgba(201,168,76,0.35); box-shadow: 0 4px 14px rgba(0,0,0,0.6); }
+.ht-fan img:nth-child(1) { transform: rotate(-9deg); margin-right: -16px; }
+.ht-fan img:nth-child(2) { z-index: 1; position: relative; }
+.ht-fan img:nth-child(3) { transform: rotate(9deg); margin-left: -16px; }
+.ht-board-wrap { position: relative; display: inline-block; }
+.ht-board-ring { position: absolute; bottom: 7%; left: 50%; transform: translateX(-50%); width: 15%; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)); }
+.ht-acts { font-family: 'Cinzel Decorative', 'Cinzel', serif; font-size: 50px; font-weight: 900; color: var(--gold-light); letter-spacing: 4px; text-shadow: 0 3px 12px rgba(201,168,76,0.3); }
+.ht-win { position: relative; display: inline-block; }
+.ht-win .ht-icon { width: 74px; height: 74px; }
+.ht-crown { position: absolute; top: -18px; right: -12px; font-size: 30px; }
+
+.howto-text {
+    font-family: 'EB Garamond', serif;
+    font-size: 17px; line-height: 1.45;
+    color: var(--text-light);
+    min-height: 74px;
+}
+.howto-text b { color: var(--gold-light); font-weight: 600; }
+
+.howto-dots { display: flex; gap: 6px; margin: 16px 0 14px; flex-wrap: wrap; justify-content: center; }
+.ht-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(201,168,76,0.22); transition: background 0.2s; }
+.ht-dot.on { background: var(--gold); }
+
+.howto-nav { display: flex; gap: 10px; }
+.howto-btn {
+    font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 1px;
+    padding: 9px 22px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--gold);
+    background: rgba(201,168,76,0.1); color: var(--gold-light);
+    transition: all 0.2s;
+}
+.howto-btn.next { background: linear-gradient(135deg, var(--gold-dark) 0%, var(--gold) 50%, var(--gold-dark) 100%); color: var(--royal-deep); font-weight: 700; border-color: var(--gold-light); }
+.howto-btn.dismiss { border-color: rgba(201,168,76,0.3); color: var(--gold-dark); }
+.howto-btn:hover { box-shadow: 0 0 14px rgba(201,168,76,0.3); transform: translateY(-1px); }
+
+/* Landscape phone: fit the whole card within a short screen. */
+@media (orientation: landscape) and (max-height: 540px) {
+    .howto-card { width: min(560px, 94vw); padding: 12px 22px 10px; }
+    .howto-counter { top: 8px; right: 12px; font-size: 10px; }
+    .howto-art { height: 108px; margin: 4px 0 8px; }
+    .ht-hero, .ht-cardimg { max-height: 108px; }
+    .ht-icon { width: 44px; height: 44px; }
+    .ht-icons .ht-icon { width: 40px; height: 40px; }
+    .ht-token { width: 66px; height: 66px; }
+    .ht-fan img { width: 56px; height: 78px; }
+    .ht-fan img:nth-child(1) { margin-right: -12px; }
+    .ht-fan img:nth-child(3) { margin-left: -12px; }
+    .ht-acts { font-size: 34px; }
+    .ht-win .ht-icon { width: 56px; height: 56px; }
+    .howto-text { font-size: 14px; line-height: 1.35; min-height: 44px; }
+    .howto-dots { margin: 8px 0 8px; }
+    .howto-btn { padding: 7px 16px; font-size: 12px; }
+}

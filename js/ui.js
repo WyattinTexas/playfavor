@@ -518,8 +518,74 @@ function startGame() {
     }, 1200);
 }
 
-function showRules() {
-    alert('Rules viewer coming soon \u2014 for now, check the physical rulebook!');
+// \u2550\u2550\u2550 HOW TO PLAY \u2014 card-deck tutorial (Prong 1) \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+// SAP-style: one idea per card, casual voice, skippable. Data-driven so
+// content is easy to tweak. `art` is an HTML snippet (real game images).
+const HOWTO_ART = {
+    icon:  n => `<img class="ht-icon" src="assets/icons/${n}.png" alt="">`,
+    hero:  s => `<img class="ht-hero" src="${s}" alt="">`,
+    card:  s => `<img class="ht-cardimg" src="${s}" alt="">`,
+};
+const HOWTO_CARDS = [
+    { text: `Welcome to <b>FAVOR</b>! You're a hero competing for the crown. Earn the most <b>Favor</b> by the end of the game, and the throne is yours.`,
+      art: HOWTO_ART.hero('assets/ui/cover.jpg') },
+    { text: `This is your <b>character board</b>. The ring on the track along the bottom marks your position \u2014 move it to unlock skills, gold, and Favor.`,
+      art: `<div class="ht-board-wrap"><img class="ht-hero" src="assets/characters/Explorer.jpg" alt=""><img class="ht-board-ring" src="assets/ui/slider-ring.png" alt=""></div>` },
+    { text: `Everything runs on six <b>skills</b>: Survival, Charisma, Alchemy, Prospecting, Knowledge, and Power. You build them up as you play.`,
+      art: `<div class="ht-icons">${['survival','charisma','alchemy','prospecting','knowledge','power'].map(HOWTO_ART.icon).join('')}</div>` },
+    { text: `Each round you're dealt a hand. <b>Pick one card to keep, then pass the rest</b> to the next player. Everyone drafts from the same hands \u2014 choose wisely!`,
+      art: `<div class="ht-fan"><img src="assets/cards/regular/Trapping Card.jpg" alt=""><img src="assets/cards/regular/Cooking Card.jpg" alt=""><img src="assets/cards/regular/Negotiate Card.jpg" alt=""></div>` },
+    { text: `<b>Play a card</b> to gain its skills, gold, or Favor. Some cost gold or need certain skills first. Not useful? <b>Discard it for +3 gold</b> instead.`,
+      art: HOWTO_ART.card('assets/cards/regular/Alchemist Apprentice Card.jpg') },
+    { text: `<b>Gold</b> is your currency. Spend it on powerful cards and on moving your board ring to better spots on the track.`,
+      art: HOWTO_ART.icon('gold') },
+    { text: `<b>Missions</b> are your path to big Favor. Take one, then meet its skill requirement to complete it. Succeed for <b>Favor and rewards</b> \u2014 fail, and you'll take <b>Scorn</b>.`,
+      art: HOWTO_ART.card('assets/cards/missions/Act 1_Helping the Merchant Card.jpg') },
+    { text: `<b>Scorn</b> works against you when the crown decides. Avoid failing missions, and watch out for cards that hand it to you.`,
+      art: HOWTO_ART.icon('scorn') },
+    { text: `Some rounds end in a <b>Melee</b> \u2014 a clash of <b>Power</b> with the players seated beside you. Build Power to come out on top.`,
+      art: HOWTO_ART.icon('power') },
+    { text: `Some cards send you on <b>adventures</b> that need a <b>Map</b>. Play the right card to earn a Map, then use it to unlock the next step \u2014 and a big Favor payoff.`,
+      art: HOWTO_ART.card('assets/cards/regular/Lost North Map.jpg') },
+    { text: `<b>Prestige</b> is honor at court \u2014 the bright opposite of Scorn. Special cards let you turn gold, or even Scorn, into Prestige to lift your standing.`,
+      art: `<img class="ht-token" src="assets/tokens/Copy of Tokens_Design_v1_Prestige_1_v1.jpg" alt="">` },
+    { text: `<b>Mind's Eye</b> and the <b>Philosopher's Stone</b> are rare treasures \u2014 keys to the game's most powerful cards and missions. Hard to earn, but game-changing.`,
+      art: `<div class="ht-icons">${HOWTO_ART.icon('minds_eye')}${HOWTO_ART.icon('philosopher')}</div>` },
+    { text: `The game unfolds over <b>three Acts</b>. Cards and missions grow stronger each Act, so think a few steps ahead.`,
+      art: `<div class="ht-acts">\u2160 \u00b7 \u2161 \u00b7 \u2162</div>` },
+    { text: `When the final Act ends, <b>the Queen decides</b>. The hero with the most Favor wins the crown. Good luck!`,
+      art: `<div class="ht-win"><img class="ht-icon" src="assets/icons/favor.png" alt=""><div class="ht-crown">\ud83d\udc51</div></div>` },
+];
+
+let howtoIndex = 0;
+
+function showRules() { openHowto(); }
+
+function openHowto() {
+    howtoIndex = 0;
+    renderHowto();
+    document.getElementById('howto-overlay').classList.add('active');
+}
+function closeHowto() {
+    document.getElementById('howto-overlay').classList.remove('active');
+}
+function howtoNext() {
+    if (howtoIndex < HOWTO_CARDS.length - 1) { howtoIndex++; renderHowto(); }
+    else closeHowto();
+}
+function howtoPrev() {
+    if (howtoIndex > 0) { howtoIndex--; renderHowto(); }
+}
+function renderHowto() {
+    const c = HOWTO_CARDS[howtoIndex];
+    const total = HOWTO_CARDS.length;
+    document.getElementById('howtoArt').innerHTML = c.art;
+    document.getElementById('howtoText').innerHTML = c.text;
+    document.getElementById('howtoCounter').textContent = `${howtoIndex + 1} / ${total}`;
+    document.getElementById('howtoPrev').style.visibility = howtoIndex === 0 ? 'hidden' : 'visible';
+    document.getElementById('howtoNext').textContent = howtoIndex === total - 1 ? 'Finish' : 'Next';
+    document.getElementById('howtoDots').innerHTML =
+        HOWTO_CARDS.map((_, i) => `<span class="ht-dot${i === howtoIndex ? ' on' : ''}"></span>`).join('');
 }
 
 // ─── CHARACTER SELECT ──────────────────────────────────────

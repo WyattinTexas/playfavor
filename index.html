@@ -33,6 +33,21 @@
         <p class="title-footer">3–5 Players &bull; 45–90 Minutes &bull; 1st Edition</p>
     </div>
 
+    <!-- ═══ HOW TO PLAY — card deck tutorial (Prong 1) ═══ -->
+    <div id="howto-overlay" onclick="closeHowto()">
+        <div class="howto-card" onclick="event.stopPropagation()">
+            <div class="howto-counter" id="howtoCounter"></div>
+            <div class="howto-art" id="howtoArt"></div>
+            <div class="howto-text" id="howtoText"></div>
+            <div class="howto-dots" id="howtoDots"></div>
+            <div class="howto-nav">
+                <button class="howto-btn back" id="howtoPrev" onclick="howtoPrev()">Back</button>
+                <button class="howto-btn next" id="howtoNext" onclick="howtoNext()">Next</button>
+                <button class="howto-btn dismiss" onclick="closeHowto()">Dismiss</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Music Toggle -->
     <button class="music-toggle" id="musicBtn" onclick="toggleMusic()" title="Toggle Music">
         &#9835;
