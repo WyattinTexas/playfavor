@@ -123,6 +123,22 @@ console.log('── Mission failure specials: discard + payouts');
   ok(g3.players[1].gold === a + 5, 'others gain 5 Gold');
 }
 
+console.log('── A Promise (AI): trades junk cards for 10 Prestige each');
+{
+  const g = newGame();
+  playCard(g, 1, 'Trapping'); // junk: 1 survival, 0 favor
+  const m = { ...missionByName('A Promise') };
+  const prestige = g.players[1].prestige;
+  g.applyMissionFailure(1, m);
+  ok(g.players[1].prestige === prestige + 10, `AI sacrificed 1 junk card (+10 prestige)`);
+  ok(g.players[1].playedCards.length === 0, 'junk card discarded');
+  // Human path defers to the picker UI:
+  const g2 = newGame();
+  playCard(g2, 0, 'Trapping');
+  g2.applyMissionFailure(0, { ...missionByName('A Promise') });
+  ok(g2.players[0]._pendingPromiseDiscard === true, 'human gets the choice (pending flag)');
+}
+
 console.log('── Melee: Heaven\'s Blade +6 with Blind Faith');
 {
   const g = newGame();

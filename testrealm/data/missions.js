@@ -146,7 +146,7 @@ window.FAVOR_DATA.missions = [
       successRewards: { skills: { survival: 5 } },
       failurePenalties: { scorn: 5 } },
 
-    { id: mid(), name: "A Promise", failSpecial: "discard_1_gain_10_prestige", placeholderName: "Teaching a Natural", audit: "Success Req: 1 Knowledge, Act 2 Success Reward: 5 Favor, 2 Knowledge Failure Reward: Discard at least 1 Card. Gain 10 Prestige for each discarded Card", filename: "Act 2_Teaching a Natural Card.jpg",
+    { id: mid(), name: "A Promise", failSpecial: "discard_any_gain_10_prestige_each", placeholderName: "Teaching a Natural", audit: "Success Req: 1 Knowledge, Act 2 Success Reward: 5 Favor, 2 Knowledge Failure Reward: Discard at least 1 Card. Gain 10 Prestige for each discarded Card", filename: "Act 2_Teaching a Natural Card.jpg",
       act: 2, activationRound: 2, favorValue: 5,
       requirements: ["knowledge"],
       successRewards: { skills: { knowledge: 2 } },

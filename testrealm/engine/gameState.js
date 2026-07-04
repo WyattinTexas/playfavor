@@ -1493,11 +1493,24 @@ class FavorGame {
                 player.prestige += 15 * n;
                 break;
             }
-            case 'discard_1_gain_10_prestige': {
-                const n = this.discardPlayedCards(playerIndex, () => true, 1);
-                player.prestige += 10 * n;
+            case 'discard_any_gain_10_prestige_each':
+                // A Promise: discard AS MANY of your played cards as you like,
+                // +10 Prestige each. The human picks via UI after mission
+                // resolution; the AI trades away its low-value cards.
+                if (playerIndex === 0) {
+                    player._pendingPromiseDiscard = true;
+                } else {
+                    const cheap = player.playedCards.filter(c =>
+                        !c.special && (c.favor || 0) < 10 && !(c.skills || []).includes('power'));
+                    const n = cheap.length
+                        ? this.discardPlayedCards(playerIndex, c => cheap.includes(c))
+                        : 0;
+                    if (n) {
+                        player.prestige += 10 * n;
+                        this.addLog(`${player.name} honors A Promise: ${n} card(s) discarded, +${10 * n} Prestige`);
+                    }
+                }
                 break;
-            }
             case 'fortune_teller_50_prestige':
                 if (player.playedCards.some(c => c.name === 'Fortune Teller')) {
                     player.prestige += 50;

@@ -669,7 +669,7 @@ window.resetCoach = resetCoach;
 function coachOverlayOpen() {
     return ['howto-overlay', 'boardOverlay', 'handInspectOv', 'oppOverlay',
             'missionLB', 'cardZoom', 'scoring-screen', 'missionSelect', 'actionPanel',
-            'cardPeek', 'meleeSplash']
+            'cardPeek', 'meleeSplash', 'promisePicker', 'slideConfirm']
         .some(id => { const el = document.getElementById(id); return el && el.classList.contains('active'); });
 }
 
@@ -1541,8 +1541,7 @@ function renderTvHand(state) {
                     data-hand-i="${i}"
                     onclick="event.stopPropagation(); selectHandCard(${i})"
                     ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
-                    <img src="assets/cards/regular/${card.filename}" alt="${card.name}"
-                         data-peek="assets/cards/regular/${card.filename}">
+                    <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
                 </div>`;
     });
     html += '</div>';
@@ -2529,10 +2528,15 @@ function endActPhases() {
         addLogEntry('No missions resolved this act');
     }
 
+    // A PROMISE — the player chooses how many played cards to sacrifice
+    // (+10 Prestige each) before the Melee begins.
+    const promisePending = game.players[0]._pendingPromiseDiscard;
+    if (promisePending) game.players[0]._pendingPromiseDiscard = false;
+
     // MELEE PHASE
     const meleeStart = hasMissionResults ? missionDelay + 400 : 800;
 
-    setTimeout(() => {
+    const startMelee = () => setTimeout(() => {
         game.phase = 'melee';
         renderGameState();
         const meleeResults = game.resolveMelee();
@@ -2563,6 +2567,64 @@ function endActPhases() {
             setTimeout(advanceAct, 2000);
         }
     }, meleeStart);
+
+    if (promisePending) showPromiseDiscardPicker().then(startMelee);
+    else startMelee();
+}
+
+// ═══ A PROMISE — choose any number of played cards to sacrifice ═══════
+// Faithful to the card: "Discard at least 1 Card, gain 10 Prestige for
+// each discarded Card." The player taps cards to mark them, then confirms.
+function showPromiseDiscardPicker() {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        const player = game.players[0];
+        if (!ov || !player.playedCards.length) { resolve(); return; }
+
+        const chosen = new Set();
+        const render = () => {
+            const cards = player.playedCards.map((c, i) => `
+                <div class="pp-card${chosen.has(i) ? ' chosen' : ''}" data-i="${i}">
+                    <img src="assets/cards/regular/${c.filename}" alt="${c.name}">
+                    <span class="pp-x">✕</span>
+                </div>`).join('');
+            ov.innerHTML = `
+                <div class="pp-inner">
+                    <div class="pp-title">A Promise Broken</div>
+                    <div class="pp-sub">Sacrifice any of your played cards — <b>+10 Prestige each</b></div>
+                    <div class="pp-cards">${cards}</div>
+                    <div class="pp-actions">
+                        <button class="btn-royal" id="ppKeep"><span>Keep All</span></button>
+                        <button class="btn-royal primary" id="ppConfirm">
+                            <span>${chosen.size ? `Sacrifice ${chosen.size} — +${chosen.size * 10} Prestige` : 'Sacrifice none'}</span>
+                        </button>
+                    </div>
+                </div>`;
+            ov.querySelectorAll('.pp-card').forEach(el => {
+                el.onclick = () => {
+                    const i = parseInt(el.dataset.i, 10);
+                    chosen.has(i) ? chosen.delete(i) : chosen.add(i);
+                    render();
+                };
+            });
+            const done = () => {
+                if (chosen.size) {
+                    const picked = [...chosen].map(i => player.playedCards[i]);
+                    const n = game.discardPlayedCards(0, c => picked.includes(c));
+                    player.prestige += 10 * n;
+                    showNotification(`A Promise: sacrificed ${n} card${n > 1 ? 's' : ''} for +${10 * n} Prestige`, 'melee');
+                    addLogEntry(`You sacrifice ${n} card(s) to A Promise: +${10 * n} Prestige`);
+                }
+                ov.classList.remove('active');
+                renderGameState();
+                resolve();
+            };
+            ov.querySelector('#ppConfirm').onclick = done;
+            ov.querySelector('#ppKeep').onclick = () => { chosen.clear(); done(); };
+        };
+        render();
+        ov.classList.add('active');
+    });
 }
 
 // ─── SCORING ───────────────────────────────────────────────
@@ -2708,9 +2770,7 @@ function buildPeekPlaques(src) {
 function openCardPeek(src) {
     const ov = document.getElementById('cardPeek');
     if (!ov) return;
-    ov.innerHTML = `
-        <img class="peek-card" src="${src}" alt="">
-        <div class="peek-plaques">${buildPeekPlaques(src)}</div>`;
+    ov.innerHTML = `<img class="peek-card" src="${src}" alt="">`;
     ov.classList.add('active');
     if (typeof coachTick === 'function') coachTick();
 }
@@ -2804,6 +2864,96 @@ function _bloomRelease() {
 }
 document.addEventListener('pointerup', _bloomRelease, { passive: true });
 document.addEventListener('pointercancel', _bloomRelease, { passive: true });
+
+// ═══ RING DRAG — slide your ring on the board, pay 5 Gold per slot ═══
+// Grab anywhere along your board's slider track and drag the ring to a
+// slot. Release → confirm "Pay N Gold to slide here?". Uses the same
+// payToSlide engine path as the board overlay (one step at a time, so
+// slot events fire per space, exactly like the physical game).
+const RING_SLOT_LEFTS = [16, 33, 50, 67, 84];
+let _ringDrag = null;
+
+function _ringSlotFromX(clientX, rect) {
+    const pct = ((clientX - rect.left) / rect.width) * 100;
+    let best = 0, bestD = Infinity;
+    RING_SLOT_LEFTS.forEach((L, i) => {
+        const d = Math.abs(pct - L);
+        if (d < bestD) { bestD = d; best = i; }
+    });
+    return best;
+}
+
+document.addEventListener('pointerdown', (e) => {
+    if (!game || game.phase !== 'gameplay') return;
+    const wrap = e.target.closest && e.target.closest('.pmat.you .pmat-boardwrap');
+    if (!wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    // Only the slider track zone (bottom quarter of the board) starts a drag.
+    if (e.clientY < rect.top + rect.height * 0.72) return;
+    const ring = wrap.querySelector('.pmat-ring');
+    if (!ring) return;
+    _ringDrag = { wrap, rect, ring, moved: false, slot: game.players[0].sliderPosition };
+    ring.classList.add('dragging');
+}, true);
+
+document.addEventListener('pointermove', (e) => {
+    if (!_ringDrag) return;
+    _ringDrag.moved = true;
+    const slot = _ringSlotFromX(e.clientX, _ringDrag.rect);
+    _ringDrag.slot = slot;
+    _ringDrag.ring.style.left = RING_SLOT_LEFTS[slot] + '%';
+}, { passive: true });
+
+function _ringDragEnd(e) {
+    if (!_ringDrag) return;
+    const { ring, slot, moved, rect } = _ringDrag;
+    ring.classList.remove('dragging');
+    _ringDrag = null;
+    const current = game.players[0].sliderPosition;
+    if (!moved || slot === current) { renderGameState(); return; }
+    // Block the mat's tap-to-inspect for this gesture.
+    if (e) { e.stopPropagation(); }
+    _peekSwallowClick = true;
+    setTimeout(() => { _peekSwallowClick = false; }, 400);
+    showSlideConfirm(slot, rect);
+}
+document.addEventListener('pointerup', _ringDragEnd, true);
+document.addEventListener('pointercancel', _ringDragEnd, true);
+
+function showSlideConfirm(targetSlot, boardRect) {
+    const ov = document.getElementById('slideConfirm');
+    if (!ov) { renderGameState(); return; }
+    const current = game.players[0].sliderPosition;
+    const steps = Math.abs(targetSlot - current);
+    const cost = steps * 5;
+    const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
+    const canAfford = game.players[0].gold >= cost;
+    ov.innerHTML = `
+        <div class="sc-bubble">
+            <div class="sc-text">Slide your ring to <b>${posNames[targetSlot]}</b>?</div>
+            <div class="sc-cost">${steps} slot${steps > 1 ? 's' : ''} · <b>−${cost} Gold</b>${canAfford ? '' : ' — not enough gold'}</div>
+            <div class="sc-actions">
+                <button class="btn-royal" id="scCancel"><span>Cancel</span></button>
+                <button class="btn-royal primary" id="scPay" ${canAfford ? '' : 'disabled style="opacity:.35"'}><span>Pay &amp; Slide</span></button>
+            </div>
+        </div>`;
+    // Sit just above the player's board.
+    ov.style.left = Math.round(boardRect.left + boardRect.width / 2) + 'px';
+    ov.style.top = Math.round(boardRect.top - 8) + 'px';
+    ov.classList.add('active');
+
+    const close = () => { ov.classList.remove('active'); renderGameState(); };
+    ov.querySelector('#scCancel').onclick = close;
+    const payBtn = ov.querySelector('#scPay');
+    if (canAfford) payBtn.onclick = async () => {
+        ov.classList.remove('active');
+        const dir = targetSlot > current ? 1 : -1;
+        for (let i = 0; i < steps; i++) {
+            await payToSlide(dir);   // charges 5g/step, fires slot events
+        }
+        renderGameState();
+    };
+}
 
 // ═══ MELEE SPLASH — end-of-act tournament flair ═══════════════════════
 // A quick full-screen moment (Battlegrounds combat splash energy): banner,

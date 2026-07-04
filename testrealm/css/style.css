@@ -3142,7 +3142,7 @@ html, body {
        blooms in turn (JS .bloom). */
     .tv-hand .hand-card:hover,
     .tv-hand .hand-card.bloom {
-        transform: translateY(-10px) scale(2.95) !important;
+        transform: translateY(-4px) scale(3.15) !important;
         transform-origin: bottom center;
         margin: 0 5px;
         z-index: 60;
@@ -3197,8 +3197,11 @@ html, body {
         max-height: calc(100dvh - 40px);
     }
     .action-panel .action-header { margin-bottom: 2px; }
-    .action-panel .action-card-name { font-size: 14px; }
-    .action-panel .action-skills, .action-panel .action-rewards { font-size: 11px; }
+    /* No text summaries — the card image IS the description. */
+    .action-panel .action-card-name,
+    .action-panel .action-card-type,
+    .action-panel .action-skills,
+    .action-panel .action-rewards { display: none; }
     .action-panel .action-buttons { gap: 6px; margin-top: 4px; }
     .action-panel .action-btn { padding: 8px 14px !important; font-size: 11px !important; }
 
@@ -3881,3 +3884,70 @@ html, body {
 }
 .action-purse img { width: 14px; height: 14px; border-radius: 50%; }
 .action-purse b { color: #ffd97a; font-family: 'Cinzel', serif; font-size: 12px; }
+
+/* ═══ A PROMISE — sacrifice picker ═══════════════════════════════════ */
+#promisePicker {
+    position: fixed; inset: 0; z-index: 10550;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(8,4,2,0.93);
+    backdrop-filter: blur(4px);
+}
+#promisePicker.active { display: flex; }
+.pp-inner { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 94vw; max-height: 96dvh; }
+.pp-title {
+    font-family: 'Cinzel', serif; font-weight: 900; font-size: clamp(18px, 5dvh, 26px);
+    letter-spacing: 4px; color: var(--gold-light); text-transform: uppercase;
+    text-shadow: 0 0 18px rgba(201,168,76,0.5);
+}
+.pp-sub { font-family: 'EB Garamond', serif; font-size: 13px; color: #e8d9bf; }
+.pp-sub b { color: #8fd4ff; }
+.pp-cards {
+    display: flex; gap: 10px; flex-wrap: nowrap; overflow-x: auto;
+    max-width: 94vw; padding: 10px 6px;
+}
+.pp-card {
+    position: relative; cursor: pointer; flex-shrink: 0;
+    border-radius: 6px; transition: transform 0.15s, box-shadow 0.15s;
+}
+.pp-card img { width: 92px; border-radius: 6px; display: block; box-shadow: 0 6px 16px rgba(0,0,0,0.55); }
+.pp-card:hover { transform: translateY(-4px); }
+.pp-card .pp-x {
+    position: absolute; inset: 0;
+    display: none; align-items: center; justify-content: center;
+    font-size: 40px; color: #ff6b5e; font-weight: 900;
+    background: rgba(60,10,6,0.45); border-radius: 6px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+}
+.pp-card.chosen { box-shadow: 0 0 0 2px #ff6b5e, 0 0 18px rgba(255,107,94,0.5); }
+.pp-card.chosen .pp-x { display: flex; }
+.pp-actions { display: flex; gap: 12px; }
+
+/* ═══ SLIDE CONFIRM — pay gold to slide the ring ═════════════════════ */
+#slideConfirm {
+    position: fixed; z-index: 10560;
+    display: none;
+    transform: translate(-50%, -100%);
+}
+#slideConfirm.active { display: block; }
+.sc-bubble {
+    background: linear-gradient(160deg, rgba(50,28,13,0.98), rgba(26,13,5,0.98));
+    border: 1.5px solid var(--gold);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.7), 0 0 18px rgba(201,168,76,0.25);
+    padding: 10px 14px;
+    display: flex; flex-direction: column; gap: 6px; align-items: center;
+    min-width: 210px;
+}
+.sc-text { font-family: 'EB Garamond', serif; font-size: 14px; color: #efe2c8; }
+.sc-text b, .sc-cost b { color: var(--gold-light); }
+.sc-cost { font-family: 'Cinzel', serif; font-size: 11px; color: #ffd97a; letter-spacing: 0.5px; }
+.sc-actions { display: flex; gap: 8px; margin-top: 2px; }
+.sc-actions .btn-royal { padding: 6px 14px; font-size: 11px; min-width: 0; }
+
+/* Ring affordance: it's grabbable, and lifts while dragging */
+.pmat.you .pmat-ring { cursor: grab; transition: left 0.12s ease-out; }
+.pmat-ring.dragging {
+    transition: none;
+    filter: drop-shadow(0 0 8px rgba(240,210,120,0.9)) drop-shadow(0 3px 4px rgba(0,0,0,0.6));
+    scale: 1.25;
+}

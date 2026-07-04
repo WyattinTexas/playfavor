@@ -58,7 +58,7 @@ export const MISSION_FAIL_SPECIALS = {
   'Trust of the Elders': 'scorn_10_per_knowledge',
   "The Falls' Dark Sussurus": 'you_gain_1_gold',
   'Great Scholar': 'prestige_2_per_knowledge',
-  'A Promise': 'discard_1_gain_10_prestige',
+  'A Promise': 'discard_any_gain_10_prestige_each',
   'Secret Grotto': 'discard_power_gain_15_prestige',
   'Alchemic Seige': 'gain_20_prestige',
   'Mercy': 'others_remove_15_scorn',
