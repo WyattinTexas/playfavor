@@ -433,7 +433,7 @@ html, body {
     position: relative;
     display: flex;
     align-items: flex-start;
-    padding: 50px 24px 160px;
+    padding: 50px 24px calc(var(--handCardH) + 40px);
     padding-left: 220px;
     overflow-y: auto;
     overflow-x: hidden;
@@ -762,8 +762,8 @@ html, body {
 }
 
 .mission-strip .mission-pip {
-    width: 28px;
-    height: 39px;
+    width: clamp(28px, 4.6vh, 50px);
+    height: clamp(39px, 6.44vh, 70px);
     border-radius: 3px;
     object-fit: cover;
     cursor: pointer;
@@ -813,7 +813,7 @@ html, body {
     display: flex;
     flex-direction: column;
     position: relative;
-    min-width: 125px;
+    min-width: calc(var(--stackCardH) * 0.714);
     transition: gap 0.3s ease;
 }
 
@@ -829,8 +829,8 @@ html, body {
 }
 
 .card-stack .stack-card {
-    width: 125px;
-    height: 175px;
+    width: calc(var(--stackCardH) * 0.714);
+    height: var(--stackCardH);
     border-radius: 5px;
     box-shadow: 0 3px 12px rgba(0,0,0,0.65);
     object-fit: cover;
@@ -840,7 +840,7 @@ html, body {
 }
 
 .card-stack .stack-card + .stack-card {
-    margin-top: -137px; /* card-h (175) - peek (38) */
+    margin-top: calc(38px - var(--stackCardH)); /* tucked: 38px peek */
 }
 
 .card-stack .stack-card:hover {
@@ -851,7 +851,7 @@ html, body {
 }
 
 .card-stack:hover .stack-card + .stack-card {
-    margin-top: -121px; /* peek + 16px spread */
+    margin-top: calc(54px - var(--stackCardH)); /* peek + 16px spread */
 }
 
 /* Empty stacks placeholder */
@@ -994,7 +994,7 @@ html, body {
     bottom: 0;
     left: 0;
     right: 220px;
-    height: 160px;
+    height: calc(var(--handCardH) + 40px);
     display: flex;
     align-items: flex-end;
     justify-content: center;
@@ -1032,9 +1032,18 @@ html, body {
     align-items: flex-end;
 }
 
+/* Resting card sizes scale with the window (Battlegrounds proportions) —
+   fixed laptop-era pixels left fullscreen tables feeling empty. The 0.714
+   factor is the 333x500 card-scan aspect. Phone table view overrides these
+   with its own tuned sizes inside the landscape media query. */
+:root {
+    --handCardH: clamp(133px, 21vh, 230px);
+    --stackCardH: clamp(175px, 24vh, 250px);
+}
+
 .hand-card {
-    width: 95px;
-    height: 133px;
+    width: calc(var(--handCardH) * 0.714);
+    height: var(--handCardH);
     border-radius: 6px;
     overflow: hidden;
     cursor: pointer;
@@ -1640,7 +1649,7 @@ html, body {
 
 .action-panel {
     position: fixed;
-    bottom: 180px;
+    bottom: calc(var(--handCardH) + 47px); /* clears the hand zone at any size */
     left: 50%;
     transform: translateX(-50%);
     display: none;

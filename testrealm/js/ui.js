@@ -2976,17 +2976,26 @@ let _bloomStartEl = null;
 // hand render and on resize/rotate; uses offsetLeft (transform-free) so
 // the fan's rotate/lift styling can't skew the math.
 const _BLOOM_ZONES = [
-    { id: 'tvHand',   cardH: 120, cardW: 86, varName: '--bloomScale',     maxScale: 3.15,      breathe: 26 },
-    { id: 'handZone', cardH: 133, cardW: 95, varName: '--bloomScaleDesk', maxScale: 680 / 133, breathe: 40 },
+    // tv: fixed 86x120 cards, cap at the tall-phone look.
+    { id: 'tvHand',   varName: '--bloomScale',     maxScale: 3.15, breathe: 26 },
+    // desktop: resting size scales with the window (--handCardH), so the
+    // card is MEASURED and the cap is a final pixel height (the 333x500
+    // scans go soft past ~680px).
+    { id: 'handZone', varName: '--bloomScaleDesk', maxPx: 680,     breathe: 40 },
 ];
 function _tvBloomLayout() {
     const vw = window.innerWidth, vh = window.innerHeight, pad = 10;
     _BLOOM_ZONES.forEach(zdef => {
         const zone = document.getElementById(zdef.id);
         if (!zone || !zone.offsetWidth) return;   // that layout is hidden
-        const scale = Math.min(zdef.maxScale, (vh - zdef.breathe) / zdef.cardH);
+        const first = zone.querySelector('.hand-card');
+        if (!first || !first.offsetHeight) return;
+        const cardH = first.offsetHeight;
+        const cardW = first.offsetWidth;
+        const cap = zdef.maxScale || (zdef.maxPx / cardH);
+        const scale = Math.max(1, Math.min(cap, (vh - zdef.breathe) / cardH));
         document.documentElement.style.setProperty(zdef.varName, scale.toFixed(3));
-        const halfW = (zdef.cardW * scale) / 2;
+        const halfW = (cardW * scale) / 2;
         const zoneLeft = zone.getBoundingClientRect().left;
         zone.querySelectorAll('.hand-card').forEach(card => {
             const cx = zoneLeft + card.offsetLeft + card.offsetWidth / 2;
