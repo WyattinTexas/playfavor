@@ -1379,6 +1379,7 @@ function renderHand(state) {
 
     html += '</div>';
     zone.innerHTML = html;
+    requestAnimationFrame(_tvBloomLayout);
 }
 
 // ── Bottom Stats (hidden, for stat animation system) ──
@@ -2827,6 +2828,48 @@ document.addEventListener('contextmenu', (e) => {
     if (e.target.closest('[data-peek]') || e.target.closest('.tv-hand .hand-card')) e.preventDefault();
 });
 
+// ── Hover peek (mouse): point at any SMALL card and the full card floats
+// beside it, Battlegrounds-big — played stacks, mission pips, sidebar
+// minis, anything peek-able. Hand cards bloom in place instead, and the
+// already-big cards (action sheet, overlays) are excluded. Touch devices
+// keep hold-to-peek.
+const HOVER_PEEK_RATIO = 333 / 500;   // card scan aspect
+function _hoverPeekHide() {
+    const ov = document.getElementById('hoverPeek');
+    if (ov) ov.classList.remove('active');
+}
+document.addEventListener('pointerover', (e) => {
+    if (e.pointerType && e.pointerType !== 'mouse') return;
+    if (!e.target.closest) return;
+    const t = e.target.closest('.stack-card, .mission-pip, .mini-card, [data-peek]');
+    const ov = document.getElementById('hoverPeek');
+    if (!ov) return;
+    if (!t || t.closest('.hand-card, .action-panel, .card-peek, .card-zoom, .mission-lb')) {
+        ov.classList.remove('active');
+        return;
+    }
+    const src = t.getAttribute('data-peek') || (t.tagName === 'IMG' ? t.getAttribute('src') : null);
+    if (!src) { ov.classList.remove('active'); return; }
+    const img = document.getElementById('hoverPeekImg');
+    if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const h = Math.min(vh * 0.88, 680), w = h * HOVER_PEEK_RATIO;
+    const r = t.getBoundingClientRect();
+    // Beside the small card: right if there's room, else left, clamped.
+    let x = r.right + 18;
+    if (x + w > vw - 10) x = r.left - 18 - w;
+    x = Math.max(10, Math.min(x, vw - w - 10));
+    const y = Math.max(10, Math.min(r.top + r.height / 2 - h / 2, vh - h - 10));
+    ov.style.left = Math.round(x) + 'px';
+    ov.style.top = Math.round(y) + 'px';
+    ov.classList.add('active');
+});
+// Click means a real action (lightbox, zoom, select) — get out of the way.
+document.addEventListener('pointerdown', (e) => {
+    if (!e.pointerType || e.pointerType === 'mouse') _hoverPeekHide();
+}, true);
+document.addEventListener('scroll', _hoverPeekHide, true);
+
 // ── Hand bloom (Battlegrounds tray feel) ──
 // Touching a hand card blooms it to near screen height IN PLACE (CSS .bloom /
 // :hover). Slide your finger across the fan and each card blooms in turn;
@@ -2834,28 +2877,34 @@ document.addEventListener('contextmenu', (e) => {
 let _bloomEl = null;
 let _bloomStartEl = null;
 
-// Bloom geometry: fit the bloomed card to the ACTUAL screen.
-// --bloomScale fills the viewport height minus a small breathing margin
-// (capped at 3.15, the tall-phone look), so the card is never taller than
-// the screen. --bloomShift nudges edge cards inward so a bloomed card near
-// the fan's ends stays fully on-screen. Runs after each hand render and on
-// resize/rotate; uses offsetLeft (transform-free) so the fan's rotate/lift
-// styling can't skew the math.
+// Bloom geometry: fit the bloomed card to the ACTUAL screen, for both the
+// phone hand (#tvHand) and the desktop hand (#handZone). The scale var
+// fills the viewport height minus a breathing margin — capped on the phone
+// at the tall-phone look, on desktop at ~680px where the 333x500 card
+// scans start going soft. --bloomShift nudges edge cards inward so a
+// bloomed card near the fan's ends stays fully on-screen. Runs after each
+// hand render and on resize/rotate; uses offsetLeft (transform-free) so
+// the fan's rotate/lift styling can't skew the math.
+const _BLOOM_ZONES = [
+    { id: 'tvHand',   cardH: 120, cardW: 86, varName: '--bloomScale',     maxScale: 3.15,      breathe: 26 },
+    { id: 'handZone', cardH: 133, cardW: 95, varName: '--bloomScaleDesk', maxScale: 680 / 133, breathe: 40 },
+];
 function _tvBloomLayout() {
-    const zone = document.getElementById('tvHand');
-    if (!zone || !zone.offsetWidth) return;   // table view hidden (desktop)
-    const cardH = 120, cardW = 86, pad = 10;
-    const scale = Math.min(3.15, (window.innerHeight - 26) / cardH);
-    document.documentElement.style.setProperty('--bloomScale', scale.toFixed(3));
-    const halfW = (cardW * scale) / 2;
-    const zoneLeft = zone.getBoundingClientRect().left;
-    const vw = window.innerWidth;
-    zone.querySelectorAll('.hand-card').forEach(card => {
-        const cx = zoneLeft + card.offsetLeft + card.offsetWidth / 2;
-        let shift = 0;
-        if (cx - halfW < pad) shift = pad - (cx - halfW);
-        else if (cx + halfW > vw - pad) shift = (vw - pad) - (cx + halfW);
-        card.style.setProperty('--bloomShift', Math.round(shift) + 'px');
+    const vw = window.innerWidth, vh = window.innerHeight, pad = 10;
+    _BLOOM_ZONES.forEach(zdef => {
+        const zone = document.getElementById(zdef.id);
+        if (!zone || !zone.offsetWidth) return;   // that layout is hidden
+        const scale = Math.min(zdef.maxScale, (vh - zdef.breathe) / zdef.cardH);
+        document.documentElement.style.setProperty(zdef.varName, scale.toFixed(3));
+        const halfW = (zdef.cardW * scale) / 2;
+        const zoneLeft = zone.getBoundingClientRect().left;
+        zone.querySelectorAll('.hand-card').forEach(card => {
+            const cx = zoneLeft + card.offsetLeft + card.offsetWidth / 2;
+            let shift = 0;
+            if (cx - halfW < pad) shift = pad - (cx - halfW);
+            else if (cx + halfW > vw - pad) shift = (vw - pad) - (cx + halfW);
+            card.style.setProperty('--bloomShift', Math.round(shift) + 'px');
+        });
     });
 }
 window.addEventListener('resize', () => requestAnimationFrame(_tvBloomLayout));

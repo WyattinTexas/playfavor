@@ -1044,13 +1044,22 @@ html, body {
     object-fit: cover;
 }
 
+/* Battlegrounds bloom: the hovered card grows to near screen height in
+   place. --bloomScaleDesk fits it to the actual window and --bloomShift
+   keeps edge cards fully on-screen (set by _bloomLayout in ui.js).
+   Margins never change, so the fan never reflows under the cursor. */
 .hand-card:hover {
-    transform: translateY(-32px) scale(1.15) rotate(0deg) !important;
+    transform: translateX(var(--bloomShift, 0px)) translateY(-14px) scale(var(--bloomScaleDesk, 4)) rotate(0deg) !important;
+    transform-origin: bottom center;
     z-index: 30;
-    margin: 0 5px;
     border-color: var(--gold);
     box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 20px rgba(201,168,76,0.1);
 }
+
+/* While a card blooms, the hand must outrank the fixed phase bar (z 30) —
+   .game-layout is a z-1 stacking context, so bump the layout itself. */
+.game-layout:has(.hand-card:hover) { z-index: 31; }
+.hand-zone:has(.hand-card:hover) { z-index: 40; }
 
 .hand-card.selected {
     transform: translateY(-36px) scale(1.18) rotate(0deg) !important;
@@ -3739,6 +3748,28 @@ html, body {
 
 @keyframes peekIn { from { transform: scale(0.6); opacity: 0; } }
 @keyframes peekPlaques { from { transform: translateX(14px); opacity: 0; } }
+
+/* ═══ HOVER PEEK — point at any small card, see it huge ═══════════════
+   Desktop mice only (touch uses hold-to-peek). A fixed, non-interactive
+   full-size card floats beside whatever small card the cursor is on —
+   played stacks, mission pips, sidebar minis — Battlegrounds-big, never
+   clipped by the scroll panes those small cards live inside. */
+
+.hover-peek {
+    position: fixed;
+    z-index: 10400; /* over everything except the hold-peek overlay (10500) */
+    pointer-events: none;
+    display: none;
+}
+.hover-peek.active { display: block; }
+.hover-peek img {
+    display: block;
+    height: min(88vh, 680px); /* card scans are 333x500 — past ~680px they go soft */
+    width: auto;
+    border-radius: 14px;
+    box-shadow: 0 0 70px rgba(201,168,76,0.4), 0 24px 60px rgba(0,0,0,0.75);
+    animation: peekIn 0.14s cubic-bezier(0.2, 1.3, 0.3, 1);
+}
 
 /* ═══ MELEE SPLASH — end-of-act tournament moment ═══════════════════ */
 
