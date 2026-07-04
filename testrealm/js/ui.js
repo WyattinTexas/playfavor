@@ -1546,6 +1546,7 @@ function renderTvHand(state) {
     });
     html += '</div>';
     zone.innerHTML = html;
+    requestAnimationFrame(_tvBloomLayout);
 }
 
 // ── Left drawer: your skills / ring / act ──
@@ -2819,9 +2820,11 @@ document.addEventListener('pointercancel', _peekRelease, { passive: true });
 document.addEventListener('click', (e) => {
     if (_peekSwallowClick) { e.stopPropagation(); e.preventDefault(); _peekSwallowClick = false; }
 }, true);
-// Long-press shouldn't summon the browser's image context menu / save sheet.
+// Long-press shouldn't summon the browser's image context menu / save sheet —
+// on peek-able cards or on the hand fan (where a long finger-press is a bloom).
 document.addEventListener('contextmenu', (e) => {
-    if (e.target.closest && e.target.closest('[data-peek]')) e.preventDefault();
+    if (!e.target.closest) return;
+    if (e.target.closest('[data-peek]') || e.target.closest('.tv-hand .hand-card')) e.preventDefault();
 });
 
 // ── Hand bloom (Battlegrounds tray feel) ──
@@ -2830,6 +2833,33 @@ document.addEventListener('contextmenu', (e) => {
 // release to open that card's action sheet. Mouse gets the same via :hover.
 let _bloomEl = null;
 let _bloomStartEl = null;
+
+// Bloom geometry: fit the bloomed card to the ACTUAL screen.
+// --bloomScale fills the viewport height minus a small breathing margin
+// (capped at 3.15, the tall-phone look), so the card is never taller than
+// the screen. --bloomShift nudges edge cards inward so a bloomed card near
+// the fan's ends stays fully on-screen. Runs after each hand render and on
+// resize/rotate; uses offsetLeft (transform-free) so the fan's rotate/lift
+// styling can't skew the math.
+function _tvBloomLayout() {
+    const zone = document.getElementById('tvHand');
+    if (!zone || !zone.offsetWidth) return;   // table view hidden (desktop)
+    const cardH = 120, cardW = 86, pad = 10;
+    const scale = Math.min(3.15, (window.innerHeight - 26) / cardH);
+    document.documentElement.style.setProperty('--bloomScale', scale.toFixed(3));
+    const halfW = (cardW * scale) / 2;
+    const zoneLeft = zone.getBoundingClientRect().left;
+    const vw = window.innerWidth;
+    zone.querySelectorAll('.hand-card').forEach(card => {
+        const cx = zoneLeft + card.offsetLeft + card.offsetWidth / 2;
+        let shift = 0;
+        if (cx - halfW < pad) shift = pad - (cx - halfW);
+        else if (cx + halfW > vw - pad) shift = (vw - pad) - (cx + halfW);
+        card.style.setProperty('--bloomShift', Math.round(shift) + 'px');
+    });
+}
+window.addEventListener('resize', () => requestAnimationFrame(_tvBloomLayout));
+window.addEventListener('orientationchange', () => setTimeout(_tvBloomLayout, 60));
 
 function _bloomSet(el) {
     if (_bloomEl === el) return;
@@ -2841,15 +2871,45 @@ function _bloomSet(el) {
 document.addEventListener('pointerdown', (e) => {
     const card = e.target.closest && e.target.closest('.tv-hand .hand-card');
     if (!card) return;
+    // Touching your peeking hand raises the drawer — otherwise the bloom
+    // grows from a card whose bottom is still below the screen edge.
+    if (typeof tvHandOpen !== 'undefined' && !tvHandOpen) {
+        tvHandOpen = true;
+        applyDrawerStates();
+    }
     _bloomStartEl = card;
     _bloomSet(card);
 }, { passive: true });
 
+// Glide: map finger X to the card whose RESTING slot is nearest — never
+// hit-test the screen, because the bloomed card itself sits on top and
+// would swallow its neighbors' territory (that's what made the old glide
+// skip every other card). Coalesced to one update per frame so 120Hz
+// touch screens don't flood the handler.
+let _bloomMoveEv = null;
+function _bloomNearest(clientX) {
+    const zone = document.getElementById('tvHand');
+    if (!zone) return null;
+    const zoneLeft = zone.getBoundingClientRect().left;
+    let best = null, bestD = Infinity;
+    zone.querySelectorAll('.hand-card').forEach(card => {
+        const cx = zoneLeft + card.offsetLeft + card.offsetWidth / 2;
+        const d = Math.abs(clientX - cx);
+        if (d < bestD) { bestD = d; best = card; }
+    });
+    return best;
+}
 document.addEventListener('pointermove', (e) => {
     if (!_bloomStartEl) return;
-    const over = document.elementFromPoint(e.clientX, e.clientY);
-    const card = over && over.closest && over.closest('.tv-hand .hand-card');
-    if (card) _bloomSet(card);
+    if (_bloomMoveEv) { _bloomMoveEv = e; return; }
+    _bloomMoveEv = e;
+    requestAnimationFrame(() => {
+        const ev = _bloomMoveEv;
+        _bloomMoveEv = null;
+        if (!_bloomStartEl || !ev) return;
+        const card = _bloomNearest(ev.clientX);
+        if (card) _bloomSet(card);
+    });
 }, { passive: true });
 
 function _bloomRelease() {

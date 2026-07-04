@@ -1029,7 +1029,8 @@ html, body {
     border-radius: 6px;
     overflow: hidden;
     cursor: pointer;
-    transition: all 0.3s ease;
+    /* ease-out (fast start) so the card answers the cursor instantly. */
+    transition: all 0.22s ease-out;
     border: 2px solid rgba(201, 168, 76, 0.3);
     position: relative;
     margin: 0 -6px;
@@ -2707,8 +2708,9 @@ html, body {
 
 @media (orientation: landscape) and (max-height: 540px) {
 
-    /* Dynamic viewport height so mobile browser chrome doesn't clip. */
-    html, body { height: 100dvh; }
+    /* Dynamic viewport height so mobile browser chrome doesn't clip;
+       no rubber-banding so hand glides never fight a page scroll. */
+    html, body { height: 100dvh; overscroll-behavior: none; }
 
     /* ── Title screen: fit landscape — shrink cover so Play is on-screen ── */
     #title-screen {
@@ -3136,22 +3138,30 @@ html, body {
         width: 86px; height: 120px;
         margin: 0 -11px;
         border-radius: 6px;
+        /* Transform is the only animated property, in AND out, and margins
+           never change — so gliding across the fan is pure GPU and the tray
+           itself never reflows under the finger. */
+        transition: transform 0.15s cubic-bezier(0.33, 1, 0.68, 1);
+        touch-action: none;          /* the glide owns the gesture — no browser pan / pointercancel */
+        -webkit-touch-callout: none; /* long-press must not summon the image save sheet */
+        -webkit-user-select: none;
+        user-select: none;
     }
-    /* Touch or hover BLOOMS the card to near screen height, in place —
-       the Battlegrounds tray feel. Slide along the fan and each card
-       blooms in turn (JS .bloom). */
-    .tv-hand .hand-card:hover,
+    .tv-hand .hand-card img { -webkit-user-drag: none; }
+    /* Touch or hover BLOOMS the card in place — the Battlegrounds tray feel.
+       Slide along the fan and each card blooms in turn (JS .bloom).
+       --bloomScale fits the card to the actual screen height and
+       --bloomShift walks edge cards inward so nothing is ever cut off;
+       both are set by _tvBloomLayout() in ui.js. */
+    .tv-hand-drawer.open .tv-hand .hand-card:hover,
     .tv-hand .hand-card.bloom {
-        transform: translateY(-4px) scale(3.15) !important;
+        transform: translateX(var(--bloomShift, 0px)) translateY(-6px) scale(var(--bloomScale, 2.8)) !important;
         transform-origin: bottom center;
-        margin: 0 5px;
         z-index: 60;
-        transition: transform 0.13s ease-out;
     }
     /* Selected keeps a modest lift — the action sheet already shows it big. */
     .tv-hand .hand-card.selected {
         transform: translateY(-24px) scale(1.16) !important;
-        margin: 0 5px;
         z-index: 30;
         filter: drop-shadow(0 0 10px rgba(240,210,120,0.65));
     }
