@@ -1138,6 +1138,24 @@ function renderStatsPanel(state) {
             </div>`;
     });
 
+    // Flex skills (Mining Guild etc.): one unit, EITHER option per use —
+    // shown as their own rows so the fixed totals above never wander.
+    const flexPairs = {};
+    (player.flexSkills || []).forEach(pair => {
+        const key = pair.join('|');
+        flexPairs[key] = (flexPairs[key] || 0) + 1;
+    });
+    Object.entries(flexPairs).forEach(([key, n]) => {
+        const [a, b] = key.split('|');
+        const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+        skillsHtml += `
+            <div class="skill-row flex-skill" title="Counts as ${cap(a)} OR ${cap(b)} — your choice each time, never both">
+                <span class="skill-icon">${SKILL_ICONS[a]}</span>
+                <span class="skill-label">${cap(a)} <i>or</i> ${cap(b)}</span>
+                <span class="skill-value has-skill">${n > 1 ? '×' + n : '✦'}</span>
+            </div>`;
+    });
+
     // Special abilities: Philosopher's Stone & Mind's Eye
     const hasPhilosopher = gp.philosopherStone && gp.philosopherStone > 0;
     const hasMindsEye = (gp.playedCards || []).some(c =>
@@ -1572,6 +1590,20 @@ function renderTvLeft(state) {
             <span class="skill-icon">${s.icon}</span>
             <span class="skill-label">${s.label}</span>
             <span class="skill-value${val > 0 ? ' has-skill' : ''}">${val}</span>
+        </div>`;
+    });
+    const flexPairs = {};
+    (player.flexSkills || []).forEach(pair => {
+        const key = pair.join('|');
+        flexPairs[key] = (flexPairs[key] || 0) + 1;
+    });
+    Object.entries(flexPairs).forEach(([key, n]) => {
+        const [a, b] = key.split('|');
+        const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+        skillsHtml += `<div class="skill-row flex-skill" title="Counts as ${cap(a)} OR ${cap(b)} — one or the other, never both">
+            <span class="skill-icon">${SKILL_ICONS[a]}</span>
+            <span class="skill-label">${cap(a)}/${cap(b)}</span>
+            <span class="skill-value has-skill">${n > 1 ? '×' + n : '✦'}</span>
         </div>`;
     });
     const hasPhil = gp.philosopherStone && gp.philosopherStone > 0;
@@ -2535,6 +2567,11 @@ function endActPhases() {
     const promisePending = game.players[0]._pendingPromiseDiscard;
     if (promisePending) game.players[0]._pendingPromiseDiscard = false;
 
+    // PENALTY DISCARD — a failed mission says "Discard N Cards": the
+    // player picks which (physical-game agency), not the engine.
+    const penaltyPending = game.players[0]._pendingPenaltyDiscard || 0;
+    if (penaltyPending) game.players[0]._pendingPenaltyDiscard = 0;
+
     // MELEE PHASE
     const meleeStart = hasMissionResults ? missionDelay + 400 : 800;
 
@@ -2570,8 +2607,63 @@ function endActPhases() {
         }
     }, meleeStart);
 
-    if (promisePending) showPromiseDiscardPicker().then(startMelee);
-    else startMelee();
+    const afterPromise = promisePending
+        ? () => showPromiseDiscardPicker()
+        : () => Promise.resolve();
+    const afterPenalty = penaltyPending
+        ? () => showPenaltyDiscardPicker(penaltyPending)
+        : () => Promise.resolve();
+    afterPenalty().then(afterPromise).then(startMelee);
+}
+
+// ═══ PENALTY DISCARD — a failed mission takes N cards; YOU pick which ═══
+function showPenaltyDiscardPicker(n) {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        const player = game.players[0];
+        const mustPick = Math.min(n, player.playedCards.length);
+        if (!ov || !mustPick) { resolve(); return; }
+
+        const chosen = new Set();
+        const render = () => {
+            const cards = player.playedCards.map((c, i) => `
+                <div class="pp-card${chosen.has(i) ? ' chosen' : ''}" data-i="${i}">
+                    <img src="assets/cards/regular/${c.filename}" alt="${c.name}">
+                    <span class="pp-x">✕</span>
+                </div>`).join('');
+            const ready = chosen.size === mustPick;
+            ov.innerHTML = `
+                <div class="pp-inner">
+                    <div class="pp-title">The Price of Failure</div>
+                    <div class="pp-sub">Choose <b>${mustPick}</b> played card${mustPick > 1 ? 's' : ''} to discard (${chosen.size}/${mustPick})</div>
+                    <div class="pp-cards">${cards}</div>
+                    <div class="pp-actions">
+                        <button class="btn-royal primary" id="ppConfirm" ${ready ? '' : 'disabled style="opacity:.35"'}>
+                            <span>Discard ${mustPick}</span>
+                        </button>
+                    </div>
+                </div>`;
+            ov.querySelectorAll('.pp-card').forEach(el => {
+                el.onclick = () => {
+                    const i = parseInt(el.dataset.i, 10);
+                    if (chosen.has(i)) chosen.delete(i);
+                    else if (chosen.size < mustPick) chosen.add(i);
+                    render();
+                };
+            });
+            ov.querySelector('#ppConfirm').onclick = () => {
+                if (chosen.size !== mustPick) return;
+                const picked = [...chosen].map(i => player.playedCards[i]);
+                const removed = game.discardPlayedCards(0, c => picked.includes(c), mustPick);
+                addLogEntry(`You discard ${removed} card(s) to a failed mission`);
+                ov.classList.remove('active');
+                renderGameState();
+                resolve();
+            };
+        };
+        render();
+        ov.classList.add('active');
+    });
 }
 
 // ═══ A PROMISE — choose any number of played cards to sacrifice ═══════

@@ -238,6 +238,9 @@ class FavorGame {
                 reqCounts[req] = (reqCounts[req] || 0) + 1;
             });
 
+            // Skill requirements resolve together so flex units (Mining
+            // Guild etc.) can be assigned wherever they're short.
+            const skillReqs = {};
             for (const [req, needed] of Object.entries(reqCounts)) {
                 if (req === 'minds_eye') {
                     const have = this.getMindsEyeCount(playerIndex);
@@ -246,15 +249,13 @@ class FavorGame {
                     const have = player.philosopherStone || 0;
                     for (let i = 0; i < needed - have; i++) missingSpecial.push("Philosopher's Stone");
                 } else {
-                    const have = this.getPlayerSkillTotal(playerIndex, req);
-                    if (have < needed) {
-                        // Add the shortfall to missing array
-                        for (let i = 0; i < needed - have; i++) {
-                            missing.push(req);
-                        }
-                    }
+                    skillReqs[req] = needed;
                 }
             }
+            const unmet = this.unmetSkillReqs(playerIndex, skillReqs);
+            Object.entries(unmet).forEach(([req, short]) => {
+                for (let i = 0; i < short; i++) missing.push(req);
+            });
         }
 
         // Gold / Favor floor requirements (having, not spending)
@@ -606,6 +607,12 @@ class FavorGame {
         }
 
         // Re-add skills from all played cards
+        // Flex skills (either/or cards) are collected separately: one unit
+        // usable as EITHER option, chosen per check, never both and never
+        // twice. They stay OUT of player.skills so displayed totals don't
+        // wander as other skills change; requirement checks allocate them
+        // against whatever is short (see unmetSkillReqs).
+        player.flexSkills = [];
         player.playedCards.forEach(c => {
             if (c.skills) {
                 c.skills.forEach(skill => {
@@ -628,18 +635,61 @@ class FavorGame {
                 player.skills.knowledge = (player.skills.knowledge || 0) + 2;
             }
             if (c.special === 'charisma_or_prospecting') {
-                const charCount = player.skills.charisma || 0;
-                const prospCount = player.skills.prospecting || 0;
-                const chosen = charCount <= prospCount ? 'charisma' : 'prospecting';
-                player.skills[chosen] = (player.skills[chosen] || 0) + 1;
+                player.flexSkills.push(['charisma', 'prospecting']);
             }
             if (c.special === 'alchemy_or_prospecting') {
-                const alchC = player.skills.alchemy || 0;
-                const prospC = player.skills.prospecting || 0;
-                const chosen = alchC <= prospC ? 'alchemy' : 'prospecting';
-                player.skills[chosen] = (player.skills[chosen] || 0) + 1;
+                player.flexSkills.push(['alchemy', 'prospecting']);
             }
         });
+
+        // Mission success rewards ("3 Prospecting") persist for the rest of
+        // the game — they must survive this rebuild.
+        if (player.bonusSkills) {
+            Object.entries(player.bonusSkills).forEach(([skill, n]) => {
+                if (SKILLS.includes(skill)) {
+                    player.skills[skill] = (player.skills[skill] || 0) + n;
+                }
+            });
+        }
+    }
+
+    /**
+     * Which of `reqCounts` ({skill: n}) can't be covered by fixed skills
+     * plus flex units? Each flex unit covers ONE unit of either of its two
+     * options — never both. Exact search over flex assignments (the list is
+     * tiny), so "1 Charisma & 1 Prospecting with one Mining Guild + one
+     * fixed Prospecting" resolves correctly no matter the order.
+     * Returns a {skill: unitsStillMissing} map — empty means satisfied.
+     */
+    unmetSkillReqs(playerIndex, reqCounts) {
+        const player = this.players[playerIndex];
+        const deficit = {};
+        Object.entries(reqCounts).forEach(([skill, n]) => {
+            const short = n - (player.skills[skill] || 0);
+            if (short > 0) deficit[skill] = short;
+        });
+        const flex = player.flexSkills || [];
+        const total = (d) => Object.values(d).reduce((a, b) => a + b, 0);
+        if (!total(deficit) || !flex.length) return deficit;
+
+        let best = deficit;
+        const tryAssign = (i, def) => {
+            if (!total(def)) { best = def; return true; }
+            if (i >= flex.length) {
+                if (total(def) < total(best)) best = def;
+                return false;
+            }
+            for (const opt of flex[i]) {
+                if (def[opt]) {
+                    const next = { ...def };
+                    if (next[opt] === 1) delete next[opt]; else next[opt]--;
+                    if (tryAssign(i + 1, next)) return true;
+                }
+            }
+            return tryAssign(i + 1, def); // this flex unit goes unused
+        };
+        tryAssign(0, deficit);
+        return best;
     }
 
     /**
@@ -824,25 +874,17 @@ class FavorGame {
                 break;
 
             case 'charisma_or_prospecting':
-                // Mining Guild: auto-pick whichever the player has less of
-                {
-                    const charCount = player.skills.charisma || 0;
-                    const prospCount = player.skills.prospecting || 0;
-                    const chosen = charCount <= prospCount ? 'charisma' : 'prospecting';
-                    player.skills[chosen] = (player.skills[chosen] || 0) + 1;
-                    this.addLog(`${player.name}'s ${card.name}: gained ${chosen} (auto-picked lesser)`);
-                }
+                // Mining Guild: a flex skill — counts as Charisma OR
+                // Prospecting per check, never both, never twice. The card
+                // is already in playedCards, so a recalc registers it.
+                this.applySlotSkills(player);
+                this.addLog(`${player.name}'s ${card.name}: +1 Charisma OR Prospecting (chosen when needed)`);
                 break;
 
             case 'alchemy_or_prospecting':
-                // Forbidden Lab: auto-pick whichever the player has less of
-                {
-                    const alchC = player.skills.alchemy || 0;
-                    const prospC = player.skills.prospecting || 0;
-                    const chosen = alchC <= prospC ? 'alchemy' : 'prospecting';
-                    player.skills[chosen] = (player.skills[chosen] || 0) + 1;
-                    this.addLog(`${player.name}'s ${card.name}: gained ${chosen} (auto-picked lesser)`);
-                }
+                // Forbidden Lab: flex — Alchemy OR Prospecting per check.
+                this.applySlotSkills(player);
+                this.addLog(`${player.name}'s ${card.name}: +1 Alchemy OR Prospecting (chosen when needed)`);
                 break;
 
             // --- Philosopher's Stone variants (end-of-game gold→favor) ---
@@ -1282,6 +1324,11 @@ class FavorGame {
             const player = this.players[pi];
             const playerResults = [];
 
+            // Two passes: every due mission is CHECKED (and successes paid
+            // out) before any failure penalty lands. A failure that discards
+            // played cards must never strip the skills a sibling mission in
+            // this same phase was counting on.
+            const failed = [];
             player.missions.forEach((mission, mi) => {
                 // Check if mission activates this act or earlier
                 if (mission.activationRound && mission.activationRound <= this.currentAct) {
@@ -1292,12 +1339,13 @@ class FavorGame {
                         player.completedMissions.push(mission);
                         playerResults.push({ mission, success: true, details });
                     } else {
-                        this.applyMissionFailure(pi, mission);
+                        failed.push(mission);
                         player.failedMissions.push(mission);
                         playerResults.push({ mission, success: false, details });
                     }
                 }
             });
+            failed.forEach(mission => this.applyMissionFailure(pi, mission));
 
             // Remove resolved missions from active list
             player.missions = player.missions.filter(m =>
@@ -1329,18 +1377,30 @@ class FavorGame {
 
         // Quantity-aware requirements: "3 Knowledge" needs knowledge >= 3
         // (the old check only asked "do you have any"). minds_eye and
-        // philosopher_stone entries count against those totals.
+        // philosopher_stone entries count against those totals. Skill
+        // requirements resolve together so flex units (Mining Guild's
+        // Charisma-OR-Prospecting) can cover whichever is short.
         const reqCounts = {};
         (mission.requirements || []).forEach(req => { reqCounts[req] = (reqCounts[req] || 0) + 1; });
+        const skillReqs = {};
         Object.entries(reqCounts).forEach(([req, n]) => {
-            let have;
-            if (req === 'minds_eye') have = this.getMindsEyeCount(playerIndex);
-            else if (req === 'philosopher_stone') have = player.philosopherStone || 0;
-            else have = player.skills[req] || 0;
-            if (have < n) {
-                missing.push(n > 1 ? `${req} ×${n}` : req);
-                met = false;
+            if (req === 'minds_eye') {
+                if (this.getMindsEyeCount(playerIndex) < n) {
+                    missing.push(n > 1 ? `${req} ×${n}` : req);
+                    met = false;
+                }
+            } else if (req === 'philosopher_stone') {
+                if ((player.philosopherStone || 0) < n) {
+                    missing.push(n > 1 ? `${req} ×${n}` : req);
+                    met = false;
+                }
+            } else {
+                skillReqs[req] = n;
             }
+        });
+        Object.entries(this.unmetSkillReqs(playerIndex, skillReqs)).forEach(([req, short]) => {
+            missing.push(short > 1 ? `${req} ×${short}` : req);
+            met = false;
         });
         if (mission.reqGold && player.gold < mission.reqGold) {
             missing.push(`${mission.reqGold} Gold`); met = false;
@@ -1371,9 +1431,13 @@ class FavorGame {
         if (s.favor) player.favor += s.favor;
         if (s.prestige) player.prestige += s.prestige;
         if (s.gold) player.gold += s.gold;
-        // Skill rewards go straight into the running tally.
+        // Skill rewards persist in bonusSkills — applySlotSkills rebuilds
+        // the tally from scratch, so a direct write here would vanish on
+        // the next slider move.
         if (s.skills) {
+            if (!player.bonusSkills) player.bonusSkills = {};
             Object.entries(s.skills).forEach(([sk, n]) => {
+                player.bonusSkills[sk] = (player.bonusSkills[sk] || 0) + n;
                 player.skills[sk] = (player.skills[sk] || 0) + n;
             });
         }
@@ -1446,6 +1510,32 @@ class FavorGame {
         }
     }
 
+    /**
+     * "Discard N Cards" mission penalty. In the physical game the OWNER
+     * chooses which cards to give up — the old code silently took the N
+     * most recent, which could strip exactly the skills the player was
+     * keeping for later (how Wyatt lost Her Lost Father's Prospecting).
+     * Human: defer to a picker (UI shows it after mission resolution).
+     * AI: sacrifice dead weight — protect cards feeding remaining missions,
+     * maps, specials, and skill grants.
+     */
+    penaltyDiscard(playerIndex, n) {
+        const player = this.players[playerIndex];
+        if (!player.playedCards.length) return;
+        if (playerIndex === 0) {
+            player._pendingPenaltyDiscard = (player._pendingPenaltyDiscard || 0) + n;
+            return;
+        }
+        const needed = new Set();
+        (player.missions || []).forEach(m => (m.requirements || []).forEach(r => needed.add(r)));
+        const keepScore = (c) =>
+            ((c.skills || []).some(sk => needed.has(sk)) ? 100 : 0) +
+            (c.grantsMap ? 50 : 0) + (c.special ? 25 : 0) +
+            ((c.skills || []).length * 10) + (c.favor || 0);
+        const dump = [...player.playedCards].sort((a, b) => keepScore(a) - keepScore(b)).slice(0, n);
+        this.discardPlayedCards(playerIndex, c => dump.includes(c), n);
+    }
+
     // Remove played cards (mission failure effects). Their skill grants come
     // off the running tally so requirements/Melee stay truthful.
     discardPlayedCards(playerIndex, filterFn, limit = Infinity) {
@@ -1454,10 +1544,12 @@ class FavorGame {
         for (let i = player.playedCards.length - 1; i >= 0 && removed.length < limit; i--) {
             if (filterFn(player.playedCards[i])) removed.push(...player.playedCards.splice(i, 1));
         }
-        removed.forEach(c => (c.skills || []).forEach(sk => {
-            if (player.skills[sk]) player.skills[sk]--;
-        }));
-        if (removed.length) this.addLog(`${player.name} discards ${removed.map(c => c.name).join(', ')}`);
+        if (removed.length) {
+            // Full recalc: fixed skills AND flex units (either/or cards)
+            // both come off the books together.
+            this.applySlotSkills(player);
+            this.addLog(`${player.name} discards ${removed.map(c => c.name).join(', ')}`);
+        }
         return removed.length;
     }
 
@@ -1475,8 +1567,8 @@ class FavorGame {
             case 'scorn_2_per_charisma': player.scorn += 2 * (player.skills.charisma || 0); break;
             case 'scorn_10_per_knowledge': player.scorn += 10 * (player.skills.knowledge || 0); break;
             case 'prestige_2_per_knowledge': player.prestige += 2 * (player.skills.knowledge || 0); break;
-            case 'discard_1_played': this.discardPlayedCards(playerIndex, () => true, 1); break;
-            case 'discard_5_played': this.discardPlayedCards(playerIndex, () => true, 5); break;
+            case 'discard_1_played': this.penaltyDiscard(playerIndex, 1); break;
+            case 'discard_5_played': this.penaltyDiscard(playerIndex, 5); break;
             case 'discard_1_artifact': this.discardPlayedCards(playerIndex, c => c.type === 'artifact', 1); break;
             case 'discard_weapons_gain_5_prestige': {
                 const n = this.discardPlayedCards(playerIndex, c => c.type === 'weapon');
@@ -1826,6 +1918,7 @@ class FavorGame {
                 // Only show hand to the owning player
                 hand: (forPlayerIndex === i) ? p.hand : null,
                 skills: p.skills,
+                flexSkills: p.flexSkills || [],
                 pendingCard: this.pendingActivations[i] !== null
             })),
             log: this.log.slice(-20)

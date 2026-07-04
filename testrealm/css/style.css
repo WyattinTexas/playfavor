@@ -607,6 +607,15 @@ html, body {
     padding-top: 5px;
 }
 
+/* Flex skill (Mining Guild etc.): one unit, either option per use. */
+.skill-row.flex-skill {
+    border: 1px dashed rgba(201, 168, 76, 0.35);
+    background: rgba(201, 168, 76, 0.04);
+    margin-top: 2px;
+}
+.skill-row.flex-skill .skill-label { font-style: normal; }
+.skill-row.flex-skill .skill-label i { color: var(--gold); font-size: 0.85em; }
+
 .skill-icon {
     width: 18px;
     height: 18px;

@@ -109,11 +109,15 @@ console.log('── Mission success: skill rewards + favorValue not double-paid'
 console.log('── Mission failure specials: discard + payouts');
 {
   const g = newGame();
+  // "Discard 5 Cards" on the HUMAN now defers to a picker (you choose
+  // which cards to give up); the AI discards immediately.
   playCard(g, 0, 'Trapping'); // survival card in play
   const m = { ...missionByName('Wanted: Crazy Lou') }; // fail: discard 5 played
-  const played = g.players[0].playedCards.length;
   g.applyMissionFailure(0, m);
-  ok(g.players[0].playedCards.length === Math.max(0, played - 5), `discard_5_played (${played} → ${g.players[0].playedCards.length})`);
+  ok(g.players[0]._pendingPenaltyDiscard === 5, `discard_5_played defers to human picker (pending ${g.players[0]._pendingPenaltyDiscard})`);
+  g.players[2].playedCards.push({ ...cardByName('First Aid') });
+  g.applyMissionFailure(2, m);
+  ok(g.players[2].playedCards.length === 0, 'AI discard executes immediately');
 
   const g3 = newGame();
   const mb = { ...missionByName("Man's Best Friend") }; // fail: +4 gold, others +5 gold
@@ -159,6 +163,98 @@ console.log('── Scoring: dynamic favor specials');
   const me = scores.find(s => s.playerIndex === 0);
   // Fang's Truce: 4 survival grant is already in skills here; 2 per survival = 8
   ok(me.cardFavor >= 8, `Fang's Truce pays 2×Survival at scoring (cardFavor ${me.cardFavor})`);
+}
+
+console.log('── Flex skills: Mining Guild counts as Charisma OR Prospecting, never both');
+{
+  const g = newGame();
+  const p = g.players[0];
+  p.gold = 20;
+  playCard(g, 0, 'Mining Guild');
+  ok((p.flexSkills || []).some(f => f.includes('charisma') && f.includes('prospecting')),
+    'flex unit registered', JSON.stringify(p.flexSkills));
+  ok((p.skills.charisma || 0) === 0 && (p.skills.prospecting || 0) === 0,
+    'fixed totals untouched (no greedy auto-pick)');
+  // One flex covers 1 CHA — or 1 PRO — but NOT 1 CHA + 1 PRO together.
+  ok(Object.keys(g.unmetSkillReqs(0, { charisma: 1 })).length === 0, 'covers 1 Charisma alone');
+  ok(Object.keys(g.unmetSkillReqs(0, { prospecting: 1 })).length === 0, 'covers 1 Prospecting alone');
+  const both = g.unmetSkillReqs(0, { charisma: 1, prospecting: 1 });
+  ok(Object.values(both).reduce((a, b) => a + b, 0) === 1, 'CANNOT cover both at once', JSON.stringify(both));
+}
+
+console.log("── Wyatt's game: Hunting + Mining Guild + Her Lost Father passes Cameron's Expedition");
+{
+  const g = newGame();
+  const p = g.players[0];
+  p.character = window.FAVOR_DATA.characters.find(c => /fisherman/i.test(c.name));
+  p.gold = 30;
+  p.skills.power = 1; // Hunting requires 1 Power to play
+  for (const name of ['Hunting', 'Mining Guild', 'Her Lost Father']) {
+    const r = playCard(g, 0, name);
+    ok(r.success, `plays ${name}`, JSON.stringify(r));
+  }
+  p.sliderPosition = 4; // far right: 8 Survival
+  g.applySlotSkills(p);
+  ok(p.skills.survival === 10, `10 Survival (8 slot + 2 Hunting), got ${p.skills.survival}`);
+  ok(p.skills.prospecting === 1, `Her Lost Father's 1 Prospecting counted, got ${p.skills.prospecting}`);
+  const cam = missionByName("Cameron's Expedition");
+  const chk = g.checkMissionRequirements(0, cam);
+  ok(chk.success === true, "Cameron's Expedition (4 SUR + 1 CHA + 1 PRO) PASSES", JSON.stringify(chk.details.missing));
+}
+
+console.log('── Mission phase: a failure discard cannot sabotage a sibling mission');
+{
+  const g = newGame();
+  const p = g.players[1]; // AI so the discard actually executes
+  p.character = window.FAVOR_DATA.characters.find(c => /fisherman/i.test(c.name));
+  p.gold = 30;
+  p.skills.power = 1;
+  for (const name of ['Hunting', 'Mining Guild', 'Her Lost Father']) {
+    const card = { ...cardByName(name) };
+    p.hand = [card];
+    g.pendingActivations[1] = null;
+    g.pickCard(1, 0);
+    g.activateCard(1, card.id, 'play');
+  }
+  p.sliderPosition = 4;
+  g.applySlotSkills(p);
+  // Crazy Lou (15 Power — hopeless, failure discards 5) + Cameron's (passable)
+  p.missions = [{ ...missionByName('Wanted: Crazy Lou') }, { ...missionByName("Cameron's Expedition") }];
+  g.currentAct = 1;
+  const results = g.resolveMissions().find(r => r.playerIndex === 1).results;
+  const lou = results.find(r => r.mission.name === 'Wanted: Crazy Lou');
+  const cam = results.find(r => r.mission.name === "Cameron's Expedition");
+  ok(lou && lou.success === false, 'Crazy Lou fails (needs 15 Power)');
+  ok(cam && cam.success === true, "Cameron's still PASSES — discard applied after all checks");
+}
+
+console.log('── Penalty discard: human picks, AI protects mission-critical cards');
+{
+  const g = newGame();
+  g.players[0].playedCards.push({ ...cardByName('First Aid') });
+  g.penaltyDiscard(0, 5);
+  ok(g.players[0]._pendingPenaltyDiscard === 5, 'human gets a pending picker, nothing auto-discarded');
+  ok(g.players[0].playedCards.length === 1, 'human cards untouched until the pick');
+
+  const p2 = g.players[2];
+  p2.missions = [{ ...missionByName("Cameron's Expedition") }];
+  p2.playedCards.push({ ...cardByName('Her Lost Father') });   // feeds Cameron's PRO
+  p2.playedCards.push({ ...cardByName('First Aid') });          // dead weight
+  g.applySlotSkills(p2);
+  g.penaltyDiscard(2, 1);
+  ok(p2.playedCards.some(c => c.name === 'Her Lost Father'),
+    'AI keeps the card its remaining mission needs', p2.playedCards.map(c => c.name).join(','));
+}
+
+console.log('── Mission skill rewards survive a slider move');
+{
+  const g = newGame();
+  const p = g.players[0];
+  g.applyMissionRewards(0, { name: 'TestReward', successRewards: { skills: { prospecting: 3 } } });
+  const before = p.skills.prospecting || 0;
+  p.sliderPosition = (p.sliderPosition + 1) % 5;
+  g.applySlotSkills(p);
+  ok((p.skills.prospecting || 0) >= 3, `+3 Prospecting persists after recalc (${before} → ${p.skills.prospecting})`);
 }
 
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
