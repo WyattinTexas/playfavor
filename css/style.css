@@ -2743,8 +2743,22 @@ html, body {
     /* The table is a positioning canvas; mats seat around the center. */
     .tv-table { position: relative; height: 100dvh; }
 
-    /* Slimmer phase bar. */
-    .phase-bar { top: 4px; padding: 3px 12px; gap: 8px; }
+    /* Scene depth (Wingspan-style): a warm pool of light on the play area
+       and a soft vignette at the edges, breathing very slowly. */
+    .tv-table::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+            radial-gradient(ellipse 62% 55% at 50% 44%, rgba(255,196,110,0.10), transparent 70%),
+            radial-gradient(ellipse 130% 120% at 50% 50%, transparent 55%, rgba(0,0,0,0.42) 100%);
+        pointer-events: none;
+        z-index: 1;
+        animation: tvGlowBreathe 16s ease-in-out infinite;
+    }
+
+    /* Slimmer phase bar, parked top-left so the rival rail owns top-center. */
+    .phase-bar { top: 6px; left: 10px; transform: none; padding: 3px 12px; gap: 8px; }
 
     /* All mats live in an absolute layer, seated around the center. */
     .tv-seats { position: absolute; inset: 0; z-index: 2; }
@@ -2773,10 +2787,10 @@ html, body {
         border-color: var(--gold-light);
         box-shadow: 0 0 14px rgba(201,168,76,0.55), 0 3px 12px rgba(0,0,0,0.6);
     }
-    /* Full board (no crop) so the slider track at the bottom is visible. */
+    /* Full board (no crop) so the slider track at the bottom is visible.
+       Your board is the only full mat on the table now — give it presence. */
     .pmat-board { display: block; height: auto; }
-    .pmat.opp .pmat-board { width: 128px; }
-    .pmat.you .pmat-board { width: 156px; }
+    .pmat.you .pmat-board { width: 174px; }
 
     /* Gold ring on the slider track (left% set inline per slider slot). */
     .pmat-ring {
@@ -2864,53 +2878,131 @@ html, body {
         align-self: center;
     }
 
-    /* ── Center — available missions (raised; above mats so taps land) ── */
+    /* ── Center stage — missions are the main event (Wingspan scale).
+       Big readable cards under a plaque, sitting in the pool of light. ── */
     .tv-center {
         position: absolute;
-        top: 43%; left: 50%;
+        top: 46%; left: 50%;
         transform: translate(-50%, -50%);
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 3px;
+        gap: 6px;
         z-index: 4; /* above .tv-seats (2) so missions are tappable */
     }
     .tv-center-label {
         font-family: 'Cinzel', serif;
-        font-size: 8px;
-        letter-spacing: 2px;
+        font-size: 9px;
+        letter-spacing: 3px;
         text-transform: uppercase;
-        color: var(--gold-dark);
+        color: var(--gold);
+        padding: 3px 16px;
+        border: 1px solid rgba(201,168,76,0.35);
+        border-radius: 12px;
+        background: linear-gradient(180deg, rgba(40,22,10,0.85), rgba(20,10,4,0.85));
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
     }
-    .tv-missions { display: flex; gap: 7px; }
+    .tv-missions { display: flex; gap: 12px; }
     .tv-mission {
-        width: 46px;
-        height: 64px;
-        border-radius: 3px;
+        width: clamp(78px, 13vw, 100px);
+        aspect-ratio: 46 / 64;
+        height: auto;
+        border-radius: 6px;
         object-fit: cover;
-        border: 1px solid rgba(201,168,76,0.25);
-        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        border: 1px solid rgba(201,168,76,0.35);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.55);
         cursor: pointer;
-        transition: transform 0.2s, border-color 0.2s;
+        transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
     }
-    .tv-mission:hover { transform: scale(1.12); border-color: var(--gold); }
+    .tv-mission:hover {
+        transform: translateY(-4px) scale(1.06);
+        border-color: var(--gold);
+        box-shadow: 0 10px 22px rgba(0,0,0,0.6), 0 0 14px rgba(201,168,76,0.35);
+    }
+    /* Ghost seat (Wingspan): an empty mission slot still reads as a place. */
+    .tv-mission.ghost {
+        display: inline-block;
+        background: rgba(201,168,76,0.045);
+        border: 1.5px dashed rgba(201,168,76,0.3);
+        box-shadow: inset 0 0 16px rgba(0,0,0,0.35);
+        cursor: default;
+    }
+    .tv-mission.ghost:hover { transform: none; border-color: rgba(201,168,76,0.3); }
 
-    /* ── Seats in a ring around the center, each mat FACING the center ──
-       You stay upright; top/left/right flip so their boards face inward. */
-    .pmat.seat-bottom   { bottom: 36px; left: 50%;  transform: translateX(-50%); }
-    .pmat.seat-top      { top: 18px;    left: 50%;  transform: translateX(-50%) rotate(180deg); }
-    .pmat.seat-topleft  { top: 18px;    left: 28%;  transform: translateX(-50%) rotate(180deg); }
-    .pmat.seat-topright { top: 18px;    right: 28%; transform: translateX(50%) rotate(180deg); }
-    .pmat.seat-left  { top: 45%; left: 30%;  transform: translate(-50%, -50%) rotate(90deg); }
-    .pmat.seat-right { top: 45%; right: 30%; transform: translate(50%, -50%) rotate(-90deg); }
+    /* ── You: full mat anchored bottom-left (the Battlegrounds hero seat).
+       Rivals no longer take table space — they live in the top rail. */
+    .pmat.seat-bottom { bottom: 40px; left: 10px; transform: none; z-index: 46; }
 
-    /* Facing-center mats reverse their stack so cards still tuck toward center. */
-    .pmat.seat-top, .pmat.seat-topleft, .pmat.seat-topright,
-    .pmat.seat-left, .pmat.seat-right { flex-direction: column-reverse; }
-    .pmat.seat-top .pmat-cards, .pmat.seat-topleft .pmat-cards, .pmat.seat-topright .pmat-cards,
-    .pmat.seat-left .pmat-cards, .pmat.seat-right .pmat-cards {
-        margin-top: 0; margin-bottom: -18px;
-        padding-top: 0; padding-bottom: 18px;
+    /* ── Rival rail (Battlegrounds-style): upright portrait plaques along
+       the top edge — same public info the old rotated mats carried
+       (tokens, ring slot, played-card count), a fraction of the space. */
+    .tv-rivals {
+        position: absolute;
+        top: 5px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 8px;
+        z-index: 3;
+        max-width: calc(100vw - 300px); /* clear the phase pill + music/log buttons */
+    }
+    .tv-rivals .pmat.rplq {
+        position: static;              /* rail children flow; not seated absolutely */
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 9px 4px 4px;
+        border: 2px solid var(--gold-dark);
+        border-radius: 10px;
+        background: linear-gradient(160deg, rgba(46,26,12,0.92), rgba(24,12,5,0.94));
+        box-shadow: 0 3px 10px rgba(0,0,0,0.55);
+        min-width: 0;
+        transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+    }
+    .tv-rivals .pmat.rplq:hover { border-color: var(--gold); }
+    .tv-rivals .pmat.rplq.active {
+        border-color: var(--gold-light);
+        box-shadow: 0 0 14px rgba(201,168,76,0.6), 0 3px 10px rgba(0,0,0,0.55);
+        transform: translateY(2px) scale(1.04);
+    }
+    .rplq-portrait {
+        width: 42px; height: 42px;
+        border-radius: 7px;
+        overflow: hidden;
+        border: 1px solid rgba(201,168,76,0.45);
+        flex-shrink: 0;
+    }
+    .rplq-portrait img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .rplq-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .rplq-name {
+        font-family: 'Cinzel', serif;
+        font-size: 9px;
+        letter-spacing: 0.5px;
+        color: var(--gold-light);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 104px;
+    }
+    /* .pmat-tokens is absolutely positioned on full mats — flow it in the rail. */
+    .rplq-chips { position: static; left: auto; bottom: auto; }
+    .rplq-foot { display: flex; align-items: center; gap: 7px; }
+    .rplq-ring { display: flex; gap: 2px; align-items: center; }
+    .rplq-ringdot {
+        width: 5px; height: 5px;
+        border-radius: 50%;
+        background: rgba(201,168,76,0.25);
+        display: inline-block;
+    }
+    .rplq-ringdot.on {
+        background: var(--gold-light);
+        box-shadow: 0 0 4px rgba(240,210,120,0.9);
+    }
+    .rplq-cards {
+        font-family: 'Cinzel', serif;
+        font-size: 8px;
+        color: var(--gold-dark);
+        letter-spacing: 0.5px;
     }
 
     /* ═══ DRAWERS ═══ */
@@ -2931,8 +3023,8 @@ html, body {
     /* ── Left drawer: your skills / ring / act ── */
     .tv-left-drawer {
         position: absolute;
-        top: 28px;
-        bottom: 34px;
+        top: 58px;
+        bottom: 38px;
         left: 0;
         width: 150px;
         z-index: 45;
@@ -2984,9 +3076,9 @@ html, body {
     .tv-hand-drawer {
         position: absolute;
         left: 0; right: 0; bottom: 0;
-        height: 120px;
+        height: 142px;
         z-index: 45;
-        transform: translateY(calc(100% - 30px)); /* closed: 30px card-tops peek */
+        transform: translateY(calc(100% - 34px)); /* closed: card-tops peek */
         transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .tv-hand-drawer.open { transform: translateY(0); }
@@ -3017,15 +3109,24 @@ html, body {
     }
     .tv-hand .hand-arc { display: flex; align-items: flex-end; }
     .tv-hand .hand-card {
-        width: 66px; height: 92px;
-        margin: 0 -8px;
-        border-radius: 5px;
+        width: 86px; height: 120px;
+        margin: 0 -11px;
+        border-radius: 6px;
     }
+    /* Selected card pops up and forward (Wingspan draft-pick energy). */
     .tv-hand .hand-card:hover,
     .tv-hand .hand-card.selected {
-        transform: translateY(-16px) scale(1.1) !important;
-        margin: 0 3px;
+        transform: translateY(-24px) scale(1.16) !important;
+        margin: 0 5px;
         z-index: 30;
+    }
+    .tv-hand .hand-card.selected {
+        filter: drop-shadow(0 0 10px rgba(240,210,120,0.65));
+    }
+    /* Battlegrounds-style playable glow: these you can act on right now. */
+    .tv-hand .hand-card.playable {
+        box-shadow: 0 0 0 2px rgba(140,225,125,0.95), 0 0 18px 4px rgba(120,220,120,0.55);
+        animation: playableBreathe 2.2s ease-in-out infinite;
     }
     .tv-hand-waiting {
         color: var(--gold); opacity: 0.4;
@@ -3034,14 +3135,46 @@ html, body {
         align-self: center;
     }
 
-    /* Action panel sits above the hand drawer. */
-    .action-panel { bottom: 130px; padding: 12px 18px; min-width: 220px; }
+    /* ── Action sheet: the selected card sits big and readable beside its
+       actions (Battlegrounds "the card is the dialog") instead of a menu
+       floating over a hidden card. ── */
+    .action-panel {
+        bottom: 10px;
+        padding: 10px 16px;
+        min-width: 0;
+        max-width: 96vw;
+        max-height: calc(100dvh - 16px);
+        flex-direction: row;
+        align-items: center;
+        gap: 16px;
+    }
+    .action-panel .action-card-img {
+        /* !important: outranks the desktop-default display:none that sits
+           later in the sheet (same specificity, later source order). */
+        display: block !important;
+        height: clamp(150px, 54dvh, 214px);
+        width: auto;
+        border-radius: 8px;
+        box-shadow: 0 8px 22px rgba(0,0,0,0.65);
+    }
+    .action-panel .action-body {
+        align-items: stretch;
+        min-width: 216px;
+        max-width: 52vw;
+        overflow-y: auto;
+        max-height: calc(100dvh - 40px);
+    }
+    .action-panel .action-header { margin-bottom: 2px; }
+    .action-panel .action-card-name { font-size: 14px; }
+    .action-panel .action-skills, .action-panel .action-rewards { font-size: 11px; }
+    .action-panel .action-buttons { gap: 6px; margin-top: 4px; }
+    .action-panel .action-btn { padding: 8px 14px !important; font-size: 11px !important; }
 
     /* ── Right drawer: your acquired missions ── */
     .tv-right-drawer {
         position: absolute;
-        top: 28px;
-        bottom: 34px;
+        top: 58px;
+        bottom: 38px;
         right: 0;
         width: 168px;
         z-index: 45;
@@ -3134,7 +3267,7 @@ html, body {
     .spotlight-player { font-size: 12px !important; letter-spacing: 1px !important; }
     .spotlight-dismiss { font-size: 9px; }
     /* Human's own quick banner clears the hand drawer. */
-    .mini-spotlight { bottom: 128px; }
+    .mini-spotlight { bottom: 150px; }
 
     /* ── Opponent inspect: big readable board + toggle to reveal cards ── */
     .opp-ov-inner {
@@ -3475,3 +3608,225 @@ html, body {
 }
 #coach-glow.show { display: block; animation: coachPulse 1.7s ease-in-out infinite; }
 @keyframes coachPulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+
+/* ═══ CARD PEEK — press & hold "boom" (Battlegrounds-style) ═══════════
+   Any card held for a beat blows up to full readable size, with keyword
+   plaques alongside explaining exactly what it does. Global: works on the
+   phone table view AND the desktop layout. */
+
+[data-peek] {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.card-peek {
+    position: fixed;
+    inset: 0;
+    z-index: 10500; /* above the action panel (9999) — the peek outranks everything */
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: 10px;
+    background: rgba(6,3,1,0.82);
+    backdrop-filter: blur(4px);
+    cursor: pointer;
+}
+.card-peek.active { display: flex; }
+
+.peek-card {
+    max-height: 92dvh;
+    max-width: 58vw;
+    border-radius: 12px;
+    box-shadow: 0 0 60px rgba(201,168,76,0.45), 0 18px 50px rgba(0,0,0,0.8);
+    animation: peekIn 0.18s cubic-bezier(0.2, 1.3, 0.3, 1);
+}
+
+.peek-plaques {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: min(300px, 36vw);
+    max-height: 92dvh;
+    overflow-y: auto;
+    animation: peekPlaques 0.26s ease;
+}
+.peek-plaques:empty { display: none; }
+
+.peek-plaque {
+    border: 1px solid rgba(201,168,76,0.4);
+    border-radius: 10px;
+    background: linear-gradient(160deg, rgba(50,28,13,0.96), rgba(26,13,5,0.97));
+    box-shadow: 0 4px 14px rgba(0,0,0,0.55);
+    padding: 7px 12px;
+}
+.peek-plaque .pk-title {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--gold-light);
+    margin-bottom: 2px;
+}
+.peek-plaque .pk-body {
+    font-family: 'EB Garamond', serif;
+    font-size: 13px;
+    color: #e8d9bf;
+    line-height: 1.35;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    align-items: center;
+}
+.pk-skill { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.pk-skill img { width: 16px; height: 16px; border-radius: 3px; }
+.peek-plaque.scorn { border-color: rgba(200,80,80,0.5); }
+.peek-plaque.scorn .pk-title { color: #f09a9a; }
+.peek-plaque.special { border-color: rgba(140,180,255,0.4); }
+.peek-plaque.special .pk-title { color: #a9c8f5; }
+.peek-plaque.type { border-color: rgba(201,168,76,0.6); }
+
+@keyframes peekIn { from { transform: scale(0.6); opacity: 0; } }
+@keyframes peekPlaques { from { transform: translateX(14px); opacity: 0; } }
+
+/* ═══ MELEE SPLASH — end-of-act tournament moment ═══════════════════ */
+
+#meleeSplash {
+    position: fixed;
+    inset: 0;
+    z-index: 10600; /* the act's big moment — nothing sits on top of the Melee */
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(30,14,6,0.88), rgba(8,4,2,0.96));
+    backdrop-filter: blur(3px);
+    cursor: pointer;
+}
+#meleeSplash.active { display: flex; animation: msFade 0.3s ease; }
+
+.ms-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    max-width: 94vw;
+    max-height: 96dvh;
+}
+.ms-banner {
+    font-family: 'Cinzel', serif;
+    font-weight: 900;
+    letter-spacing: 8px;
+    font-size: clamp(20px, 7dvh, 36px);
+    color: var(--gold-light);
+    text-transform: uppercase;
+    text-shadow: 0 0 24px rgba(201,168,76,0.55), 0 3px 6px rgba(0,0,0,0.8);
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    animation: msBanner 0.5s cubic-bezier(0.2, 1.4, 0.3, 1);
+}
+.ms-act {
+    font-size: 0.45em;
+    letter-spacing: 4px;
+    color: var(--gold-dark);
+}
+.ms-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: min(500px, 92vw);
+    overflow-y: auto;
+    overflow-x: hidden;   /* rows slide in from ±46px — no scrollbar flash */
+    padding: 4px;
+}
+.ms-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 14px;
+    border: 1px solid rgba(201,168,76,0.25);
+    border-radius: 10px;
+    background: linear-gradient(90deg, rgba(46,26,12,0.88), rgba(24,12,5,0.92));
+    opacity: 0;
+    transform: translateX(-46px);
+    animation: msRow 0.45s cubic-bezier(0.2, 1.2, 0.3, 1) forwards;
+}
+.ms-row:nth-child(even) { transform: translateX(46px); }
+.ms-row.winner {
+    border-color: var(--gold-light);
+    box-shadow: 0 0 20px rgba(201,168,76,0.45);
+}
+.ms-place {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    color: var(--gold-dark);
+    width: 30px;
+    flex-shrink: 0;
+}
+.ms-row.winner .ms-place { color: var(--gold-light); }
+.ms-portrait {
+    width: 34px; height: 34px;
+    border-radius: 6px;
+    object-fit: cover;
+    border: 1px solid rgba(201,168,76,0.4);
+    flex-shrink: 0;
+}
+.ms-name {
+    font-family: 'Cinzel', serif;
+    font-size: 13px;
+    color: var(--gold);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ms-row.winner .ms-name { color: #ffe9ad; }
+.ms-power { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.ms-power img { width: 18px; height: 18px; }
+.ms-power b {
+    font-family: 'Cinzel', serif;
+    font-size: 16px;
+    color: #ffd97a;
+    min-width: 26px;
+    text-align: right;
+}
+.ms-prestige {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    color: #8fd4ff;
+    width: 88px;
+    text-align: right;
+    flex-shrink: 0;
+}
+.ms-hint {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--gold-dark);
+    opacity: 0.7;
+}
+@keyframes msRow { to { opacity: 1; transform: none; } }
+@keyframes msBanner { from { opacity: 0; transform: scale(1.35); } }
+@keyframes msFade { from { opacity: 0; } }
+
+/* ═══ ACTION PANEL — shared body wrapper + table-scene breathing ═════ */
+
+/* Desktop keeps the classic centered column; the card image is a
+   table-view feature (shown inside the landscape media query). */
+.action-panel .action-card-img { display: none; }
+.action-panel .action-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+}
+
+@keyframes tvGlowBreathe { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }
+
+@keyframes playableBreathe {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(140,225,125,0.95), 0 0 18px 4px rgba(120,220,120,0.55); }
+    50%      { box-shadow: 0 0 0 2px rgba(140,225,125,0.7),  0 0 10px 2px rgba(120,220,120,0.35); }
+}

@@ -535,7 +535,7 @@ const HOWTO_CARDS = [
       art: `<div class="ht-icons">${['survival','charisma','alchemy','prospecting','knowledge','power'].map(HOWTO_ART.icon).join('')}</div>` },
     { text: `Each round you're dealt a hand. <b>Play one card, then pass the rest</b> to the next player. Everyone drafts from the same hands \u2014 choose wisely!`,
       art: `<div class="ht-fan"><img src="assets/cards/regular/Trapping Card.jpg" alt=""><img src="assets/cards/regular/Cooking Card.jpg" alt=""><img src="assets/cards/regular/Negotiate Card.jpg" alt=""></div>` },
-    { text: `On your turn, <b>play a card</b> to gain its skills (you'll need the right skills for some). Not useful? <b>Discard it for +3 gold</b> \u2014 or to nudge your ring.`,
+    { text: `On your turn, <b>play a card</b> to gain its skills (you'll need the right skills for some). Not useful? <b>Discard it for +3 gold</b> \u2014 or to slide your ring.`,
       art: HOWTO_ART.card('assets/cards/regular/Alchemist Apprentice Card.jpg') },
     { text: `Cards come in many types: <b>Endeavors</b> build skills, <b>Weapons</b> give Power, <b>Artifacts</b> & <b>Adventures</b> grant Favor, and <b>Potions</b> fire off instantly.`,
       art: `<div class="ht-fan"><img src="assets/cards/regular/Hunting Card.jpg" alt=""><img src="assets/cards/regular/Lens of Truth Card.jpg" alt=""><img src="assets/cards/regular/Badge of Courage Card.jpg" alt=""></div>` },
@@ -660,7 +660,8 @@ window.resetCoach = resetCoach;
 // Never surface a tip while a full-screen modal / action panel is up.
 function coachOverlayOpen() {
     return ['howto-overlay', 'boardOverlay', 'handInspectOv', 'oppOverlay',
-            'missionLB', 'cardZoom', 'scoring-screen', 'missionSelect', 'actionPanel']
+            'missionLB', 'cardZoom', 'scoring-screen', 'missionSelect', 'actionPanel',
+            'cardPeek', 'meleeSplash']
         .some(id => { const el = document.getElementById(id); return el && el.classList.contains('active'); });
 }
 
@@ -817,6 +818,22 @@ function coachMarkSeen(id) {
     if (_coachActive === id) { _coachActive = null; hideCoach(); }
     setTimeout(coachTick, 40);
 }
+
+// Backstop for the same rule: ANY tap inside the glowing anchor counts as
+// "got it" — even if the tap didn't route through a wired handler above.
+document.addEventListener('pointerdown', (e) => {
+    if (!_coachActive) return;
+    const step = COACH_STEPS.find(s => s.id === _coachActive);
+    if (!step) return;
+    let anchor = null;
+    try { anchor = step.anchor(); } catch (err) { return; }
+    if (!anchor) return;
+    const r = anchor.getBoundingClientRect();
+    if (e.clientX >= r.left && e.clientX <= r.right &&
+        e.clientY >= r.top && e.clientY <= r.bottom) {
+        coachMarkSeen(step.id);
+    }
+}, true);
 
 // Safety-net heartbeat: some modals open/close without a table re-render, so
 // poll a few times a second to keep the bubble correctly shown/hidden. Costs
@@ -1003,11 +1020,27 @@ function formatPhase(phase) {
 
 // ── Phase Bar ──
 
+// Short phase names for the compact table view's top-left pill.
+function formatPhaseShort(phase) {
+    const names = {
+        'setup': 'Setup',
+        'gameplay': 'Draft',
+        'activate': 'Activation',
+        'missions': 'Missions',
+        'melee': 'Melee',
+        'scoring': 'Scoring',
+        'game_over': 'Game Over'
+    };
+    return names[phase] || phase;
+}
+
 function renderPhaseBar(state) {
     const bar = document.getElementById('phaseBar');
+    const acts = ['I', 'II', 'III'];
+    const phaseText = isCompactLandscape() ? formatPhaseShort(state.phase) : formatPhase(state.phase);
     bar.innerHTML = `
-        <span class="act-tag">Act ${state.currentAct}</span>
-        <span class="phase-text">${formatPhase(state.phase)}</span>
+        <span class="act-tag">Act ${acts[state.currentAct - 1] || state.currentAct}</span>
+        <span class="phase-text">${phaseText}</span>
     `;
 }
 
@@ -1379,7 +1412,8 @@ function buildPlayerMat(i, state, isYou, seat) {
     // Played cards tucked under the mat (peeking, overlapped). Click mat to expand.
     const cards = p.playedCards || [];
     let tucked = cards.map(c =>
-        `<img class="pmat-card" src="assets/cards/regular/${c.filename}" alt="${c.name}">`
+        `<img class="pmat-card" src="assets/cards/regular/${c.filename}" alt="${c.name}"
+              data-peek="assets/cards/regular/${c.filename}">`
     ).join('');
     if (!tucked) tucked = '<span class="pmat-empty">No cards played</span>';
 
@@ -1397,30 +1431,58 @@ function buildPlayerMat(i, state, isYou, seat) {
         </div>`;
 }
 
-// Seat assignment for OPPONENTS (you are always seat "bottom"), arranged
-// around the central missions. Keyed by opponent count.
-function tvOpponentSeats(opponentCount) {
-    switch (opponentCount) {
-        case 1:  return ['top'];                              // 2-player: across
-        case 2:  return ['left', 'right'];                    // 3-player: sides
-        case 3:  return ['left', 'top', 'right'];             // 4-player: ring
-        default: return ['left', 'topleft', 'topright', 'right']; // 5-player
-    }
+// ── Rival plaque (Battlegrounds-style top rail) ──
+// Rivals compress into upright portrait plaques along the top edge instead of
+// rotated full boards: portrait + name + the same public info the old mats
+// showed (gold / prestige / scorn / favor tokens, played-card count, ring
+// slot). Keeps .pmat/.opp classes + data-pi so coach-marks, tap-to-inspect
+// and the FX delta system all keep working unchanged.
+function buildRivalPlaque(i, state) {
+    const p = state.players[i];
+    const char = game.players[i] ? game.players[i].character : null;
+    const boardSrc = char ? `assets/characters/${char.filename}` : '';
+    const isActive = state.activePlayerIndex === i;
+    const crown = state.emblemHolder === i ? ' 👑' : '';
+    const ringPos = game.players[i] ? game.players[i].sliderPosition : 2;
+    const cardCount = (p.playedCards || []).length;
+
+    let chips = tvTokenChip('gold', p.gold);
+    if (p.prestige) chips += tvTokenChip('prestige', p.prestige);
+    if (p.scorn)    chips += tvTokenChip('scorn', p.scorn);
+    if (p.favor)    chips += tvTokenChip('favor', p.favor);
+
+    const ringDots = [0,1,2,3,4].map(s =>
+        `<i class="rplq-ringdot${s === ringPos ? ' on' : ''}"></i>`).join('');
+
+    return `
+        <div class="pmat opp rplq${isActive ? ' active' : ''}" data-pi="${i}"
+             onclick="openOppOverlay(${i})">
+            <div class="rplq-portrait"><img src="${boardSrc}" alt="${p.name}"></div>
+            <div class="rplq-info">
+                <span class="rplq-name">${p.name}${crown}</span>
+                <div class="pmat-tokens rplq-chips">${chips}</div>
+                <div class="rplq-foot">
+                    <span class="rplq-ring">${ringDots}</span>
+                    <span class="rplq-cards">🂠 ${cardCount}</span>
+                </div>
+            </div>
+        </div>`;
 }
 
 function renderTvCenter(state) {
     const c = document.getElementById('tvCenter');
     if (!c) return;
     const ms = state.visibleMissions || [];
-    let h = '<span class="tv-center-label">Available Missions</span><div class="tv-missions">';
-    if (ms.length) {
-        ms.forEach(m => {
-            h += `<img class="tv-mission" src="assets/cards/missions/${m.filename}"
-                       alt="${m.name}"
-                       onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
-        });
-    } else {
-        h += '<span class="pmat-empty">None</span>';
+    // Missions are the stage: big readable cards, with ghosted placeholder
+    // slots (Wingspan-style) so the pool always reads as 3 seats.
+    let h = '<span class="tv-center-label">Missions of the Realm</span><div class="tv-missions">';
+    ms.forEach(m => {
+        h += `<img class="tv-mission" src="assets/cards/missions/${m.filename}"
+                   alt="${m.name}" data-peek="assets/cards/missions/${m.filename}"
+                   onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
+    });
+    for (let g = ms.length; g < 3; g++) {
+        h += '<span class="tv-mission ghost"></span>';
     }
     h += '</div>';
     c.innerHTML = h;
@@ -1442,16 +1504,29 @@ function renderTvHand(state) {
     const step = count > 1 ? (maxAngle * 2) / (count - 1) : 0;
     const startAngle = -maxAngle;
 
+    // Playable glow (Battlegrounds-style): on your turn, cards you can
+    // actually play get a soft green edge so options read at a glance.
+    const myTurn = state.activePlayerIndex === 0 && state.phase === 'gameplay';
+
     let html = '<div class="hand-arc">';
     hand.forEach((card, i) => {
         const angle = startAngle + step * i;
         const lift = -Math.abs(angle) * 0.4;
         const isSelected = selectedHandCard === i;
-        html += `<div class="hand-card${isSelected ? ' selected' : ''}"
+        let playable = false;
+        if (myTurn) {
+            if (card.type === 'mission_letter') {
+                playable = game.players[0].gold >= 1 && (state.visibleMissions || []).length > 0;
+            } else {
+                try { playable = game.checkRequirements(0, card).canPlay; } catch (e) { playable = false; }
+            }
+        }
+        html += `<div class="hand-card${isSelected ? ' selected' : ''}${playable ? ' playable' : ''}"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
                     onclick="event.stopPropagation(); selectHandCard(${i})"
                     ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
-                    <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
+                    <img src="assets/cards/regular/${card.filename}" alt="${card.name}"
+                         data-peek="assets/cards/regular/${card.filename}">
                 </div>`;
     });
     html += '</div>';
@@ -1522,7 +1597,8 @@ function renderTvRight(state) {
         const reqs = (m.requirements || []).map(r => SKILL_ABBR[r] || r.slice(0,3).toUpperCase()).join(' + ') || '—';
         return `<div class="tv-mission-row ${cls}"
                      onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">
-            <img class="tv-mission-thumb" src="assets/cards/missions/${m.filename}" alt="${m.name}">
+            <img class="tv-mission-thumb" src="assets/cards/missions/${m.filename}" alt="${m.name}"
+                 data-peek="assets/cards/missions/${m.filename}">
             <div class="tv-mission-info">
                 <span class="tv-mission-name">${m.name}</span>
                 <span class="tv-mission-meta">${m.favorValue || 0} Favor · ${reqs}</span>
@@ -1664,10 +1740,11 @@ function renderTableView(state) {
     const seatsEl = document.getElementById('tvSeats');
     if (!seatsEl) return;
 
-    const seats = tvOpponentSeats(state.players.length - 1);
+    // You: full mat, bottom-left anchor. Rivals: compact plaque rail, top.
     let html = buildPlayerMat(0, state, true, 'bottom');
-    let s = 0;
-    state.players.forEach((p, i) => { if (i !== 0) html += buildPlayerMat(i, state, false, seats[s++]); });
+    html += '<div class="tv-rivals">';
+    state.players.forEach((p, i) => { if (i !== 0) html += buildRivalPlaque(i, state); });
+    html += '</div>';
     seatsEl.innerHTML = html;
 
     renderTvCenter(state);
@@ -1817,7 +1894,7 @@ function openOppOverlay(playerIndex) {
     const p = state.players[playerIndex];
     const char = game.players[playerIndex].character;
     if (!char) return;
-    if (playerIndex !== 0 && typeof coachMarkSeen === 'function') coachMarkSeen('rivals');
+    if (typeof coachMarkSeen === 'function') coachMarkSeen(playerIndex === 0 ? 'welcome' : 'rivals');
 
     document.getElementById('oppOvAvatar').src = `assets/characters/${char.filename}`;
     document.getElementById('oppOvName').textContent = p.name;
@@ -1837,7 +1914,8 @@ function openOppOverlay(playerIndex) {
         wrap.className = 'opp-ov-card-wrap';
         const safeName = card.name.replace(/'/g, "\\'");
         wrap.innerHTML = `
-            <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
+            <img src="assets/cards/regular/${card.filename}" alt="${card.name}"
+                 data-peek="assets/cards/regular/${card.filename}">
             <div class="lend-btn" onclick="requestLend(${playerIndex}, '${safeName}')">Lend Skills</div>
         `;
         cardsEl.appendChild(wrap);
@@ -1915,7 +1993,11 @@ function showActionPanel(cardIndex) {
     const skills = card.skills || [];
     const typeName = (card.type || 'card').replace(/_/g, ' ');
 
-    let html = '<div class="action-header">';
+    // The card itself sits beside the buttons (readable, peek-able) so the
+    // decision and the actions live together \u2014 no more covered/cut-off card.
+    let html = `<img class="action-card-img" src="assets/cards/regular/${card.filename}"
+                     alt="${card.name}" data-peek="assets/cards/regular/${card.filename}">`;
+    html += '<div class="action-body"><div class="action-header">';
     html += `<div class="action-card-name">${card.name}</div>`;
     html += `<div class="action-card-type">${typeName.charAt(0).toUpperCase() + typeName.slice(1)}</div>`;
 
@@ -1967,13 +2049,13 @@ function showActionPanel(cardIndex) {
     // Discard to slide — only if slider can move
     const player = game.players[0];
     if (player.sliderPosition > 0) {
-        html += `<button class="btn-royal action-btn" onclick="discardToSlide(${cardIndex}, -1)"><span>\u2190 Discard to Slide Left</span></button>`;
+        html += `<button class="btn-royal action-btn" onclick="discardToSlide(${cardIndex}, -1)"><span>\u2190 Discard: Slide Ring</span></button>`;
     }
     if (player.sliderPosition < 4) {
-        html += `<button class="btn-royal action-btn" onclick="discardToSlide(${cardIndex}, 1)"><span>Discard to Slide Right \u2192</span></button>`;
+        html += `<button class="btn-royal action-btn" onclick="discardToSlide(${cardIndex}, 1)"><span>Discard: Slide Ring \u2192</span></button>`;
     }
 
-    html += '</div>';
+    html += '</div></div>';
 
     panel.innerHTML = html;
     panel.classList.add('active');
@@ -2315,7 +2397,8 @@ function showMissionSelectUI() {
     game.visibleMissions.forEach((m, i) => {
         html += `
             <div class="mission-option" onclick="selectMission(${i})">
-                <img src="assets/cards/missions/${m.filename}" alt="${m.name}">
+                <img src="assets/cards/missions/${m.filename}" alt="${m.name}"
+                     data-peek="assets/cards/missions/${m.filename}">
                 <div style="font-family: Cinzel, serif; color: var(--gold); margin-top: 8px; font-size: 14px;">${m.name}</div>
             </div>
         `;
@@ -2443,11 +2526,10 @@ function endActPhases() {
             meleeResults.forEach(r => {
                 addLogEntry(`${ordinals[r.placement - 1] || r.placement + 'th'}: ${r.name} \u2014 Power ${r.power}, +${r.prestige} Prestige`);
             });
-            showNotification(`Melee Winner: ${meleeResults[0].name} (Power: ${meleeResults[0].power})`, 'melee');
         }
 
-        // ACT TRANSITION
-        setTimeout(() => {
+        // ACT TRANSITION \u2014 after the Melee splash has had its moment.
+        const advanceAct = () => {
             const result = game.endAct();
             if (result === 'scoring') {
                 showScoring();
@@ -2456,7 +2538,13 @@ function endActPhases() {
                 showNotification(`Act ${game.currentAct} Begins!`, 'act');
                 renderGameState();
             }
-        }, 2000);
+        };
+
+        if (meleeResults.length > 0) {
+            showMeleeSplash(meleeResults, actNum).then(() => setTimeout(advanceAct, 450));
+        } else {
+            setTimeout(advanceAct, 2000);
+        }
     }, meleeStart);
 }
 
@@ -2517,6 +2605,206 @@ function renderStats(state) {
     renderBottomStats(state);
 }
 
+// ═══ CARD PEEK — press & hold "boom" (Battlegrounds-style) ═══════════
+// Hold any card (hand, table, missions, panels) ~a third of a second and it
+// blows up to full readable size with keyword plaques beside it explaining
+// exactly what it does. Release or tap to put it down. Works with mouse too.
+
+const PEEK_TYPE_INFO = {
+    endeavor:       ['Endeavor', 'Builds your skills.'],
+    weapon:         ['Weapon', 'Power for the Melee.'],
+    artifact:       ['Artifact', 'Grants lasting Favor.'],
+    adventure:      ['Adventure', 'A quest that grants rich Favor.'],
+    potion:         ['Potion', 'Fires off instantly when played.'],
+    mission_letter: ['Mission Letter', 'Spend 1 Gold to take a mission from the pool.'],
+    mission:        ['Mission', 'Meet its skill requirement — Favor if you succeed, Scorn if you fail.'],
+};
+
+let _peekIndexMap = null;
+function peekLookup(src) {
+    if (!_peekIndexMap) {
+        _peekIndexMap = {};
+        ((window.FAVOR_DATA || {}).cards || []).forEach(c => {
+            _peekIndexMap['assets/cards/regular/' + c.filename] = { kind: 'card', data: c };
+        });
+        ((window.FAVOR_DATA || {}).missions || []).forEach(m => {
+            _peekIndexMap['assets/cards/missions/' + m.filename] = { kind: 'mission', data: m };
+        });
+    }
+    return _peekIndexMap[src] || null;
+}
+
+// "Survival ×2" style aggregation for skill lists.
+function peekSkillCounts(list) {
+    const counts = {};
+    (list || []).forEach(s => { counts[s] = (counts[s] || 0) + 1; });
+    return Object.entries(counts).map(([s, n]) =>
+        `<span class="pk-skill"><img src="assets/icons/${s}.png" alt="">${s.charAt(0).toUpperCase() + s.slice(1)}${n > 1 ? ' ×' + n : ''}</span>`
+    ).join('');
+}
+
+function peekPlaque(title, body, cls) {
+    return `<div class="peek-plaque ${cls || ''}"><div class="pk-title">${title}</div><div class="pk-body">${body}</div></div>`;
+}
+
+function buildPeekPlaques(src) {
+    const hit = peekLookup(src);
+    if (!hit) return '';
+    const d = hit.data;
+    let out = '';
+
+    if (hit.kind === 'card') {
+        const t = PEEK_TYPE_INFO[d.type];
+        if (t) out += peekPlaque(t[0], t[1], 'type');
+        if (d.skills && d.skills.length) out += peekPlaque('Grants', peekSkillCounts(d.skills));
+        if (d.cost) out += peekPlaque('Cost', `${d.cost} Gold to play`);
+        if (d.requirements && d.requirements.length) out += peekPlaque('Requires', peekSkillCounts(d.requirements), 'req');
+        const r = d.rewards || {};
+        const rr = [];
+        if (r.gold) rr.push(`+${r.gold} Gold`);
+        if (r.prestige) rr.push(`+${r.prestige} Prestige`);
+        if (r.favor) rr.push(`+${r.favor} Favor`);
+        if (rr.length) out += peekPlaque('Rewards', rr.join(' · '));
+        if (r.scorn) out += peekPlaque('Beware', `+${r.scorn} Scorn`, 'scorn');
+        if (d.special && SPECIAL_DESCRIPTIONS[d.special]) out += peekPlaque('Special', SPECIAL_DESCRIPTIONS[d.special], 'special');
+    } else {
+        const t = PEEK_TYPE_INFO.mission;
+        out += peekPlaque(t[0], t[1], 'type');
+        if (d.favorValue) out += peekPlaque('Worth', `${d.favorValue} Favor`);
+        if (d.requirements && d.requirements.length) out += peekPlaque('Requires', peekSkillCounts(d.requirements), 'req');
+        const s = d.successRewards || {};
+        const sr = [];
+        if (s.favor) sr.push(`+${s.favor} Favor`);
+        if (s.gold) sr.push(`+${s.gold} Gold`);
+        if (s.prestige) sr.push(`+${s.prestige} Prestige`);
+        if (sr.length) out += peekPlaque('On Success', sr.join(' · '));
+        const f = d.failurePenalties || {};
+        if (f.scorn) out += peekPlaque('On Failure', `+${f.scorn} Scorn`, 'scorn');
+        if (d.grantsMap) out += peekPlaque('Grants Map', d.grantsMap, 'special');
+    }
+    return out;
+}
+
+function openCardPeek(src) {
+    const ov = document.getElementById('cardPeek');
+    if (!ov) return;
+    ov.innerHTML = `
+        <img class="peek-card" src="${src}" alt="">
+        <div class="peek-plaques">${buildPeekPlaques(src)}</div>`;
+    ov.classList.add('active');
+    if (typeof coachTick === 'function') coachTick();
+}
+
+function closeCardPeek() {
+    const ov = document.getElementById('cardPeek');
+    if (ov) ov.classList.remove('active');
+    if (typeof coachTick === 'function') coachTick();
+}
+
+// Long-press detection (delegated; survives every re-render).
+let _peekTimer = null;
+let _peekStart = null;
+let _peekShowing = false;
+let _peekSwallowClick = false;
+
+document.addEventListener('pointerdown', (e) => {
+    const t = e.target.closest && e.target.closest('[data-peek]');
+    if (!t) return;
+    _peekStart = { x: e.clientX, y: e.clientY };
+    clearTimeout(_peekTimer);
+    _peekTimer = setTimeout(() => {
+        _peekShowing = true;
+        openCardPeek(t.getAttribute('data-peek'));
+    }, 340);
+}, { passive: true });
+
+document.addEventListener('pointermove', (e) => {
+    if (!_peekTimer || !_peekStart) return;
+    if (Math.abs(e.clientX - _peekStart.x) > 10 || Math.abs(e.clientY - _peekStart.y) > 10) {
+        clearTimeout(_peekTimer); _peekTimer = null;
+    }
+}, { passive: true });
+
+function _peekRelease() {
+    clearTimeout(_peekTimer); _peekTimer = null;
+    if (_peekShowing) {
+        _peekShowing = false;
+        _peekSwallowClick = true;              // don't let the release "click" the card
+        setTimeout(() => { _peekSwallowClick = false; }, 400);
+        closeCardPeek();
+    }
+}
+document.addEventListener('pointerup', _peekRelease, { passive: true });
+document.addEventListener('pointercancel', _peekRelease, { passive: true });
+document.addEventListener('click', (e) => {
+    if (_peekSwallowClick) { e.stopPropagation(); e.preventDefault(); _peekSwallowClick = false; }
+}, true);
+// Long-press shouldn't summon the browser's image context menu / save sheet.
+document.addEventListener('contextmenu', (e) => {
+    if (e.target.closest && e.target.closest('[data-peek]')) e.preventDefault();
+});
+
+// ═══ MELEE SPLASH — end-of-act tournament flair ═══════════════════════
+// A quick full-screen moment (Battlegrounds combat splash energy): banner,
+// every heir's Power counts up, the strongest flares gold and takes
+// Prestige. Tap to skip; resolves a promise so the act flow waits for it.
+
+function showMeleeSplash(results, actNum) {
+    return new Promise((resolve) => {
+        const el = document.getElementById('meleeSplash');
+        if (!el || !results || !results.length) { resolve(); return; }
+        const acts = ['I', 'II', 'III'];
+
+        const rows = results.map((r, idx) => {
+            const pi = (r.playerIndex != null) ? r.playerIndex : game.players.findIndex(p => p.name === r.name);
+            const char = pi >= 0 && game.players[pi] && game.players[pi].character ? game.players[pi].character : null;
+            const img = char ? `assets/characters/${char.filename}` : 'assets/ui/cover.jpg';
+            return `<div class="ms-row${idx === 0 ? ' winner' : ''}" style="animation-delay:${0.25 + idx * 0.14}s">
+                <span class="ms-place">${['1st','2nd','3rd','4th','5th'][r.placement - 1] || r.placement + 'th'}</span>
+                <img class="ms-portrait" src="${img}" alt="">
+                <span class="ms-name">${r.name}</span>
+                <span class="ms-power"><img src="assets/icons/power.png" alt=""><b data-power="${r.power}">0</b></span>
+                <span class="ms-prestige">${r.prestige ? `+${r.prestige} Prestige` : ''}</span>
+            </div>`;
+        }).join('');
+
+        el.innerHTML = `
+            <div class="ms-inner">
+                <div class="ms-banner">⚔ &nbsp;Melee&nbsp; ⚔<span class="ms-act">Act ${acts[actNum - 1] || actNum}</span></div>
+                <div class="ms-rows">${rows}</div>
+                <div class="ms-hint">tap to continue</div>
+            </div>`;
+        el.classList.add('active');
+
+        // Roll every Power count up from 0 (ease-out).
+        el.querySelectorAll('.ms-power b').forEach(b => {
+            const target = parseInt(b.dataset.power, 10) || 0;
+            const dur = 750;
+            let t0 = null;
+            const tick = (t) => {
+                if (!el.classList.contains('active')) return;
+                if (t0 === null) t0 = t;
+                const k = Math.min(1, (t - t0) / dur);
+                b.textContent = Math.round(target * (1 - Math.pow(1 - k, 3)));
+                if (k < 1) requestAnimationFrame(tick);
+            };
+            setTimeout(() => requestAnimationFrame(tick), 420);
+        });
+
+        let closed = false;
+        const close = () => {
+            if (closed) return;
+            closed = true;
+            el.classList.remove('active');
+            el.onclick = null;
+            setTimeout(resolve, 260);
+        };
+        el.onclick = close;
+        const hold = (2100 + results.length * 500) * (window.CINEMATIC_SPEED || 1);
+        setTimeout(close, hold);
+    });
+}
+
 // ─── CARD ZOOM ─────────────────────────────────────────────
 
 function zoomCard(src) {
@@ -2540,6 +2828,7 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
         closeAllOverlays();
         closeZoom();
+        closeCardPeek();
     }
 });
 
