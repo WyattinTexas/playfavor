@@ -1694,12 +1694,41 @@ html, body {
     display: none;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
     background: linear-gradient(180deg, var(--royal-deep) 0%, #0a0612 100%);
     z-index: 950;
+    overflow-y: auto; /* short screens scroll instead of clipping */
 }
 
 #scoring-screen.active { display: flex; }
+
+/* margin:auto centers when the content fits and scrolls when it doesn't —
+   justify-content:center would clip the top on short screens. */
+#scoringContent {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: auto;
+    padding: 16px;
+    max-width: 100vw;
+}
+
+.scoring-title {
+    font-family: 'Cinzel', serif;
+    color: var(--gold);
+    font-size: 28px;
+    margin: 20px 0;
+    text-align: center;
+}
+
+.scoring-sub {
+    color: var(--text-light);
+    opacity: 0.7;
+    margin-bottom: 20px;
+}
+
+.scoring-scroll { max-width: 96vw; overflow-x: auto; }
+
+.scoring-actions { margin: 40px 0 12px; }
 
 .scoring-table {
     border-collapse: collapse;
@@ -3583,6 +3612,16 @@ html, body {
     .howto-text { font-size: 14px; line-height: 1.35; min-height: 44px; }
     .howto-dots { margin: 8px 0 8px; }
     .howto-btn { padding: 7px 16px; font-size: 12px; }
+
+    /* ── Final scoring: the whole ceremony fits a short screen ── */
+    #scoringContent { padding: 8px 10px; }
+    .scoring-title { font-size: 17px; margin: 6px 0 2px; }
+    .scoring-sub { font-size: 11px; margin-bottom: 6px; }
+    .scoring-table { margin-top: 8px; }
+    .scoring-table th, .scoring-table td { padding: 4px 9px; font-size: 11px; }
+    .scoring-table th { font-size: 8px; letter-spacing: 0.5px; }
+    .scoring-actions { margin: 12px 0 6px; }
+    .scoring-actions .btn-royal { padding: 8px 22px; font-size: 12px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════

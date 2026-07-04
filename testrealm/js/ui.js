@@ -2733,37 +2733,35 @@ function showScoring() {
     const winner = scores[0];
 
     content.innerHTML = `
-        <h2 style="font-family: 'Cinzel', serif; color: var(--gold); font-size: 28px; margin: 20px 0;">
-            ${winner.name} Claims the Throne!
-        </h2>
-        <p style="color: var(--text-light); opacity: 0.7; margin-bottom: 20px;">
-            Final Score: ${winner.finalScore} points
-        </p>
-        <table class="scoring-table">
-            <tr>
-                <th>Heir</th>
-                <th>Mission Favor</th>
-                <th>Card Favor</th>
-                <th>Character Favor</th>
-                <th>Prestige</th>
-                <th>Scorn</th>
-                <th>Total</th>
-                <th>Gold (Tiebreaker)</th>
-            </tr>
-            ${scores.map((s, i) => `
-                <tr class="${i === 0 ? 'winner' : ''}">
-                    <td>${s.name}</td>
-                    <td>${s.missionFavor}</td>
-                    <td>${s.cardFavor}</td>
-                    <td>${s.characterFavor}</td>
-                    <td>${s.prestige}</td>
-                    <td>-${s.scorn}</td>
-                    <td><strong>${s.finalScore}</strong></td>
-                    <td>${s.gold}</td>
+        <h2 class="scoring-title">${winner.name} Claims the Throne!</h2>
+        <p class="scoring-sub">Final Score: ${winner.finalScore} points</p>
+        <div class="scoring-scroll">
+            <table class="scoring-table">
+                <tr>
+                    <th>Heir</th>
+                    <th>Mission Favor</th>
+                    <th>Card Favor</th>
+                    <th>Character Favor</th>
+                    <th>Prestige</th>
+                    <th>Scorn</th>
+                    <th>Total</th>
+                    <th>Gold (Tiebreaker)</th>
                 </tr>
-            `).join('')}
-        </table>
-        <div style="margin-top: 40px;">
+                ${scores.map((s, i) => `
+                    <tr class="${i === 0 ? 'winner' : ''}">
+                        <td>${s.name}</td>
+                        <td>${s.missionFavor}</td>
+                        <td>${s.cardFavor}</td>
+                        <td>${s.characterFavor}</td>
+                        <td>${s.prestige}</td>
+                        <td>${s.scorn ? '−' + s.scorn : 0}</td>
+                        <td><strong>${s.finalScore}</strong></td>
+                        <td>${s.gold}</td>
+                    </tr>
+                `).join('')}
+            </table>
+        </div>
+        <div class="scoring-actions">
             <button class="btn-royal primary" onclick="location.reload()">
                 <span>Play Again</span>
             </button>
