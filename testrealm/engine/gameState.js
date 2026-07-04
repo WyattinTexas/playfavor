@@ -1221,20 +1221,22 @@ class FavorGame {
             return;
         }
 
-        // 1/2 + 2/2 weapon combos (Blind Faith + Heaven's Blade, Chemical X + Chemical Y)
+        // 1/2 + 2/2 pairs: the 2/2 card prints its OWN bonus for owning the
+        // 1/2 partner — there is no generic combo reward. Heaven's Blade and
+        // Archeus each pay +6 Power at the Melee (calculatePower, ongoing
+        // while both are down); Chemical Y pays +15 Favor at scoring
+        // (dynamicCardFavor). Here we just announce a pairing completing.
         if (card.combo === '1/2' || card.combo === '2/2') {
-            const partnerCombo = card.combo === '1/2' ? '2/2' : '1/2';
-            // Find partner among played cards that shares the same combo system
-            // (same act+type or explicitly linked)
-            const partner = player.playedCards.find(c =>
-                c.id !== card.id &&
-                c.combo === partnerCombo &&
-                c.type === card.type
-            );
-            if (partner && !player[`combo_${Math.min(card.id, partner.id)}_${Math.max(card.id, partner.id)}`]) {
-                player[`combo_${Math.min(card.id, partner.id)}_${Math.max(card.id, partner.id)}`] = true;
-                player.favor += 5;
-                this.addLog(`${player.name} combo! ${card.name} + ${partner.name}: +5 Favor`);
+            const own = (n) => player.playedCards.some(c => c.name === n);
+            if (own('Blind Faith')) {
+                const partners = ["Heaven's Blade", 'Archeus'].filter(own);
+                if (partners.length && ['Blind Faith', "Heaven's Blade", 'Archeus'].includes(card.name)) {
+                    this.addLog(`${player.name}'s Blind Faith pairing: +6 Power from ${partners.join(' and from ')} at the Melee`);
+                }
+            }
+            if (own('Chemical X') && own('Chemical Y') &&
+                (card.name === 'Chemical X' || card.name === 'Chemical Y')) {
+                this.addLog(`${player.name}'s Chemical X + Chemical Y pairing: +15 Favor at scoring`);
             }
             return;
         }
@@ -1706,10 +1708,15 @@ class FavorGame {
         // (accumulated by applyCardEffects and applySliderAbilities)
         let power = player.skills.power || 0;
 
-        // Heaven's Blade: +6 Power while you also own Blind Faith.
-        if (player.playedCards.some(c => c.special === 'power_6_if_blind_faith') &&
-            player.playedCards.some(c => c.name === 'Blind Faith')) {
-            power += 6;
+        // Blind Faith pairings: Heaven's Blade AND Archeus each print
+        // "+6 Additional Power if you own Blind Faith" — so each grants
+        // its own +6 while Blind Faith is down (both owned = +12).
+        if (player.playedCards.some(c => c.name === 'Blind Faith')) {
+            player.playedCards.forEach(c => {
+                if (c.special === 'power_6_if_blind_faith' || c.name === 'Archeus') {
+                    power += 6;
+                }
+            });
         }
 
         // --- Apply special melee modifiers ---
@@ -1808,6 +1815,10 @@ class FavorGame {
                 const right = this.players[(playerIndex + 1) % n];
                 return (left.skills.power || 0) + (right.skills.power || 0);
             }
+            case 'double_adventure_favor':
+                // Chemical Y's printed pair bonus: "If you own Chemical X:
+                // 15 Favor" (its doubling effect fires at play time).
+                return p.playedCards.some(c => c.name === 'Chemical X') ? 15 : 0;
             default:
                 return 0;
         }

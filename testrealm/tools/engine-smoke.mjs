@@ -257,5 +257,33 @@ console.log('── Mission skill rewards survive a slider move');
   ok((p.skills.prospecting || 0) >= 3, `+3 Prospecting persists after recalc (${before} → ${p.skills.prospecting})`);
 }
 
+console.log('── 1/2 + 2/2 pairs: printed bonuses only, no invented favor');
+{
+  const g = newGame();
+  const p = g.players[0];
+  p.skills.power = 1;
+  const favorBefore = p.favor;
+  p.playedCards.push({ ...cardByName('Blind Faith') });
+  g.applySlotSkills(p);
+  const base = g.calculatePower(0);
+  p.playedCards.push({ ...cardByName('Archeus') });
+  g.resolveCombo(0, p.playedCards[p.playedCards.length - 1]);
+  ok(g.calculatePower(0) === base + 6, `Archeus + Blind Faith: +6 Power (${base} → ${g.calculatePower(0)})`);
+  p.playedCards.push({ ...cardByName("Heaven's Blade") });
+  ok(g.calculatePower(0) === base + 12, `all three: Heaven's Blade AND Archeus each +6 (${g.calculatePower(0)})`);
+  ok(p.favor === favorBefore, 'no phantom +5 favor from pairing');
+}
+
+console.log('── Chemical Y: +15 Favor at scoring only with Chemical X owned');
+{
+  const g = newGame();
+  g.players[0].playedCards.push({ ...cardByName('Chemical Y') });
+  let me = g.calculateFinalScores().find(s => s.playerIndex === 0);
+  const without = me.cardFavor;
+  g.players[0].playedCards.push({ ...cardByName('Chemical X') });
+  me = g.calculateFinalScores().find(s => s.playerIndex === 0);
+  ok(me.cardFavor === without + 15, `pair bonus at scoring (${without} → ${me.cardFavor})`);
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);
