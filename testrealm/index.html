@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FAVOR — Test Realm</title>
-    <link rel="stylesheet" href="css/style.css?v=20260704193438">
+    <link rel="stylesheet" href="css/style.css?v=20260704195420">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
@@ -85,13 +85,16 @@
     <!-- ═══ GAME SCREEN — Final Cut Layout ═══ -->
     <div id="game-screen">
 
-        <!-- Board Expand Overlay -->
+        <!-- Board Expand Overlay — the art IS the sheet: the ring sits on
+             the track's slot circles; click a circle to pay & slide. -->
         <div class="board-overlay" id="boardOverlay" onclick="closeBoardOverlay()">
-            <img class="board-ov-full" id="boardOvImg" src="" onclick="event.stopPropagation()">
+            <div class="board-ov-boardwrap" onclick="event.stopPropagation()">
+                <img class="board-ov-full" id="boardOvImg" src="">
+                <img class="board-ov-ring" id="boardOvRing" src="assets/ui/slider-ring.png" alt="">
+                <div id="boardOvSlots"></div>
+            </div>
             <div class="board-ov-name" id="boardOvName"></div>
             <div class="board-ov-sub">Character Board</div>
-            <div class="board-ov-slider" id="boardOvSlider" onclick="event.stopPropagation()"></div>
-            <div class="board-ov-strip" id="boardOvStrip" onclick="event.stopPropagation()"></div>
             <div class="ov-close" onclick="closeBoardOverlay()">ESC</div>
         </div>
 
@@ -261,10 +264,10 @@
     </audio>
 
     <!-- ═══ SCRIPTS ═══ -->
-    <script src="data/cards.js?v=20260704193438"></script>
-    <script src="data/missions.js?v=20260704193438"></script>
-    <script src="data/characters.js?v=20260704193438"></script>
-    <script src="engine/gameState.js?v=20260704193438"></script>
-    <script src="js/ui.js?v=20260704193438"></script>
+    <script src="data/cards.js?v=20260704195420"></script>
+    <script src="data/missions.js?v=20260704195420"></script>
+    <script src="data/characters.js?v=20260704195420"></script>
+    <script src="engine/gameState.js?v=20260704195420"></script>
+    <script src="js/ui.js?v=20260704195420"></script>
 </body>
 </html>

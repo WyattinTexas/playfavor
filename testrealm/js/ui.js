@@ -1836,8 +1836,7 @@ function openBoardOverlay() {
     document.getElementById('boardOvImg').src = `assets/characters/${char.filename}`;
     document.getElementById('boardOvName').textContent = char.name;
 
-    renderBoardOvSlider();
-    renderBoardOvStrip(char.id);
+    renderBoardOvSlots();
 
     document.getElementById('boardOverlay').classList.add('active');
 }
@@ -1846,73 +1845,49 @@ function closeBoardOverlay() {
     document.getElementById('boardOverlay').classList.remove('active');
 }
 
-function renderBoardOvSlider() {
+// The board art already explains every slot \u2014 no widget re-explains it.
+// Invisible hotspots sit on the art's five track circles: hover for the
+// landing halo + cost, click to pay & slide. The ring token overlaps the
+// current circle, exactly like the physical board.
+// Calibrated against the board scans (pixel-measured): the five circles
+// sit at these % of the board image. (The table mats' RING_SLOT_LEFTS are
+// rounded for their tiny size \u2014 at overlay size the drift shows.)
+const BOARD_OV_TRACK = { lefts: [17, 33.4, 50, 66.3, 82.9], top: 84.7 };
+
+function renderBoardOvSlots() {
     const player = game.players[0];
-    const char = player.character;
-    if (!char || !char.slots) return;
-
-    const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
-    const canLeft = player.sliderPosition > 0 && player.gold >= 5;
-    const canRight = player.sliderPosition < 4 && player.gold >= 5;
-    const claimed = player.claimedSlots || new Set([2]);
-
-    let cellsHtml = '';
-    for (let i = 0; i < 5; i++) {
-        const slot = char.slots[i];
-        const isCurrent = i === player.sliderPosition;
-        const isClaimed = claimed.has(i) && !isCurrent;
-        const stateClass = isCurrent ? 'current' : isClaimed ? 'claimed' : 'unclaimed';
-        const labels = buildSlotLabel(slot);
-
-        cellsHtml += `
-            <div class="slot-cell ${stateClass}" data-slot="${i}">
-                <div class="slot-pos-name">${posNames[i]}</div>
-                <div class="slot-rewards">
-                    ${labels.map(l => `<div class="slot-reward-line">${l}</div>`).join('')}
-                </div>
-                ${isClaimed ? '<div class="slot-claimed-check">\u2713</div>' : ''}
-            </div>`;
+    const cur = player.sliderPosition;
+    const ring = document.getElementById('boardOvRing');
+    if (ring) {
+        ring.style.left = BOARD_OV_TRACK.lefts[cur] + '%';
+        ring.style.top = BOARD_OV_TRACK.top + '%';
     }
 
-    document.getElementById('boardOvSlider').innerHTML = `
-        <button class="slider-btn${canLeft ? '' : ' disabled'}" onclick="payToSlide(-1); renderBoardOvSlider(); renderGameState()">
-            \u25C0 <span class="slider-cost">5g</span>
-        </button>
-        <div class="slot-track">
-            ${cellsHtml}
-            <div class="slot-ring" style="transform: translateX(${player.sliderPosition * 100}%)"></div>
-        </div>
-        <button class="slider-btn${canRight ? '' : ' disabled'}" onclick="payToSlide(1); renderBoardOvSlider(); renderGameState()">
-            <span class="slider-cost">5g</span> \u25B6
-        </button>
-    `;
-}
-
-function renderBoardOvStrip(activeId) {
-    const strip = document.getElementById('boardOvStrip');
-    const chars = window.FAVOR_DATA.characters;
-
-    strip.innerHTML = chars.map(c => {
-        const isActive = c.id === (activeId || selectedCharacter);
-        return `<img class="char-option${isActive ? ' active' : ''}"
-                    src="assets/characters/${c.filename}"
-                    onclick="switchBoardOv(this, '${c.id}')">`;
+    const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
+    const holder = document.getElementById('boardOvSlots');
+    if (!holder) return;
+    holder.innerHTML = BOARD_OV_TRACK.lefts.map((L, i) => {
+        const steps = Math.abs(i - cur);
+        const tip = i === cur
+            ? 'Your ring is here'
+            : `Slide to ${posNames[i]} \u2014 ${steps * 5} Gold`;
+        return `<div class="board-ov-slot${i === cur ? ' current' : ''}"
+                     style="left:${L}%; top:${BOARD_OV_TRACK.top}%"
+                     title="${tip}"
+                     onclick="event.stopPropagation(); boardOvSlotClick(${i})"></div>`;
     }).join('');
 }
 
-function switchBoardOv(el, charId) {
-    document.querySelectorAll('.board-ov-strip .char-option').forEach(o => o.classList.remove('active'));
-    el.classList.add('active');
-
-    const char = window.FAVOR_DATA.characters.find(c => c.id === charId);
-    if (!char) return;
-
-    const img = document.getElementById('boardOvImg');
-    img.style.animation = 'none';
-    img.offsetHeight;
-    img.style.animation = 'ovZoom 0.35s cubic-bezier(0.16,1,0.3,1)';
-    img.src = `assets/characters/${char.filename}`;
-    document.getElementById('boardOvName').textContent = char.name;
+function boardOvSlotClick(i) {
+    const player = game.players[0];
+    if (i === player.sliderPosition) return;
+    if (!game || game.phase !== 'gameplay') {
+        showNotification('The ring slides during gameplay rounds', 'error');
+        return;
+    }
+    const wrap = document.querySelector('.board-ov-boardwrap');
+    if (!wrap) return;
+    showSlideConfirm(i, wrap.getBoundingClientRect());
 }
 
 // ── Hand Inspect Overlay ──
@@ -2254,14 +2229,14 @@ async function payToSlide(direction) {
         showNotification(`Slider moved to ${posNames[player.sliderPosition]} (\u22125g)`, 'play');
         addLogEntry(`You pay 5g to slide to ${posNames[player.sliderPosition]}`);
         renderGameState();
-        renderBoardOvSlider();
+        renderBoardOvSlots();
 
         // Magician slot 2: choose a mission from the pool
         if (player._pendingSlotMission) {
             player._pendingSlotMission = false;
             await showMissionSelectAsync();
             renderGameState();
-            renderBoardOvSlider();
+            renderBoardOvSlots();
         }
     } else {
         showNotification(result.error, 'error');
@@ -3150,7 +3125,12 @@ function showSlideConfirm(targetSlot, boardRect) {
     ov.style.top = Math.round(boardRect.top - 8) + 'px';
     ov.classList.add('active');
 
-    const close = () => { ov.classList.remove('active'); renderGameState(); };
+    // Keep the board overlay's ring/hotspots honest if it's open.
+    const refreshBoardOv = () => {
+        const bo = document.getElementById('boardOverlay');
+        if (bo && bo.classList.contains('active')) renderBoardOvSlots();
+    };
+    const close = () => { ov.classList.remove('active'); renderGameState(); refreshBoardOv(); };
     ov.querySelector('#scCancel').onclick = close;
     const payBtn = ov.querySelector('#scPay');
     if (canAfford) payBtn.onclick = async () => {
@@ -3160,6 +3140,7 @@ function showSlideConfirm(targetSlot, boardRect) {
             await payToSlide(dir);   // charges 5g/step, fires slot events
         }
         renderGameState();
+        refreshBoardOv();
     };
 }
 
