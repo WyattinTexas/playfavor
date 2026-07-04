@@ -1,0 +1,2905 @@
+/**
+ * FAVOR — UI Controller
+ * Manages screens, rendering, player interaction
+ * Includes cinematic card spotlight system
+ */
+
+let game = null;
+let selectedCharacter = null;
+let musicPlaying = false;
+let selectedHandCard = null;
+
+// ─── CINEMATIC SPEED MULTIPLIER ──────────────────────────
+// 1.0 = normal, 0.5 = fast, 2.0 = slow drama
+window.CINEMATIC_SPEED = 1.0;
+
+function setCinematicSpeed(mult) {
+    window.CINEMATIC_SPEED = mult;
+    document.documentElement.style.setProperty('--cinematic-speed', mult);
+}
+setCinematicSpeed(1.0);
+
+// ─── SPECIAL ABILITY DESCRIPTIONS ────────────────────────
+
+const SPECIAL_DESCRIPTIONS = {
+    "or_choice":                     "Choose one skill from the options granted.",
+    "charisma_or_prospecting":       "Gain Charisma or Prospecting (auto-picked).",
+    "alchemy_or_prospecting":        "Gain Alchemy or Prospecting (auto-picked).",
+    "minds_eye":                     "+1 Knowledge (Mind's Eye).",
+    "philosopher_stone":             "Converts Gold to Favor at game end!",
+    "map_lost_north":                "Reveals a hidden path to the North.",
+    "power_x2":                      "Doubles your Power for Melee!",
+    "move_slider_any":               "Move your slider to any position!",
+    "double_adventure_favor":        "Doubles Favor from all Adventures!",
+    "minus_3_power_all_others":      "All opponents lose 3 Power!",
+    "scorn_to_prestige":             "Converts all Scorn into Prestige!",
+    "map_finding_lost_corridor":     "Unlocks the Finding the Lost Corridor adventure.",
+    "The Shadow Guide":              "Summons the Shadow Guide to lead the way.",
+    "gold_to_prestige":              "Converts Gold into Prestige!",
+    "others_5_scorn":                "All opponents gain 5 Scorn!",
+    "multiply_gold_x2":              "Doubles your Gold!",
+    "coin_flip_4_power":             "Flip a coin: win = +4 Power!",
+    "remove_mission_requirements":   "Removes all mission requirements!",
+    "remove_13_scorn":               "Removes up to 13 Scorn!",
+    "trade_route":                   "Opens a trade route for lasting profit.",
+    "discard_opponent_weapon":       "Destroys one weapon from each opponent!",
+    "sacred_chest":                  "Unlocks the Sacred Chest for treasure.",
+    "knowledge_x5":                  "Gain 5 Knowledge!",
+    "knowledge_x2":                  "Doubles your Knowledge!",
+    "philosopher_stone_x10":         "10x Philosopher's Stone conversion!",
+    "minds_eye_x2_philosopher_stone_x5": "2x Mind's Eye + 5x Philosopher's Stone!",
+    "map":                           "A fragment of the ancient map.",
+    "king_of_the_sky":               "King of the Sky -- dominates Melee!",
+    "defend_the_throne":             "Defends the throne from all challengers!",
+    "gold_2_per_alchemy_triangle":   "2 Gold for each Alchemy you and both neighbors have.",
+    "gold_2_per_power_neighbors":    "2 Gold for each Power your two neighbors have.",
+    "favor_per_survival_x2":         "Scores 2 Favor for each Survival you have.",
+    "favor_per_quest_x5":            "Scores 5 Favor per completed mission.",
+    "favor_per_sur_cha_pro":         "Scores 1 Favor per Survival, Charisma & Prospecting.",
+    "favor_per_wisdom_x8":           "Scores 8 Favor for each Wisdom card you have.",
+    "favor_per_neighbor_power":      "Scores 1 Favor for each Power your neighbors have.",
+    "power_6_if_blind_faith":        "+6 Power in Melee while you own Blind Faith.",
+};
+
+// ─── SLOT SPECIAL LABELS (Character Board) ───────────────
+const SLOT_SPECIAL_LABELS = {
+    "steal_3_prestige_each":       "Steal 3 Prestige",
+    "steal_2_gold_each":           "Steal 2 Gold each",
+    "give_1_gold_each":            "Give 1 Gold each",
+    "all_others_1_scorn":          "Others +1 Scorn",
+    "convert_gold_to_prestige":    "Gold \u2192 Prestige",
+    "philosopher_stone":           "Philosopher\u2019s Stone",
+    "philosopher_stone_x2":        "2\u00D7 Philosopher\u2019s Stone",
+    "minds_eye":                   "Mind\u2019s Eye",
+    "minds_eye_x5":                "5\u00D7 Mind\u2019s Eye",
+    "minds_eye_and_philosopher":   "Mind\u2019s Eye + Phil. Stone",
+    "pick_one":                    "Choose a Skill",
+    "borrow_any_player":           "Borrow from any player",
+    "mission_fail_10_gold":        "Fail mission \u2192 +10 Gold",
+    "choose_mission":              "Choose a Mission",
+};
+
+/**
+ * Build a compact label array for a character board slot.
+ * Returns an array of short strings like ["+5 Gold", "Power +1", "15 Favor"].
+ */
+function buildSlotLabel(slot) {
+    if (!slot) return ['(empty)'];
+    const parts = [];
+
+    // Skills
+    if (slot.skills) {
+        Object.entries(slot.skills).forEach(([skill, val]) => {
+            const name = skill.charAt(0).toUpperCase() + skill.slice(1);
+            parts.push(`${name} +${val}`);
+        });
+    }
+
+    // One-time gold
+    if (slot.gold) parts.push(`+${slot.gold} Gold`);
+
+    // One-time scorn
+    if (slot.scorn) parts.push(`+${slot.scorn} Scorn`);
+
+    // Favor
+    if (slot.favor) parts.push(`${slot.favor} Favor`);
+
+    // Special
+    if (slot.special && SLOT_SPECIAL_LABELS[slot.special]) {
+        parts.push(SLOT_SPECIAL_LABELS[slot.special]);
+    }
+
+    if (parts.length === 0) parts.push('\u2014');
+    return parts;
+}
+
+// ─── ANIMATION QUEUE ─────────────────────────────────────
+
+class AnimationQueue {
+    constructor() {
+        this.queue = [];
+        this.running = false;
+    }
+
+    add(fn) {
+        this.queue.push(fn);
+        if (!this.running) this.run();
+    }
+
+    async run() {
+        if (this.running) return;
+        this.running = true;
+        while (this.queue.length > 0) {
+            const fn = this.queue.shift();
+            try {
+                await fn();
+            } catch (e) {
+                console.warn('[AnimationQueue] Animation error:', e);
+            }
+        }
+        this.running = false;
+    }
+
+    clear() {
+        this.queue = [];
+    }
+
+    get pending() {
+        return this.queue.length;
+    }
+}
+
+const animationQueue = new AnimationQueue();
+
+// ─── CARD SPOTLIGHT SYSTEM ───────────────────────────────
+
+/**
+ * Build a read-only mini slot track for an opponent's character board.
+ */
+function buildMiniSlotTrack(playerIndex) {
+    const player = game.players[playerIndex];
+    const char = player.character;
+    if (!char || !char.slots) return '';
+
+    const posNames = ['1', '2', '3', '4', '5'];
+    const claimed = player.claimedSlots || new Set([2]);
+
+    let cells = '';
+    for (let i = 0; i < 5; i++) {
+        const isCurrent = i === player.sliderPosition;
+        const isClaimed = claimed.has(i) && !isCurrent;
+        const stateClass = isCurrent ? 'current' : isClaimed ? 'claimed' : 'unclaimed';
+        const labels = buildSlotLabel(char.slots[i]);
+
+        cells += `<div class="opp-slot-cell ${stateClass}">
+            <div class="opp-slot-num">${posNames[i]}</div>
+            <div class="opp-slot-rewards">${labels.map(l => `<div class="opp-slot-line">${l}</div>`).join('')}</div>
+        </div>`;
+    }
+
+    return `<div class="opp-slot-track">
+        ${cells}
+        <div class="opp-slot-ring" style="transform: translateX(${player.sliderPosition * 100}%)"></div>
+    </div>`;
+}
+
+function buildSpotlightContent(playerIndex, card, action) {
+    const isDiscard = (action === 'discard' || action === 'discard_slide');
+    const player = game.players[playerIndex];
+    const playerName = player.name;
+    const char = player.character;
+    const avatarSrc = char ? `assets/characters/${char.filename}` : '';
+    const charName = char ? char.name : '';
+
+    const actionLabel = isDiscard
+        ? `${playerName} discards...`
+        : `${playerName} plays...`;
+
+    // Build new card display
+    const imgSrc = `assets/cards/regular/${card.filename}`;
+    const safeCardName = card.name.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+    const actionTag = isDiscard ? 'DISCARDING' : 'NOW PLAYING';
+
+    // Build effect description for the new card
+    let effectText = '';
+    if (isDiscard) {
+        effectText = action === 'discard_slide' ? 'Slider move' : '+3 Gold';
+    } else if (card.special && SPECIAL_DESCRIPTIONS[card.special]) {
+        effectText = SPECIAL_DESCRIPTIONS[card.special];
+    } else {
+        const parts = [];
+        if (card.rewards) {
+            if (card.rewards.gold) parts.push(`+${card.rewards.gold}g`);
+            if (card.rewards.prestige) parts.push(`+${card.rewards.prestige} Pres`);
+            if (card.rewards.favor) parts.push(`+${card.rewards.favor} Fav`);
+        }
+        if (card.favor) parts.push(`+${card.favor} Fav`);
+        if (card.skills && card.skills.length > 0) parts.push(card.skills.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', '));
+        effectText = parts.join(' \u00B7 ');
+    }
+
+    // Stats
+    const state = game.getState(0);
+    const ps = state.players[playerIndex];
+
+    // Previously played cards (before this card is added)
+    const playedCards = player.playedCards || [];
+    let playedHtml = '';
+    if (playedCards.length > 0) {
+        playedHtml = `<div class="opp-turn-played">
+            ${playedCards.slice(-8).map(c =>
+                `<img class="opp-turn-played-card" src="assets/cards/regular/${c.filename}" alt="${c.name}">`
+            ).join('')}
+        </div>`;
+    }
+
+    let html = `<div class="spotlight-backdrop"></div>`;
+    html += `<div class="opp-turn-inner">`;
+
+    // Header
+    html += `<div class="opp-turn-header">
+        <img class="opp-turn-avatar" src="${avatarSrc}" alt="${charName}">
+        <div class="opp-turn-header-info">
+            <div class="opp-turn-name">${playerName}</div>
+            <div class="opp-turn-char">${charName}</div>
+        </div>
+    </div>`;
+
+    // Ring track
+    html += `<div class="opp-turn-ring">${buildMiniSlotTrack(playerIndex)}</div>`;
+
+    // Stats
+    html += `<div class="opp-turn-stats">
+        <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${ps.gold}</span>
+        <span class="stat-pill prestige">\u2B50 ${ps.prestige}</span>
+        <span class="stat-pill favor">${ps.favor || 0} Favor</span>
+        <span class="stat-pill scorn">${ps.scorn} Scorn</span>
+    </div>`;
+
+    // Action label
+    html += `<div class="spotlight-player">${actionLabel}</div>`;
+
+    // New card + previously played
+    html += `<div class="opp-turn-cards-area">`;
+    html += playedHtml;
+    html += `<div class="opp-turn-new-card ${isDiscard ? 'discard' : 'play'}">
+        <div class="opp-turn-new-tag">${actionTag}</div>
+        <img src="${imgSrc}" alt="${safeCardName}" onerror="this.style.display='none'">
+        <div class="opp-turn-new-name">${card.name}</div>
+        ${effectText ? `<div class="opp-turn-new-effect">${effectText}</div>` : ''}
+    </div>`;
+    html += `</div>`;
+
+    html += `<div class="spotlight-dismiss">click to continue</div>`;
+    html += `</div>`;
+
+    return { html, isDiscard };
+}
+
+/**
+ * Full cinematic spotlight — used for AI plays.
+ * Shows opponent's full board context with the new card highlighted.
+ */
+function showCardSpotlight(playerIndex, card, action) {
+    const speed = window.CINEMATIC_SPEED;
+    const autoDismissMs = 2500 * speed;
+
+    return new Promise((resolve) => {
+        const el = document.getElementById('cardSpotlight');
+        const { html, isDiscard } = buildSpotlightContent(playerIndex, card, action);
+
+        el.innerHTML = html;
+        el.className = 'card-spotlight active' + (isDiscard ? ' discard-variant' : '');
+
+        // Force reflow then make visible
+        void el.offsetWidth;
+        el.classList.add('visible');
+
+        let resolved = false;
+        function dismiss() {
+            if (resolved) return;
+            resolved = true;
+
+            el.classList.add('exiting');
+
+            setTimeout(() => {
+                el.className = 'card-spotlight';
+                el.innerHTML = '';
+                resolve();
+            }, 300 * speed);
+        }
+
+        // Click to dismiss early
+        el.onclick = dismiss;
+
+        // Auto-dismiss timer
+        setTimeout(dismiss, autoDismissMs);
+    });
+}
+
+/**
+ * Quick mini-reveal for YOUR plays — slide-in banner at bottom.
+ * You already know what you picked, so no need for a full-screen takeover.
+ */
+function showMiniSpotlight(card, action) {
+    const speed = window.CINEMATIC_SPEED;
+    const isDiscard = (action === 'discard' || action === 'discard_slide');
+    const typeName = (card.type || 'card').replace(/_/g, ' ');
+
+    let effectText = '';
+    if (isDiscard) {
+        effectText = action === 'discard_slide' ? 'Slider move' : '+3 Gold';
+    } else if (card.special && SPECIAL_DESCRIPTIONS[card.special]) {
+        effectText = SPECIAL_DESCRIPTIONS[card.special];
+    } else if (card.rewards) {
+        const parts = [];
+        if (card.rewards.gold) parts.push(`+${card.rewards.gold}g`);
+        if (card.rewards.prestige) parts.push(`+${card.rewards.prestige} Pres`);
+        if (card.rewards.favor) parts.push(`+${card.rewards.favor} Fav`);
+        effectText = parts.join(' · ');
+    }
+
+    const banner = document.createElement('div');
+    banner.className = 'mini-spotlight' + (isDiscard ? ' mini-discard' : '');
+    banner.innerHTML = `
+        <img src="assets/cards/regular/${card.filename}" alt="${card.name}"
+             onerror="this.style.display='none'">
+        <div class="mini-spotlight-info">
+            <span class="mini-spotlight-name">${card.name}</span>
+            <span class="mini-spotlight-effect">${effectText}</span>
+        </div>
+    `;
+
+    document.body.appendChild(banner);
+    void banner.offsetWidth;
+    banner.classList.add('show');
+
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            banner.classList.add('exit');
+            setTimeout(() => {
+                banner.remove();
+                resolve();
+            }, 300 * speed);
+        }, 1200 * speed);
+    });
+}
+
+// ─── EFFECT FLOAT SYSTEM ─────────────────────────────────
+
+function showEffectFloat(text, cssClass, anchorEl) {
+    const speed = window.CINEMATIC_SPEED;
+    const container = document.getElementById('effectFloats');
+    if (!container) return;
+
+    const float = document.createElement('div');
+    float.className = `effect-float ${cssClass}`;
+    float.textContent = text;
+
+    // Position near the anchor element or center screen
+    if (anchorEl) {
+        const rect = anchorEl.getBoundingClientRect();
+        float.style.left = `${rect.left + rect.width / 2}px`;
+        float.style.top = `${rect.top}px`;
+        float.style.transform = 'translateX(-50%)';
+    } else {
+        float.style.left = '50%';
+        float.style.top = '45%';
+        float.style.transform = 'translateX(-50%)';
+    }
+
+    container.appendChild(float);
+
+    setTimeout(() => float.remove(), 1500 * speed);
+}
+
+// ─── STAT CHANGE TRACKING & ANIMATION ────────────────────
+
+let _prevStats = null;
+
+function captureStats() {
+    if (!game) return;
+    const p = game.players[0];
+    _prevStats = {
+        gold: p.gold,
+        prestige: p.prestige,
+        scorn: p.scorn,
+        favor: p.favor
+    };
+}
+
+function animateStatChanges() {
+    if (!game || !_prevStats) return;
+    const p = game.players[0];
+    const bar = document.getElementById('bottomStats');
+    if (!bar) return;
+
+    const changes = [
+        { key: 'gold', prev: _prevStats.gold, curr: p.gold, cls: 'gold-change', label: 'Gold' },
+        { key: 'prestige', prev: _prevStats.prestige, curr: p.prestige, cls: 'prestige-change', label: 'Prestige' },
+        { key: 'scorn', prev: _prevStats.scorn, curr: p.scorn, cls: 'scorn-change', label: 'Scorn' },
+        { key: 'favor', prev: _prevStats.favor, curr: p.favor, cls: 'favor-change', label: 'Favor' },
+    ];
+
+    changes.forEach(c => {
+        if (c.curr === c.prev) return;
+
+        const diff = c.curr - c.prev;
+        const sign = diff > 0 ? '+' : '';
+        const gainOrLoss = diff > 0 ? 'gain' : 'loss';
+
+        // Find the stat element in the bar
+        const statEls = bar.querySelectorAll('.stat');
+        statEls.forEach(el => {
+            if (el.classList.contains(c.key)) {
+                el.classList.remove('stat-pulse', 'stat-gain', 'stat-loss');
+                void el.offsetWidth; // Force reflow
+                el.classList.add('stat-pulse', `stat-${gainOrLoss}`);
+
+                setTimeout(() => {
+                    el.classList.remove('stat-pulse', 'stat-gain', 'stat-loss');
+                }, 500 * window.CINEMATIC_SPEED);
+            }
+        });
+
+        // Float text
+        showEffectFloat(`${sign}${diff} ${c.label}`, c.cls);
+    });
+
+    _prevStats = null;
+}
+
+// ─── NOTIFICATIONS ────────────────────────────────────────
+
+function showNotification(msg, type = 'info') {
+    const container = document.getElementById('notifications');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `game-toast ${type}`;
+    toast.textContent = msg;
+    container.appendChild(toast);
+
+    requestAnimationFrame(() => toast.classList.add('show'));
+
+    setTimeout(() => {
+        toast.classList.add('fade-out');
+        setTimeout(() => toast.remove(), 500);
+    }, 3000);
+}
+
+function addLogEntry(msg) {
+    const entries = document.getElementById('logEntries');
+    if (!entries) return;
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.textContent = msg;
+    entries.insertBefore(entry, entries.firstChild);
+
+    while (entries.children.length > 50) {
+        entries.removeChild(entries.lastChild);
+    }
+}
+
+function toggleLog() {
+    document.getElementById('gameLog').classList.toggle('open');
+}
+
+// ─── MUSIC ─────────────────────────────────────────────────
+
+function toggleMusic() {
+    const audio = document.getElementById('themeMusic');
+    const btn = document.getElementById('musicBtn');
+
+    if (musicPlaying) {
+        audio.pause();
+        btn.classList.add('muted');
+        musicPlaying = false;
+    } else {
+        audio.volume = 0.4;
+        audio.play().catch(() => {});
+        btn.classList.remove('muted');
+        musicPlaying = true;
+    }
+}
+
+// Auto-play music on first interaction
+document.addEventListener('click', function initMusic() {
+    if (!musicPlaying) {
+        const audio = document.getElementById('themeMusic');
+        audio.volume = 0.4;
+        audio.play().then(() => {
+            musicPlaying = true;
+            document.getElementById('musicBtn').classList.remove('muted');
+        }).catch(() => {});
+    }
+    document.removeEventListener('click', initMusic);
+}, { once: true });
+
+// ─── TITLE SCREEN ──────────────────────────────────────────
+
+function startGame() {
+    document.getElementById('title-screen').classList.add('hidden');
+    setTimeout(() => {
+        document.getElementById('title-screen').style.display = 'none';
+        showCharacterSelect();
+    }, 1200);
+}
+
+// \u2550\u2550\u2550 HOW TO PLAY \u2014 card-deck tutorial (Prong 1) \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+// SAP-style: one idea per card, casual voice, skippable. Data-driven so
+// content is easy to tweak. `art` is an HTML snippet (real game images).
+const HOWTO_ART = {
+    icon:  n => `<img class="ht-icon" src="assets/icons/${n}.png" alt="">`,
+    hero:  s => `<img class="ht-hero" src="${s}" alt="">`,
+    card:  s => `<img class="ht-cardimg" src="${s}" alt="">`,
+};
+const HOWTO_CARDS = [
+    { text: `The King has passed, and his children vie for the throne. The Queen will crown whoever wins the most <b>Favor</b> in her eyes \u2014 make that heir <b>you</b>.`,
+      art: HOWTO_ART.hero('assets/ui/cover.jpg') },
+    { text: `This is your <b>character board</b>. The ring on the track marks your position \u2014 move it to unlock skills, gold, and Favor.`,
+      art: `<div class="ht-board-wrap"><img class="ht-hero" src="assets/characters/Explorer.jpg" alt=""><img class="ht-board-ring" src="assets/ui/slider-ring.png" alt=""></div>` },
+    { text: `Everything runs on six <b>skills</b>: Survival, Charisma, Alchemy, Prospecting, Knowledge, and Power. You build them up as you play.`,
+      art: `<div class="ht-icons">${['survival','charisma','alchemy','prospecting','knowledge','power'].map(HOWTO_ART.icon).join('')}</div>` },
+    { text: `Each round you're dealt a hand. <b>Play one card, then pass the rest</b> to the next player. Everyone drafts from the same hands \u2014 choose wisely!`,
+      art: `<div class="ht-fan"><img src="assets/cards/regular/Trapping Card.jpg" alt=""><img src="assets/cards/regular/Cooking Card.jpg" alt=""><img src="assets/cards/regular/Negotiate Card.jpg" alt=""></div>` },
+    { text: `On your turn, <b>play a card</b> to gain its skills (you'll need the right skills for some). Not useful? <b>Discard it for +3 gold</b> \u2014 or to slide your ring.`,
+      art: HOWTO_ART.card('assets/cards/regular/Alchemist Apprentice Card.jpg') },
+    { text: `Cards come in many types: <b>Endeavors</b> build skills, <b>Weapons</b> give Power, <b>Artifacts</b> & <b>Adventures</b> grant Favor, and <b>Potions</b> fire off instantly.`,
+      art: `<div class="ht-fan"><img src="assets/cards/regular/Hunting Card.jpg" alt=""><img src="assets/cards/regular/Lens of Truth Card.jpg" alt=""><img src="assets/cards/regular/Badge of Courage Card.jpg" alt=""></div>` },
+    { text: `<b>Gold</b> is your currency. Spend it on cards, on moving your ring, and to <b>borrow skills</b> from other players when you're short.`,
+      art: HOWTO_ART.icon('gold') },
+    { text: `<b>Missions</b> are your path to big Favor. Take one from the pool, then meet its skill requirement. Succeed for <b>Favor and rewards</b> \u2014 fail, and you'll take <b>Scorn</b>.`,
+      art: HOWTO_ART.card('assets/cards/missions/Act 1_Helping the Merchant Card.jpg') },
+    { text: `<b>Scorn</b> is dishonor \u2014 it counts <b>against</b> you when the Queen tallies the score. Dodge failed missions and cards that dish it out.`,
+      art: HOWTO_ART.icon('scorn') },
+    { text: `Each Act ends in a <b>Melee</b> \u2014 a realm-wide tournament of <b>Power</b>. Everyone's Power is compared, and the strongest earn <b>Prestige</b>.`,
+      art: HOWTO_ART.icon('power') },
+    { text: `<b>Prestige</b> is honor at court \u2014 positive points at scoring. You earn it mainly by <b>winning Melees</b> (and a few rare cards).`,
+      art: `<img class="ht-token" src="assets/tokens/Copy of Tokens_Design_v1_Prestige_1_v1.jpg" alt="">` },
+    { text: `Some cards grant a <b>Map</b>. A Map lets you play its linked card <b>for free</b> \u2014 chaining you into adventures and rich Favor.`,
+      art: HOWTO_ART.card('assets/cards/regular/Lost North Map.jpg') },
+    { text: `<b>Mind's Eye</b> and the <b>Philosopher's Stone</b> are rare treasures \u2014 keys to the game's mightiest cards and missions. They can't be borrowed, so guard them well.`,
+      art: `<div class="ht-icons">${HOWTO_ART.icon('minds_eye')}${HOWTO_ART.icon('philosopher')}</div>` },
+    { text: `The tale spans <b>three Acts</b>. Cards and missions grow mightier each Act, so plan a few moves ahead.`,
+      art: `<div class="ht-acts">\u2160 \u00b7 \u2161 \u00b7 \u2162</div>` },
+    { text: `When Act 3's final Melee ends, <b>the Queen decides</b>. She tallies your Favor \u2014 from missions, artifacts, and skills \u2014 plus Prestige, minus Scorn. The most Favor takes the throne!`,
+      art: `<div class="ht-win"><img class="ht-icon" src="assets/icons/favor.png" alt=""><div class="ht-crown">\ud83d\udc51</div></div>` },
+];
+
+let howtoIndex = 0;
+
+function showRules() { openHowto(); }
+
+function openHowto() {
+    howtoIndex = 0;
+    renderHowto();
+    document.getElementById('howto-overlay').classList.add('active');
+}
+function closeHowto() {
+    document.getElementById('howto-overlay').classList.remove('active');
+}
+function howtoNext() {
+    if (howtoIndex < HOWTO_CARDS.length - 1) { howtoIndex++; renderHowto(); }
+    else closeHowto();
+}
+function howtoPrev() {
+    if (howtoIndex > 0) { howtoIndex--; renderHowto(); }
+}
+function renderHowto() {
+    const c = HOWTO_CARDS[howtoIndex];
+    const total = HOWTO_CARDS.length;
+    document.getElementById('howtoArt').innerHTML = c.art;
+    document.getElementById('howtoText').innerHTML = c.text;
+    document.getElementById('howtoCounter').textContent = `${howtoIndex + 1} / ${total}`;
+    document.getElementById('howtoPrev').style.visibility = howtoIndex === 0 ? 'hidden' : 'visible';
+    document.getElementById('howtoNext').textContent = howtoIndex === total - 1 ? 'Finish' : 'Next';
+    document.getElementById('howtoDots').innerHTML =
+        HOWTO_CARDS.map((_, i) => `<span class="ht-dot${i === howtoIndex ? ' on' : ''}"></span>`).join('');
+}
+
+// ═══ COACH-MARKS — Prong 2: in-game contextual tips ═══════════════
+// SAP-style nudges that point at the real UI. One idea per bubble,
+// fires once on first encounter, ✕ to dismiss, never blocks play.
+// Strictly linear: step N only becomes eligible once step N-1 is
+// dismissed AND step N's own moment arrives — so they pace themselves
+// to the natural flow of a first game rather than dogpiling at once.
+// Phone table-view only (desktop players have the How-to-Play deck).
+
+function coachSumSkills(sk) {
+    if (!sk) return 0;
+    return Object.values(sk).reduce((a, b) => a + (b || 0), 0);
+}
+function coachMyTurn(s) {
+    const hand = s.players[0].hand;
+    return s.activePlayerIndex === 0 && hand && hand.length > 0
+        && s.phase !== 'scoring' && s.phase !== 'game_over';
+}
+
+const COACH_STEPS = [
+    { id: 'welcome',
+      text: `This is <b>your board</b>, seated at the bottom. Your rivals fill the table around you.`,
+      anchor: () => document.querySelector('#tvSeats .pmat.you'),
+      place: 'top',
+      when: () => true },
+    { id: 'missions',
+      text: `The cards in the center are <b>Missions</b> — complete them for <b>Favor</b>, the points that win the crown. Tap one to read it.`,
+      anchor: () => document.getElementById('tvCenter'),
+      place: 'bottom',
+      when: (s) => (s.visibleMissions || []).length > 0 },
+    { id: 'hand',
+      text: `Your turn! <b>Tap a card</b> in your hand to see what you can do with it — play it, or discard it for gold.`,
+      anchor: () => document.getElementById('tvHandDrawer'),
+      place: 'top',
+      when: (s) => coachMyTurn(s),
+      // Reveal the hand drawer right as this tip appears (it was tucked for the
+      // earlier board/missions tips).
+      onActivate: () => { tvHandOpen = true; applyDrawerStates(); } },
+    { id: 'rivals',
+      text: `Tap any <b>rival's board</b> to see their skills — and borrow one when you're short a skill to play a card.`,
+      anchor: () => document.querySelector('#tvSeats .pmat.opp'),
+      place: 'auto',
+      when: (s) => s.players.some((p, i) => i !== 0 && coachSumSkills(p.skills) > 0) },
+    { id: 'skills',
+      text: `Your <b>skills</b>, ring position and current Act live in this drawer. Tap the arrow to check them anytime.`,
+      anchor: () => document.getElementById('tvLeftTab'),
+      place: 'right',
+      when: (s) => coachSumSkills(s.players[0].skills) > 0 },
+];
+
+let _coachSeen = coachLoadSeen();
+let _coachActive = null;
+
+function coachLoadSeen() {
+    try { return new Set(JSON.parse(localStorage.getItem('favor_coach_seen') || '[]')); }
+    catch (e) { return new Set(); }
+}
+function coachSaveSeen() {
+    try { localStorage.setItem('favor_coach_seen', JSON.stringify([..._coachSeen])); } catch (e) {}
+}
+// Console helper: window.resetCoach() to replay the tips.
+function resetCoach() {
+    _coachSeen = new Set(); coachSaveSeen(); _coachActive = null; hideCoach();
+    if (typeof coachStartHeartbeat === 'function') coachStartHeartbeat();
+    if (typeof game !== 'undefined' && game) renderGameState();
+}
+window.resetCoach = resetCoach;
+
+// Never surface a tip while a full-screen modal / action panel is up.
+function coachOverlayOpen() {
+    return ['howto-overlay', 'boardOverlay', 'handInspectOv', 'oppOverlay',
+            'missionLB', 'cardZoom', 'scoring-screen', 'missionSelect', 'actionPanel',
+            'cardPeek', 'meleeSplash']
+        .some(id => { const el = document.getElementById(id); return el && el.classList.contains('active'); });
+}
+
+function coachFirstUnseen() {
+    const s = COACH_STEPS.find(st => !_coachSeen.has(st.id));
+    return s ? s.id : null;
+}
+// True while a tip *earlier* than 'hand' (board, missions) is still pending —
+// used to keep the hand drawer tucked so those prompts aren't blocked by it.
+function coachTuckHand() {
+    if (!isCompactLandscape()) return false;
+    const first = coachFirstUnseen();
+    if (!first) return false;
+    const handIdx = COACH_STEPS.findIndex(s => s.id === 'hand');
+    const firstIdx = COACH_STEPS.findIndex(s => s.id === first);
+    return firstIdx > -1 && firstIdx < handIdx;
+}
+
+function coachVisibleEl(el) {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return false;
+    return r.bottom > 0 && r.right > 0 && r.top < window.innerHeight && r.left < window.innerWidth;
+}
+
+// The heartbeat: called after every table render / panel change.
+function coachTick() {
+    const coach = document.getElementById('coach');
+    if (!coach) return;
+    if (!isCompactLandscape() || typeof game === 'undefined' || !game || coachOverlayOpen()) {
+        hideCoach(); return;
+    }
+    let state;
+    try { state = game.getState(0); } catch (e) { hideCoach(); return; }
+
+    // Only ever consider the first not-yet-seen step (strict linear order).
+    const step = COACH_STEPS.find(s => !_coachSeen.has(s.id));
+    if (!step) { hideCoach(); return; }
+
+    let anchor = null;
+    try { anchor = step.when(state) ? step.anchor() : null; } catch (e) { anchor = null; }
+    if (!coachVisibleEl(anchor)) { hideCoach(); return; }
+
+    showCoach(step, anchor);
+}
+
+function showCoach(step, anchor) {
+    const coach = document.getElementById('coach');
+    const glow = document.getElementById('coach-glow');
+    if (_coachActive !== step.id) {
+        _coachActive = step.id;
+        coach.innerHTML =
+            `<div class="coach-bubble">
+                <button class="coach-x" onclick="dismissCoach()" aria-label="Dismiss">✕</button>
+                <div class="coach-text">${step.text}</div>
+                <span class="coach-skip" onclick="skipAllCoach()">Skip tips</span>
+                <span class="coach-arrow"></span>
+            </div>`;
+        if (typeof step.onActivate === 'function') step.onActivate();
+    }
+    coach.classList.add('show');
+    glow.classList.add('show');
+    positionCoach(anchor, step.place);
+}
+
+function positionCoach(anchor, place) {
+    const coach = document.getElementById('coach');
+    const glow = document.getElementById('coach-glow');
+    const arrow = coach.querySelector('.coach-arrow');
+    const a = anchor.getBoundingClientRect();
+    const vw = window.innerWidth, vh = window.innerHeight;
+
+    // Frame the target.
+    const gp = 4;
+    glow.style.left = (a.left - gp) + 'px';
+    glow.style.top = (a.top - gp) + 'px';
+    glow.style.width = (a.width + gp * 2) + 'px';
+    glow.style.height = (a.height + gp * 2) + 'px';
+
+    // Measure the bubble off-screen, then place it.
+    coach.style.left = '-9999px';
+    coach.style.top = '0px';
+    const bw = coach.offsetWidth, bh = coach.offsetHeight;
+    const gap = 12;
+    const acx = a.left + a.width / 2, acy = a.top + a.height / 2;
+
+    if (place === 'auto') {
+        const room = { top: a.top, bottom: vh - a.bottom, left: a.left, right: vw - a.right };
+        place = Object.keys(room).sort((x, y) => room[y] - room[x])[0];
+    }
+
+    let x, y;
+    if (place === 'top')         { x = acx - bw / 2; y = a.top - bh - gap; }
+    else if (place === 'bottom') { x = acx - bw / 2; y = a.bottom + gap; }
+    else if (place === 'left')   { x = a.left - bw - gap; y = acy - bh / 2; }
+    else                         { x = a.right + gap; y = acy - bh / 2; }
+
+    x = Math.max(8, Math.min(x, vw - bw - 8));
+    y = Math.max(8, Math.min(y, vh - bh - 8));
+    coach.style.left = x + 'px';
+    coach.style.top = y + 'px';
+
+    positionCoachArrow(arrow, place, x, y, bw, bh, acx, acy);
+}
+
+function positionCoachArrow(arrow, place, x, y, bw, bh, acx, acy) {
+    const sz = 12, half = sz / 2;
+    let pd, left = '', top = '';
+    if (place === 'top') {          // bubble above anchor → caret points down
+        pd = 'down'; top = (bh - half) + 'px';
+        left = Math.max(10, Math.min(acx - x - half, bw - 10 - sz)) + 'px';
+    } else if (place === 'bottom') { // bubble below → caret points up
+        pd = 'up'; top = (-half) + 'px';
+        left = Math.max(10, Math.min(acx - x - half, bw - 10 - sz)) + 'px';
+    } else if (place === 'left') {   // bubble left of anchor → caret points right
+        pd = 'right'; left = (bw - half) + 'px';
+        top = Math.max(10, Math.min(acy - y - half, bh - 10 - sz)) + 'px';
+    } else {                         // bubble right of anchor → caret points left
+        pd = 'left'; left = (-half) + 'px';
+        top = Math.max(10, Math.min(acy - y - half, bh - 10 - sz)) + 'px';
+    }
+    arrow.className = 'coach-arrow pd-' + pd;
+    arrow.style.left = left; arrow.style.right = '';
+    arrow.style.top = top; arrow.style.bottom = '';
+}
+
+function dismissCoach() {
+    if (_coachActive) { _coachSeen.add(_coachActive); coachSaveSeen(); }
+    _coachActive = null;
+    hideCoach();
+    // Re-evaluate; the next tip only appears once its own moment arrives.
+    setTimeout(coachTick, 40);
+}
+function skipAllCoach() {
+    COACH_STEPS.forEach(s => _coachSeen.add(s.id));
+    coachSaveSeen();
+    _coachActive = null;
+    hideCoach();
+}
+function hideCoach() {
+    // Only hides the bubble; keeps _coachActive so an unchanged step that
+    // reappears (e.g. after a re-render) doesn't rebuild and flicker.
+    const c = document.getElementById('coach'), g = document.getElementById('coach-glow');
+    if (c) c.classList.remove('show');
+    if (g) g.classList.remove('show');
+}
+
+// Mark a tip done because the player actually engaged its element (tapped a
+// card, opened a rival, etc.) — so it never nags after they've "got it".
+function coachMarkSeen(id) {
+    if (_coachSeen.has(id)) return;
+    _coachSeen.add(id);
+    coachSaveSeen();
+    if (_coachActive === id) { _coachActive = null; hideCoach(); }
+    setTimeout(coachTick, 40);
+}
+
+// Backstop for the same rule: ANY tap inside the glowing anchor counts as
+// "got it" — even if the tap didn't route through a wired handler above.
+document.addEventListener('pointerdown', (e) => {
+    if (!_coachActive) return;
+    const step = COACH_STEPS.find(s => s.id === _coachActive);
+    if (!step) return;
+    let anchor = null;
+    try { anchor = step.anchor(); } catch (err) { return; }
+    if (!anchor) return;
+    const r = anchor.getBoundingClientRect();
+    if (e.clientX >= r.left && e.clientX <= r.right &&
+        e.clientY >= r.top && e.clientY <= r.bottom) {
+        coachMarkSeen(step.id);
+    }
+}, true);
+
+// Safety-net heartbeat: some modals open/close without a table re-render, so
+// poll a few times a second to keep the bubble correctly shown/hidden. Costs
+// almost nothing (early-returns) and stops itself once every tip is seen.
+let _coachHeartbeat = null;
+function coachStartHeartbeat() {
+    if (_coachHeartbeat) clearInterval(_coachHeartbeat);
+    _coachHeartbeat = setInterval(() => {
+        if (COACH_STEPS.every(s => _coachSeen.has(s.id))) {
+            clearInterval(_coachHeartbeat); _coachHeartbeat = null; hideCoach(); return;
+        }
+        coachTick();
+    }, 400);
+}
+coachStartHeartbeat();
+
+// ── Prompt Test toggle (title screen) ──
+// When on, the tutorial prompts replay every game — handy for testing without
+// clearing tab storage. State persists in localStorage.
+function togglePromptTest(on) {
+    try { localStorage.setItem('favor_prompt_test', on ? '1' : '0'); } catch (e) {}
+    if (on) resetCoach();   // clear seen now so prompts fire on the next play
+}
+function coachPromptTestOn() {
+    try { return localStorage.getItem('favor_prompt_test') === '1'; } catch (e) { return false; }
+}
+// If Prompt Test is on, wipe seen-state at the start of each game so tips replay.
+function coachApplyPromptTest() {
+    if (coachPromptTestOn()) { _coachSeen = new Set(); coachSaveSeen(); _coachActive = null; coachStartHeartbeat(); }
+}
+// Restore the checkbox to its saved state on load (scripts run after the DOM).
+(function () {
+    try {
+        const cb = document.getElementById('promptTestToggle');
+        if (cb) cb.checked = coachPromptTestOn();
+    } catch (e) {}
+})();
+
+// ─── CHARACTER SELECT ──────────────────────────────────────
+
+function showCharacterSelect() {
+    const screen = document.getElementById('character-select');
+    screen.classList.add('active');
+
+    const grid = document.getElementById('characterGrid');
+    grid.innerHTML = '';
+
+    if (!window.FAVOR_DATA || !window.FAVOR_DATA.characters) {
+        grid.innerHTML = '<p style="color: var(--gold); grid-column: 1/-1; text-align: center;">Loading character data...</p>';
+        return;
+    }
+
+    window.FAVOR_DATA.characters.forEach(char => {
+        const card = document.createElement('div');
+        card.className = 'character-card fade-in';
+        card.dataset.id = char.id;
+        card.onclick = () => selectCharacter(char.id, card);
+
+        const stars = '\u2605'.repeat(Math.floor(char.difficulty)) + (char.difficulty % 1 ? '\u00BD' : '');
+
+        card.innerHTML = `
+            <img src="assets/characters/${char.filename}" alt="${char.name}">
+            <div class="character-info">
+                <h3>${char.name}</h3>
+                <div class="difficulty">Difficulty: ${stars}</div>
+                <div class="tip">${char.tip || ''}</div>
+            </div>
+        `;
+
+        grid.appendChild(card);
+    });
+}
+
+function selectCharacter(id, cardEl) {
+    document.querySelectorAll('.character-card').forEach(c => c.classList.remove('selected'));
+    cardEl.classList.add('selected');
+    selectedCharacter = id;
+    document.getElementById('confirmBtn').style.display = 'inline-block';
+}
+
+function confirmCharacter() {
+    if (!selectedCharacter) return;
+
+    const playerCount = parseInt(document.getElementById('playerCountSelect').value);
+
+    game = new FavorGame(playerCount);
+    game.loadDecks();
+
+    const allChars = window.FAVOR_DATA.characters.map(c => c.id);
+    const available = allChars.filter(id => id !== selectedCharacter);
+
+    const choices = [{ characterId: selectedCharacter, playerName: 'You' }];
+
+    const shuffled = shuffleArray(available);
+    const aiNames = ['Prince Aldric', 'Princess Sera', 'Lord Cassius', 'Lady Elara'];
+    for (let i = 0; i < playerCount - 1; i++) {
+        choices.push({ characterId: shuffled[i], playerName: aiNames[i] });
+    }
+
+    game.initPlayers(choices);
+
+    document.getElementById('character-select').classList.remove('active');
+
+    game.startAct(1);
+    addLogEntry('\u2550\u2550\u2550 Act 1 begins \u2550\u2550\u2550');
+    showNotification('Act 1 Begins \u2014 Choose wisely.', 'act');
+
+    // If Prompt Test is checked, replay the tutorial prompts this game.
+    if (typeof coachApplyPromptTest === 'function') coachApplyPromptTest();
+
+    showGameScreen();
+}
+
+// ─── GAME SCREEN ───────────────────────────────────────────
+
+// ─── SKILL GROUP MAPPING FOR CARD STACKS ─────────────────
+
+const SKILL_GROUPS = {
+    alchemy:     { label: 'Alchemy',     order: 0 },
+    survival:    { label: 'Survival',    order: 1 },
+    charisma:    { label: 'Charisma',    order: 2 },
+    prospecting: { label: 'Prospecting', order: 3 },
+    knowledge:   { label: 'Knowledge',   order: 4 },
+    power:       { label: 'Power',       order: 5 },
+};
+
+// True on phones/short viewports in landscape, where the left panels flow
+// in a flex rail (.left-rail) instead of the desktop JS-pinned absolute stack.
+function isCompactLandscape() {
+    return window.matchMedia('(orientation: landscape) and (max-height: 540px)').matches;
+}
+
+// Re-render on rotate/resize so left-rail panels re-flow or re-pin correctly.
+let _reflowTimer = null;
+window.addEventListener('resize', () => {
+    clearTimeout(_reflowTimer);
+    _reflowTimer = setTimeout(() => {
+        if (typeof game !== 'undefined' && game) renderGameState();
+    }, 120);
+});
+
+function getCardSkillGroup(card) {
+    if (card.skills && card.skills.length > 0) {
+        return card.skills[0]; // Primary skill
+    }
+    return 'misc';
+}
+
+// ─── GAME SCREEN ───────────────────────────────────────────
+
+function showGameScreen() {
+    document.getElementById('game-screen').classList.add('active');
+    renderGameState();
+}
+
+function renderGameState() {
+    if (!game) return;
+
+    const state = game.getState(0);
+
+    renderPhaseBar(state);
+    renderBoardThumb(state);
+    renderStatsPanel(state);
+    renderMissionStrip(state);
+    renderCardStacks(state);
+    renderSidebar(state);
+    renderHand(state);
+    renderBottomStats(state);
+    renderTableView(state);
+}
+
+function formatPhase(phase) {
+    const names = {
+        'setup': 'Setting Up...',
+        'gameplay': 'Draft Phase — Pick a Card',
+        'activate': 'Activation Phase',
+        'missions': 'Missions Phase',
+        'melee': 'Melee Phase',
+        'scoring': 'Final Scoring',
+        'game_over': 'Game Over'
+    };
+    return names[phase] || phase;
+}
+
+// ── Phase Bar ──
+
+// Short phase names for the compact table view's top-left pill.
+function formatPhaseShort(phase) {
+    const names = {
+        'setup': 'Setup',
+        'gameplay': 'Draft',
+        'activate': 'Activation',
+        'missions': 'Missions',
+        'melee': 'Melee',
+        'scoring': 'Scoring',
+        'game_over': 'Game Over'
+    };
+    return names[phase] || phase;
+}
+
+function renderPhaseBar(state) {
+    const bar = document.getElementById('phaseBar');
+    const acts = ['I', 'II', 'III'];
+    const compact = isCompactLandscape();
+    const phaseText = compact ? formatPhaseShort(state.phase) : formatPhase(state.phase);
+    // On the table view the pill also carries your purse — gold must be
+    // readable at all times, not buried on the dimmed board.
+    const purse = compact
+        ? `<span class="purse"><img src="${TOKEN_IMG.gold}" alt="Gold"><b>${state.players[0].gold}</b></span>`
+        : '';
+    bar.innerHTML = `
+        <span class="act-tag">Act ${acts[state.currentAct - 1] || state.currentAct}</span>
+        <span class="phase-text">${phaseText}</span>
+        ${purse}
+    `;
+}
+
+// ── Board Thumbnail ──
+
+function renderBoardThumb(state) {
+    const el = document.getElementById('boardThumb');
+    const char = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
+    if (!char) return;
+
+    el.innerHTML = `
+        <img src="assets/characters/${char.filename}" alt="${char.name}">
+        <div class="thumb-footer">
+            <span class="thumb-name">${char.name}</span>
+            <span class="thumb-hint">View board</span>
+        </div>
+    `;
+    el.onclick = () => openBoardOverlay();
+}
+
+// ── Stats Panel ──
+
+// Skill icons — real images cropped from rulebook Symbols page
+const SKILL_ICONS = {
+    survival:    `<img class="skill-svg" src="assets/icons/survival.png" alt="Survival">`,
+    charisma:    `<img class="skill-svg" src="assets/icons/charisma.png" alt="Charisma">`,
+    alchemy:     `<img class="skill-svg" src="assets/icons/alchemy.png" alt="Alchemy">`,
+    prospecting: `<img class="skill-svg" src="assets/icons/prospecting.png" alt="Prospecting">`,
+    knowledge:   `<img class="skill-svg" src="assets/icons/knowledge.png" alt="Knowledge">`,
+    power:       `<img class="skill-svg" src="assets/icons/power.png" alt="Power">`,
+    philosopher: `<img class="skill-svg" src="assets/icons/philosopher.png" alt="Philosopher's Stone">`,
+    minds_eye:   `<img class="skill-svg" src="assets/icons/minds_eye.png" alt="Mind's Eye">`
+};
+
+function renderStatsPanel(state) {
+    const panel = document.getElementById('statsPanel');
+    const player = state.players[0];
+    const gp = game.players[0];
+    const emblem = state.emblemHolder === 0 ? '<div class="emblem-tag">\uD83D\uDC51 Emblem Holder</div>' : '';
+    const sliderPos = gp.sliderPosition;
+    const posNames = ['1', '2', '3', '4', '5'];
+
+    // Resource tokens row
+    const resourcesHtml = `
+        <div class="resource-tokens">
+            <span class="resource-token gold-token">
+                <img src="assets/tokens/Copy of Tokens_Design_v1_Gold_1_v1.jpg" alt="Gold" class="token-img">
+                <span class="token-val gold-val">${player.gold}</span>
+            </span>
+            <span class="resource-token prestige-token">
+                <img src="assets/tokens/Copy of Tokens_Design_v1_Prestige_1_v1.jpg" alt="Prestige" class="token-img">
+                <span class="token-val prestige-val">${player.prestige}</span>
+            </span>
+            <span class="resource-token scorn-token">
+                <img src="assets/tokens/Copy of Tokens_Design_v1_Scorn_1_v1.jpg" alt="Scorn" class="token-img">
+                <span class="token-val scorn-val">${player.scorn}</span>
+            </span>
+        </div>
+    `;
+
+    // Skills grid
+    const skills = player.skills || {};
+    const skillEntries = [
+        { key: 'survival',    label: 'Survival',    icon: SKILL_ICONS.survival },
+        { key: 'charisma',    label: 'Charisma',    icon: SKILL_ICONS.charisma },
+        { key: 'alchemy',     label: 'Alchemy',     icon: SKILL_ICONS.alchemy },
+        { key: 'prospecting', label: 'Prospecting', icon: SKILL_ICONS.prospecting },
+        { key: 'knowledge',   label: 'Knowledge',   icon: SKILL_ICONS.knowledge },
+        { key: 'power',       label: 'Power',       icon: SKILL_ICONS.power },
+    ];
+
+    let skillsHtml = '<div class="skills-grid">';
+    skillEntries.forEach(s => {
+        const val = skills[s.key] || 0;
+        skillsHtml += `
+            <div class="skill-row">
+                <span class="skill-icon">${s.icon}</span>
+                <span class="skill-label">${s.label}</span>
+                <span class="skill-value${val > 0 ? ' has-skill' : ''}">${val}</span>
+            </div>`;
+    });
+
+    // Special abilities: Philosopher's Stone & Mind's Eye
+    const hasPhilosopher = gp.philosopherStone && gp.philosopherStone > 0;
+    const hasMindsEye = (gp.playedCards || []).some(c =>
+        c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_x2_philosopher_stone_x5'
+    );
+
+    if (hasPhilosopher) {
+        skillsHtml += `
+            <div class="skill-row special-ability">
+                <span class="skill-icon">${SKILL_ICONS.philosopher}</span>
+                <span class="skill-label">Phil. Stone</span>
+                <span class="skill-value has-skill">${gp.philosopherStone}:1</span>
+            </div>`;
+    }
+    if (hasMindsEye) {
+        skillsHtml += `
+            <div class="skill-row special-ability">
+                <span class="skill-icon">${SKILL_ICONS.minds_eye}</span>
+                <span class="skill-label">Mind's Eye</span>
+                <span class="skill-value has-skill">\u2713</span>
+            </div>`;
+    }
+    skillsHtml += '</div>';
+
+    panel.innerHTML = `
+        <div class="act-badge">Act ${state.currentAct}</div>
+        ${resourcesHtml}
+        ${skillsHtml}
+        <div class="ring-indicator">
+            Ring: ${[0,1,2,3,4].map(pos => {
+                const charData = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
+                const tip = charData ? buildSlotLabel(charData.slots[pos]).join(', ') : '';
+                return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posNames[pos]}</span>`;
+            }).join('')}
+        </div>
+        ${emblem}
+    `;
+
+    // Position dynamically after board thumb loads (desktop only — in compact
+    // landscape the .left-rail flex flow handles stacking, so clear inline top).
+    if (isCompactLandscape()) {
+        panel.style.top = '';
+    } else {
+        requestAnimationFrame(() => {
+            if (isCompactLandscape()) { panel.style.top = ''; return; }
+            const thumb = document.getElementById('boardThumb');
+            if (thumb && thumb.offsetHeight > 20) {
+                panel.style.top = (thumb.offsetTop + thumb.offsetHeight + 6) + 'px';
+            }
+        });
+    }
+}
+
+// ── Mission Strip ──
+
+function renderMissionStrip(state) {
+    const strip = document.getElementById('missionStrip');
+    const missions = game.players[0].missions || [];
+    const completedMissions = game.players[0].completedMissions || [];
+    const allAcquired = [...missions, ...completedMissions];
+
+    let html = '';
+
+    // Active/Acquired missions section
+    if (allAcquired.length > 0) {
+        html += '<div class="mission-section">';
+        html += '<span class="strip-label">Active Missions</span>';
+        html += '<div class="mission-pips">';
+        allAcquired.forEach(m => {
+            const isComplete = completedMissions.includes(m);
+            html += `<img class="mission-pip${isComplete ? ' completed' : ' active'}"
+                        src="assets/cards/missions/${m.filename}"
+                        alt="${m.name}"
+                        onclick="openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
+        });
+        html += '</div></div>';
+    }
+
+    // Available missions from pool
+    if (state.visibleMissions && state.visibleMissions.length > 0) {
+        html += '<div class="mission-section">';
+        html += '<span class="strip-label">Available Missions</span>';
+        html += '<div class="mission-pips">';
+        state.visibleMissions.forEach(m => {
+            html += `<img class="mission-pip available"
+                        src="assets/cards/missions/${m.filename}"
+                        alt="${m.name}"
+                        onclick="openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
+        });
+        html += '</div></div>';
+    }
+
+    if (!html) {
+        html = '<span class="strip-label">No Missions</span>';
+    }
+
+    strip.innerHTML = html;
+
+    // Position below stats panel (desktop only — compact landscape uses flex flow)
+    if (isCompactLandscape()) {
+        strip.style.top = '';
+    } else {
+        requestAnimationFrame(() => {
+            if (isCompactLandscape()) { strip.style.top = ''; return; }
+            const statsPanel = document.getElementById('statsPanel');
+            if (statsPanel && statsPanel.offsetHeight > 10) {
+                strip.style.top = (statsPanel.offsetTop + statsPanel.offsetHeight + 6) + 'px';
+            }
+        });
+    }
+}
+
+// ── Card Stacks (played cards grouped by skill) ──
+
+function renderCardStacks(state) {
+    const el = document.getElementById('cardStacks');
+    const player = state.players[0];
+
+    if (!player.playedCards || player.playedCards.length === 0) {
+        el.innerHTML = '<div class="no-cards-msg">No cards played yet</div>';
+        return;
+    }
+
+    // Group cards by primary skill
+    const groups = {};
+    player.playedCards.forEach(card => {
+        const group = getCardSkillGroup(card);
+        if (!groups[group]) groups[group] = [];
+        groups[group].push(card);
+    });
+
+    // Sort groups by defined order
+    const sortedKeys = Object.keys(groups).sort((a, b) => {
+        const oa = SKILL_GROUPS[a] ? SKILL_GROUPS[a].order : 99;
+        const ob = SKILL_GROUPS[b] ? SKILL_GROUPS[b].order : 99;
+        return oa - ob;
+    });
+
+    let html = '';
+    sortedKeys.forEach(key => {
+        const label = SKILL_GROUPS[key] ? SKILL_GROUPS[key].label : 'Other';
+        const cards = groups[key];
+
+        html += '<div class="card-stack">';
+        html += `<div class="stack-label">${label}</div>`;
+        cards.forEach(card => {
+            html += `<img class="stack-card" src="assets/cards/regular/${card.filename}"
+                        alt="${card.name}"
+                        onclick="zoomCard('assets/cards/regular/${card.filename}')">`;
+        });
+        html += '</div>';
+    });
+
+    el.innerHTML = html;
+}
+
+// ── Sidebar (Opponents) ──
+
+function renderSidebar(state) {
+    const sidebar = document.getElementById('gameSidebar');
+    let html = '<div class="sidebar-header">Opponents</div>';
+
+    state.players.forEach((p, i) => {
+        if (i === 0) return;
+
+        const isActive = state.activePlayerIndex === i;
+        const emblem = state.emblemHolder === i ? ' \uD83D\uDC51' : '';
+        const char = game.players[i].character;
+        const avatarSrc = char ? `assets/characters/${char.filename}` : '';
+        const sliderPos = game.players[i].sliderPosition; // 0-4
+        const posLabels = ['1', '2', '3', '4', '5'];
+
+        html += `
+            <div class="opp-entry${isActive ? ' active-turn' : ''}"
+                 onclick="openOppOverlay(${i})">
+                <img class="opp-avatar" src="${avatarSrc}">
+                <div class="opp-details">
+                    <span class="opp-name">${p.name}${emblem}</span>
+                    <div class="opp-ring-row">
+                        ${[0,1,2,3,4].map(pos => {
+                            const tip = char ? buildSlotLabel(char.slots[pos]).join(', ') : '';
+                            return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posLabels[pos]}</span>`;
+                        }).join('')}
+                    </div>
+                    <div class="opp-stats-row">
+                        <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${p.gold}</span>
+                        <span class="stat-pill favor">${p.favor || 0}</span>
+                        <span class="stat-pill scorn">${p.scorn}</span>
+                    </div>
+                    <div class="mini-stack">
+                        ${p.playedCards.slice(-5).map(c =>
+                            `<img class="mini-card" src="assets/cards/regular/${c.filename}" alt="${c.name}">`
+                        ).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    sidebar.innerHTML = html;
+}
+
+// ── Hand ──
+
+function renderHand(state) {
+    const zone = document.getElementById('handZone');
+    const hand = state.players[0].hand;
+
+    if (!hand || hand.length === 0) {
+        if (game.phase === 'gameplay') {
+            zone.innerHTML = '<div class="hand-waiting">Waiting for next phase...</div>';
+        } else {
+            zone.innerHTML = '';
+        }
+        return;
+    }
+
+    // Fan rotation per card
+    const count = hand.length;
+    const maxAngle = Math.min(count * 3, 14);
+    const step = count > 1 ? (maxAngle * 2) / (count - 1) : 0;
+    const startAngle = -maxAngle;
+
+    let html = '<div class="hand-hint" onclick="event.stopPropagation(); openHandInspect()">Click to inspect hand</div>';
+    html += '<div class="hand-arc">';
+
+    hand.forEach((card, i) => {
+        const angle = startAngle + step * i;
+        const lift = -Math.abs(angle) * 0.4;
+        const isSelected = selectedHandCard === i;
+
+        html += `<div class="hand-card${isSelected ? ' selected' : ''}"
+                    style="transform: rotate(${angle}deg) translateY(${lift}px)"
+                    onclick="event.stopPropagation(); selectHandCard(${i})"
+                    ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
+                    <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
+                </div>`;
+    });
+
+    html += '</div>';
+    zone.innerHTML = html;
+}
+
+// ── Bottom Stats (hidden, for stat animation system) ──
+
+function renderBottomStats(state) {
+    const bar = document.getElementById('bottomStats');
+    const player = state.players[0];
+    bar.innerHTML = `
+        <div class="stat gold">${player.gold}</div>
+        <div class="stat prestige">${player.prestige}</div>
+        <div class="stat scorn">${player.scorn}</div>
+        <div class="stat favor">${player.favor}</div>
+    `;
+}
+
+// ═══ TABLE VIEW (phone landscape) ═══════════════════════════
+// A shared-table layout: each player is a "mat" (board + tokens on the
+// board + played cards tucked underneath), arranged around a center
+// missions area. Desktop is untouched (#table-view is display:none there).
+
+// One token "chip" resting on the mat: real token art (or a favor star) + count.
+function tvTokenChip(kind, amount) {
+    const face = TOKEN_IMG[kind]
+        ? `<img src="${TOKEN_IMG[kind]}" alt="">`
+        : `<span class="pmat-tok-favor">★</span>`;
+    return `<span class="pmat-tok ${kind}">${face}<b>${amount}</b></span>`;
+}
+
+function buildPlayerMat(i, state, isYou, seat) {
+    const p = state.players[i];
+    const char = game.players[i] ? game.players[i].character : null;
+    const boardSrc = char ? `assets/characters/${char.filename}` : '';
+    const isActive = state.activePlayerIndex === i;
+    const crown = state.emblemHolder === i ? ' 👑' : '';
+
+    // Ring indicator on the board's slider track (5 slots, evenly spaced).
+    const sliderPos = game.players[i] ? game.players[i].sliderPosition : 2;
+    const slotLeft = [16, 33, 50, 67, 84][sliderPos] != null ? [16, 33, 50, 67, 84][sliderPos] : 50;
+
+    // Tokens laid out on the board (corner cluster). Gold always; others if > 0.
+    let tokens = tvTokenChip('gold', p.gold);
+    if (p.prestige) tokens += tvTokenChip('prestige', p.prestige);
+    if (p.scorn)    tokens += tvTokenChip('scorn', p.scorn);
+    if (p.favor)    tokens += tvTokenChip('favor', p.favor);
+
+    // Played cards tucked under the mat (peeking, overlapped). Click mat to expand.
+    const cards = p.playedCards || [];
+    let tucked = cards.map(c =>
+        `<img class="pmat-card" src="assets/cards/regular/${c.filename}" alt="${c.name}"
+              data-peek="assets/cards/regular/${c.filename}">`
+    ).join('');
+    if (!tucked) tucked = '<span class="pmat-empty">No cards played</span>';
+
+    return `
+        <div class="pmat ${isYou ? 'you' : 'opp'} seat-${seat}${isActive ? ' active' : ''}"
+             data-pi="${i}"
+             onclick="openOppOverlay(${i})">
+            <div class="pmat-boardwrap">
+                <img class="pmat-board" src="${boardSrc}" alt="${p.name}">
+                <img class="pmat-ring" src="assets/ui/slider-ring.png" style="left:${slotLeft}%" alt="">
+                <span class="pmat-name">${p.name}${crown}</span>
+                <div class="pmat-tokens">${tokens}</div>
+            </div>
+            <div class="pmat-cards">${tucked}</div>
+        </div>`;
+}
+
+// ── Rival plaque (Battlegrounds-style top rail) ──
+// Rivals compress into upright portrait plaques along the top edge instead of
+// rotated full boards: portrait + name + the same public info the old mats
+// showed (gold / prestige / scorn / favor tokens, played-card count, ring
+// slot). Keeps .pmat/.opp classes + data-pi so coach-marks, tap-to-inspect
+// and the FX delta system all keep working unchanged.
+function buildRivalPlaque(i, state) {
+    const p = state.players[i];
+    const char = game.players[i] ? game.players[i].character : null;
+    const boardSrc = char ? `assets/characters/${char.filename}` : '';
+    const isActive = state.activePlayerIndex === i;
+    const crown = state.emblemHolder === i ? ' 👑' : '';
+    const ringPos = game.players[i] ? game.players[i].sliderPosition : 2;
+    const cardCount = (p.playedCards || []).length;
+
+    let chips = tvTokenChip('gold', p.gold);
+    if (p.prestige) chips += tvTokenChip('prestige', p.prestige);
+    if (p.scorn)    chips += tvTokenChip('scorn', p.scorn);
+    if (p.favor)    chips += tvTokenChip('favor', p.favor);
+
+    const ringDots = [0,1,2,3,4].map(s =>
+        `<i class="rplq-ringdot${s === ringPos ? ' on' : ''}"></i>`).join('');
+
+    return `
+        <div class="pmat opp rplq${isActive ? ' active' : ''}" data-pi="${i}"
+             onclick="openOppOverlay(${i})">
+            <div class="rplq-portrait"><img src="${boardSrc}" alt="${p.name}"></div>
+            <div class="rplq-info">
+                <span class="rplq-name">${p.name}${crown}</span>
+                <div class="pmat-tokens rplq-chips">${chips}</div>
+                <div class="rplq-foot">
+                    <span class="rplq-ring">${ringDots}</span>
+                    <span class="rplq-cards">🂠 ${cardCount}</span>
+                </div>
+            </div>
+        </div>`;
+}
+
+function renderTvCenter(state) {
+    const c = document.getElementById('tvCenter');
+    if (!c) return;
+    const ms = state.visibleMissions || [];
+    // Missions are the stage: big readable cards, with ghosted placeholder
+    // slots (Wingspan-style) so the pool always reads as 3 seats.
+    let h = '<span class="tv-center-label">Missions of the Realm</span><div class="tv-missions">';
+    ms.forEach(m => {
+        h += `<img class="tv-mission" src="assets/cards/missions/${m.filename}"
+                   alt="${m.name}" data-peek="assets/cards/missions/${m.filename}"
+                   onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
+    });
+    for (let g = ms.length; g < 3; g++) {
+        h += '<span class="tv-mission ghost"></span>';
+    }
+    h += '</div>';
+    c.innerHTML = h;
+}
+
+function renderTvHand(state) {
+    const zone = document.getElementById('tvHand');
+    if (!zone) return;
+    const hand = state.players[0].hand;
+
+    if (!hand || hand.length === 0) {
+        zone.innerHTML = game.phase === 'gameplay'
+            ? '<div class="tv-hand-waiting">Waiting for next phase…</div>' : '';
+        return;
+    }
+
+    const count = hand.length;
+    const maxAngle = Math.min(count * 3, 12);
+    const step = count > 1 ? (maxAngle * 2) / (count - 1) : 0;
+    const startAngle = -maxAngle;
+
+    // Playable glow (Battlegrounds-style): on your turn, cards you can
+    // actually play get a soft green edge so options read at a glance.
+    const myTurn = state.activePlayerIndex === 0 && state.phase === 'gameplay';
+
+    let html = '<div class="hand-arc">';
+    hand.forEach((card, i) => {
+        const angle = startAngle + step * i;
+        const lift = -Math.abs(angle) * 0.4;
+        const isSelected = selectedHandCard === i;
+        let playable = false;
+        if (myTurn) {
+            if (card.type === 'mission_letter') {
+                playable = game.players[0].gold >= 1 && (state.visibleMissions || []).length > 0;
+            } else {
+                try { playable = game.checkRequirements(0, card).canPlay; } catch (e) { playable = false; }
+            }
+        }
+        html += `<div class="hand-card${isSelected ? ' selected' : ''}${playable ? ' playable' : ''}"
+                    style="transform: rotate(${angle}deg) translateY(${lift}px)"
+                    data-hand-i="${i}"
+                    onclick="event.stopPropagation(); selectHandCard(${i})"
+                    ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
+                    <img src="assets/cards/regular/${card.filename}" alt="${card.name}"
+                         data-peek="assets/cards/regular/${card.filename}">
+                </div>`;
+    });
+    html += '</div>';
+    zone.innerHTML = html;
+}
+
+// ── Left drawer: your skills / ring / act ──
+function renderTvLeft(state) {
+    const el = document.getElementById('tvLeftContent');
+    if (!el) return;
+    const player = state.players[0];
+    const gp = game.players[0];
+    const skills = player.skills || {};
+    const skillEntries = [
+        { key: 'survival',    label: 'Survival',    icon: SKILL_ICONS.survival },
+        { key: 'charisma',    label: 'Charisma',    icon: SKILL_ICONS.charisma },
+        { key: 'alchemy',     label: 'Alchemy',     icon: SKILL_ICONS.alchemy },
+        { key: 'prospecting', label: 'Prospecting', icon: SKILL_ICONS.prospecting },
+        { key: 'knowledge',   label: 'Knowledge',   icon: SKILL_ICONS.knowledge },
+        { key: 'power',       label: 'Power',       icon: SKILL_ICONS.power },
+    ];
+    let skillsHtml = '<div class="skills-grid">';
+    skillEntries.forEach(s => {
+        const val = skills[s.key] || 0;
+        skillsHtml += `<div class="skill-row">
+            <span class="skill-icon">${s.icon}</span>
+            <span class="skill-label">${s.label}</span>
+            <span class="skill-value${val > 0 ? ' has-skill' : ''}">${val}</span>
+        </div>`;
+    });
+    const hasPhil = gp.philosopherStone && gp.philosopherStone > 0;
+    const hasMindsEye = (gp.playedCards || []).some(c =>
+        c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_x2_philosopher_stone_x5');
+    if (hasPhil) skillsHtml += `<div class="skill-row special-ability">
+        <span class="skill-icon">${SKILL_ICONS.philosopher}</span>
+        <span class="skill-label">Phil. Stone</span>
+        <span class="skill-value has-skill">${gp.philosopherStone}:1</span></div>`;
+    if (hasMindsEye) skillsHtml += `<div class="skill-row special-ability">
+        <span class="skill-icon">${SKILL_ICONS.minds_eye}</span>
+        <span class="skill-label">Mind's Eye</span>
+        <span class="skill-value has-skill">✓</span></div>`;
+    skillsHtml += '</div>';
+
+    const sliderPos = gp.sliderPosition;
+    const posNames = ['1', '2', '3', '4', '5'];
+    const ringHtml = `<div class="ring-indicator">Ring: ${[0,1,2,3,4].map(pos => {
+        const charData = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
+        const tip = charData ? buildSlotLabel(charData.slots[pos]).join(', ') : '';
+        return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posNames[pos]}</span>`;
+    }).join('')}</div>`;
+
+    el.innerHTML = `<div class="tv-left-title">Your Skills</div><div class="act-badge">Act ${state.currentAct}</div>${skillsHtml}${ringHtml}`;
+}
+
+// ── Right drawer: your acquired missions + status ──
+const SKILL_ABBR = { survival:'SUR', charisma:'CHA', alchemy:'ALC', prospecting:'PRO', knowledge:'KNO', power:'POW' };
+
+function renderTvRight(state) {
+    const el = document.getElementById('tvRightContent');
+    if (!el) return;
+    const gp = game.players[0];
+    const active = gp.missions || [];
+    const done = gp.completedMissions || [];
+    const failed = gp.failedMissions || [];
+
+    let rows = '';
+    const entry = (m, cls, tag) => {
+        const reqs = (m.requirements || []).map(r => SKILL_ABBR[r] || r.slice(0,3).toUpperCase()).join(' + ') || '—';
+        return `<div class="tv-mission-row ${cls}"
+                     onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">
+            <img class="tv-mission-thumb" src="assets/cards/missions/${m.filename}" alt="${m.name}"
+                 data-peek="assets/cards/missions/${m.filename}">
+            <div class="tv-mission-info">
+                <span class="tv-mission-name">${m.name}</span>
+                <span class="tv-mission-meta">${m.favorValue || 0} Favor · ${reqs}</span>
+            </div>
+            <span class="tv-mission-tag">${tag}</span>
+        </div>`;
+    };
+    active.forEach(m => rows += entry(m, 'active', '●'));
+    done.forEach(m => rows += entry(m, 'done', '✓'));
+    failed.forEach(m => rows += entry(m, 'failed', '✕'));
+    if (!rows) rows = '<div class="tv-right-empty">No missions taken yet.<br>Play a mission card to acquire one.</div>';
+
+    el.innerHTML = `<div class="tv-right-title">Your Missions</div>${rows}`;
+}
+
+// ── Drawer state (hand auto-opens on your turn; all have manual arrows) ──
+let tvHandOpen = true;
+let tvLeftOpen = false;
+let tvRightOpen = false;
+let _tvTurnSig = null;
+
+function applyDrawerStates() {
+    const hd = document.getElementById('tvHandDrawer');
+    const ld = document.getElementById('tvLeftDrawer');
+    const rd = document.getElementById('tvRightDrawer');
+    const ht = document.getElementById('tvHandTab');
+    const lt = document.getElementById('tvLeftTab');
+    const rt = document.getElementById('tvRightTab');
+    if (hd) hd.classList.toggle('open', tvHandOpen);
+    if (ld) ld.classList.toggle('open', tvLeftOpen);
+    if (rd) rd.classList.toggle('open', tvRightOpen);
+    if (ht) ht.textContent = tvHandOpen ? '▾' : '▴';
+    if (lt) lt.textContent = tvLeftOpen ? '◂' : '▸';
+    if (rt) rt.textContent = tvRightOpen ? '▸' : '◂';
+    if (typeof coachTick === 'function') coachTick();
+}
+function toggleHandDrawer(e) { if (e) e.stopPropagation(); tvHandOpen = !tvHandOpen; applyDrawerStates(); }
+function toggleLeftDrawer(e) { if (e) e.stopPropagation(); tvLeftOpen = !tvLeftOpen; if (tvLeftOpen && typeof coachMarkSeen === 'function') coachMarkSeen('skills'); applyDrawerStates(); }
+function toggleRightDrawer(e) { if (e) e.stopPropagation(); tvRightOpen = !tvRightOpen; applyDrawerStates(); }
+
+// ═══ PHASE C — tabletop motion via per-player state diffing ═══
+// No engine edits: each render we compare each player's tokens / played-card
+// count / acquired missions against the last render and animate the deltas.
+// FX elements go in #tvFx (never wiped by mat re-renders).
+
+const TOKEN_IMG = {
+    gold:     'assets/tokens/Copy of Tokens_Design_v1_Gold_1_v1.jpg',
+    prestige: 'assets/tokens/Copy of Tokens_Design_v1_Prestige_1_v1.jpg',
+    scorn:    'assets/tokens/Copy of Tokens_Design_v1_Scorn_1_v1.jpg'
+};
+let _tvGameRef = null;
+let _tvPrev = {};
+
+function tvMatEl(i) {
+    return document.querySelector(`#table-view .pmat[data-pi="${i}"]`);
+}
+
+function tvDropToken(matEl, key, amount) {
+    const fx = document.getElementById('tvFx');
+    if (!fx || !matEl) return;
+    const tokRow = matEl.querySelector('.pmat-tokens') || matEl;
+    const r = tokRow.getBoundingClientRect();
+    const el = document.createElement('div');
+    el.className = `tv-token-drop ${key}`;
+    const face = TOKEN_IMG[key]
+        ? `<img src="${TOKEN_IMG[key]}" alt="">`
+        : `<span class="tv-token-favor">★</span>`;
+    el.innerHTML = `${face}<span class="tv-token-amt">+${amount}</span>`;
+    el.style.left = `${r.left + r.width / 2}px`;
+    el.style.top = `${r.top}px`;
+    fx.appendChild(el);
+    setTimeout(() => el.remove(), 1100 * window.CINEMATIC_SPEED);
+}
+
+function tvAnimateNewCard(matEl, card) {
+    const fx = document.getElementById('tvFx');
+    if (!fx || !matEl || !card) return;
+    const cardsEl = matEl.querySelector('.pmat-cards') || matEl;
+    const r = cardsEl.getBoundingClientRect();
+    const img = document.createElement('img');
+    img.className = 'tv-card-drop';
+    img.src = `assets/cards/regular/${card.filename}`;
+    img.style.left = `${r.left + r.width / 2}px`;
+    img.style.top = `${r.top}px`;
+    fx.appendChild(img);
+    setTimeout(() => img.remove(), 850 * window.CINEMATIC_SPEED);
+}
+
+function tvMissionReveal(playerName, mission) {
+    const fx = document.getElementById('tvFx');
+    if (!fx || !mission) return;
+    const el = document.createElement('div');
+    el.className = 'tv-mission-reveal';
+    el.innerHTML = `
+        <div class="tv-mr-who">${playerName} takes a mission</div>
+        <img class="tv-mr-card" src="assets/cards/missions/${mission.filename}" alt="${mission.name}">
+        <div class="tv-mr-name">${mission.name}</div>`;
+    fx.appendChild(el);
+    setTimeout(() => el.classList.add('out'), 1400 * window.CINEMATIC_SPEED);
+    setTimeout(() => el.remove(), 1900 * window.CINEMATIC_SPEED);
+}
+
+function tvAnimateDeltas(state) {
+    if (game !== _tvGameRef) { _tvGameRef = game; _tvPrev = {}; } // new game → reset baseline
+    const animate = isCompactLandscape();
+
+    state.players.forEach((p, i) => {
+        const acquired = (p.missions || []).concat(p.completedMissions || [], p.failedMissions || []);
+        const curr = {
+            gold: p.gold, prestige: p.prestige, scorn: p.scorn, favor: p.favor || 0,
+            cardCount: (p.playedCards || []).length,
+            missionNames: acquired.map(m => m.name)
+        };
+        const prev = _tvPrev[i];
+
+        if (prev && animate) {
+            const matEl = tvMatEl(i);
+            if (matEl) {
+                ['gold', 'prestige', 'scorn', 'favor'].forEach(k => {
+                    if (curr[k] > prev[k]) tvDropToken(matEl, k, curr[k] - prev[k]);
+                });
+                if (curr.cardCount > prev.cardCount) {
+                    const newest = (p.playedCards || [])[p.playedCards.length - 1];
+                    tvAnimateNewCard(matEl, newest);
+                }
+            }
+            const fresh = curr.missionNames.filter(n => !prev.missionNames.includes(n));
+            fresh.forEach(name => {
+                const m = acquired.find(x => x.name === name);
+                if (m) tvMissionReveal(i === 0 ? 'You' : p.name, m);
+            });
+        }
+        _tvPrev[i] = curr;
+    });
+}
+
+function renderTableView(state) {
+    if (!game) return;
+    const seatsEl = document.getElementById('tvSeats');
+    if (!seatsEl) return;
+
+    // You: full mat, bottom-left anchor. Rivals: compact plaque rail, top.
+    let html = buildPlayerMat(0, state, true, 'bottom');
+    html += '<div class="tv-rivals">';
+    state.players.forEach((p, i) => { if (i !== 0) html += buildRivalPlaque(i, state); });
+    html += '</div>';
+    seatsEl.innerHTML = html;
+
+    renderTvCenter(state);
+    renderTvHand(state);
+    renderTvLeft(state);
+    renderTvRight(state);
+
+    // Tabletop motion: animate any per-player deltas since the last render.
+    tvAnimateDeltas(state);
+
+    // Auto-open the hand when the turn context changes to the human's turn to
+    // act; tuck it otherwise. Manual arrow toggles persist within a turn.
+    const sig = state.phase + ':' + state.activePlayerIndex;
+    if (sig !== _tvTurnSig) {
+        _tvTurnSig = sig;
+        const hand = state.players[0].hand;
+        const myTurn = state.activePlayerIndex === 0
+            && hand && hand.length > 0
+            && state.phase !== 'scoring' && state.phase !== 'game_over';
+        tvHandOpen = myTurn;
+    }
+    // Tutorial: while the early tips (board, missions) are still up, keep the
+    // hand tucked so the "this is your board" prompt isn't blocked. The 'hand'
+    // tip itself opens the drawer when it's reached.
+    if (typeof coachTuckHand === 'function' && coachTuckHand()) tvHandOpen = false;
+    applyDrawerStates();
+
+    // Prong 2: re-evaluate contextual coach-marks after each table render.
+    coachTick();
+}
+
+// ═══ OVERLAY FUNCTIONS ═══════════════════════════════════════
+
+// ── Board Overlay ──
+
+function openBoardOverlay() {
+    const char = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
+    if (!char) return;
+
+    document.getElementById('boardOvImg').src = `assets/characters/${char.filename}`;
+    document.getElementById('boardOvName').textContent = char.name;
+
+    renderBoardOvSlider();
+    renderBoardOvStrip(char.id);
+
+    document.getElementById('boardOverlay').classList.add('active');
+}
+
+function closeBoardOverlay() {
+    document.getElementById('boardOverlay').classList.remove('active');
+}
+
+function renderBoardOvSlider() {
+    const player = game.players[0];
+    const char = player.character;
+    if (!char || !char.slots) return;
+
+    const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
+    const canLeft = player.sliderPosition > 0 && player.gold >= 5;
+    const canRight = player.sliderPosition < 4 && player.gold >= 5;
+    const claimed = player.claimedSlots || new Set([2]);
+
+    let cellsHtml = '';
+    for (let i = 0; i < 5; i++) {
+        const slot = char.slots[i];
+        const isCurrent = i === player.sliderPosition;
+        const isClaimed = claimed.has(i) && !isCurrent;
+        const stateClass = isCurrent ? 'current' : isClaimed ? 'claimed' : 'unclaimed';
+        const labels = buildSlotLabel(slot);
+
+        cellsHtml += `
+            <div class="slot-cell ${stateClass}" data-slot="${i}">
+                <div class="slot-pos-name">${posNames[i]}</div>
+                <div class="slot-rewards">
+                    ${labels.map(l => `<div class="slot-reward-line">${l}</div>`).join('')}
+                </div>
+                ${isClaimed ? '<div class="slot-claimed-check">\u2713</div>' : ''}
+            </div>`;
+    }
+
+    document.getElementById('boardOvSlider').innerHTML = `
+        <button class="slider-btn${canLeft ? '' : ' disabled'}" onclick="payToSlide(-1); renderBoardOvSlider(); renderGameState()">
+            \u25C0 <span class="slider-cost">5g</span>
+        </button>
+        <div class="slot-track">
+            ${cellsHtml}
+            <div class="slot-ring" style="transform: translateX(${player.sliderPosition * 100}%)"></div>
+        </div>
+        <button class="slider-btn${canRight ? '' : ' disabled'}" onclick="payToSlide(1); renderBoardOvSlider(); renderGameState()">
+            <span class="slider-cost">5g</span> \u25B6
+        </button>
+    `;
+}
+
+function renderBoardOvStrip(activeId) {
+    const strip = document.getElementById('boardOvStrip');
+    const chars = window.FAVOR_DATA.characters;
+
+    strip.innerHTML = chars.map(c => {
+        const isActive = c.id === (activeId || selectedCharacter);
+        return `<img class="char-option${isActive ? ' active' : ''}"
+                    src="assets/characters/${c.filename}"
+                    onclick="switchBoardOv(this, '${c.id}')">`;
+    }).join('');
+}
+
+function switchBoardOv(el, charId) {
+    document.querySelectorAll('.board-ov-strip .char-option').forEach(o => o.classList.remove('active'));
+    el.classList.add('active');
+
+    const char = window.FAVOR_DATA.characters.find(c => c.id === charId);
+    if (!char) return;
+
+    const img = document.getElementById('boardOvImg');
+    img.style.animation = 'none';
+    img.offsetHeight;
+    img.style.animation = 'ovZoom 0.35s cubic-bezier(0.16,1,0.3,1)';
+    img.src = `assets/characters/${char.filename}`;
+    document.getElementById('boardOvName').textContent = char.name;
+}
+
+// ── Hand Inspect Overlay ──
+
+function openHandInspect() {
+    const hand = game.players[0].hand;
+    if (!hand || hand.length === 0) return;
+
+    const spread = document.getElementById('handOvSpread');
+    spread.innerHTML = hand.map(card =>
+        `<img class="ov-hand-card" src="assets/cards/regular/${card.filename}"
+            alt="${card.name}"
+            onclick="zoomCard('assets/cards/regular/${card.filename}')">`
+    ).join('');
+
+    document.getElementById('handOvLabel').textContent = `Your Hand — ${hand.length} Cards`;
+    document.getElementById('handInspectOv').classList.add('active');
+}
+
+function closeHandInspect() {
+    document.getElementById('handInspectOv').classList.remove('active');
+}
+
+// ── Opponent Overlay ──
+
+function openOppOverlay(playerIndex) {
+    const state = game.getState(0);
+    const p = state.players[playerIndex];
+    const char = game.players[playerIndex].character;
+    if (!char) return;
+    if (typeof coachMarkSeen === 'function') coachMarkSeen(playerIndex === 0 ? 'welcome' : 'rivals');
+
+    document.getElementById('oppOvAvatar').src = `assets/characters/${char.filename}`;
+    document.getElementById('oppOvName').textContent = p.name;
+    document.getElementById('oppOvBoard').src = `assets/characters/${char.filename}`;
+
+    document.getElementById('oppOvStats').innerHTML = `
+        <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${p.gold}</span>
+        <span class="stat-pill prestige">\u2B50 ${p.prestige}</span>
+        <span class="stat-pill favor">${p.favor || 0} Favor</span>
+        <span class="stat-pill scorn">${p.scorn} Scorn</span>
+    `;
+
+    const cardsEl = document.getElementById('oppOvCards');
+    cardsEl.innerHTML = '';
+    p.playedCards.forEach(card => {
+        const wrap = document.createElement('div');
+        wrap.className = 'opp-ov-card-wrap';
+        const safeName = card.name.replace(/'/g, "\\'");
+        wrap.innerHTML = `
+            <img src="assets/cards/regular/${card.filename}" alt="${card.name}"
+                 data-peek="assets/cards/regular/${card.filename}">
+            <div class="lend-btn" onclick="requestLend(${playerIndex}, '${safeName}')">Lend Skills</div>
+        `;
+        cardsEl.appendChild(wrap);
+    });
+
+    // Toggle button label (used on landscape); start on the board view.
+    const n = p.playedCards.length;
+    const toggle = document.getElementById('oppOvToggle');
+    if (toggle) toggle.textContent = n ? `View Played Cards (${n})` : 'No Cards Played';
+    const ov = document.getElementById('oppOverlay');
+    ov.classList.remove('cards-open');
+    ov.classList.add('active');
+}
+
+// Landscape: reveal/hide the played-cards panel (keeps the board readable
+// instead of one long scroll). No-op behavior on desktop (panel shows inline).
+function toggleOppCards(e) {
+    if (e) e.stopPropagation();
+    document.getElementById('oppOverlay').classList.toggle('cards-open');
+}
+
+function closeOppOverlay() {
+    const ov = document.getElementById('oppOverlay');
+    ov.classList.remove('active', 'cards-open');
+}
+
+function requestLend(oppIndex, cardName) {
+    const oppName = game.players[oppIndex].name;
+    const toast = document.getElementById('lendToast');
+    toast.textContent = `Request sent to ${oppName} — "${cardName}"`;
+    toast.classList.add('active');
+    setTimeout(() => toast.classList.remove('active'), 2500);
+}
+
+// ── Mission Lightbox ──
+
+function openMissionLB(src, name) {
+    if (typeof coachMarkSeen === 'function') coachMarkSeen('missions');
+    document.getElementById('missionLBImg').src = src;
+    document.getElementById('missionLBLabel').textContent = name;
+    document.getElementById('missionLB').classList.add('active');
+}
+
+function closeMissionLB() {
+    document.getElementById('missionLB').classList.remove('active');
+}
+
+// ── ESC closes all overlays ──
+
+function closeAllOverlays() {
+    closeBoardOverlay();
+    closeHandInspect();
+    closeOppOverlay();
+    closeMissionLB();
+}
+
+function selectHandCard(index) {
+    if (game.phase !== 'gameplay') return;
+
+    if (typeof coachMarkSeen === 'function') coachMarkSeen('hand');
+    selectedHandCard = index;
+    renderHand(game.getState(0));
+    showActionPanel(index);
+}
+
+// ─── ACTION PANEL ──────────────────────────────────────────
+
+function showActionPanel(cardIndex) {
+    const panel = document.getElementById('actionPanel');
+    const card = game.players[0].hand[cardIndex];
+    if (!card) return;
+
+    const { canPlay, missingSkills, missingSpecial = [] } = game.checkRequirements(0, card);
+    const isMissionLetter = card.type === 'mission_letter';
+    const skills = card.skills || [];
+    const typeName = (card.type || 'card').replace(/_/g, ' ');
+
+    // The card itself sits beside the buttons (readable, peek-able) so the
+    // decision and the actions live together \u2014 no more covered/cut-off card.
+    let html = `<img class="action-card-img" src="assets/cards/regular/${card.filename}"
+                     alt="${card.name}" data-peek="assets/cards/regular/${card.filename}">`;
+    html += '<div class="action-body"><div class="action-header">';
+    html += `<div class="action-card-name">${card.name}</div>`;
+    html += `<div class="action-card-type">${typeName.charAt(0).toUpperCase() + typeName.slice(1)}</div>`;
+    html += `<div class="action-purse"><img src="${TOKEN_IMG.gold}" alt="Gold"> Your purse: <b>${game.players[0].gold} Gold</b></div>`;
+
+    if (skills.length > 0) {
+        html += `<div class="action-skills">${skills.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' \u00B7 ')}</div>`;
+    }
+
+    if (card.rewards) {
+        const r = [];
+        if (card.rewards.gold) r.push(`+${card.rewards.gold} Gold`);
+        if (card.rewards.prestige) r.push(`+${card.rewards.prestige} Prestige`);
+        if (card.rewards.favor) r.push(`+${card.rewards.favor} Favor`);
+        if (r.length) html += `<div class="action-rewards">${r.join(' \u00B7 ')}</div>`;
+    }
+
+    html += '</div><div class="action-buttons">';
+
+    if (isMissionLetter) {
+        // Mission letters can ONLY be used as mission letters or discarded — no "Play"
+        if (game.players[0].gold >= 1 && game.visibleMissions.length > 0) {
+            html += `<button class="btn-royal primary action-btn" onclick="playMissionLetter(${cardIndex})"><span>Mission Letter (\u22121g)</span></button>`;
+        } else {
+            html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>Need 1g for Mission Letter</span></button>`;
+        }
+    } else {
+        // Regular card — Play button
+        if (canPlay) {
+            html += `<button class="btn-royal primary action-btn" onclick="playSelectedCard(${cardIndex})"><span>\u25B6 Play</span></button>`;
+        } else {
+            const needed = [...missingSkills, ...missingSpecial];
+            html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>\u25B6 Need: ${needed.join(', ')}</span></button>`;
+
+            // Borrow option \u2014 only skill gaps are borrowable; Mind's Eye / Philosopher's
+            // Stone / Gold / Favor requirements can never be borrowed (see tutorial).
+            if (missingSpecial.length === 0 && missingSkills.length > 0) {
+                const borrowable = game.getBorrowableSkills(0);
+                const canBorrowAll = missingSkills.every(s => borrowable[s] && borrowable[s].length > 0);
+                const borrowCost = missingSkills.length * 2;
+                if (canBorrowAll && game.players[0].gold >= borrowCost) {
+                    html += `<button class="btn-royal primary action-btn" onclick="playWithBorrow(${cardIndex})"><span>Borrow & Play (\u2212${borrowCost}g)</span></button>`;
+                }
+            }
+        }
+    }
+
+    // Discard — always available, offers +3g or slide
+    html += `<button class="btn-royal action-btn" onclick="discardSelectedCard(${cardIndex})"><span>\u2715 Discard (+3g)</span></button>`;
+
+    // Discard to slide — only if slider can move
+    const player = game.players[0];
+    if (player.sliderPosition > 0) {
+        html += `<button class="btn-royal action-btn" onclick="discardToSlide(${cardIndex}, -1)"><span>\u2190 Discard: Slide Ring</span></button>`;
+    }
+    if (player.sliderPosition < 4) {
+        html += `<button class="btn-royal action-btn" onclick="discardToSlide(${cardIndex}, 1)"><span>Discard: Slide Ring \u2192</span></button>`;
+    }
+
+    html += '</div></div>';
+
+    panel.innerHTML = html;
+    panel.classList.add('active');
+    if (typeof coachTick === 'function') coachTick();
+}
+
+function hideActionPanel() {
+    document.getElementById('actionPanel').classList.remove('active');
+    selectedHandCard = null;
+    if (typeof coachTick === 'function') coachTick();
+}
+
+// ─── CARD ACTIONS ──────────────────────────────────────────
+
+function playSelectedCard(cardIndex) {
+    if (!game || game.phase !== 'gameplay') return;
+
+    const card = game.players[0].hand[cardIndex];
+    if (!card) return;
+
+    const { canPlay } = game.checkRequirements(0, card);
+    if (!canPlay) {
+        showNotification(`Cannot play ${card.name}!`, 'error');
+        return;
+    }
+
+    game.pickCard(0, cardIndex);
+    hideActionPanel();
+
+    const skillText = card.skills && card.skills.length > 0
+        ? ` \u2014 ${card.skills.join(', ')}`
+        : '';
+    showNotification(`Played: ${card.name}${skillText}`, 'play');
+    addLogEntry(`You play ${card.name}`);
+
+    processRound('play');
+}
+
+function discardSelectedCard(cardIndex) {
+    if (!game || game.phase !== 'gameplay') return;
+
+    const card = game.players[0].hand[cardIndex];
+    if (!card) return;
+
+    game.pickCard(0, cardIndex);
+    hideActionPanel();
+
+    game.players[0]._discardNext = true;
+
+    showNotification(`Discarded: ${card.name} (+3 Gold)`, 'discard');
+    addLogEntry(`You discard ${card.name} for 3 Gold`);
+
+    processRound('discard');
+}
+
+async function playMissionLetter(cardIndex) {
+    if (!game || game.phase !== 'gameplay') return;
+
+    const card = game.players[0].hand[cardIndex];
+    if (!card || game.players[0].gold < 1) return;
+
+    game.pickCard(0, cardIndex);
+    hideActionPanel();
+
+    addLogEntry('You play a Mission Letter');
+
+    // Immediately activate the mission letter (deducts 1g, discards the card)
+    const result = game.activateCard(0, card.id, 'mission_letter');
+
+    // Show mini spotlight for visual feedback
+    await showMiniSpotlight(card, 'play');
+
+    if (result && result.chooseMission) {
+        // Show mission select immediately and wait for the player's choice
+        renderGameState();
+        await showMissionSelectAsync();
+    }
+
+    // Now continue the round (AI picks, hand passing, activations)
+    // pendingActivations[0] is already null since the letter was activated above
+    processRound('mission_letter_done');
+}
+
+function playWithBorrow(cardIndex) {
+    if (!game || game.phase !== 'gameplay') return;
+
+    const card = game.players[0].hand[cardIndex];
+    if (!card) return;
+
+    // Special requirements (Mind's Eye / Philosopher's Stone / Gold / Favor) can't be borrowed
+    const { missingSpecial = [] } = game.checkRequirements(0, card);
+    if (missingSpecial.length > 0) {
+        showNotification(`Cannot borrow for: ${missingSpecial.join(', ')}`, 'error');
+        return;
+    }
+
+    game.pickCard(0, cardIndex);
+    hideActionPanel();
+
+    game.players[0]._borrowNext = true;
+
+    const { missingSkills } = game.checkRequirements(0, card);
+    const borrowCost = missingSkills.length * 2;
+    showNotification(`Borrowed skills & played: ${card.name} (\u2212${borrowCost}g)`, 'play');
+    addLogEntry(`You borrow skills and play ${card.name}`);
+
+    processRound('borrow_play');
+}
+
+function discardToSlide(cardIndex, direction) {
+    if (!game || game.phase !== 'gameplay') return;
+
+    const card = game.players[0].hand[cardIndex];
+    if (!card) return;
+
+    const player = game.players[0];
+    const newPos = player.sliderPosition + direction;
+    if (newPos < 0 || newPos > 4) return;
+
+    game.pickCard(0, cardIndex);
+    hideActionPanel();
+
+    game.players[0]._discardSlideNext = direction;
+
+    const dirName = direction < 0 ? 'left' : 'right';
+    const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
+    showNotification(`Discarded ${card.name} \u2014 Slider moves ${dirName} to ${posNames[newPos]}`, 'play');
+    addLogEntry(`You discard ${card.name} to slide ${dirName}`);
+
+    processRound('discard_slide');
+}
+
+// Pay 5 Gold to move slider (can do anytime during gameplay)
+async function payToSlide(direction) {
+    if (!game || game.phase !== 'gameplay') return;
+
+    const player = game.players[0];
+    if (player.gold < 5) {
+        showNotification('Need 5 Gold to move slider!', 'error');
+        return;
+    }
+
+    const result = game.moveSlider(0, direction);
+    if (result.success) {
+        const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
+        showNotification(`Slider moved to ${posNames[player.sliderPosition]} (\u22125g)`, 'play');
+        addLogEntry(`You pay 5g to slide to ${posNames[player.sliderPosition]}`);
+        renderGameState();
+        renderBoardOvSlider();
+
+        // Magician slot 2: choose a mission from the pool
+        if (player._pendingSlotMission) {
+            player._pendingSlotMission = false;
+            await showMissionSelectAsync();
+            renderGameState();
+            renderBoardOvSlider();
+        }
+    } else {
+        showNotification(result.error, 'error');
+    }
+}
+
+// ─── ROUND PROCESSING ─────────────────────────────────────
+
+async function processRound(humanAction) {
+    // AI picks
+    for (let i = 1; i < game.playerCount; i++) {
+        if (game.pendingActivations[i] === null && game.players[i].hand.length > 0) {
+            aiPickCard(i);
+        }
+    }
+
+    // For mission_letter_done, player 0's pending is already null (activated immediately).
+    // Check that all OTHER players have picked.
+    const allReady = humanAction === 'mission_letter_done'
+        ? game.pendingActivations.every((a, i) => i === 0 || a !== null)
+        : game.allPlayersPicked();
+
+    if (!allReady) {
+        renderGameState();
+        return;
+    }
+
+    game.passHands();
+
+    const needsMissionSelect = await activateAllCards(humanAction);
+
+    if (needsMissionSelect) {
+        renderGameState();
+        showMissionSelectUI();
+        return;
+    }
+
+    finishRound();
+}
+
+async function activateAllCards(humanAction) {
+    let needsMissionSelect = false;
+
+    for (let round = 0; round < game.playerCount; round++) {
+        const pi = (game.emblemHolder + round) % game.playerCount;
+        const pending = game.pendingActivations[pi];
+        if (!pending) continue;
+
+        const cards = Array.isArray(pending) ? pending : [pending];
+
+        for (let cardIdx = 0; cardIdx < cards.length; cardIdx++) {
+            const card = cards[cardIdx];
+
+            // Capture player 0's stats before activation for delta animation
+            if (pi === 0) captureStats();
+
+            if (pi === 0) {
+                // Human player — quick mini-spotlight (you already know what you picked)
+                if (humanAction === 'discard_slide' && cardIdx === 0 && game.players[0]._discardSlideNext !== undefined) {
+                    await showMiniSpotlight(card, 'discard_slide');
+
+                    const direction = game.players[0]._discardSlideNext;
+                    game.activateCard(0, card.id, 'discard_slide', direction);
+                    game.players[0]._discardSlideNext = undefined;
+
+                    // Magician slot 2: choose_mission triggered by slider move
+                    if (game.players[0]._pendingSlotMission) {
+                        game.players[0]._pendingSlotMission = false;
+                        renderGameState();
+                        await showMissionSelectAsync();
+                    }
+                } else if (humanAction === 'discard' && cardIdx === 0 && game.players[0]._discardNext) {
+                    await showMiniSpotlight(card, 'discard');
+
+                    game.activateCard(0, card.id, 'discard');
+                    game.players[0]._discardNext = false;
+                } else if (humanAction === 'borrow_play' && cardIdx === 0 && game.players[0]._borrowNext) {
+                    await showMiniSpotlight(card, 'play');
+
+                    const { missingSkills } = game.checkRequirements(0, card);
+                    const borrowable = game.getBorrowableSkills(0);
+                    const borrowFrom = missingSkills.map(s => ({
+                        skill: s,
+                        neighborIndex: borrowable[s][0]
+                    }));
+                    game.activateCard(0, card.id, 'play', borrowFrom);
+                    game.players[0]._borrowNext = false;
+                } else {
+                    // Default: play if possible
+                    const isMissionLetter = card.type === 'mission_letter';
+
+                    if (isMissionLetter) {
+                        // Mission letters can't be "played" — auto-discard if no choice given
+                        await showMiniSpotlight(card, 'discard');
+                        game.activateCard(0, card.id, 'discard');
+                        addLogEntry(`${card.name} auto-discarded (mission letter)`);
+                    } else {
+                        const { canPlay } = game.checkRequirements(0, card);
+                        if (canPlay) {
+                            await showMiniSpotlight(card, 'play');
+                            game.activateCard(0, card.id, 'play');
+                            if (cardIdx > 0) {
+                                addLogEntry(`You also play ${card.name}`);
+                            }
+                        } else {
+                            await showMiniSpotlight(card, 'discard');
+                            game.activateCard(0, card.id, 'discard');
+                            if (cardIdx > 0) {
+                                addLogEntry(`${card.name} auto-discarded (missing requirements)`);
+                            }
+                        }
+                    }
+                }
+            } else {
+                // AI player
+                const isMissionLetter = card.type === 'mission_letter';
+
+                if (isMissionLetter) {
+                    // AI mission letter: use it if they have gold and missions available, else discard
+                    if (game.players[pi].gold >= 1 && game.visibleMissions.length > 0) {
+                        await showCardSpotlight(pi, card, 'play');
+                        const result = game.activateCard(pi, card.id, 'mission_letter');
+                        if (result && result.chooseMission) {
+                            // AI picks the best mission they can complete
+                            const bestIdx = aiBestMission(pi);
+                            game.chooseMission(pi, bestIdx);
+                            addLogEntry(`${game.players[pi].name} uses a Mission Letter`);
+                        }
+                    } else {
+                        await showCardSpotlight(pi, card, 'discard');
+                        game.activateCard(pi, card.id, 'discard');
+                        addLogEntry(`${game.players[pi].name} discards ${card.name}`);
+                    }
+                } else {
+                    const { canPlay } = game.checkRequirements(pi, card);
+                    if (canPlay) {
+                        await showCardSpotlight(pi, card, 'play');
+                        game.activateCard(pi, card.id, 'play');
+                        addLogEntry(`${game.players[pi].name} plays ${card.name}`);
+                    } else {
+                        await showCardSpotlight(pi, card, 'discard');
+                        game.activateCard(pi, card.id, 'discard');
+                        addLogEntry(`${game.players[pi].name} discards ${card.name}`);
+                    }
+                }
+            }
+
+            // Animate stat changes after each card resolves
+            renderGameState();
+            animateStatChanges();
+
+            // Brief pause between cards from the same player
+            if (cardIdx < cards.length - 1) {
+                await new Promise(r => setTimeout(r, 300 * window.CINEMATIC_SPEED));
+            }
+        }
+    }
+
+    return needsMissionSelect;
+}
+
+function finishRound() {
+    const allEmpty = game.players.every(p => p.hand.length === 0);
+    if (allEmpty) {
+        renderGameState();
+        setTimeout(() => endActPhases(), 1000);
+    } else {
+        game.phase = 'gameplay';
+        game.pendingActivations = new Array(game.playerCount).fill(null);
+        renderGameState();
+    }
+}
+
+// ─── MISSION SELECT ────────────────────────────────────────
+
+function showMissionSelectUI() {
+    const overlay = document.getElementById('missionSelect');
+
+    let html = '<div class="mission-select-content">';
+    html += '<h2 class="select-title" style="font-size: 28px; margin-bottom: 20px;">Choose a Mission</h2>';
+    html += '<div class="mission-options">';
+
+    game.visibleMissions.forEach((m, i) => {
+        html += `
+            <div class="mission-option" onclick="selectMission(${i})">
+                <img src="assets/cards/missions/${m.filename}" alt="${m.name}"
+                     data-peek="assets/cards/missions/${m.filename}">
+                <div style="font-family: Cinzel, serif; color: var(--gold); margin-top: 8px; font-size: 14px;">${m.name}</div>
+            </div>
+        `;
+    });
+
+    html += '</div></div>';
+    overlay.innerHTML = html;
+    overlay.classList.add('active');
+    if (typeof coachTick === 'function') coachTick();
+}
+
+function showMissionSelectAsync() {
+    return new Promise((resolve) => {
+        window._missionSelectResolve = resolve;
+        showMissionSelectUI();
+    });
+}
+
+function selectMission(index) {
+    game.chooseMission(0, index);
+    document.getElementById('missionSelect').classList.remove('active');
+    if (typeof coachTick === 'function') coachTick();
+    showNotification('Mission acquired!', 'mission');
+    addLogEntry('You take a mission');
+
+    // If called from immediate mission letter flow, resolve the Promise
+    if (window._missionSelectResolve) {
+        const resolve = window._missionSelectResolve;
+        window._missionSelectResolve = null;
+        resolve();
+    } else {
+        finishRound();
+    }
+}
+
+// ─── AI ────────────────────────────────────────────────────
+
+// AI picks the best available mission (highest favor value)
+function aiBestMission(playerIndex) {
+    let bestIdx = 0;
+    let bestFavor = -1;
+    game.visibleMissions.forEach((m, i) => {
+        const favor = m.favor || m.successReward?.favor || 0;
+        if (favor > bestFavor) {
+            bestFavor = favor;
+            bestIdx = i;
+        }
+    });
+    return bestIdx;
+}
+
+function aiPickCard(playerIndex) {
+    const player = game.players[playerIndex];
+    if (!player.hand || player.hand.length === 0) return;
+
+    let bestIndex = 0;
+    let bestScore = -1;
+
+    player.hand.forEach((card, i) => {
+        let score = 0;
+        if (card.skills) score += card.skills.length * 2;
+        if (card.rewards) {
+            if (card.rewards.gold) score += card.rewards.gold;
+            if (card.rewards.prestige) score += card.rewards.prestige * 3;
+            if (card.rewards.favor) score += card.rewards.favor * 2;
+            if (card.rewards.scorn) score -= card.rewards.scorn * 2;
+        }
+        if (card.skills && card.skills.includes('power')) score += 3;
+
+        const { canPlay } = game.checkRequirements(playerIndex, card);
+        if (canPlay) score += 5;
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestIndex = i;
+        }
+    });
+
+    game.pickCard(playerIndex, bestIndex);
+}
+
+// ─── END OF ACT ────────────────────────────────────────────
+
+function endActPhases() {
+    const actNum = game.currentAct;
+
+    // MISSIONS PHASE
+    game.phase = 'missions';
+    renderGameState();
+    const missionResults = game.resolveMissions();
+
+    let missionDelay = 500;
+    let hasMissionResults = false;
+
+    missionResults.forEach(pr => {
+        pr.results.forEach(r => {
+            hasMissionResults = true;
+            const playerName = pr.playerIndex === 0 ? 'You' : game.players[pr.playerIndex].name;
+            if (r.success) {
+                setTimeout(() => showNotification(`${playerName} completed: ${r.mission.name}!`, 'mission'), missionDelay);
+                addLogEntry(`${playerName} completed mission: ${r.mission.name}`);
+            } else {
+                setTimeout(() => showNotification(`${playerName} failed: ${r.mission.name}`, 'error'), missionDelay);
+                addLogEntry(`${playerName} failed mission: ${r.mission.name}`);
+            }
+            missionDelay += 600;
+        });
+    });
+
+    if (!hasMissionResults) {
+        addLogEntry('No missions resolved this act');
+    }
+
+    // MELEE PHASE
+    const meleeStart = hasMissionResults ? missionDelay + 400 : 800;
+
+    setTimeout(() => {
+        game.phase = 'melee';
+        renderGameState();
+        const meleeResults = game.resolveMelee();
+
+        if (meleeResults.length > 0) {
+            const ordinals = ['1st', '2nd', '3rd', '4th', '5th'];
+            addLogEntry(`--- Act ${actNum} Melee ---`);
+            meleeResults.forEach(r => {
+                addLogEntry(`${ordinals[r.placement - 1] || r.placement + 'th'}: ${r.name} \u2014 Power ${r.power}, +${r.prestige} Prestige`);
+            });
+        }
+
+        // ACT TRANSITION \u2014 after the Melee splash has had its moment.
+        const advanceAct = () => {
+            const result = game.endAct();
+            if (result === 'scoring') {
+                showScoring();
+            } else {
+                addLogEntry(`\u2550\u2550\u2550 Act ${game.currentAct} begins \u2550\u2550\u2550`);
+                showNotification(`Act ${game.currentAct} Begins!`, 'act');
+                renderGameState();
+            }
+        };
+
+        if (meleeResults.length > 0) {
+            showMeleeSplash(meleeResults, actNum).then(() => setTimeout(advanceAct, 450));
+        } else {
+            setTimeout(advanceAct, 2000);
+        }
+    }, meleeStart);
+}
+
+// ─── SCORING ───────────────────────────────────────────────
+
+function showScoring() {
+    const scores = game.getWinner();
+
+    document.getElementById('game-screen').classList.remove('active');
+    document.getElementById('scoring-screen').classList.add('active');
+
+    const content = document.getElementById('scoringContent');
+    const winner = scores[0];
+
+    content.innerHTML = `
+        <h2 style="font-family: 'Cinzel', serif; color: var(--gold); font-size: 28px; margin: 20px 0;">
+            ${winner.name} Claims the Throne!
+        </h2>
+        <p style="color: var(--text-light); opacity: 0.7; margin-bottom: 20px;">
+            Final Score: ${winner.finalScore} points
+        </p>
+        <table class="scoring-table">
+            <tr>
+                <th>Heir</th>
+                <th>Mission Favor</th>
+                <th>Card Favor</th>
+                <th>Character Favor</th>
+                <th>Prestige</th>
+                <th>Scorn</th>
+                <th>Total</th>
+                <th>Gold (Tiebreaker)</th>
+            </tr>
+            ${scores.map((s, i) => `
+                <tr class="${i === 0 ? 'winner' : ''}">
+                    <td>${s.name}</td>
+                    <td>${s.missionFavor}</td>
+                    <td>${s.cardFavor}</td>
+                    <td>${s.characterFavor}</td>
+                    <td>${s.prestige}</td>
+                    <td>-${s.scorn}</td>
+                    <td><strong>${s.finalScore}</strong></td>
+                    <td>${s.gold}</td>
+                </tr>
+            `).join('')}
+        </table>
+        <div style="margin-top: 40px;">
+            <button class="btn-royal primary" onclick="location.reload()">
+                <span>Play Again</span>
+            </button>
+        </div>
+    `;
+}
+
+// ─── PLAYER STATS (renderStats alias for backward compat) ──
+
+function renderStats(state) {
+    renderStatsPanel(state);
+    renderBottomStats(state);
+}
+
+// ═══ CARD PEEK — press & hold "boom" (Battlegrounds-style) ═══════════
+// Hold any card (hand, table, missions, panels) ~a third of a second and it
+// blows up to full readable size with keyword plaques beside it explaining
+// exactly what it does. Release or tap to put it down. Works with mouse too.
+
+const PEEK_TYPE_INFO = {
+    endeavor:       ['Endeavor', 'Builds your skills.'],
+    weapon:         ['Weapon', 'Power for the Melee.'],
+    artifact:       ['Artifact', 'Grants lasting Favor.'],
+    adventure:      ['Adventure', 'A quest that grants rich Favor.'],
+    potion:         ['Potion', 'Fires off instantly when played.'],
+    mission_letter: ['Mission Letter', 'Spend 1 Gold to take a mission from the pool.'],
+    mission:        ['Mission', 'Meet its skill requirement — Favor if you succeed, Scorn if you fail.'],
+};
+
+let _peekIndexMap = null;
+function peekLookup(src) {
+    if (!_peekIndexMap) {
+        _peekIndexMap = {};
+        ((window.FAVOR_DATA || {}).cards || []).forEach(c => {
+            _peekIndexMap['assets/cards/regular/' + c.filename] = { kind: 'card', data: c };
+        });
+        ((window.FAVOR_DATA || {}).missions || []).forEach(m => {
+            _peekIndexMap['assets/cards/missions/' + m.filename] = { kind: 'mission', data: m };
+        });
+    }
+    return _peekIndexMap[src] || null;
+}
+
+// "Survival ×2" style aggregation for skill lists.
+function peekSkillCounts(list) {
+    const counts = {};
+    (list || []).forEach(s => { counts[s] = (counts[s] || 0) + 1; });
+    return Object.entries(counts).map(([s, n]) =>
+        `<span class="pk-skill"><img src="assets/icons/${s}.png" alt="">${s.charAt(0).toUpperCase() + s.slice(1)}${n > 1 ? ' ×' + n : ''}</span>`
+    ).join('');
+}
+
+function peekPlaque(title, body, cls) {
+    return `<div class="peek-plaque ${cls || ''}"><div class="pk-title">${title}</div><div class="pk-body">${body}</div></div>`;
+}
+
+function buildPeekPlaques(src) {
+    const hit = peekLookup(src);
+    if (!hit) return '';
+    const d = hit.data;
+    let out = '';
+
+    if (hit.kind === 'card') {
+        const t = PEEK_TYPE_INFO[d.type];
+        if (t) out += peekPlaque(t[0], t[1], 'type');
+        if (d.skills && d.skills.length) out += peekPlaque('Grants', peekSkillCounts(d.skills));
+        if (d.cost) out += peekPlaque('Cost', `${d.cost} Gold to play`);
+        if (d.requirements && d.requirements.length) out += peekPlaque('Requires', peekSkillCounts(d.requirements), 'req');
+        const r = d.rewards || {};
+        const rr = [];
+        if (r.gold) rr.push(`+${r.gold} Gold`);
+        if (r.prestige) rr.push(`+${r.prestige} Prestige`);
+        if (r.favor) rr.push(`+${r.favor} Favor`);
+        if (rr.length) out += peekPlaque('Rewards', rr.join(' · '));
+        if (d.favor) out += peekPlaque('Favor', `Scores ${d.favor} Favor for the Queen`, 'type');
+        if (r.scorn) out += peekPlaque('Beware', `+${r.scorn} Scorn`, 'scorn');
+        if (d.special && SPECIAL_DESCRIPTIONS[d.special]) out += peekPlaque('Special', SPECIAL_DESCRIPTIONS[d.special], 'special');
+        if (d.reqMaps && d.reqMaps.length) out += peekPlaque('Map Route', `Play ${d.reqMaps.join(' or ')} first and its Map plays this card for free.`, 'special');
+        if (d.grantsMap) out += peekPlaque('Grants Map', d.grantsMap, 'special');
+    } else {
+        const t = PEEK_TYPE_INFO.mission;
+        out += peekPlaque(t[0], t[1], 'type');
+        if (d.favorValue) out += peekPlaque('Worth', `${d.favorValue} Favor`);
+        if (d.requirements && d.requirements.length) out += peekPlaque('Requires', peekSkillCounts(d.requirements), 'req');
+        const s = d.successRewards || {};
+        const sr = [];
+        if (s.favor) sr.push(`+${s.favor} Favor`);
+        if (s.gold) sr.push(`+${s.gold} Gold`);
+        if (s.prestige) sr.push(`+${s.prestige} Prestige`);
+        if (sr.length) out += peekPlaque('On Success', sr.join(' · '));
+        const f = d.failurePenalties || {};
+        if (f.scorn) out += peekPlaque('On Failure', `+${f.scorn} Scorn`, 'scorn');
+        if (d.grantsMap) out += peekPlaque('Grants Map', d.grantsMap, 'special');
+    }
+    return out;
+}
+
+function openCardPeek(src) {
+    const ov = document.getElementById('cardPeek');
+    if (!ov) return;
+    ov.innerHTML = `
+        <img class="peek-card" src="${src}" alt="">
+        <div class="peek-plaques">${buildPeekPlaques(src)}</div>`;
+    ov.classList.add('active');
+    if (typeof coachTick === 'function') coachTick();
+}
+
+function closeCardPeek() {
+    const ov = document.getElementById('cardPeek');
+    if (ov) ov.classList.remove('active');
+    if (typeof coachTick === 'function') coachTick();
+}
+
+// Long-press detection (delegated; survives every re-render).
+let _peekTimer = null;
+let _peekStart = null;
+let _peekShowing = false;
+let _peekSwallowClick = false;
+
+document.addEventListener('pointerdown', (e) => {
+    const t = e.target.closest && e.target.closest('[data-peek]');
+    if (!t) return;
+    _peekStart = { x: e.clientX, y: e.clientY };
+    clearTimeout(_peekTimer);
+    _peekTimer = setTimeout(() => {
+        _peekShowing = true;
+        openCardPeek(t.getAttribute('data-peek'));
+    }, 340);
+}, { passive: true });
+
+document.addEventListener('pointermove', (e) => {
+    if (!_peekTimer || !_peekStart) return;
+    if (Math.abs(e.clientX - _peekStart.x) > 10 || Math.abs(e.clientY - _peekStart.y) > 10) {
+        clearTimeout(_peekTimer); _peekTimer = null;
+    }
+}, { passive: true });
+
+function _peekRelease() {
+    clearTimeout(_peekTimer); _peekTimer = null;
+    if (_peekShowing) {
+        _peekShowing = false;
+        _peekSwallowClick = true;              // don't let the release "click" the card
+        setTimeout(() => { _peekSwallowClick = false; }, 400);
+        closeCardPeek();
+    }
+}
+document.addEventListener('pointerup', _peekRelease, { passive: true });
+document.addEventListener('pointercancel', _peekRelease, { passive: true });
+document.addEventListener('click', (e) => {
+    if (_peekSwallowClick) { e.stopPropagation(); e.preventDefault(); _peekSwallowClick = false; }
+}, true);
+// Long-press shouldn't summon the browser's image context menu / save sheet.
+document.addEventListener('contextmenu', (e) => {
+    if (e.target.closest && e.target.closest('[data-peek]')) e.preventDefault();
+});
+
+// ── Hand bloom (Battlegrounds tray feel) ──
+// Touching a hand card blooms it to near screen height IN PLACE (CSS .bloom /
+// :hover). Slide your finger across the fan and each card blooms in turn;
+// release to open that card's action sheet. Mouse gets the same via :hover.
+let _bloomEl = null;
+let _bloomStartEl = null;
+
+function _bloomSet(el) {
+    if (_bloomEl === el) return;
+    if (_bloomEl) _bloomEl.classList.remove('bloom');
+    _bloomEl = el;
+    if (el) el.classList.add('bloom');
+}
+
+document.addEventListener('pointerdown', (e) => {
+    const card = e.target.closest && e.target.closest('.tv-hand .hand-card');
+    if (!card) return;
+    _bloomStartEl = card;
+    _bloomSet(card);
+}, { passive: true });
+
+document.addEventListener('pointermove', (e) => {
+    if (!_bloomStartEl) return;
+    const over = document.elementFromPoint(e.clientX, e.clientY);
+    const card = over && over.closest && over.closest('.tv-hand .hand-card');
+    if (card) _bloomSet(card);
+}, { passive: true });
+
+function _bloomRelease() {
+    // Slid to a different card than the touch started on: the native click
+    // lands nowhere, so select the card that's blooming now.
+    if (_bloomEl && _bloomStartEl && _bloomEl !== _bloomStartEl && !_peekShowing) {
+        const i = parseInt(_bloomEl.getAttribute('data-hand-i'), 10);
+        if (!isNaN(i)) setTimeout(() => selectHandCard(i), 0);
+    }
+    _bloomSet(null);
+    _bloomStartEl = null;
+}
+document.addEventListener('pointerup', _bloomRelease, { passive: true });
+document.addEventListener('pointercancel', _bloomRelease, { passive: true });
+
+// ═══ MELEE SPLASH — end-of-act tournament flair ═══════════════════════
+// A quick full-screen moment (Battlegrounds combat splash energy): banner,
+// every heir's Power counts up, the strongest flares gold and takes
+// Prestige. Tap to skip; resolves a promise so the act flow waits for it.
+
+function showMeleeSplash(results, actNum) {
+    return new Promise((resolve) => {
+        const el = document.getElementById('meleeSplash');
+        if (!el || !results || !results.length) { resolve(); return; }
+        const acts = ['I', 'II', 'III'];
+
+        const rows = results.map((r, idx) => {
+            const pi = (r.playerIndex != null) ? r.playerIndex : game.players.findIndex(p => p.name === r.name);
+            const char = pi >= 0 && game.players[pi] && game.players[pi].character ? game.players[pi].character : null;
+            const img = char ? `assets/characters/${char.filename}` : 'assets/ui/cover.jpg';
+            return `<div class="ms-row${idx === 0 ? ' winner' : ''}" style="animation-delay:${0.25 + idx * 0.14}s">
+                <span class="ms-place">${['1st','2nd','3rd','4th','5th'][r.placement - 1] || r.placement + 'th'}</span>
+                <img class="ms-portrait" src="${img}" alt="">
+                <span class="ms-name">${r.name}</span>
+                <span class="ms-power"><img src="assets/icons/power.png" alt=""><b data-power="${r.power}">0</b></span>
+                <span class="ms-prestige">${r.prestige ? `+${r.prestige} Prestige` : ''}</span>
+            </div>`;
+        }).join('');
+
+        el.innerHTML = `
+            <div class="ms-inner">
+                <div class="ms-banner">⚔ &nbsp;Melee&nbsp; ⚔<span class="ms-act">Act ${acts[actNum - 1] || actNum}</span></div>
+                <div class="ms-rows">${rows}</div>
+                <div class="ms-hint">tap to continue</div>
+            </div>`;
+        el.classList.add('active');
+
+        // Roll every Power count up from 0 (ease-out).
+        el.querySelectorAll('.ms-power b').forEach(b => {
+            const target = parseInt(b.dataset.power, 10) || 0;
+            const dur = 750;
+            let t0 = null;
+            const tick = (t) => {
+                if (!el.classList.contains('active')) return;
+                if (t0 === null) t0 = t;
+                const k = Math.min(1, (t - t0) / dur);
+                b.textContent = Math.round(target * (1 - Math.pow(1 - k, 3)));
+                if (k < 1) requestAnimationFrame(tick);
+            };
+            setTimeout(() => requestAnimationFrame(tick), 420);
+        });
+
+        let closed = false;
+        const close = () => {
+            if (closed) return;
+            closed = true;
+            el.classList.remove('active');
+            el.onclick = null;
+            setTimeout(resolve, 260);
+        };
+        el.onclick = close;
+        const hold = (2100 + results.length * 500) * (window.CINEMATIC_SPEED || 1);
+        setTimeout(close, hold);
+    });
+}
+
+// ─── CARD ZOOM ─────────────────────────────────────────────
+
+function zoomCard(src) {
+    document.getElementById('zoomImg').src = src;
+    document.getElementById('cardZoom').classList.add('active');
+}
+
+function closeZoom() {
+    document.getElementById('cardZoom').classList.remove('active');
+}
+
+// Close action panel on outside click
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.hand-card') && !e.target.closest('.action-panel')) {
+        hideActionPanel();
+    }
+});
+
+// ESC closes all game overlays
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+        closeAllOverlays();
+        closeZoom();
+        closeCardPeek();
+    }
+});
+
+// ─── UTILITIES ─────────────────────────────────────────────
+
+function shuffleArray(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
