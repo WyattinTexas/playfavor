@@ -1367,6 +1367,92 @@ class FavorGame {
         return { success, details, mission };
     }
 
+    /**
+     * Can borrowed skills rescue this mission? Returns {borrowFrom, cost}
+     * exactly like card borrows (2g per unit, paid to the lender), or null
+     * when it can't: any Mind's Eye / Philosopher's Stone / Gold / Favor gap
+     * is unborrowable, and gold must cover the fee WITHOUT breaking a
+     * hold-N-gold requirement. Pure analysis — no side effects (never calls
+     * checkMissionRequirements, which consumes Life Essence).
+     */
+    missionBorrowPlan(playerIndex, mission) {
+        const player = this.players[playerIndex];
+        if (player.removeMissionRequirements) return null; // succeeds on its own
+
+        const reqCounts = {};
+        (mission.requirements || []).forEach(req => { reqCounts[req] = (reqCounts[req] || 0) + 1; });
+        const skillReqs = {};
+        for (const [req, n] of Object.entries(reqCounts)) {
+            if (req === 'minds_eye') {
+                if (this.getMindsEyeCount(playerIndex) < n) return null;
+            } else if (req === 'philosopher_stone') {
+                if ((player.philosopherStone || 0) < n) return null;
+            } else {
+                skillReqs[req] = n;
+            }
+        }
+        if (mission.reqFavor && player.favor < mission.reqFavor) return null;
+        if (mission.reqSpecial === 'favor_5_per_minds_eye' &&
+            player.favor < 5 * this.getMindsEyeCount(playerIndex)) return null;
+
+        const gaps = this.unmetSkillReqs(playerIndex, skillReqs);
+        const borrowable = this.getBorrowableSkills(playerIndex);
+        const borrowFrom = [];
+        for (const [skill, short] of Object.entries(gaps)) {
+            if (!borrowable[skill] || borrowable[skill].length === 0) return null;
+            for (let k = 0; k < short; k++) {
+                borrowFrom.push({ skill, neighborIndex: borrowable[skill][0] });
+            }
+        }
+        if (borrowFrom.length === 0) return null; // nothing missing — no borrow needed
+
+        const cost = borrowFrom.length * BORROW_SKILL_COST;
+        // Covers both the fee and any hold-N-gold requirement — the borrow
+        // may not pay for itself by breaking the mission's gold check.
+        if (player.gold < cost + (mission.reqGold || 0)) return null;
+
+        return { borrowFrom, cost };
+    }
+
+    /**
+     * Borrow the missing skills and complete the mission — the player's
+     * CHOICE, never automatic. Gold pays the lending neighbors, exactly
+     * like card borrows.
+     */
+    completeMissionWithBorrow(playerIndex, missionIndex) {
+        const player = this.players[playerIndex];
+        const mission = player.missions[missionIndex];
+        if (!mission) return { success: false, error: 'No such mission' };
+        const plan = this.missionBorrowPlan(playerIndex, mission);
+        if (!plan) return { success: false, error: 'Borrowing cannot complete this mission' };
+
+        player.gold -= plan.cost;
+        plan.borrowFrom.forEach(b => {
+            this.players[b.neighborIndex].gold += BORROW_SKILL_COST;
+        });
+        player.missions.splice(missionIndex, 1);
+        this.applyMissionRewards(playerIndex, mission);
+        player.completedMissions.push(mission);
+        const skills = plan.borrowFrom.map(b => b.skill).join(', ');
+        this.addLog(`${player.name} borrows ${skills} (−${plan.cost}g) to complete ${mission.name}`);
+        return { success: true, mission, cost: plan.cost };
+    }
+
+    /**
+     * Decline the borrow offer — the mission fails now, penalties and all.
+     * (Failing on purpose is a legitimate play; see turnInMission.)
+     */
+    failMissionByChoice(playerIndex, missionIndex) {
+        const player = this.players[playerIndex];
+        const mission = player.missions[missionIndex];
+        if (!mission) return { success: false, error: 'No such mission' };
+        player.missions.splice(missionIndex, 1);
+        player.failedMissions.push(mission);
+        this.applyMissionFailure(playerIndex, mission);
+        this.addLog(`${player.name} lets ${mission.name} fail`);
+        return { success: false, mission };
+    }
+
     resolveMissions() {
         const results = [];
 
@@ -1403,12 +1489,36 @@ class FavorGame {
                 }
 
                 const { success, details } = this.checkMissionRequirements(pi, mission);
-                resolved.add(mission);
                 if (success) {
+                    resolved.add(mission);
                     this.applyMissionRewards(pi, mission);
                     player.completedMissions.push(mission);
                     playerResults.push({ mission, success: true, details });
                 } else {
+                    // Unmet at its due date — can borrowed skills save it?
+                    // Borrowing is a CHOICE, never automatic: the human gets
+                    // a chooser (endActPhases pauses the phase, same pattern
+                    // as _pendingPenaltyDiscard); the AI borrows only when
+                    // the mission's favor clearly beats the gold fee.
+                    const plan = this.missionBorrowPlan(pi, mission);
+                    if (plan && pi === 0) {
+                        player._pendingMissionBorrows = player._pendingMissionBorrows || [];
+                        player._pendingMissionBorrows.push(mission);
+                        return; // stays in player.missions; the chooser resolves it
+                    }
+                    if (plan && pi !== 0 && (mission.favorValue || 0) >= plan.cost * 2) {
+                        player.gold -= plan.cost;
+                        plan.borrowFrom.forEach(b => {
+                            this.players[b.neighborIndex].gold += BORROW_SKILL_COST;
+                        });
+                        resolved.add(mission);
+                        this.applyMissionRewards(pi, mission);
+                        player.completedMissions.push(mission);
+                        this.addLog(`${player.name} borrows ${plan.borrowFrom.map(b => b.skill).join(', ')} (−${plan.cost}g) to complete ${mission.name}`);
+                        playerResults.push({ mission, success: true, details, borrowed: plan.cost });
+                        return;
+                    }
+                    resolved.add(mission);
                     failed.push(mission);
                     player.failedMissions.push(mission);
                     playerResults.push({ mission, success: false, details });

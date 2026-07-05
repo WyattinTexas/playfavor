@@ -388,6 +388,120 @@ console.log('── Desktop: board thumb ring marks the slot and follows slides'
   await page.close();
 }
 
+// ═══ DESKTOP: mission borrow chooser at the due date ═══
+console.log('── Desktop: due mission short a borrowable skill — chooser offers both doors');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('borrow-due: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('borrow-due pageerror: ' + e.message));
+  await page.setViewport({ width: 1420, height: 800 });
+  await startGame(page);
+
+  await page.evaluate(() => {
+    const p = game.players[0];
+    const pick = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    const kCard = FAVOR_DATA.cards.find(c => (c.skills || []).includes('knowledge'));
+    p.missions = [{ ...FAVOR_DATA.missions.find(m => m.name === 'A Day With the Birds') }];
+    p.skills.knowledge = 2;         // 1 short of the 3 required
+    p.gold = 10;
+    game.players[1].playedCards.push({ ...kCard });     // the lender
+    // Last round of the act: one KNOWN card each (random leftovers could
+    // move gold around and flake the ledger checks), then missions resolve.
+    p.hand = [pick('First Aid')];
+    for (let i = 1; i < game.playerCount; i++) game.players[i].hand = [pick('First Aid')];
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    renderGameState();
+  });
+  await sleep(300);
+  await page.evaluate(() => selectHandCard(0));
+  await sleep(300);
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.action-panel .action-btn')].find(x => /discard \(\+3g\)/i.test(x.textContent));
+    b.click();
+  });
+
+  let chooser = false;
+  try {
+    await page.waitForFunction(() =>
+      document.getElementById('promisePicker').classList.contains('active') &&
+      /Mission Due/i.test(document.getElementById('promisePicker').textContent), { timeout: 18000 });
+    chooser = true;
+  } catch (e) {}
+  ok(chooser, 'borrow chooser pauses the mission phase');
+
+  if (chooser) {
+    const offer = await page.evaluate(() => ({
+      yes: document.getElementById('borrowYes')?.textContent.trim(),
+      no: document.getElementById('borrowNo')?.textContent.trim(),
+      art: !!document.querySelector('#promisePicker .pp-card img'),
+    }));
+    ok(/Borrow & Complete \(−2g\)/.test(offer.yes || ''), `offer prices the gap (${offer.yes})`);
+    ok(/Let it Fail/i.test(offer.no || ''), 'declining stays a real option');
+    ok(offer.art, 'the mission card itself is shown');
+    await page.screenshot({ path: join(SHOTS, 'mission-borrow-chooser.png') });
+
+    const before = await page.evaluate(() => ({ gold: game.players[0].gold, lender: game.players[1].gold }));
+    await page.evaluate(() => document.getElementById('borrowYes').click());
+    await sleep(150);
+    const after = await page.evaluate(() => ({
+      completed: game.players[0].completedMissions.length,
+      failed: game.players[0].failedMissions.length,
+      gold: game.players[0].gold,
+      lender: game.players[1].gold,
+      closed: !document.getElementById('promisePicker').classList.contains('active'),
+    }));
+    ok(after.completed === 1 && after.failed === 0, 'Borrow & Complete completes the mission');
+    ok(after.gold === before.gold - 2 && after.lender === before.lender + 2,
+      `2g fee moved to the lender (you ${before.gold}→${after.gold}, lender ${before.lender}→${after.lender})`);
+    ok(after.closed, 'chooser closes; the act rolls on');
+  }
+  await page.close();
+}
+
+// ═══ DESKTOP: Turn In Now can borrow too ═══
+console.log('── Desktop: Turn In Now offers Borrow & Complete when a neighbor covers the gap');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('borrow-turnin: ' + m.text()); });
+  await page.setViewport({ width: 1420, height: 800 });
+  await startGame(page);
+
+  await page.evaluate(() => {
+    const p = game.players[0];
+    const kCard = FAVOR_DATA.cards.find(c => (c.skills || []).includes('knowledge'));
+    p.missions = [{ ...FAVOR_DATA.missions.find(m => m.name === 'A Day With the Birds') }];
+    p.skills.knowledge = 2;
+    p.gold = 10;
+    game.players[1].playedCards.push({ ...kCard });
+    game.phase = 'gameplay';
+    renderGameState();
+    openMissionLB('assets/cards/missions/' + p.missions[0].filename, p.missions[0].name);
+  });
+  await sleep(400);
+
+  const lb = await page.evaluate(() => ({
+    borrow: document.getElementById('missionBorrowIn')?.textContent.trim(),
+    turnIn: document.getElementById('missionTurnIn')?.textContent.trim(),
+  }));
+  ok(/Borrow & Complete \(−2g\)/.test(lb.borrow || ''), `lightbox offers the borrow (${lb.borrow})`);
+  ok(/would FAIL/i.test(lb.turnIn || ''), 'plain turn-in still warns it would fail');
+  await page.screenshot({ path: join(SHOTS, 'mission-borrow-turnin.png') });
+
+  const before = await page.evaluate(() => ({ lender: game.players[1].gold }));
+  await page.evaluate(() => document.getElementById('missionBorrowIn').click());
+  await sleep(500);
+  const after = await page.evaluate(() => ({
+    completed: game.players[0].completedMissions.length,
+    gold: game.players[0].gold,
+    lender: game.players[1].gold,
+    lbClosed: !document.getElementById('missionLB').classList.contains('active'),
+  }));
+  ok(after.completed === 1 && after.gold === 8 && after.lender === before.lender + 2,
+    `turn-in borrow completes and pays the lender (gold ${after.gold})`);
+  ok(after.lbClosed, 'lightbox closes after the borrow');
+  await page.close();
+}
+
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));
 
 await browser.close();

@@ -2012,10 +2012,31 @@ function renderMissionLBTurnIn(name) {
     const { success } = game.checkMissionRequirements(0, mission);
     const dueNote = due > game.currentAct
         ? `<div class="mission-lb-due">Due at the end of Act ${due} — turn in any time before</div>` : '';
+    // Short only on borrowable skills? Turning in now can borrow them too —
+    // same 2g-per-unit deal the borrow chooser offers at the due date.
+    const plan = success ? null : game.missionBorrowPlan(0, mission);
     holder.innerHTML = `${dueNote}
+        ${plan ? `<button class="btn-royal primary" id="missionBorrowIn">
+            <span>Borrow & Complete (−${plan.cost}g)</span>
+        </button>` : ''}
         <button class="btn-royal${success ? ' primary' : ''}" id="missionTurnIn">
             <span>${success ? '✓ Turn In Now — requirements met' : 'Turn In Now (you would FAIL)'}</span>
         </button>`;
+    const borrowBtn = holder.querySelector('#missionBorrowIn');
+    if (borrowBtn) {
+        borrowBtn.onclick = (e) => {
+            e.stopPropagation();
+            const res = game.completeMissionWithBorrow(0, mi);
+            closeMissionLB();
+            if (res.success) {
+                showNotification(`Mission complete: ${name}! (−${res.cost}g to your neighbor)`, 'mission');
+                addLogEntry(`You borrow skills (−${res.cost}g) and complete ${name}`);
+            } else {
+                showNotification(res.error || 'Borrow fell through', 'error');
+            }
+            renderGameState();
+        };
+    }
     const btn = holder.querySelector('#missionTurnIn');
     let armed = success; // failing on purpose takes two clicks
     btn.onclick = (e) => {
@@ -2716,10 +2737,12 @@ function endActPhases() {
     const promisePending = game.players[0]._pendingPromiseDiscard;
     if (promisePending) game.players[0]._pendingPromiseDiscard = false;
 
-    // PENALTY DISCARD — a failed mission says "Discard N Cards": the
-    // player picks which (physical-game agency), not the engine.
-    const penaltyPending = game.players[0]._pendingPenaltyDiscard || 0;
-    if (penaltyPending) game.players[0]._pendingPenaltyDiscard = 0;
+    // MISSION BORROW — due missions short only on borrowable skills were
+    // paused by resolveMissions (same pause pattern as the penalty picker).
+    // The player decides each one FIRST: a declined mission fails here, so
+    // its own "Discard N" penalty joins the picker read below.
+    const borrowsPending = (game.players[0]._pendingMissionBorrows || []).slice();
+    game.players[0]._pendingMissionBorrows = [];
 
     // MELEE PHASE
     const meleeStart = hasMissionResults ? missionDelay + 400 : 800;
@@ -2756,13 +2779,91 @@ function endActPhases() {
         }
     }, meleeStart);
 
+    const afterBorrows = () => borrowsPending.reduce(
+        (chain, m) => chain.then(() => showMissionBorrowChooser(m)), Promise.resolve());
+    // PENALTY DISCARD — a failed mission says "Discard N Cards": the player
+    // picks which (physical-game agency), not the engine. Read AFTER the
+    // borrow choosers so declined missions' penalties are included.
+    const afterPenalty = () => {
+        const penaltyPending = game.players[0]._pendingPenaltyDiscard || 0;
+        game.players[0]._pendingPenaltyDiscard = 0;
+        return penaltyPending ? showPenaltyDiscardPicker(penaltyPending) : Promise.resolve();
+    };
     const afterPromise = promisePending
         ? () => showPromiseDiscardPicker()
         : () => Promise.resolve();
-    const afterPenalty = penaltyPending
-        ? () => showPenaltyDiscardPicker(penaltyPending)
-        : () => Promise.resolve();
-    afterPenalty().then(afterPromise).then(startMelee);
+    afterBorrows().then(afterPenalty).then(afterPromise).then(startMelee);
+}
+
+// ═══ MISSION BORROW — a due mission, short only on borrowable skills ════
+// The physical-table move: a neighbor lends the skill for 2g a unit.
+// Entirely OPTIONAL — failing on purpose is a real strategy, so the
+// chooser always offers both doors and nothing is ever auto-borrowed.
+function showMissionBorrowChooser(mission) {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        const mi = game.players[0].missions.indexOf(mission);
+        const plan = mi >= 0 ? game.missionBorrowPlan(0, mission) : null;
+        if (!ov || mi < 0 || !plan) {
+            // The window closed between phases — resolve it honestly as the
+            // failure it already was at its due date.
+            if (mi >= 0) {
+                game.failMissionByChoice(0, mi);
+                showNotification(`Mission failed: ${mission.name}`, 'error');
+                renderGameState();
+            }
+            resolve();
+            return;
+        }
+
+        const counts = {};
+        plan.borrowFrom.forEach(b => { counts[b.skill] = (counts[b.skill] || 0) + 1; });
+        const shortTxt = Object.entries(counts)
+            .map(([s, n]) => `${s.charAt(0).toUpperCase() + s.slice(1)}${n > 1 ? ' ×' + n : ''}`)
+            .join(', ');
+        const lenders = [...new Set(plan.borrowFrom.map(b => game.players[b.neighborIndex].name))].join(' & ');
+
+        ov.innerHTML = `
+            <div class="pp-inner">
+                <div class="pp-title">Mission Due: ${mission.name}</div>
+                <div class="pp-sub">You're short <b>${shortTxt}</b> — ${lenders} can lend it for <b>${plan.cost} Gold</b>.</div>
+                <div class="pp-cards"><div class="pp-card" style="cursor:default">
+                    <img src="assets/cards/missions/${mission.filename}" alt="${mission.name}"
+                         style="width:auto;height:min(42vh,340px)">
+                </div></div>
+                <div class="pp-actions">
+                    <button class="btn-royal primary" id="borrowYes"><span>Borrow & Complete (−${plan.cost}g)</span></button>
+                    <button class="btn-royal" id="borrowNo"><span>Let it Fail</span></button>
+                </div>
+            </div>`;
+
+        ov.querySelector('#borrowYes').onclick = () => {
+            const idx = game.players[0].missions.indexOf(mission);
+            const res = game.completeMissionWithBorrow(0, idx);
+            ov.classList.remove('active');
+            if (res.success) {
+                showNotification(`Mission complete: ${mission.name}! (−${res.cost}g to your neighbor)`, 'mission');
+                addLogEntry(`You borrow skills (−${res.cost}g) and complete ${mission.name}`);
+            } else {
+                // Plan somehow died under the click — the due date still rules.
+                game.failMissionByChoice(0, idx);
+                showNotification(`Mission failed: ${mission.name}`, 'error');
+                addLogEntry(`You fail ${mission.name}`);
+            }
+            renderGameState();
+            resolve();
+        };
+        ov.querySelector('#borrowNo').onclick = () => {
+            const idx = game.players[0].missions.indexOf(mission);
+            game.failMissionByChoice(0, idx);
+            ov.classList.remove('active');
+            showNotification(`Mission failed: ${mission.name}`, 'error');
+            addLogEntry(`You let ${mission.name} fail`);
+            renderGameState();
+            resolve();
+        };
+        ov.classList.add('active');
+    });
 }
 
 // ═══ PENALTY DISCARD — a failed mission takes N cards; YOU pick which ═══

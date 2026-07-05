@@ -424,5 +424,101 @@ console.log('── Double Mission Letter finale: letter #1 never wipes letter #
   ok(p2.gold === 3 && g2.pendingActivations[0] === null, 'same-id twin: letter #2 discards cleanly');
 }
 
+console.log('── Mission borrowing: optional rescue at mission time, 2g/skill to the lender');
+{
+  const kCard = window.FAVOR_DATA.cards.find(c => (c.skills || []).includes('knowledge'));
+
+  // Borrow-passes: short 1 Knowledge on a due mission, neighbor has it on cards.
+  const g = newGame();
+  const p = g.players[0];
+  const m = { ...missionByName('A Day With the Birds') }; // 3 Knowledge, due Act 1
+  p.missions = [m];
+  p.skills.knowledge = 2;
+  p.gold = 10;
+  g.players[1].playedCards.push({ ...kCard });
+  const plan = g.missionBorrowPlan(0, m);
+  ok(plan && plan.cost === 2 && plan.borrowFrom.length === 1, 'plan: 1 unit short → 2g fee');
+
+  g.currentAct = 1;
+  g.resolveMissions();
+  ok((p._pendingMissionBorrows || []).length === 1, 'human: due-but-borrowable mission PAUSES for the chooser');
+  ok(p.missions.length === 1 && p.failedMissions.length === 0 && p.completedMissions.length === 0,
+    'nothing auto-failed, nothing auto-borrowed');
+
+  const lenderGold = g.players[1].gold;
+  const res = g.completeMissionWithBorrow(0, 0);
+  ok(res.success === true && p.gold === 8, `Borrow & Complete: fee paid (10 → ${p.gold})`);
+  ok(g.players[1].gold === lenderGold + 2, 'the 2g lands with the lending neighbor');
+  ok(p.completedMissions.length === 1 && p.missions.length === 0, 'mission completed and cleared');
+
+  // Decline-fails: penalties land, including Discard-N joining the picker.
+  const g2 = newGame();
+  const p2 = g2.players[0];
+  p2.missions = [{ ...missionByName('A Day With the Birds'), failSpecial: 'discard_5_played' }];
+  p2.skills.knowledge = 2;
+  p2.gold = 10;
+  p2.playedCards.push({ ...cardByName('First Aid') }); // penaltyDiscard needs a table
+  g2.players[1].playedCards.push({ ...kCard });
+  g2.currentAct = 1;
+  g2.resolveMissions();
+  ok((p2._pendingMissionBorrows || []).length === 1, 'decline rig: chooser queued');
+  const scornBefore = p2.scorn;
+  g2.failMissionByChoice(0, 0);
+  ok(p2.failedMissions.length === 1 && p2.missions.length === 0, 'Let it Fail resolves the mission as failed');
+  ok(p2.scorn === scornBefore + 10, `failure penalty applied (+10 scorn)`);
+  ok(p2._pendingPenaltyDiscard === 5, "declined mission's Discard-5 joins the penalty picker");
+
+  // Unborrowable: no lender → no offer, the mission just fails at its due date.
+  const g3 = newGame();
+  const p3 = g3.players[0];
+  p3.missions = [{ ...missionByName('A Day With the Birds') }];
+  p3.skills.knowledge = 2;
+  p3.gold = 10; // neighbors hold no knowledge cards
+  g3.currentAct = 1;
+  ok(g3.missionBorrowPlan(0, p3.missions[0]) === null, 'no lender → no plan');
+  g3.resolveMissions();
+  ok((p3._pendingMissionBorrows || []).length === 0 && p3.failedMissions.length === 1,
+    'no offer — mission fails at its due date');
+
+  // Mind's Eye / Philosopher's Stone gaps can never be borrowed.
+  const g4 = newGame();
+  const meMission = window.FAVOR_DATA.missions.find(mm => (mm.requirements || []).includes('minds_eye'));
+  g4.players[0].missions = [{ ...meMission }];
+  g4.players[0].gold = 50;
+  ok(g4.missionBorrowPlan(0, g4.players[0].missions[0]) === null, `minds_eye gap → no offer (${meMission.name})`);
+
+  // The fee is real gold — broke players get no offer.
+  const g5 = newGame();
+  const p5 = g5.players[0];
+  p5.missions = [{ ...missionByName('A Day With the Birds') }];
+  p5.skills.knowledge = 2;
+  p5.gold = 1;
+  g5.players[1].playedCards.push({ ...kCard });
+  ok(g5.missionBorrowPlan(0, p5.missions[0]) === null, 'gold 1 < 2g fee → no offer');
+
+  // AI: borrows when favorValue clearly beats the fee, refuses a bad deal.
+  const g6 = newGame();
+  const ai = g6.players[1];
+  ai.missions = [{ ...missionByName('A Day With the Birds') }]; // favorValue 10
+  ai.skills.knowledge = 2;
+  ai.gold = 10;
+  g6.players[0].playedCards.push({ ...kCard });
+  g6.currentAct = 1;
+  const aiLenderBefore = g6.players[0].gold;
+  g6.resolveMissions();
+  ok(ai.completedMissions.length === 1 && ai.gold === 8, `AI borrows for a 10-favor mission (gold → ${ai.gold})`);
+  ok(g6.players[0].gold === aiLenderBefore + 2, "AI's fee pays the lender");
+
+  const g7 = newGame();
+  const ai7 = g7.players[1];
+  ai7.missions = [{ ...missionByName('A Day With the Birds'), favorValue: 3 }];
+  ai7.skills.knowledge = 2;
+  ai7.gold = 10;
+  g7.players[0].playedCards.push({ ...kCard });
+  g7.currentAct = 1;
+  g7.resolveMissions();
+  ok(ai7.failedMissions.length === 1 && ai7.gold === 10, 'AI refuses when 3 favor < 2× the fee');
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);
