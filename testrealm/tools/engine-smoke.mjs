@@ -218,13 +218,14 @@ console.log('── Mission phase: a failure discard cannot sabotage a sibling m
   }
   p.sliderPosition = 4;
   g.applySlotSkills(p);
-  // Crazy Lou (15 Power — hopeless, failure discards 5) + Cameron's (passable)
+  // Crazy Lou (15 Power — hopeless, failure discards 5) + Cameron's
+  // (passable). At Act 3 BOTH are due, so both force-resolve together.
   p.missions = [{ ...missionByName('Wanted: Crazy Lou') }, { ...missionByName("Cameron's Expedition") }];
-  g.currentAct = 1;
+  g.currentAct = 3;
   const results = g.resolveMissions().find(r => r.playerIndex === 1).results;
   const lou = results.find(r => r.mission.name === 'Wanted: Crazy Lou');
   const cam = results.find(r => r.mission.name === "Cameron's Expedition");
-  ok(lou && lou.success === false, 'Crazy Lou fails (needs 15 Power)');
+  ok(lou && lou.success === false, 'Crazy Lou fails at its due act (needs 15 Power)');
   ok(cam && cam.success === true, "Cameron's still PASSES — discard applied after all checks");
 }
 
@@ -283,6 +284,70 @@ console.log('── Chemical Y: +15 Favor at scoring only with Chemical X owned'
   g.players[0].playedCards.push({ ...cardByName('Chemical X') });
   me = g.calculateFinalScores().find(s => s.playerIndex === 0);
   ok(me.cardFavor === without + 15, `pair bonus at scoring (${without} → ${me.cardFavor})`);
+}
+
+console.log('── Mission windows: turn in by choice, forced only at the due act');
+{
+  const g = newGame();
+  ok(g.missionDueAct(missionByName('Wanted: Crazy Lou')) === 3, 'Crazy Lou (Act 1 OR 2 OR 3) due Act 3');
+  ok(g.missionDueAct(missionByName("The Minister's Plan")) === 2, "Minister's Plan (Act 2 OR Act 1) due Act 2");
+  ok(g.missionDueAct(missionByName("Cameron's Expedition")) === 1, "Cameron's (Act 1 only) due Act 1");
+
+  // Human holds Crazy Lou unmet at end of Act 1 → NOT auto-failed, carries over.
+  const p = g.players[0];
+  p.missions = [{ ...missionByName('Wanted: Crazy Lou') }];
+  g.currentAct = 1;
+  let r = g.resolveMissions().find(x => x.playerIndex === 0).results;
+  ok(r.length === 0 && p.missions.length === 1 && p.failedMissions.length === 0,
+    'human keeps unmet Crazy Lou at end of Act 1 (no auto-fail)');
+  // …and at the end of Act 3 it forces and fails.
+  g.currentAct = 3;
+  r = g.resolveMissions().find(x => x.playerIndex === 0).results;
+  ok(r.length === 1 && r[0].success === false && p.missions.length === 0,
+    'due date reached: forced resolve fails it');
+
+  // AI banks a met multi-act mission early.
+  const ai = g.players[1];
+  ai.skills.power = 15;
+  ai.missions = [{ ...missionByName('Wanted: Crazy Lou') }];
+  g.currentAct = 1;
+  g.resolveMissions();
+  ok(ai.completedMissions.some(m => m.name === 'Wanted: Crazy Lou') && ai.missions.length === 0,
+    'AI turns in met Crazy Lou during the window');
+}
+
+console.log('── turnInMission: early cash-in resolves either way, right now');
+{
+  const g = newGame();
+  const p = g.players[0];
+  g.currentAct = 1;
+  p.skills.power = 15;
+  p.missions = [{ ...missionByName('Wanted: Crazy Lou') }];
+  const favorBefore = p.favor, goldBefore = p.gold;
+  const res = g.turnInMission(0, 0);
+  ok(res.success === true && p.completedMissions.length === 1, 'met: success immediately');
+  ok(p.gold === goldBefore + 15, `+15 Gold reward (${goldBefore} → ${p.gold})`);
+
+  const p2 = g.players[0];
+  p2.missions = [{ ...missionByName('Wanted: Crazy Lou') }];
+  p2.skills.power = 0;
+  p2.playedCards.push({ ...cardByName('First Aid') });
+  const res2 = g.turnInMission(0, 0);
+  ok(res2.success === false && p2.failedMissions.length === 1, 'unmet: fails immediately by choice');
+  ok(p2._pendingPenaltyDiscard === 5, 'failure penalty (discard 5 picker) queued');
+}
+
+console.log('── pickCard: last two cards both activate, both stay choosable');
+{
+  const g = newGame();
+  const p = g.players[0];
+  p.hand = [{ ...cardByName('First Aid') }, { ...cardByName('Trapping') }];
+  g.pendingActivations[0] = null;
+  g.pickCard(0, 0);
+  const pending = g.pendingActivations[0];
+  ok(Array.isArray(pending) && pending.length === 2, 'both cards pending');
+  const actions = g.getActivationActions(0);
+  ok(actions.length === 2 && actions.every(a => a.canDiscard), 'full action set offered for BOTH cards');
 }
 
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);

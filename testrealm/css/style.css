@@ -1065,19 +1065,24 @@ html, body {
 /* Battlegrounds bloom: the hovered card grows to near screen height in
    place. --bloomScaleDesk fits it to the actual window and --bloomShift
    keeps edge cards fully on-screen (set by _bloomLayout in ui.js).
-   Margins never change, so the fan never reflows under the cursor. */
-.hand-card:hover {
-    transform: translateX(var(--bloomShift, 0px)) translateY(-14px) scale(var(--bloomScaleDesk, 4)) rotate(0deg) !important;
-    transform-origin: bottom center;
-    z-index: 30;
-    border-color: var(--gold);
-    box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 20px rgba(201,168,76,0.1);
-}
+   Margins never change, so the fan never reflows under the cursor.
+   MICE ONLY: touch browsers keep :hover stuck on the last-touched card,
+   which double-bloomed alongside the JS glide (.bloom) — so touch relies
+   on .bloom exclusively. */
+@media (hover: hover) {
+    .hand-card:hover {
+        transform: translateX(var(--bloomShift, 0px)) translateY(-14px) scale(var(--bloomScaleDesk, 4)) rotate(0deg) !important;
+        transform-origin: bottom center;
+        z-index: 30;
+        border-color: var(--gold);
+        box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 20px rgba(201,168,76,0.1);
+    }
 
-/* While a card blooms, the hand must outrank the fixed phase bar (z 30) —
-   .game-layout is a z-1 stacking context, so bump the layout itself. */
-.game-layout:has(.hand-card:hover) { z-index: 31; }
-.hand-zone:has(.hand-card:hover) { z-index: 40; }
+    /* While a card blooms, the hand must outrank the fixed phase bar (z 30)
+       — .game-layout is a z-1 stacking context, so bump the layout itself. */
+    .game-layout:has(.hand-card:hover) { z-index: 31; }
+    .hand-zone:has(.hand-card:hover) { z-index: 40; }
+}
 
 .hand-card.selected {
     transform: translateY(-36px) scale(1.18) rotate(0deg) !important;
@@ -1439,6 +1444,27 @@ html, body {
     font-size: 16px;
     color: var(--gold-light);
     letter-spacing: 3px;
+}
+
+/* Turn-in row: shown only for YOUR active missions during gameplay. */
+.mission-lb-action {
+    position: absolute;
+    bottom: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    z-index: 2;
+}
+.mission-lb-action:empty { display: none; }
+.mission-lb-due {
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: 13px;
+    color: rgba(240,230,211,0.65);
+    text-shadow: 0 2px 6px rgba(0,0,0,0.8);
 }
 
 /* ── Lend Toast ── */
@@ -3065,12 +3091,20 @@ html, body {
        Slide along the fan and each card blooms in turn (JS .bloom).
        --bloomScale fits the card to the actual screen height and
        --bloomShift walks edge cards inward so nothing is ever cut off;
-       both are set by _tvBloomLayout() in ui.js. */
-    .tv-hand-drawer.open .tv-hand .hand-card:hover,
+       both are set by _tvBloomLayout() in ui.js. Touch gets ONLY the
+       JS-managed .bloom — sticky mobile :hover next to it showed two
+       bloomed cards at once. */
     .tv-hand .hand-card.bloom {
         transform: translateX(var(--bloomShift, 0px)) translateY(-6px) scale(var(--bloomScale, 2.8)) !important;
         transform-origin: bottom center;
         z-index: 60;
+    }
+    @media (hover: hover) {
+        .tv-hand-drawer.open .tv-hand .hand-card:hover {
+            transform: translateX(var(--bloomShift, 0px)) translateY(-6px) scale(var(--bloomScale, 2.8)) !important;
+            transform-origin: bottom center;
+            z-index: 60;
+        }
     }
     /* Selected keeps a modest lift — the action sheet already shows it big. */
     .tv-hand .hand-card.selected {

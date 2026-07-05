@@ -1980,7 +1980,57 @@ function openMissionLB(src, name) {
     if (typeof coachMarkSeen === 'function') coachMarkSeen('missions');
     document.getElementById('missionLBImg').src = src;
     document.getElementById('missionLBLabel').textContent = name;
+    renderMissionLBTurnIn(name);
     document.getElementById('missionLB').classList.add('active');
+}
+
+// "Turn In Now" — a held mission may be cashed in during ANY act of its
+// window, the player's call. The button tells the truth (the check is
+// deterministic); failing on purpose asks for a second click.
+function renderMissionLBTurnIn(name) {
+    const holder = document.getElementById('missionLBAction');
+    if (!holder) return;
+    holder.innerHTML = '';
+    if (!game || game.phase !== 'gameplay') return;
+    const p = game.players[0];
+    const mi = (p.missions || []).findIndex(m => m.name === name);
+    if (mi < 0) return;
+
+    const mission = p.missions[mi];
+    const due = game.missionDueAct(mission);
+    const { success } = game.checkMissionRequirements(0, mission);
+    const dueNote = due > game.currentAct
+        ? `<div class="mission-lb-due">Due at the end of Act ${due} — turn in any time before</div>` : '';
+    holder.innerHTML = `${dueNote}
+        <button class="btn-royal${success ? ' primary' : ''}" id="missionTurnIn">
+            <span>${success ? '✓ Turn In Now — requirements met' : 'Turn In Now (you would FAIL)'}</span>
+        </button>`;
+    const btn = holder.querySelector('#missionTurnIn');
+    let armed = success; // failing on purpose takes two clicks
+    btn.onclick = (e) => {
+        e.stopPropagation();
+        if (!armed) {
+            armed = true;
+            btn.querySelector('span').textContent = 'Click again to fail it — penalties apply';
+            return;
+        }
+        const res = game.turnInMission(0, mi);
+        closeMissionLB();
+        if (res.success) {
+            showNotification(`Mission complete: ${name}!`, 'mission');
+            addLogEntry(`You turn in ${name} — success!`);
+        } else {
+            showNotification(`Mission failed: ${name}`, 'error');
+            addLogEntry(`You turn in ${name} — failed`);
+        }
+        // Crazy Lou-style penalties: the discard picker fires right away.
+        const pend = game.players[0]._pendingPenaltyDiscard || 0;
+        if (pend) {
+            game.players[0]._pendingPenaltyDiscard = 0;
+            showPenaltyDiscardPicker(pend).then(() => renderGameState());
+        }
+        renderGameState();
+    };
 }
 
 function closeMissionLB() {
@@ -2091,6 +2141,98 @@ function hideActionPanel() {
     document.getElementById('actionPanel').classList.remove('active');
     selectedHandCard = null;
     if (typeof coachTick === 'function') coachTick();
+}
+
+// ─── FINAL CARD CHOICE ─────────────────────────────────────
+// With two cards left you pick one and the last card activates too — but
+// WHAT it does (play / borrow / mission letter / discard / slide) is still
+// the player's call, exactly like any other card. Resolves an action string.
+function showFinalCardChoice(card) {
+    return new Promise((resolve) => {
+        const panel = document.getElementById('actionPanel');
+        const player = game.players[0];
+        const { canPlay, missingSkills, missingSpecial = [] } = game.checkRequirements(0, card);
+        const isMissionLetter = card.type === 'mission_letter';
+
+        let html = `<img class="action-card-img" src="assets/cards/regular/${card.filename}"
+                         alt="${card.name}" data-peek="assets/cards/regular/${card.filename}">`;
+        html += '<div class="action-body"><div class="action-header">';
+        html += `<div class="action-card-name">${card.name}</div>`;
+        html += `<div class="action-card-type">Your final card — choose its fate</div>`;
+        html += `<div class="action-purse"><img src="${TOKEN_IMG.gold}" alt="Gold"> Your purse: <b>${player.gold} Gold</b></div>`;
+        html += '</div><div class="action-buttons">';
+
+        const btn = (label, action, primary) =>
+            `<button class="btn-royal${primary ? ' primary' : ''} action-btn" data-act="${action}"><span>${label}</span></button>`;
+
+        if (isMissionLetter) {
+            if (player.gold >= 1 && game.visibleMissions.length > 0) {
+                html += btn('Mission Letter (−1g)', 'mission_letter', true);
+            }
+        } else if (canPlay) {
+            html += btn('▶ Play', 'play', true);
+        } else {
+            const needed = [...missingSkills, ...missingSpecial];
+            html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>▶ Need: ${needed.join(', ')}</span></button>`;
+            if (missingSpecial.length === 0 && missingSkills.length > 0) {
+                const borrowable = game.getBorrowableSkills(0);
+                const canBorrowAll = missingSkills.every(s => borrowable[s] && borrowable[s].length > 0);
+                const borrowCost = missingSkills.length * 2;
+                if (canBorrowAll && player.gold >= borrowCost) {
+                    html += btn(`Borrow & Play (−${borrowCost}g)`, 'borrow_play', true);
+                }
+            }
+        }
+        html += btn('✕ Discard (+3g)', 'discard', false);
+        if (player.sliderPosition > 0) html += btn('← Discard: Slide Ring', 'discard_slide_left', false);
+        if (player.sliderPosition < 4) html += btn('Discard: Slide Ring →', 'discard_slide_right', false);
+        html += '</div></div>';
+
+        panel.innerHTML = html;
+        panel.classList.add('active');
+        if (typeof coachTick === 'function') coachTick();
+
+        panel.querySelectorAll('[data-act]').forEach(b => {
+            b.onclick = () => {
+                panel.classList.remove('active');
+                resolve(b.dataset.act);
+            };
+        });
+    });
+}
+
+// Apply the chosen action to the final card through the normal engine paths.
+async function resolveFinalCardChoice(card) {
+    const act = await showFinalCardChoice(card);
+    await showMiniSpotlight(card, act === 'play' || act === 'borrow_play' || act === 'mission_letter' ? 'play' : 'discard');
+
+    if (act === 'play') {
+        game.activateCard(0, card.id, 'play');
+        addLogEntry(`You also play ${card.name}`);
+    } else if (act === 'borrow_play') {
+        const { missingSkills } = game.checkRequirements(0, card);
+        const borrowable = game.getBorrowableSkills(0);
+        const borrowFrom = missingSkills.map(s => ({ skill: s, neighborIndex: borrowable[s][0] }));
+        game.activateCard(0, card.id, 'play', borrowFrom);
+        addLogEntry(`You borrow skills and play ${card.name}`);
+    } else if (act === 'mission_letter') {
+        const result = game.activateCard(0, card.id, 'mission_letter');
+        if (result && result.chooseMission) {
+            renderGameState();
+            await showMissionSelectAsync();
+        }
+    } else if (act === 'discard_slide_left' || act === 'discard_slide_right') {
+        game.activateCard(0, card.id, 'discard_slide', act === 'discard_slide_left' ? -1 : 1);
+        addLogEntry(`You discard ${card.name} to slide your ring`);
+        if (game.players[0]._pendingSlotMission) {
+            game.players[0]._pendingSlotMission = false;
+            renderGameState();
+            await showMissionSelectAsync();
+        }
+    } else {
+        game.activateCard(0, card.id, 'discard');
+        addLogEntry(`You discard ${card.name} (+3 Gold)`);
+    }
 }
 
 // ─── CARD ACTIONS ──────────────────────────────────────────
@@ -2324,6 +2466,13 @@ async function activateAllCards(humanAction) {
                     }));
                     game.activateCard(0, card.id, 'play', borrowFrom);
                     game.players[0]._borrowNext = false;
+                } else if (cardIdx > 0 || humanAction === 'mission_letter_done') {
+                    // The auto-activated FINAL card: the player still chooses
+                    // its fate — play / borrow / letter / discard / slide.
+                    // (After a Mission Letter pick the leftover card arrives at
+                    // index 0, but it was never explicitly chosen either.)
+                    renderGameState();
+                    await resolveFinalCardChoice(card);
                 } else {
                     // Default: play if possible
                     const isMissionLetter = card.type === 'mission_letter';
@@ -2338,15 +2487,9 @@ async function activateAllCards(humanAction) {
                         if (canPlay) {
                             await showMiniSpotlight(card, 'play');
                             game.activateCard(0, card.id, 'play');
-                            if (cardIdx > 0) {
-                                addLogEntry(`You also play ${card.name}`);
-                            }
                         } else {
                             await showMiniSpotlight(card, 'discard');
                             game.activateCard(0, card.id, 'discard');
-                            if (cardIdx > 0) {
-                                addLogEntry(`${card.name} auto-discarded (missing requirements)`);
-                            }
                         }
                     }
                 }

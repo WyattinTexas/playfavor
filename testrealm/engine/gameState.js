@@ -1317,6 +1317,44 @@ class FavorGame {
 
     // ─── MISSIONS PHASE ────────────────────────────────────────
 
+    /**
+     * A mission's DUE act — the last act in its printed window. Audits read
+     * "Act 1 OR Act 2 OR Act 3": the mission may be turned in during ANY
+     * listed act (player's choice, see turnInMission) and is only FORCED to
+     * resolve — failing if unmet — at the end of its final listed act.
+     * Parsed from the audit head (before "Success Reward", so failure text
+     * that mentions acts can't skew it) and cached on the mission.
+     */
+    missionDueAct(mission) {
+        if (mission.dueAct) return mission.dueAct;
+        const head = (mission.audit || '').split(/Success Reward/i)[0];
+        const acts = [...head.matchAll(/Act\s*(\d)/gi)].map(m => parseInt(m[1], 10));
+        mission.dueAct = acts.length ? Math.max(...acts) : (mission.activationRound || mission.act || 1);
+        return mission.dueAct;
+    }
+
+    /**
+     * Turn a held mission in EARLY, by choice — it resolves immediately,
+     * success or failure, exactly as it would at its due date.
+     */
+    turnInMission(playerIndex, missionIndex) {
+        const player = this.players[playerIndex];
+        const mission = player.missions[missionIndex];
+        if (!mission) return { success: false, error: 'No such mission' };
+
+        const { success, details } = this.checkMissionRequirements(playerIndex, mission);
+        player.missions.splice(missionIndex, 1);
+        if (success) {
+            this.applyMissionRewards(playerIndex, mission);
+            player.completedMissions.push(mission);
+        } else {
+            player.failedMissions.push(mission);
+            this.applyMissionFailure(playerIndex, mission);
+            this.addLog(`${player.name} turns in ${mission.name} early — and fails it`);
+        }
+        return { success, details, mission };
+    }
+
     resolveMissions() {
         const results = [];
 
@@ -1331,28 +1369,44 @@ class FavorGame {
             // played cards must never strip the skills a sibling mission in
             // this same phase was counting on.
             const failed = [];
+            const resolved = new Set();
             player.missions.forEach((mission, mi) => {
-                // Check if mission activates this act or earlier
-                if (mission.activationRound && mission.activationRound <= this.currentAct) {
-                    const { success, details } = this.checkMissionRequirements(pi, mission);
+                if (!mission.activationRound || mission.activationRound > this.currentAct) return;
+                const due = this.missionDueAct(mission) <= this.currentAct;
 
-                    if (success) {
-                        this.applyMissionRewards(pi, mission);
-                        player.completedMissions.push(mission);
-                        playerResults.push({ mission, success: true, details });
-                    } else {
-                        failed.push(mission);
-                        player.failedMissions.push(mission);
-                        playerResults.push({ mission, success: false, details });
+                if (!due) {
+                    // In its window but not due. The AI banks a met mission
+                    // now; an unmet one is HELD, never auto-failed — the
+                    // human turns in by choice via turnInMission.
+                    if (pi !== 0) {
+                        const { success, details } = this.checkMissionRequirements(pi, mission);
+                        if (success) {
+                            this.applyMissionRewards(pi, mission);
+                            player.completedMissions.push(mission);
+                            resolved.add(mission);
+                            playerResults.push({ mission, success: true, details });
+                        }
                     }
+                    return;
+                }
+
+                const { success, details } = this.checkMissionRequirements(pi, mission);
+                resolved.add(mission);
+                if (success) {
+                    this.applyMissionRewards(pi, mission);
+                    player.completedMissions.push(mission);
+                    playerResults.push({ mission, success: true, details });
+                } else {
+                    failed.push(mission);
+                    player.failedMissions.push(mission);
+                    playerResults.push({ mission, success: false, details });
                 }
             });
             failed.forEach(mission => this.applyMissionFailure(pi, mission));
 
-            // Remove resolved missions from active list
-            player.missions = player.missions.filter(m =>
-                !m.activationRound || m.activationRound > this.currentAct
-            );
+            // Remove only what actually resolved — missions still inside
+            // their window carry over to the next act.
+            player.missions = player.missions.filter(m => !resolved.has(m));
 
             results.push({ playerIndex: pi, results: playerResults });
             pi = (pi + 1) % this.playerCount;
