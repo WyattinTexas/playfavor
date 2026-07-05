@@ -1066,8 +1066,17 @@ function renderBoardThumb(state) {
     const char = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
     if (!char) return;
 
+    // The ring rides the thumb at the same %-based track the big overlay
+    // uses (BOARD_OV_TRACK), so the mini board always shows where you are.
+    // Rebuilt on every renderGameState, so slides stay in sync.
+    const cur = (typeof game !== 'undefined' && game && game.players[0])
+        ? game.players[0].sliderPosition : 2;
     el.innerHTML = `
-        <img src="assets/characters/${char.filename}" alt="${char.name}">
+        <div class="thumb-boardwrap">
+            <img src="assets/characters/${char.filename}" alt="${char.name}">
+            <img class="thumb-ring" src="assets/ui/slider-ring.png" alt=""
+                 style="left:${BOARD_OV_TRACK.lefts[cur]}%; top:${BOARD_OV_TRACK.top}%">
+        </div>
         <div class="thumb-footer">
             <span class="thumb-name">${char.name}</span>
             <span class="thumb-hint">View board</span>

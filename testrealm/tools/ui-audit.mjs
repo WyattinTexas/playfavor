@@ -349,6 +349,45 @@ async function doubleLetterFlow(mode) {
 await doubleLetterFlow('desktop');
 await doubleLetterFlow('phone');
 
+// ═══ DESKTOP: board thumbnail shows the ring at the current slot ═══
+console.log('── Desktop: board thumb ring marks the slot and follows slides');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('thumbring: ' + m.text()); });
+  await page.setViewport({ width: 1420, height: 800 });
+  await startGame(page);
+
+  const measure = () => page.evaluate(() => {
+    const ring = document.querySelector('#boardThumb .thumb-ring');
+    if (!ring) return null;
+    const wrap = ring.parentElement.getBoundingClientRect();
+    const r = ring.getBoundingClientRect();
+    return {
+      pos: game.players[0].sliderPosition,
+      leftStyle: ring.style.left,
+      centerPct: ((r.left + r.width / 2 - wrap.left) / wrap.width) * 100,
+      expectPct: BOARD_OV_TRACK.lefts[game.players[0].sliderPosition],
+      ringW: r.width,
+    };
+  });
+
+  let m = await measure();
+  ok(!!m, 'thumb ring rendered');
+  if (m) {
+    ok(Math.abs(m.centerPct - m.expectPct) < 1.5, `ring centered on slot ${m.pos + 1} (${m.centerPct.toFixed(1)}% vs ${m.expectPct}%)`);
+    ok(m.ringW > 5, `ring visible at thumb scale (${m.ringW.toFixed(1)}px wide)`);
+  }
+
+  // Slide right (pay 5g) — the thumb must follow without reopening anything.
+  await page.evaluate(() => { game.players[0].gold = 30; payToSlide(1); });
+  await sleep(600);
+  const m2 = await measure();
+  ok(m2 && m2.pos !== m.pos, `slide moved the ring (slot ${m.pos + 1} → ${m2 && m2.pos + 1})`);
+  ok(m2 && Math.abs(m2.centerPct - m2.expectPct) < 1.5, `thumb ring follows the slide (${m2 && m2.centerPct.toFixed(1)}% vs ${m2 && m2.expectPct}%)`);
+  await page.screenshot({ path: join(SHOTS, 'thumb-ring.png') });
+  await page.close();
+}
+
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));
 
 await browser.close();
