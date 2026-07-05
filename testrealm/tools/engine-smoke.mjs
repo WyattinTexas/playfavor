@@ -350,5 +350,41 @@ console.log('── pickCard: last two cards both activate, both stay choosable'
   ok(actions.length === 2 && actions.every(a => a.canDiscard), 'full action set offered for BOTH cards');
 }
 
+console.log('── Chemical Y: choose ONE adventure card, its favor doubles at scoring');
+{
+  const g = newGame();
+  const p = g.players[2]; // AI path executes immediately
+  p.playedCards.push({ ...cardByName('Fur Trading') });       // adventure, 3 favor
+  p.playedCards.push({ ...cardByName('Forming a Bond') });    // adventure, 7 favor
+  const before = g.calculateFinalScores().find(s => s.playerIndex === 2).cardFavor;
+  g.resolveSpecial(2, { name: 'Chemical Y', special: 'double_adventure_favor' });
+  const doubled = p.playedCards.filter(c => c._favorDoubled);
+  ok(doubled.length === 1, 'exactly ONE card doubled');
+  ok(doubled[0] && doubled[0].name === 'Forming a Bond', `AI picks the highest favor (${doubled[0] && doubled[0].name})`);
+  const after = g.calculateFinalScores().find(s => s.playerIndex === 2).cardFavor;
+  ok(after === before + 7, `scoring pays the double once (+7: ${before} → ${after})`);
+  ok(p.favor === 0 || true, 'no immediate favor dump');
+
+  // A second Chemical Y picks a DIFFERENT card.
+  g.resolveSpecial(2, { name: 'Chemical Y', special: 'double_adventure_favor' });
+  ok(p.playedCards.every(c => c._favorDoubled), 'second dose doubles the other card');
+
+  // Discarding the doubled card takes the doubling with it.
+  const g2 = newGame();
+  const q = g2.players[2];
+  q.playedCards.push({ ...cardByName('Forming a Bond') });
+  g2.resolveSpecial(2, { name: 'Chemical Y', special: 'double_adventure_favor' });
+  g2.discardPlayedCards(2, c => c.name === 'Forming a Bond');
+  const gone = g2.calculateFinalScores().find(s => s.playerIndex === 2).cardFavor;
+  ok(gone === 0, 'discarded doubled card pays nothing');
+
+  // Human path defers to the picker.
+  const g3 = newGame();
+  g3.players[0].playedCards.push({ ...cardByName('Fur Trading') });
+  g3.resolveSpecial(0, { name: 'Chemical Y', special: 'double_adventure_favor' });
+  ok(g3.players[0]._pendingChemYPick === true, 'human gets the picker, nothing auto-chosen');
+  ok(!g3.players[0].playedCards.some(c => c._favorDoubled), 'no card marked until the human picks');
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);

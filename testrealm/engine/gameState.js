@@ -1011,19 +1011,27 @@ class FavorGame {
             // --- Favor/economy specials ---
 
             case 'double_adventure_favor':
-                // Chemical Y: double all favor earned from adventure cards played so far
+                // Chemical Y, per the card: "Choose an Adventure card you
+                // have, multiply its Favor amount by 2" — ONE card, chosen.
+                // The pick is marked on the card and pays at scoring, so a
+                // later discard takes the doubling with it. A card doubles
+                // at most once; a second Chemical Y picks a different one.
+                // (Pair bonus +15 w/ Chemical X pays in dynamicCardFavor.)
                 {
-                    let adventureFavor = 0;
-                    player.playedCards.forEach(c => {
-                        if (c.type === 'adventure' && c.favor) {
-                            adventureFavor += c.favor;
-                        }
-                    });
-                    if (adventureFavor > 0) {
-                        player.favor += adventureFavor;
-                        this.addLog(`${player.name}'s Chemical Y: doubled adventure favor (+${adventureFavor})`);
-                    } else {
+                    const advs = player.playedCards.filter(c =>
+                        c.type === 'adventure' && (c.favor || 0) > 0 && !c._favorDoubled);
+                    if (!advs.length) {
                         this.addLog(`${player.name}'s Chemical Y: no adventure favor to double`);
+                        break;
+                    }
+                    if (playerIndex === 0) {
+                        // Human chooses via the picker (UI shows it right
+                        // after this activation resolves).
+                        player._pendingChemYPick = true;
+                    } else {
+                        const best = advs.reduce((a, b) => ((b.favor || 0) > (a.favor || 0) ? b : a));
+                        best._favorDoubled = true;
+                        this.addLog(`${player.name}'s Chemical Y doubles ${best.name} (+${best.favor} Favor at scoring)`);
                     }
                 }
                 break;
@@ -1886,10 +1894,11 @@ class FavorGame {
                 if (m.favorValue) missionFavor += m.favorValue;
             });
 
-            // Favor from adventure and artifact cards (static + dynamic)
+            // Favor from adventure and artifact cards (static + dynamic).
+            // Chemical Y's chosen adventure counts double (_favorDoubled).
             let cardFavor = 0;
             p.playedCards.forEach(card => {
-                if (card.favor) cardFavor += card.favor;
+                if (card.favor) cardFavor += card.favor * (card._favorDoubled ? 2 : 1);
                 cardFavor += this.dynamicCardFavor(i, card);
             });
 

@@ -1302,8 +1302,10 @@ function renderCardStacks(state) {
         html += '<div class="card-stack">';
         html += `<div class="stack-label">${label}</div>`;
         cards.forEach(card => {
-            html += `<img class="stack-card" src="assets/cards/regular/${card.filename}"
-                        alt="${card.name}"
+            const doubled = card._favorDoubled ? ' doubled' : '';
+            const doubledTip = card._favorDoubled ? ` — Chemical Y: worth ${card.favor * 2} Favor (×2)` : '';
+            html += `<img class="stack-card${doubled}" src="assets/cards/regular/${card.filename}"
+                        alt="${card.name}" title="${card.name}${doubledTip}"
                         onclick="zoomCard('assets/cards/regular/${card.filename}')">`;
         });
         html += '</div>';
@@ -2493,7 +2495,17 @@ async function activateAllCards(humanAction) {
                         }
                     }
                 }
-            } else {
+            }
+
+            // Chemical Y just resolved for the human: pick which adventure
+            // card doubles, before anything else moves.
+            if (pi === 0 && game.players[0]._pendingChemYPick) {
+                game.players[0]._pendingChemYPick = false;
+                renderGameState();
+                await showChemYPicker();
+            }
+
+            if (pi !== 0) {
                 // AI player
                 const isMissionLetter = card.type === 'mission_letter';
 
@@ -2833,6 +2845,55 @@ function showPromiseDiscardPicker() {
             };
             ov.querySelector('#ppConfirm').onclick = done;
             ov.querySelector('#ppKeep').onclick = () => { chosen.clear(); done(); };
+        };
+        render();
+        ov.classList.add('active');
+    });
+}
+
+// ═══ CHEMICAL Y — choose ONE adventure card, its Favor doubles ═════════
+// Faithful to the card: "Choose an Adventure card you have, multiply its
+// Favor amount by 2." The pick is marked on the card and pays at scoring.
+function showChemYPicker() {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        const player = game.players[0];
+        const advs = player.playedCards
+            .map((c, i) => ({ c, i }))
+            .filter(x => x.c.type === 'adventure' && (x.c.favor || 0) > 0 && !x.c._favorDoubled);
+        if (!ov || !advs.length) { resolve(); return; }
+
+        let chosen = advs[0].i;
+        const render = () => {
+            const cards = advs.map(({ c, i }) => `
+                <div class="pp-card${chosen === i ? ' chosen' : ''}" data-i="${i}">
+                    <img src="assets/cards/regular/${c.filename}" alt="${c.name}">
+                    <span class="pp-favor">${c.favor} ➜ ${c.favor * 2}</span>
+                </div>`).join('');
+            const pick = player.playedCards[chosen];
+            ov.innerHTML = `
+                <div class="pp-inner chemy">
+                    <div class="pp-title">Chemical Y</div>
+                    <div class="pp-sub">Choose an Adventure card — its Favor is <b>multiplied by 2</b></div>
+                    <div class="pp-cards">${cards}</div>
+                    <div class="pp-actions">
+                        <button class="btn-royal primary" id="chemYConfirm">
+                            <span>Double ${pick.name} — +${pick.favor} Favor at scoring</span>
+                        </button>
+                    </div>
+                </div>`;
+            ov.querySelectorAll('.pp-card').forEach(el => {
+                el.onclick = () => { chosen = parseInt(el.dataset.i, 10); render(); };
+            });
+            ov.querySelector('#chemYConfirm').onclick = () => {
+                const card = player.playedCards[chosen];
+                card._favorDoubled = true;
+                addLogEntry(`Chemical Y doubles ${card.name} (+${card.favor} Favor at scoring)`);
+                showNotification(`${card.name} is now worth ${card.favor * 2} Favor`, 'play');
+                ov.classList.remove('active');
+                renderGameState();
+                resolve();
+            };
         };
         render();
         ov.classList.add('active');

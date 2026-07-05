@@ -201,6 +201,60 @@ console.log('── Desktop: held mission offers Turn In Now, resolves by choice
   await page.close();
 }
 
+// ═══ DESKTOP: Chemical Y picker — choose ONE adventure to double ═══
+console.log('── Desktop: Chemical Y presents the choose-one picker');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('chemY: ' + m.text()); });
+  await page.setViewport({ width: 1420, height: 800 });
+  await startGame(page);
+
+  // Rig: two adventures down, requirements met, Chemical Y as the pick.
+  await page.evaluate(() => {
+    const p = game.players[0];
+    const pick = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    p.playedCards.push(pick('Fur Trading'), pick('Forming a Bond'));
+    p.skills.alchemy = 6;
+    p.philosopherStone = 1;
+    p.gold = 30;
+    p.hand = [pick('Chemical Y'), pick('First Aid')];
+    renderGameState();
+    selectHandCard(0);
+  });
+  await sleep(300);
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.action-panel .action-btn')].find(x => /play/i.test(x.textContent) && !x.disabled);
+    b.click();
+  });
+
+  let pickerShown = false;
+  try {
+    await page.waitForFunction(() =>
+      document.getElementById('promisePicker').classList.contains('active') &&
+      /Chemical Y/i.test(document.getElementById('promisePicker').textContent), { timeout: 9000 });
+    pickerShown = true;
+  } catch (e) {}
+  await page.screenshot({ path: join(SHOTS, 'chemy-picker.png') });
+  ok(pickerShown, 'Chemical Y picker appears on play');
+
+  if (pickerShown) {
+    const result = await page.evaluate(() => {
+      const cards = [...document.querySelectorAll('#promisePicker .pp-card')];
+      cards[cards.length - 1].click(); // choose the second adventure
+      document.getElementById('chemYConfirm').click();
+      return null;
+    });
+    await sleep(500);
+    const state = await page.evaluate(() => ({
+      doubled: game.players[0].playedCards.filter(c => c._favorDoubled).map(c => c.name),
+      badge: document.querySelectorAll('.stack-card.doubled').length,
+    }));
+    ok(state.doubled.length === 1, `exactly one card doubled (${state.doubled.join(',')})`);
+    ok(state.badge === 1, 'doubled card wears its gold ring in the stacks');
+  }
+  await page.close();
+}
+
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));
 
 await browser.close();
