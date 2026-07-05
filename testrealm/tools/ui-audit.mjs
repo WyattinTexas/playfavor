@@ -502,6 +502,193 @@ console.log('── Desktop: Turn In Now offers Borrow & Complete when a neighbo
   await page.close();
 }
 
+// ═══ SLIDE-RING PICKER: one button, pick a slot on the board itself ═══
+async function slidePickerFlow(mode) {
+  console.log(`── ${mode}: ⇄ Discard: Slide Ring — one button, board picks the slot`);
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push(`slidepick-${mode}: ` + m.text()); });
+  page.on('pageerror', e => consoleErrors.push(`slidepick-${mode} pageerror: ` + e.message));
+  if (mode === 'phone') await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  else await page.setViewport({ width: 1420, height: 800 });
+  await startGame(page);
+
+  await page.evaluate(() => {
+    const p = game.players[0];
+    const pick = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    p.hand = [pick('First Aid'), pick('Trapping'), pick('Hunting')];
+    p.gold = 7;
+    p.sliderPosition = 2;
+    // Even hand sizes — passHands rotates hands, so a lopsided rig would
+    // hand the human an empty hand and skew the ledger checks.
+    for (let i = 1; i < game.playerCount; i++) {
+      game.players[i].hand = [pick('First Aid'), pick('Trapping'), pick('Hunting')];
+    }
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    renderGameState();
+  });
+  await sleep(300);
+  await page.evaluate(() => selectHandCard(0));
+  await sleep(300);
+
+  const buttons = await page.evaluate(() =>
+    [...document.querySelectorAll('.action-panel .action-btn')].map(b => b.textContent.trim()));
+  const slideBtns = buttons.filter(t => /Slide Ring/i.test(t));
+  ok(slideBtns.length === 1 && /⇄/.test(slideBtns[0]), `ONE slide button (${slideBtns.join(' | ') || 'none'})`);
+  ok(!buttons.some(t => /(←|→)\s*$|^\s*(←|→)/.test(t) && /Slide Ring/i.test(t)), 'old ←/→ pair is gone');
+
+  // Open the picker, then CANCEL with Escape — panel must come back.
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.action-panel .action-btn')].find(b => /Slide Ring/i.test(b.textContent)).click();
+  });
+  await sleep(350);
+  let ov = await page.evaluate(() => ({
+    active: document.getElementById('boardOverlay').classList.contains('active'),
+    pickable: document.querySelectorAll('.board-ov-slot.pickable').length,
+    dimmed: document.querySelectorAll('.board-ov-slot.dimmed').length,
+    hint: document.getElementById('boardOvHint')?.textContent || '',
+    panelAside: !document.querySelector('.action-panel.active'),
+  }));
+  ok(ov.active, 'board opens in pick-a-slot mode');
+  ok(ov.panelAside, 'action panel steps aside — nothing covers the circles');
+  ok(ov.pickable === 2, `exactly the two adjacent circles glow (${ov.pickable})`);
+  ok(ov.dimmed === 2, `far circles are dead (${ov.dimmed})`);
+  ok(/pays the toll/i.test(ov.hint), 'hint explains the toll');
+  if (mode === 'desktop') await page.screenshot({ path: join(SHOTS, 'slide-picker.png') });
+
+  await page.keyboard.press('Escape');
+  await sleep(400);
+  const afterEsc = await page.evaluate(() => ({
+    ovClosed: !document.getElementById('boardOverlay').classList.contains('active'),
+    panelBack: document.querySelector('.action-panel').classList.contains('active'),
+    hand: game.players[0].hand.length,
+  }));
+  ok(afterEsc.ovClosed && afterEsc.panelBack && afterEsc.hand === 3,
+    'Escape cancels back to the action panel, card untouched');
+
+  // Backdrop cancel — the same click must not eat the re-opened panel.
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.action-panel .action-btn')].find(b => /Slide Ring/i.test(b.textContent)).click();
+  });
+  await sleep(300);
+  await page.evaluate(() => document.getElementById('boardOverlay').click());
+  await sleep(400);
+  const afterBk = await page.evaluate(() => ({
+    ovClosed: !document.getElementById('boardOverlay').classList.contains('active'),
+    panelBack: document.querySelector('.action-panel').classList.contains('active'),
+  }));
+  ok(afterBk.ovClosed && afterBk.panelBack, 'backdrop cancels back to the action panel too');
+
+  // Pick the RIGHT circle — free slide, the discard is the payment.
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.action-panel .action-btn')].find(b => /Slide Ring/i.test(b.textContent)).click();
+  });
+  await sleep(300);
+  // Same click handler serves taps; headless touch does not synthesize
+  // clicks reliably, so drive the handler directly on both layouts (the
+  // phone-glide flow already proves the raw touch pipeline).
+  await page.evaluate(() => {
+    const slots = [...document.querySelectorAll('.board-ov-slot.pickable')];
+    slots[slots.length - 1].click();
+  });
+  await sleep(2200);
+  const done = await page.evaluate(() => ({
+    pos: game.players[0].sliderPosition,
+    hand: game.players[0].hand.length,
+    gold: game.players[0].gold,
+    ovClosed: !document.getElementById('boardOverlay').classList.contains('active'),
+  }));
+  ok(done.pos === 3, `ring slid one space right (slot ${done.pos + 1})`);
+  ok(done.hand === 2, 'the card left the hand as the payment');
+  ok(done.gold === 7, `free — no gold spent or gained (${done.gold})`);
+  ok(done.ovClosed, 'board closed after the pick');
+  await page.close();
+}
+await slidePickerFlow('desktop');
+await slidePickerFlow('phone');
+
+// ═══ DESKTOP: final-card chooser uses the same picker ═══
+console.log('── Desktop: final card slides via the picker, chooser survives the trip');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('slidepick-final: ' + m.text()); });
+  await page.setViewport({ width: 1420, height: 800 });
+  await startGame(page);
+
+  await page.evaluate(() => {
+    const p = game.players[0];
+    const pick = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    p.hand = [pick('First Aid'), pick('Trapping')];
+    p.gold = 9;
+    p.skills.power = 1;
+    p.sliderPosition = 2;
+    for (let i = 1; i < game.playerCount; i++) game.players[i].hand = [pick('First Aid')];
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    renderGameState();
+  });
+  await sleep(300);
+  await page.evaluate(() => selectHandCard(0));
+  await sleep(300);
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.action-panel .action-btn')].find(x => /play/i.test(x.textContent) && !x.disabled);
+    b.click();
+  });
+
+  await page.waitForFunction(() =>
+    document.querySelector('.action-panel.active') &&
+    /final card/i.test(document.querySelector('.action-panel').textContent), { timeout: 9000 });
+  const chooserBtns = await page.evaluate(() =>
+    [...document.querySelectorAll('.action-panel [data-act]')].map(b => b.dataset.act));
+  ok(chooserBtns.includes('discard_slide_pick') && !chooserBtns.includes('discard_slide_left'),
+    `chooser carries ONE slide action (${chooserBtns.join(',')})`);
+
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.action-panel [data-act]')].find(b => b.dataset.act === 'discard_slide_pick').click();
+  });
+  await sleep(350);
+  const midState = await page.evaluate(() => ({
+    ovActive: document.getElementById('boardOverlay').classList.contains('active'),
+    pickable: document.querySelectorAll('.board-ov-slot.pickable').length,
+    panelAside: !document.querySelector('.action-panel.active'),
+  }));
+  ok(midState.ovActive && midState.pickable === 2, 'picker takes the stage for the final card');
+  ok(midState.panelAside, 'chooser steps aside while picking');
+  await page.screenshot({ path: join(SHOTS, 'slide-picker-final.png') });
+
+  // Escape must bring the chooser back, promise intact and buttons live.
+  await page.keyboard.press('Escape');
+  await sleep(300);
+  const backState = await page.evaluate(() => ({
+    ovClosed: !document.getElementById('boardOverlay').classList.contains('active'),
+    chooserBack: document.querySelector('.action-panel').classList.contains('active'),
+    stillFinal: /final card/i.test(document.querySelector('.action-panel').textContent),
+  }));
+  ok(backState.ovClosed && backState.chooserBack && backState.stillFinal,
+    'Escape returns to the final-card chooser, promise intact');
+
+  // Go again and pick for real this time.
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.action-panel [data-act]')].find(b => b.dataset.act === 'discard_slide_pick').click();
+  });
+  await sleep(350);
+
+  const goldAtPick = await page.evaluate(() => game.players[0].gold);
+  await page.evaluate(() => document.querySelectorAll('.board-ov-slot.pickable')[0].click()); // left circle
+  await sleep(2200);
+  const done = await page.evaluate(() => ({
+    pos: game.players[0].sliderPosition,
+    pendingCleared: !game.pendingActivations[0],
+    gold: game.players[0].gold,
+    panelClosed: !document.querySelector('.action-panel.active'),
+    discarded: game.discardPile.some(c => c.name === 'Trapping'),
+  }));
+  ok(done.pos === 1 && done.pendingCleared, `final card slid the ring left (slot ${done.pos + 1}), round continued`);
+  // No 5g fee — slot LANDING effects (Explorer's left circle pays gold)
+  // are legitimate and expected, only the toll must be absent.
+  ok(done.gold >= goldAtPick, `no slide fee charged (${goldAtPick}g → ${done.gold}g incl. slot bonus)`);
+  ok(done.discarded && done.panelClosed, 'final card paid the toll and the chooser closed');
+  await page.close();
+}
+
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));
 
 await browser.close();

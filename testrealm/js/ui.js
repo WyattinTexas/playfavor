@@ -1854,6 +1854,43 @@ function openBoardOverlay() {
 
 function closeBoardOverlay() {
     document.getElementById('boardOverlay').classList.remove('active');
+    // Escape / backdrop while picking a slide slot: cancel back to where
+    // the player came from. The hand panel is re-opened a tick later so
+    // the same click's outside-click handler can't immediately hide it;
+    // the final-card chooser (still pending, guarded) just re-surfaces.
+    if (_slidePick) {
+        const pick = _slidePick;
+        _slidePick = null;
+        if (pick.mode === 'hand') {
+            setTimeout(() => selectHandCard(pick.cardIndex), 0);
+        } else {
+            document.getElementById('actionPanel').classList.add('active');
+        }
+    }
+}
+
+// ── Discard-to-Slide slot picker ──
+// ONE "Discard: Slide Ring" button opens the board itself in pick-a-slot
+// mode: the circles one step from the ring glow, clicking one spends the
+// discard as the toll — no gold changes hands. Escape/backdrop cancels.
+// The action panel steps aside while the board has the stage: the overlay
+// lives INSIDE the game screen's stacking context, so it can never paint
+// over the root-level panel — hiding the panel is the only clean stage.
+let _slidePick = null;
+
+function openSlidePicker(cardIndex) {
+    if (!game || game.phase !== 'gameplay') return;
+    _slidePick = { mode: 'hand', cardIndex };
+    hideActionPanel();
+    openBoardOverlay();
+}
+
+function openSlidePickerFinal(onPick) {
+    _slidePick = { mode: 'final', onPick };
+    // Direct class toggle — hideActionPanel() is guarded while the final
+    // choice is pending, and that guard must stay for stray clicks.
+    document.getElementById('actionPanel').classList.remove('active');
+    openBoardOverlay();
 }
 
 // The board art already explains every slot \u2014 no widget re-explains it.
@@ -1877,20 +1914,45 @@ function renderBoardOvSlots() {
     const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
     const holder = document.getElementById('boardOvSlots');
     if (!holder) return;
+    const picking = !!_slidePick;
     holder.innerHTML = BOARD_OV_TRACK.lefts.map((L, i) => {
         const steps = Math.abs(i - cur);
+        const pickable = picking && steps === 1;
         const tip = i === cur
             ? 'Your ring is here'
-            : `Slide to ${posNames[i]} \u2014 ${steps * 5} Gold`;
-        return `<div class="board-ov-slot${i === cur ? ' current' : ''}"
+            : picking
+                ? (pickable ? `Slide to ${posNames[i]} \u2014 the discard pays` : 'One space per discard')
+                : `Slide to ${posNames[i]} \u2014 ${steps * 5} Gold`;
+        const cls = 'board-ov-slot'
+            + (i === cur ? ' current' : '')
+            + (pickable ? ' pickable' : '')
+            + (picking && !pickable && i !== cur ? ' dimmed' : '');
+        return `<div class="${cls}"
                      style="left:${L}%; top:${BOARD_OV_TRACK.top}%"
                      title="${tip}"
                      onclick="event.stopPropagation(); boardOvSlotClick(${i})"></div>`;
     }).join('');
+    const hint = document.getElementById('boardOvHint');
+    if (hint) hint.textContent = picking
+        ? 'Pick a glowing circle \u2014 the discarded card pays the toll'
+        : '';
 }
 
 function boardOvSlotClick(i) {
     const player = game.players[0];
+
+    // Pick-a-slot mode: the discard pays the toll, one space only.
+    if (_slidePick) {
+        const step = i - player.sliderPosition;
+        if (Math.abs(step) !== 1) return;
+        const pick = _slidePick;
+        _slidePick = null;
+        closeBoardOverlay();
+        if (pick.mode === 'hand') discardToSlide(pick.cardIndex, step);
+        else pick.onPick(step);
+        return;
+    }
+
     if (i === player.sliderPosition) return;
     if (!game || game.phase !== 'gameplay') {
         showNotification('The ring slides during gameplay rounds', 'error');
@@ -2153,14 +2215,9 @@ function showActionPanel(cardIndex) {
     // Discard — always available, offers +3g or slide
     html += `<button class="btn-royal action-btn" onclick="discardSelectedCard(${cardIndex})"><span>\u2715 Discard (+3g)</span></button>`;
 
-    // Discard to slide — only if slider can move
-    const player = game.players[0];
-    if (player.sliderPosition > 0) {
-        html += `<button class="btn-royal action-btn" onclick="discardToSlide(${cardIndex}, -1)"><span>\u2190 Discard: Slide Ring</span></button>`;
-    }
-    if (player.sliderPosition < 4) {
-        html += `<button class="btn-royal action-btn" onclick="discardToSlide(${cardIndex}, 1)"><span>Discard: Slide Ring \u2192</span></button>`;
-    }
+    // Discard to slide — ONE button; the board itself opens in pick-a-slot
+    // mode and the circles beside the ring take the discard as payment.
+    html += `<button class="btn-royal action-btn" onclick="openSlidePicker(${cardIndex})"><span>\u21c4 Discard: Slide Ring</span></button>`;
 
     html += '</div></div>';
 
@@ -2225,8 +2282,7 @@ function showFinalCardChoice(card) {
             }
         }
         html += btn('✕ Discard (+3g)', 'discard', false);
-        if (player.sliderPosition > 0) html += btn('← Discard: Slide Ring', 'discard_slide_left', false);
-        if (player.sliderPosition < 4) html += btn('Discard: Slide Ring →', 'discard_slide_right', false);
+        html += btn('⇄ Discard: Slide Ring', 'discard_slide_pick', false);
         html += '</div></div>';
 
         panel.innerHTML = html;
@@ -2235,6 +2291,17 @@ function showFinalCardChoice(card) {
 
         panel.querySelectorAll('[data-act]').forEach(b => {
             b.onclick = () => {
+                // Slide is a two-step choice: the board opens in pick-a-slot
+                // mode; cancelling lands back here, chooser still up (it
+                // never closed — hideActionPanel is guarded while pending).
+                if (b.dataset.act === 'discard_slide_pick') {
+                    openSlidePickerFinal((direction) => {
+                        window._finalChoicePending = false;
+                        panel.classList.remove('active');
+                        resolve(direction < 0 ? 'discard_slide_left' : 'discard_slide_right');
+                    });
+                    return;
+                }
                 window._finalChoicePending = false;
                 panel.classList.remove('active');
                 resolve(b.dataset.act);
