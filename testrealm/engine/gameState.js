@@ -1285,10 +1285,14 @@ class FavorGame {
     removePendingCard(playerIndex, cardId) {
         const pending = this.pendingActivations[playerIndex];
         if (Array.isArray(pending)) {
-            this.pendingActivations[playerIndex] = pending.filter(c => c.id !== cardId);
-            if (this.pendingActivations[playerIndex].length === 0) {
-                this.pendingActivations[playerIndex] = null;
-            }
+            // Remove ONE instance only — duplicate ids (two Mission Letters)
+            // must not wipe the sibling card. Build a NEW array: callers
+            // (activateAllCards) iterate a captured snapshot of the old one,
+            // so mutating it in place would skip the cards after this one.
+            const idx = pending.findIndex(c => c && c.id === cardId);
+            const next = idx === -1 ? pending.slice()
+                : pending.slice(0, idx).concat(pending.slice(idx + 1));
+            this.pendingActivations[playerIndex] = next.length === 0 ? null : next;
         } else {
             this.pendingActivations[playerIndex] = null;
         }

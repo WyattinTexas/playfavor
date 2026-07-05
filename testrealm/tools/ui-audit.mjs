@@ -255,6 +255,100 @@ console.log('── Desktop: Chemical Y presents the choose-one picker');
   await page.close();
 }
 
+// ═══ DOUBLE MISSION LETTER FINALE (Wyatt's 7/5 freeze) ═══
+// Final 2 cards BOTH letters, 1 gold: play #1 through the real panel, take a
+// mission, then letter #2's chooser must appear, SURVIVE stray clicks, and
+// still offer Discard at 0 gold — on desktop AND phone.
+async function doubleLetterFlow(mode) {
+  console.log(`── ${mode}: double Mission Letter finale — chooser appears and survives stray clicks`);
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push(`letters-${mode}: ` + m.text()); });
+  page.on('pageerror', e => consoleErrors.push(`letters-${mode} pageerror: ` + e.message));
+  if (mode === 'phone') await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  else await page.setViewport({ width: 1420, height: 800 });
+  await startGame(page);
+
+  await page.evaluate(() => {
+    const p = game.players[0];
+    const letters = FAVOR_DATA.cards.filter(c => c.type === 'mission_letter' && c.act === 1);
+    p.hand = [letters[0], letters[1]];
+    p.gold = 1;
+    p.sliderPosition = 4;
+    for (let i = 1; i < game.playerCount; i++) game.players[i].hand = game.players[i].hand.slice(0, 2);
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    renderGameState();
+  });
+  await sleep(400);
+
+  await page.evaluate(() => selectHandCard(0));
+  await sleep(300);
+  const played = await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.action-panel .action-btn')]
+      .find(x => /mission letter/i.test(x.textContent) && !x.disabled);
+    if (!b) return false;
+    b.click();
+    return true;
+  });
+  ok(played, 'letter #1 played through the hand panel');
+
+  let msShown = false;
+  try {
+    await page.waitForFunction(() => document.getElementById('missionSelect').classList.contains('active')
+      && document.querySelector('.mission-option'), { timeout: 9000 });
+    msShown = true;
+  } catch (e) {}
+  ok(msShown, 'mission select opens for letter #1');
+  if (msShown) await page.evaluate(() => document.querySelector('.mission-option').click());
+
+  let chooser = false;
+  try {
+    await page.waitForFunction(() =>
+      document.querySelector('.action-panel.active') &&
+      /final card/i.test(document.querySelector('.action-panel').textContent), { timeout: 9000 });
+    chooser = true;
+  } catch (e) {}
+  ok(chooser, 'letter #2 presents the final-card chooser');
+
+  if (chooser) {
+    // The freeze reproducer: stray clicks outside the chooser must NOT dismiss it.
+    await page.evaluate(() => document.body.click());
+    if (mode === 'phone') { await page.touchscreen.touchStart(420, 60); await page.touchscreen.touchEnd(); }
+    else await page.mouse.click(850, 500);
+    await sleep(350);
+    const after = await page.evaluate(() => {
+      const p = document.querySelector('.action-panel');
+      const r = p.getBoundingClientRect();
+      return {
+        active: p.classList.contains('active'),
+        onScreen: r.width > 100 && r.top >= 0 && r.bottom <= window.innerHeight + 2,
+        buttons: [...p.querySelectorAll('button')].map(b => b.textContent.trim()),
+      };
+    });
+    ok(after.active, 'chooser survives stray outside clicks');
+    ok(after.onScreen, `chooser visible in ${mode} viewport`);
+    ok(after.buttons.some(t => /discard \(\+3g\)/i.test(t)), `Discard offered at 0 gold (${after.buttons.join(' · ')})`);
+    await page.screenshot({ path: join(SHOTS, `double-letter-${mode}.png`) });
+
+    await page.evaluate(() => {
+      const b = [...document.querySelectorAll('.action-panel [data-act]')].find(x => x.dataset.act === 'discard');
+      b.click();
+    });
+    await sleep(2000);
+    const done = await page.evaluate(() => ({
+      gold: game.players[0].gold,
+      pendingCleared: !game.pendingActivations[0],
+      panelGone: !document.querySelector('.action-panel.active'),
+    }));
+    ok(done.pendingCleared && done.gold === 3, `letter #2 discards for +3g, round continues (gold=${done.gold})`);
+    ok(done.panelGone, 'chooser closes after the choice');
+  } else {
+    await page.screenshot({ path: join(SHOTS, `double-letter-${mode}.png`) });
+  }
+  await page.close();
+}
+await doubleLetterFlow('desktop');
+await doubleLetterFlow('phone');
+
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));
 
 await browser.close();

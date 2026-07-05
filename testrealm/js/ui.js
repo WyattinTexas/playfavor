@@ -2140,6 +2140,10 @@ function showActionPanel(cardIndex) {
 }
 
 function hideActionPanel() {
+    // The final-card chooser awaits a Promise that ONLY its buttons resolve.
+    // Dismissing it (outside click, etc.) would strand that await and freeze
+    // the round — so while it's pending the panel refuses to hide.
+    if (window._finalChoicePending) return;
     document.getElementById('actionPanel').classList.remove('active');
     selectedHandCard = null;
     if (typeof coachTick === 'function') coachTick();
@@ -2151,6 +2155,9 @@ function hideActionPanel() {
 // the player's call, exactly like any other card. Resolves an action string.
 function showFinalCardChoice(card) {
     return new Promise((resolve) => {
+        // Mark the chooser as pending BEFORE it renders: hideActionPanel()
+        // is a no-op while this is set, so no stray click can strand the await.
+        window._finalChoicePending = true;
         const panel = document.getElementById('actionPanel');
         const player = game.players[0];
         const { canPlay, missingSkills, missingSpecial = [] } = game.checkRequirements(0, card);
@@ -2170,6 +2177,8 @@ function showFinalCardChoice(card) {
         if (isMissionLetter) {
             if (player.gold >= 1 && game.visibleMissions.length > 0) {
                 html += btn('Mission Letter (−1g)', 'mission_letter', true);
+            } else {
+                html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>Need 1g for Mission Letter</span></button>`;
             }
         } else if (canPlay) {
             html += btn('▶ Play', 'play', true);
@@ -2196,6 +2205,7 @@ function showFinalCardChoice(card) {
 
         panel.querySelectorAll('[data-act]').forEach(b => {
             b.onclick = () => {
+                window._finalChoicePending = false;
                 panel.classList.remove('active');
                 resolve(b.dataset.act);
             };

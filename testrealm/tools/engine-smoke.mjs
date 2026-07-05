@@ -386,5 +386,43 @@ console.log('── Chemical Y: choose ONE adventure card, its favor doubles at 
   ok(!g3.players[0].playedCards.some(c => c._favorDoubled), 'no card marked until the human picks');
 }
 
+console.log('── Double Mission Letter finale: letter #1 never wipes letter #2');
+{
+  // Wyatt's 7/5 freeze: final 2 cards BOTH Mission Letters, 1 gold.
+  const letters = window.FAVOR_DATA.cards.filter(c => c.type === 'mission_letter' && c.act === 1);
+
+  // Real deal: two distinct letter entries (unique ids).
+  const g = newGame();
+  const p = g.players[0];
+  p.hand = [letters[0], letters[1]];
+  p.gold = 1;
+  g.pendingActivations[0] = null;
+  g.pickCard(0, 0);
+  ok(Array.isArray(g.pendingActivations[0]) && g.pendingActivations[0].length === 2, 'both letters pending');
+  const r1 = g.activateCard(0, letters[0].id, 'mission_letter');
+  ok(r1.success === true && r1.chooseMission === true, 'letter #1 buys a mission pick');
+  ok(p.gold === 0, 'gold 1 → 0');
+  const left = g.pendingActivations[0];
+  ok(Array.isArray(left) && left.length === 1, `letter #2 still pending (${JSON.stringify(left && left.length)})`,
+    JSON.stringify(g.pendingActivations[0]));
+  const acts = g.getActivationActions(0);
+  ok(acts.length === 1 && acts[0].canDiscard, 'letter #2 still offers Discard at 0 gold');
+  g.activateCard(0, left[0].id, 'discard');
+  ok(p.gold === 3 && g.pendingActivations[0] === null, 'letter #2 discards for +3g, pending clears');
+
+  // Duplicate-id copies (rigged decks / cloned objects) must behave the same.
+  const g2 = newGame();
+  const p2 = g2.players[0];
+  p2.hand = [{ ...letters[0] }, { ...letters[0] }];
+  p2.gold = 1;
+  g2.pendingActivations[0] = null;
+  g2.pickCard(0, 0);
+  g2.activateCard(0, letters[0].id, 'mission_letter');
+  const left2 = g2.pendingActivations[0];
+  ok(Array.isArray(left2) && left2.length === 1, 'same-id twin: letter #2 survives letter #1\'s removal');
+  g2.activateCard(0, letters[0].id, 'discard');
+  ok(p2.gold === 3 && g2.pendingActivations[0] === null, 'same-id twin: letter #2 discards cleanly');
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);
