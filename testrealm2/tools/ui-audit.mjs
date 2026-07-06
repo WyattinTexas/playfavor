@@ -269,6 +269,44 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
     const r = strip.getBoundingClientRect();
     return r.width > 0 && r.top < window.innerHeight;
   }), 'hand strip stays visible between hands');
+
+  // Delta FX aimed at the chip rail stay on-screen (top-edge targets flip
+  // to the downward drop — the classic climb would start above the screen).
+  const fxCheck = await page.evaluate(async () => {
+    tvDropToken(tvMatEl(1), 'gold', 3);
+    tvAnimateNewCard(tvMatEl(2), FAVOR_DATA.cards.find(c => c.name === 'Hunting'));
+    await new Promise(r => setTimeout(r, 420));
+    return [...document.querySelectorAll('#tvFx > *')].map(el => {
+      const r = el.getBoundingClientRect();
+      return { cls: el.className, onScreen: r.top >= 0 && r.left >= 0 && r.bottom <= window.innerHeight };
+    });
+  });
+  ok(fxCheck.length === 2 && fxCheck.every(f => f.onScreen && / below/.test(f.cls)),
+    `chip-rail delta FX play on-screen (${fxCheck.map(f => f.cls.split(' ')[0] + (f.onScreen ? '·ok' : '·OFF')).join(', ')})`);
+  await sleep(900);
+
+  // Coach marks anchor the new zones and never speak drawer.
+  const coach = await page.evaluate(async () => {
+    game.phase = 'gameplay';
+    game.players[0].hand = [{ ...FAVOR_DATA.cards.find(c => c.name === 'First Aid') }];
+    resetCoach();
+    renderGameState();
+    await new Promise(r => setTimeout(r, 500));
+    const c = document.getElementById('coach');
+    const g = document.getElementById('coach-glow').getBoundingClientRect();
+    const chip = document.querySelector('#tvSeats .pmat.you').getBoundingClientRect();
+    const overlap = !(g.right < chip.left || g.left > chip.right || g.bottom < chip.top || g.top > chip.bottom);
+    const allCopy = COACH_STEPS.map(s => s.text).join(' ');
+    return {
+      shown: c.classList.contains('show'),
+      firstIsWelcome: /chip is/i.test(c.textContent),
+      anchored: overlap,
+      cleanCopy: !/drawer|arrow/i.test(allCopy),
+    };
+  });
+  ok(coach.shown && coach.firstIsWelcome && coach.anchored, 'welcome tip shows framed on your seat chip');
+  ok(coach.cleanCopy, 'no coach copy mentions drawers or arrows');
+  await page.evaluate(() => skipAllCoach());
   await page.close();
 }
 

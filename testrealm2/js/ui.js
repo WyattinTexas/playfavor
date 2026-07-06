@@ -618,31 +618,28 @@ function coachMyTurn(s) {
 
 const COACH_STEPS = [
     { id: 'welcome',
-      text: `This is <b>your board</b>, seated at the bottom. Your rivals fill the table around you.`,
+      text: `You're seated at the table — this chip is <b>you</b>. Tap it (or your board, top right) to open your full board.`,
       anchor: () => document.querySelector('#tvSeats .pmat.you'),
-      place: 'top',
+      place: 'bottom',
       when: () => true },
     { id: 'missions',
-      text: `The cards in the center are <b>Missions</b> — complete them for <b>Favor</b>, the points that win the crown. Tap one to read it.`,
-      anchor: () => document.getElementById('tvCenter'),
+      text: `These are the <b>Missions of the Realm</b> — complete them for <b>Favor</b>, the points that win the crown. Tap one to read it.`,
+      anchor: () => document.getElementById('tvMissionRail'),
       place: 'bottom',
       when: (s) => (s.visibleMissions || []).length > 0 },
     { id: 'hand',
       text: `Your turn! <b>Tap a card</b> in your hand to see what you can do with it — play it, or discard it for gold.`,
-      anchor: () => document.getElementById('tvHandDrawer'),
+      anchor: () => document.getElementById('tvHandStrip') || document.getElementById('tvHandDrawer'),
       place: 'top',
-      when: (s) => coachMyTurn(s),
-      // Reveal the hand drawer right as this tip appears (it was tucked for the
-      // earlier board/missions tips).
-      onActivate: () => { tvHandOpen = true; applyDrawerStates(); } },
+      when: (s) => coachMyTurn(s) },
     { id: 'rivals',
-      text: `Tap any <b>rival's board</b> to see their skills — and borrow one when you're short a skill to play a card.`,
+      text: `Tap a <b>rival's chip</b> to see their board and played cards — and borrow a skill when you're short.`,
       anchor: () => document.querySelector('#tvSeats .pmat.opp'),
-      place: 'auto',
+      place: 'bottom',
       when: (s) => s.players.some((p, i) => i !== 0 && coachSumSkills(p.skills) > 0) },
     { id: 'skills',
-      text: `Your <b>skills</b>, ring position and current Act live in this drawer. Tap the arrow to check them anytime.`,
-      anchor: () => document.getElementById('tvLeftTab'),
+      text: `Your <b>skills</b> live here, always in view — the cards you play grow them. Tap an icon for its name.`,
+      anchor: () => document.getElementById('tvSkills'),
       place: 'right',
       when: (s) => coachSumSkills(s.players[0].skills) > 0 },
 ];
@@ -2009,14 +2006,17 @@ function tvDropToken(matEl, key, amount) {
     if (!fx || !matEl) return;
     const tokRow = matEl.querySelector('.pmat-tokens') || matEl;
     const r = tokRow.getBoundingClientRect();
+    // Seat chips hug the top edge — the classic upward drop would start
+    // off-screen, so top-edge targets get the mirrored downward drop.
+    const below = r.top < 64;
     const el = document.createElement('div');
-    el.className = `tv-token-drop ${key}`;
+    el.className = `tv-token-drop ${key}${below ? ' below' : ''}`;
     const face = TOKEN_IMG[key]
         ? `<img src="${TOKEN_IMG[key]}" alt="">`
         : `<span class="tv-token-favor">★</span>`;
     el.innerHTML = `${face}<span class="tv-token-amt">+${amount}</span>`;
     el.style.left = `${r.left + r.width / 2}px`;
-    el.style.top = `${r.top}px`;
+    el.style.top = below ? `${r.bottom}px` : `${r.top}px`;
     fx.appendChild(el);
     setTimeout(() => el.remove(), 1100 * window.CINEMATIC_SPEED);
 }
@@ -2026,11 +2026,12 @@ function tvAnimateNewCard(matEl, card) {
     if (!fx || !matEl || !card) return;
     const cardsEl = matEl.querySelector('.pmat-cards') || matEl;
     const r = cardsEl.getBoundingClientRect();
+    const below = r.top < 64;   // chip rail: the card tucks in from below
     const img = document.createElement('img');
-    img.className = 'tv-card-drop';
+    img.className = `tv-card-drop${below ? ' below' : ''}`;
     img.src = `assets/cards/regular/${card.filename}`;
     img.style.left = `${r.left + r.width / 2}px`;
-    img.style.top = `${r.top}px`;
+    img.style.top = below ? `${r.bottom}px` : `${r.top}px`;
     fx.appendChild(img);
     setTimeout(() => img.remove(), 850 * window.CINEMATIC_SPEED);
 }

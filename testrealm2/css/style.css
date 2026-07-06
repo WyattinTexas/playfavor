@@ -3599,6 +3599,19 @@ html, body {
     100% { transform: translate(-50%, -180%) scale(0.9); opacity: 0; }
 }
 
+/* Mirrored drop for top-edge targets (seat chips): pops out of the chip
+   downward instead of climbing off-screen. */
+.tv-token-drop.below {
+    transform: translate(-50%, 30%);
+    animation-name: tvTokenDropBelow;
+}
+@keyframes tvTokenDropBelow {
+    0%   { transform: translate(-50%, -40%) scale(0.6); opacity: 0; }
+    35%  { transform: translate(-50%, 30%) scale(1.1); opacity: 1; }
+    70%  { transform: translate(-50%, 30%) scale(1); opacity: 1; }
+    100% { transform: translate(-50%, 70%) scale(0.9); opacity: 0; }
+}
+
 .tv-card-drop {
     position: fixed;
     width: 22px; height: 31px;
@@ -3612,6 +3625,15 @@ html, body {
     0%   { transform: translate(-50%, -260%) scale(2.4) rotate(-6deg); opacity: 0; }
     30%  { opacity: 1; }
     100% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 0; }
+}
+
+/* Chip-rail tuck: the card appears big under the chip and shrinks up
+   into it — same beat, aimed on-screen. */
+.tv-card-drop.below { animation-name: tvCardDropBelow; }
+@keyframes tvCardDropBelow {
+    0%   { transform: translate(-50%, 30%) scale(2.6) rotate(-6deg); opacity: 0; }
+    30%  { opacity: 1; }
+    100% { transform: translate(-50%, -60%) scale(0.7) rotate(0deg); opacity: 0; }
 }
 
 .tv-mission-reveal {
