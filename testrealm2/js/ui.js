@@ -669,7 +669,7 @@ window.resetCoach = resetCoach;
 function coachOverlayOpen() {
     return ['howto-overlay', 'boardOverlay', 'handInspectOv', 'oppOverlay',
             'missionLB', 'cardZoom', 'scoring-screen', 'missionSelect', 'actionPanel',
-            'cardPeek', 'meleeSplash', 'promisePicker', 'slideConfirm']
+            'cardPeek', 'meleeSplash', 'promisePicker', 'slideConfirm', 'tvPopoverHost']
         .some(id => { const el = document.getElementById(id); return el && el.classList.contains('active'); });
 }
 
@@ -2118,6 +2118,12 @@ function renderTableView(state) {
 function openBoardOverlay() {
     const char = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
     if (!char) return;
+    if (typeof coachMarkSeen === 'function') coachMarkSeen('welcome');
+
+    // Root-level #actionPanel (z 9999) would paint over the board —
+    // it steps aside while the overlay has the stage (slide-pick mode
+    // manages the panel itself, so only the plain open does this).
+    if (!_slidePick) _tvPanelStepAside();
 
     document.getElementById('boardOvImg').src = `assets/characters/${char.filename}`;
     document.getElementById('boardOvName').textContent = char.name;
@@ -2141,6 +2147,10 @@ function closeBoardOverlay() {
         } else {
             document.getElementById('actionPanel').classList.add('active');
         }
+    } else {
+        // Same-tick dodge: restoring in this click's own bubble would let
+        // the document-level outside-click handler immediately re-hide it.
+        setTimeout(_tvPanelRestore, 0);
     }
 }
 
@@ -2267,6 +2277,7 @@ function openOppOverlay(playerIndex) {
     const char = game.players[playerIndex].character;
     if (!char) return;
     if (typeof coachMarkSeen === 'function') coachMarkSeen(playerIndex === 0 ? 'welcome' : 'rivals');
+    _tvPanelStepAside();   // the root-level action panel would paint over the overlay
 
     document.getElementById('oppOvAvatar').src = `assets/characters/${char.filename}`;
     document.getElementById('oppOvName').textContent = p.name;
@@ -2312,6 +2323,7 @@ function toggleOppCards(e) {
 function closeOppOverlay() {
     const ov = document.getElementById('oppOverlay');
     ov.classList.remove('active', 'cards-open');
+    setTimeout(_tvPanelRestore, 0);   // after this click's outside-click handler
 }
 
 function requestLend(oppIndex, cardName) {
@@ -2326,6 +2338,7 @@ function requestLend(oppIndex, cardName) {
 
 function openMissionLB(src, name) {
     if (typeof coachMarkSeen === 'function') coachMarkSeen('missions');
+    _tvPanelStepAside();   // the root-level action panel would paint over the lightbox
     document.getElementById('missionLBImg').src = src;
     document.getElementById('missionLBLabel').textContent = name;
     renderMissionLBTurnIn(name);
@@ -2404,6 +2417,7 @@ function renderMissionLBTurnIn(name) {
 
 function closeMissionLB() {
     document.getElementById('missionLB').classList.remove('active');
+    setTimeout(_tvPanelRestore, 0);   // after this click's outside-click handler
 }
 
 // ── ESC closes all overlays ──
@@ -2413,6 +2427,7 @@ function closeAllOverlays() {
     closeHandInspect();
     closeOppOverlay();
     closeMissionLB();
+    if (typeof closeTvPopover === 'function') closeTvPopover();
 }
 
 function selectHandCard(index) {

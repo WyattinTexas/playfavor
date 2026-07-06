@@ -15,7 +15,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import puppeteer from 'puppeteer-core';
 
-const URL = process.env.AUDIT_URL || 'http://localhost:8891/testrealm/';
+const URL = process.env.AUDIT_URL || 'http://localhost:8891/testrealm2/';
 const SHOTS = join(dirname(fileURLToPath(import.meta.url)), 'audit-shots');
 mkdirSync(SHOTS, { recursive: true });
 
@@ -98,6 +98,177 @@ console.log('── Phone: glide blooms exactly one card (no sticky-hover double
   }));
   ok(after.bloomsLeft === 0 && after.enlarged === 0, `release: all cards back to rest (bloom=${after.bloomsLeft}, big=${after.enlarged})`);
   await page.evaluate(() => { const ap = document.querySelector('.action-panel'); if (ap) ap.classList.remove('active'); if (typeof deselectHandCard === 'function') try { deselectHandCard(); } catch (e) {} });
+  await page.close();
+}
+
+// ═══ PHONE: Wingspan HUD — zones, chip taps, popovers, panel-aside ═══
+console.log('── Phone: HUD — all zones live, chips/rails tap through, panel steps aside');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('hud: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('hud pageerror: ' + e.message));
+  await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  await startGame(page);
+
+  // Rig: a mission in every state + a played card so every zone has content.
+  await page.evaluate(() => {
+    const p = game.players[0];
+    const pick = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    p.hand = [pick('First Aid'), pick('Trapping'), pick('Hunting')];
+    for (let i = 1; i < game.playerCount; i++) game.players[i].hand = [pick('First Aid'), pick('Trapping'), pick('Hunting')];
+    p.missions = [{ ...FAVOR_DATA.missions[3] }];
+    p.completedMissions = [{ ...FAVOR_DATA.missions[4] }];
+    p.failedMissions = [{ ...FAVOR_DATA.missions[5] }];
+    p.playedCards.push(pick('First Aid'));
+    game.players[1].playedCards.push(pick('Hunting'));   // rival has a card to lend
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    renderGameState();
+    document.getElementById('notifications').innerHTML = '';
+    const fx = document.getElementById('tvFx'); if (fx) fx.innerHTML = '';
+  });
+  await sleep(400);
+
+  const zones = await page.evaluate(() =>
+    ['tvPurse', 'tvSkills', 'tvSeats', 'tvMissionRail', 'tvBoardThumb', 'tvStage', 'tvHand', 'phaseBar'].map(id => {
+      const el = document.getElementById(id);
+      const r = el ? el.getBoundingClientRect() : null;
+      return { id, ok: !!r && r.width > 0 && r.height > 0 };
+    }));
+  ok(zones.every(z => z.ok), `all 8 HUD zones render (missing: ${zones.filter(z => !z.ok).map(z => z.id).join(',') || 'none'})`);
+  ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no horizontal scroll');
+  ok(await page.evaluate(() =>
+    ['tvLeftDrawer', 'tvRightDrawer'].every(id => { const el = document.getElementById(id); return !el || el.offsetParent === null; })),
+    'left/right drawers gone from view');
+  ok(await page.evaluate(() => {
+    const strip = document.getElementById('tvHandStrip') || document.getElementById('tvHandDrawer');
+    return strip && getComputedStyle(strip).transform === 'none' && strip.querySelectorAll('.hand-card').length === 3;
+  }), 'hand strip pinned open with the fan visible');
+
+  // Rival chip → full overlay, played cards one tap deeper.
+  await page.evaluate(() => document.querySelector('#tvSeats .pmat.opp').click());
+  await sleep(350);
+  ok(await page.evaluate(() => document.getElementById('oppOverlay').classList.contains('active')), 'rival chip opens the rival overlay');
+  await page.screenshot({ path: join(SHOTS, 'hud-rival-overlay.png') });
+  await page.evaluate(() => document.getElementById('oppOvToggle').click());
+  await sleep(300);
+  const oppCards = await page.evaluate(() => ({
+    open: document.getElementById('oppOverlay').classList.contains('cards-open'),
+    n: document.querySelectorAll('#oppOvCards .opp-ov-card-wrap').length,
+  }));
+  ok(oppCards.open && oppCards.n >= 1, `played-cards panel reveals with Lend Skills (${oppCards.n} cards)`);
+  await page.screenshot({ path: join(SHOTS, 'hud-rival-cards.png') });
+  await page.evaluate(() => closeOppOverlay());
+  await sleep(250);
+
+  // Your chip and the board thumb both open the board overlay.
+  await page.evaluate(() => document.querySelector('#tvSeats .pmat.you').click());
+  await sleep(300);
+  ok(await page.evaluate(() => document.getElementById('boardOverlay').classList.contains('active')), 'your chip opens the board overlay');
+  await page.keyboard.press('Escape');
+  await sleep(250);
+  await page.evaluate(() => document.getElementById('tvBoardThumb').click());
+  await sleep(300);
+  ok(await page.evaluate(() => document.getElementById('boardOverlay').classList.contains('active')), 'board thumb opens the board overlay');
+  const thumbRing = await page.evaluate(() => {
+    const ring = document.querySelector('#tvBoardThumb .thumb-ring');
+    if (!ring) return null;
+    const wrap = document.getElementById('tvBoardThumb').getBoundingClientRect();
+    const r = ring.getBoundingClientRect();
+    return {
+      centerPct: ((r.left + r.width / 2 - wrap.left) / wrap.width) * 100,
+      expect: BOARD_OV_TRACK.lefts[game.players[0].sliderPosition],
+    };
+  });
+  ok(thumbRing && Math.abs(thumbRing.centerPct - thumbRing.expect) < 2,
+    `thumb ring rides the overlay track (${thumbRing && thumbRing.centerPct.toFixed(1)}% vs ${thumbRing && thumbRing.expect}%)`);
+  await page.keyboard.press('Escape');
+  await sleep(250);
+
+  // Mission rail thumb → lightbox.
+  await page.evaluate(() => document.querySelector('#tvMissionRail .tv-mission:not(.ghost)').click());
+  await sleep(300);
+  ok(await page.evaluate(() => document.getElementById('missionLB').classList.contains('active')), 'mission thumb opens the lightbox');
+  await page.keyboard.press('Escape');
+  await sleep(250);
+
+  // My Missions popover: ● ✓ ✕ rows, row hands off to the lightbox with Turn In.
+  await page.evaluate(() => document.querySelector('.tv-mym').click());
+  await sleep(300);
+  const mym = await page.evaluate(() => ({
+    open: document.getElementById('tvPopoverHost').classList.contains('active'),
+    rows: [...document.querySelectorAll('#tvPopoverHost .tv-mission-row')].map(r => r.className.replace('tv-mission-row', '').trim()),
+  }));
+  ok(mym.open, 'My Missions popover opens');
+  ok(mym.rows.includes('active') && mym.rows.includes('done') && mym.rows.includes('failed'),
+    `popover lists active/done/failed rows (${mym.rows.join(',')})`);
+  await page.screenshot({ path: join(SHOTS, 'hud-mymissions.png') });
+  await page.evaluate(() => document.querySelector('#tvPopoverHost .tv-mission-row.active').click());
+  await sleep(350);
+  const afterRow = await page.evaluate(() => ({
+    lb: document.getElementById('missionLB').classList.contains('active'),
+    pop: document.getElementById('tvPopoverHost').classList.contains('active'),
+    turnIn: !!document.getElementById('missionTurnIn'),
+  }));
+  ok(afterRow.lb && !afterRow.pop, 'popover row hands off to the lightbox');
+  ok(afterRow.turnIn, 'held mission shows Turn In inside the lightbox');
+  await page.keyboard.press('Escape');
+  await sleep(250);
+
+  // Gear popover: music toggles, log opens, how-to opens.
+  await page.evaluate(() => document.querySelector('.tv-gear').click());
+  await sleep(250);
+  ok(await page.evaluate(() => !!document.querySelector('#tvPopoverHost .tv-pop.gear')), 'gear popover opens');
+  const musicBefore = await page.evaluate(() => musicPlaying);
+  await page.evaluate(() => document.getElementById('gearMusic').click());
+  await sleep(400);
+  const musicAfter = await page.evaluate(() => musicPlaying);
+  ok(musicAfter !== musicBefore, `gear toggles music (${musicBefore} → ${musicAfter})`);
+  await page.evaluate(() => {
+    [...document.querySelectorAll('#tvPopoverHost .tv-pop-item')].find(b => /game log/i.test(b.textContent)).click();
+  });
+  await sleep(300);
+  const logState = await page.evaluate(() => ({
+    log: document.getElementById('gameLog').classList.contains('open'),
+    pop: document.getElementById('tvPopoverHost').classList.contains('active'),
+  }));
+  ok(logState.log && !logState.pop, 'gear opens the Game Log and closes itself');
+  await page.evaluate(() => toggleLog());
+  await page.evaluate(() => document.querySelector('.tv-gear').click());
+  await sleep(250);
+  await page.evaluate(() => {
+    [...document.querySelectorAll('#tvPopoverHost .tv-pop-item')].find(b => /how to play/i.test(b.textContent)).click();
+  });
+  await sleep(300);
+  ok(await page.evaluate(() => document.getElementById('howto-overlay').classList.contains('active')), 'gear opens How to Play');
+  await page.evaluate(() => closeHowto());
+  await sleep(200);
+
+  // Panel-aside: hand panel up → rival chip → panel steps aside → returns on close.
+  await page.evaluate(() => selectHandCard(0));
+  await sleep(300);
+  ok(await page.evaluate(() => document.getElementById('actionPanel').classList.contains('active')), 'action panel opens for a hand card');
+  await page.evaluate(() => document.querySelector('#tvSeats .pmat.opp').click());
+  await sleep(350);
+  const aside = await page.evaluate(() => ({
+    ov: document.getElementById('oppOverlay').classList.contains('active'),
+    panel: document.getElementById('actionPanel').classList.contains('active'),
+  }));
+  ok(aside.ov && !aside.panel, 'action panel steps aside while the overlay has the stage');
+  await page.screenshot({ path: join(SHOTS, 'hud-panel-aside.png') });
+  await page.evaluate(() => closeOppOverlay());
+  await sleep(400);
+  ok(await page.evaluate(() => document.getElementById('actionPanel').classList.contains('active')),
+    'action panel returns when the overlay closes');
+  await page.evaluate(() => { window._finalChoicePending = false; hideActionPanel(); });
+
+  // The strip stays on stage even with no cards to hold.
+  await page.evaluate(() => { game.players[0].hand = []; game.phase = 'activate'; renderGameState(); });
+  await sleep(250);
+  ok(await page.evaluate(() => {
+    const strip = document.getElementById('tvHandStrip') || document.getElementById('tvHandDrawer');
+    const r = strip.getBoundingClientRect();
+    return r.width > 0 && r.top < window.innerHeight;
+  }), 'hand strip stays visible between hands');
   await page.close();
 }
 
@@ -497,7 +668,7 @@ console.log('── Desktop: Turn In Now offers Borrow & Complete when a neighbo
     lbClosed: !document.getElementById('missionLB').classList.contains('active'),
   }));
   ok(after.completed === 1 && after.gold === 8 && after.lender === before.lender + 2,
-    `turn-in borrow completes and pays the lender (gold ${after.gold})`);
+    `turn-in borrow completes and pays the lender (completed ${after.completed}, gold ${after.gold}, lender ${before.lender}→${after.lender})`);
   ok(after.lbClosed, 'lightbox closes after the borrow');
   await page.close();
 }
