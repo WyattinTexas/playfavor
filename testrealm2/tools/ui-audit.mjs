@@ -61,8 +61,7 @@ console.log('── Phone: glide blooms exactly one card (no sticky-hover double
   page.on('console', m => { if (m.type() === 'error') consoleErrors.push('phone: ' + m.text()); });
   await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
   await startGame(page);
-  await page.evaluate(() => { tvHandOpen = true; applyDrawerStates(); });
-  await sleep(500);
+  await sleep(500);   // strip is always open — nothing to raise
 
   const centers = await page.evaluate(() => {
     const zone = document.getElementById('tvHand');
@@ -140,7 +139,7 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
     ['tvLeftDrawer', 'tvRightDrawer'].every(id => { const el = document.getElementById(id); return !el || el.offsetParent === null; })),
     'left/right drawers gone from view');
   ok(await page.evaluate(() => {
-    const strip = document.getElementById('tvHandStrip') || document.getElementById('tvHandDrawer');
+    const strip = document.getElementById('tvHandStrip');
     return strip && getComputedStyle(strip).transform === 'none' && strip.querySelectorAll('.hand-card').length === 3;
   }), 'hand strip pinned open with the fan visible');
 
@@ -265,7 +264,7 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
   await page.evaluate(() => { game.players[0].hand = []; game.phase = 'activate'; renderGameState(); });
   await sleep(250);
   ok(await page.evaluate(() => {
-    const strip = document.getElementById('tvHandStrip') || document.getElementById('tvHandDrawer');
+    const strip = document.getElementById('tvHandStrip');
     const r = strip.getBoundingClientRect();
     return r.width > 0 && r.top < window.innerHeight;
   }), 'hand strip stays visible between hands');

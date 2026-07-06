@@ -629,7 +629,7 @@ const COACH_STEPS = [
       when: (s) => (s.visibleMissions || []).length > 0 },
     { id: 'hand',
       text: `Your turn! <b>Tap a card</b> in your hand to see what you can do with it — play it, or discard it for gold.`,
-      anchor: () => document.getElementById('tvHandStrip') || document.getElementById('tvHandDrawer'),
+      anchor: () => document.getElementById('tvHandStrip'),
       place: 'top',
       when: (s) => coachMyTurn(s) },
     { id: 'rivals',
@@ -668,21 +668,6 @@ function coachOverlayOpen() {
             'missionLB', 'cardZoom', 'scoring-screen', 'missionSelect', 'actionPanel',
             'cardPeek', 'meleeSplash', 'promisePicker', 'slideConfirm', 'tvPopoverHost']
         .some(id => { const el = document.getElementById(id); return el && el.classList.contains('active'); });
-}
-
-function coachFirstUnseen() {
-    const s = COACH_STEPS.find(st => !_coachSeen.has(st.id));
-    return s ? s.id : null;
-}
-// True while a tip *earlier* than 'hand' (board, missions) is still pending —
-// used to keep the hand drawer tucked so those prompts aren't blocked by it.
-function coachTuckHand() {
-    if (!isCompactLandscape()) return false;
-    const first = coachFirstUnseen();
-    if (!first) return false;
-    const handIdx = COACH_STEPS.findIndex(s => s.id === 'hand');
-    const firstIdx = COACH_STEPS.findIndex(s => s.id === first);
-    return firstIdx > -1 && firstIdx < handIdx;
 }
 
 function coachVisibleEl(el) {
@@ -1420,91 +1405,6 @@ function renderBottomStats(state) {
 // board + played cards tucked underneath), arranged around a center
 // missions area. Desktop is untouched (#table-view is display:none there).
 
-// One token "chip" resting on the mat: real token art (or a favor star) + count.
-function tvTokenChip(kind, amount) {
-    const face = TOKEN_IMG[kind]
-        ? `<img src="${TOKEN_IMG[kind]}" alt="">`
-        : `<span class="pmat-tok-favor">★</span>`;
-    return `<span class="pmat-tok ${kind}">${face}<b>${amount}</b></span>`;
-}
-
-function buildPlayerMat(i, state, isYou, seat) {
-    const p = state.players[i];
-    const char = game.players[i] ? game.players[i].character : null;
-    const boardSrc = char ? `assets/characters/${char.filename}` : '';
-    const isActive = state.activePlayerIndex === i;
-    const crown = state.emblemHolder === i ? ' 👑' : '';
-
-    // Ring indicator on the board's slider track (5 slots, evenly spaced).
-    const sliderPos = game.players[i] ? game.players[i].sliderPosition : 2;
-    const slotLeft = [16, 33, 50, 67, 84][sliderPos] != null ? [16, 33, 50, 67, 84][sliderPos] : 50;
-
-    // Tokens laid out on the board (corner cluster). Gold always; others if > 0.
-    let tokens = tvTokenChip('gold', p.gold);
-    if (p.prestige) tokens += tvTokenChip('prestige', p.prestige);
-    if (p.scorn)    tokens += tvTokenChip('scorn', p.scorn);
-    if (p.favor)    tokens += tvTokenChip('favor', p.favor);
-
-    // Played cards tucked under the mat (peeking, overlapped). Click mat to expand.
-    const cards = p.playedCards || [];
-    let tucked = cards.map(c =>
-        `<img class="pmat-card" src="assets/cards/regular/${c.filename}" alt="${c.name}"
-              data-peek="assets/cards/regular/${c.filename}">`
-    ).join('');
-    if (!tucked) tucked = '<span class="pmat-empty">No cards played</span>';
-
-    return `
-        <div class="pmat ${isYou ? 'you' : 'opp'} seat-${seat}${isActive ? ' active' : ''}"
-             data-pi="${i}"
-             onclick="openOppOverlay(${i})">
-            <div class="pmat-boardwrap">
-                <img class="pmat-board" src="${boardSrc}" alt="${p.name}">
-                <img class="pmat-ring" src="assets/ui/slider-ring.png" style="left:${slotLeft}%" alt="">
-                <span class="pmat-name">${p.name}${crown}</span>
-                <div class="pmat-tokens">${tokens}</div>
-            </div>
-            <div class="pmat-cards">${tucked}</div>
-        </div>`;
-}
-
-// ── Rival plaque (Battlegrounds-style top rail) ──
-// Rivals compress into upright portrait plaques along the top edge instead of
-// rotated full boards: portrait + name + the same public info the old mats
-// showed (gold / prestige / scorn / favor tokens, played-card count, ring
-// slot). Keeps .pmat/.opp classes + data-pi so coach-marks, tap-to-inspect
-// and the FX delta system all keep working unchanged.
-function buildRivalPlaque(i, state) {
-    const p = state.players[i];
-    const char = game.players[i] ? game.players[i].character : null;
-    const boardSrc = char ? `assets/characters/${char.filename}` : '';
-    const isActive = state.activePlayerIndex === i;
-    const crown = state.emblemHolder === i ? ' 👑' : '';
-    const ringPos = game.players[i] ? game.players[i].sliderPosition : 2;
-    const cardCount = (p.playedCards || []).length;
-
-    let chips = tvTokenChip('gold', p.gold);
-    if (p.prestige) chips += tvTokenChip('prestige', p.prestige);
-    if (p.scorn)    chips += tvTokenChip('scorn', p.scorn);
-    if (p.favor)    chips += tvTokenChip('favor', p.favor);
-
-    const ringDots = [0,1,2,3,4].map(s =>
-        `<i class="rplq-ringdot${s === ringPos ? ' on' : ''}"></i>`).join('');
-
-    return `
-        <div class="pmat opp rplq${isActive ? ' active' : ''}" data-pi="${i}"
-             onclick="openOppOverlay(${i})">
-            <div class="rplq-portrait"><img src="${boardSrc}" alt="${p.name}"></div>
-            <div class="rplq-info">
-                <span class="rplq-name">${p.name}${crown}</span>
-                <div class="pmat-tokens rplq-chips">${chips}</div>
-                <div class="rplq-foot">
-                    <span class="rplq-ring">${ringDots}</span>
-                    <span class="rplq-cards">🂠 ${cardCount}</span>
-                </div>
-            </div>
-        </div>`;
-}
-
 // ═══ WINGSPAN HUD ZONES (phone landscape) ═══════════════════
 // Every zone glanceable at once — no drawers. All CSS lives inside the
 // compact-landscape media query; desktop .game-layout is untouched.
@@ -1764,7 +1664,7 @@ function buildMyMissionRows() {
     (gp.missions || []).forEach(m => rows += entry(m, 'active', '●'));
     (gp.completedMissions || []).forEach(m => rows += entry(m, 'done', '✓'));
     (gp.failedMissions || []).forEach(m => rows += entry(m, 'failed', '✕'));
-    if (!rows) rows = '<div class="tv-right-empty">No missions taken yet.<br>Play a mission card to acquire one.</div>';
+    if (!rows) rows = '<div class="tv-pop-empty">No missions taken yet.<br>Play a mission card to acquire one.</div>';
     return rows;
 }
 
@@ -1794,25 +1694,6 @@ function openTvPopover(kind) {
     if (typeof coachTick === 'function') coachTick();
 }
 
-function renderTvCenter(state) {
-    const c = document.getElementById('tvCenter');
-    if (!c) return;
-    const ms = state.visibleMissions || [];
-    // Missions are the stage: big readable cards, with ghosted placeholder
-    // slots (Wingspan-style) so the pool always reads as 3 seats.
-    let h = '<span class="tv-center-label">Missions of the Realm</span><div class="tv-missions">';
-    ms.forEach(m => {
-        h += `<img class="tv-mission" src="assets/cards/missions/${m.filename}"
-                   alt="${m.name}" data-peek="assets/cards/missions/${m.filename}"
-                   onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
-    });
-    for (let g = ms.length; g < 3; g++) {
-        h += '<span class="tv-mission ghost"></span>';
-    }
-    h += '</div>';
-    c.innerHTML = h;
-}
-
 function renderTvHand(state) {
     const zone = document.getElementById('tvHand');
     if (!zone) return;
@@ -1824,7 +1705,7 @@ function renderTvHand(state) {
 
     // "Your turn" pulse on the always-visible strip (replaces the old
     // auto-opening drawer as the turn signal).
-    const strip = document.getElementById('tvHandStrip') || document.getElementById('tvHandDrawer');
+    const strip = document.getElementById('tvHandStrip');
     if (strip) strip.classList.toggle('your-turn', myTurn && !!(hand && hand.length));
 
     if (!hand || hand.length === 0) {
@@ -1864,125 +1745,8 @@ function renderTvHand(state) {
     requestAnimationFrame(_tvBloomLayout);
 }
 
-// ── Left drawer: your skills / ring / act ──
-function renderTvLeft(state) {
-    const el = document.getElementById('tvLeftContent');
-    if (!el) return;
-    const player = state.players[0];
-    const gp = game.players[0];
-    const skills = player.skills || {};
-    const skillEntries = [
-        { key: 'survival',    label: 'Survival',    icon: SKILL_ICONS.survival },
-        { key: 'charisma',    label: 'Charisma',    icon: SKILL_ICONS.charisma },
-        { key: 'alchemy',     label: 'Alchemy',     icon: SKILL_ICONS.alchemy },
-        { key: 'prospecting', label: 'Prospecting', icon: SKILL_ICONS.prospecting },
-        { key: 'knowledge',   label: 'Knowledge',   icon: SKILL_ICONS.knowledge },
-        { key: 'power',       label: 'Power',       icon: SKILL_ICONS.power },
-    ];
-    let skillsHtml = '<div class="skills-grid">';
-    skillEntries.forEach(s => {
-        const val = skills[s.key] || 0;
-        skillsHtml += `<div class="skill-row">
-            <span class="skill-icon">${s.icon}</span>
-            <span class="skill-label">${s.label}</span>
-            <span class="skill-value${val > 0 ? ' has-skill' : ''}">${val}</span>
-        </div>`;
-    });
-    const flexPairs = {};
-    (player.flexSkills || []).forEach(pair => {
-        const key = pair.join('|');
-        flexPairs[key] = (flexPairs[key] || 0) + 1;
-    });
-    Object.entries(flexPairs).forEach(([key, n]) => {
-        const [a, b] = key.split('|');
-        const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
-        skillsHtml += `<div class="skill-row flex-skill" title="Counts as ${cap(a)} OR ${cap(b)} — one or the other, never both">
-            <span class="skill-icon">${SKILL_ICONS[a]}</span>
-            <span class="skill-label">${cap(a)}/${cap(b)}</span>
-            <span class="skill-value has-skill">${n > 1 ? '×' + n : '✦'}</span>
-        </div>`;
-    });
-    const hasPhil = gp.philosopherStone && gp.philosopherStone > 0;
-    const hasMindsEye = (gp.playedCards || []).some(c =>
-        c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_x2_philosopher_stone_x5');
-    if (hasPhil) skillsHtml += `<div class="skill-row special-ability">
-        <span class="skill-icon">${SKILL_ICONS.philosopher}</span>
-        <span class="skill-label">Phil. Stone</span>
-        <span class="skill-value has-skill">${gp.philosopherStone}:1</span></div>`;
-    if (hasMindsEye) skillsHtml += `<div class="skill-row special-ability">
-        <span class="skill-icon">${SKILL_ICONS.minds_eye}</span>
-        <span class="skill-label">Mind's Eye</span>
-        <span class="skill-value has-skill">✓</span></div>`;
-    skillsHtml += '</div>';
-
-    const sliderPos = gp.sliderPosition;
-    const posNames = ['1', '2', '3', '4', '5'];
-    const ringHtml = `<div class="ring-indicator">Ring: ${[0,1,2,3,4].map(pos => {
-        const charData = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
-        const tip = charData ? buildSlotLabel(charData.slots[pos]).join(', ') : '';
-        return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posNames[pos]}</span>`;
-    }).join('')}</div>`;
-
-    el.innerHTML = `<div class="tv-left-title">Your Skills</div><div class="act-badge">Act ${state.currentAct}</div>${skillsHtml}${ringHtml}`;
-}
-
-// ── Right drawer: your acquired missions + status ──
+// Mission requirement abbreviations for the My Missions popover rows.
 const SKILL_ABBR = { survival:'SUR', charisma:'CHA', alchemy:'ALC', prospecting:'PRO', knowledge:'KNO', power:'POW' };
-
-function renderTvRight(state) {
-    const el = document.getElementById('tvRightContent');
-    if (!el) return;
-    const gp = game.players[0];
-    const active = gp.missions || [];
-    const done = gp.completedMissions || [];
-    const failed = gp.failedMissions || [];
-
-    let rows = '';
-    const entry = (m, cls, tag) => {
-        const reqs = (m.requirements || []).map(r => SKILL_ABBR[r] || r.slice(0,3).toUpperCase()).join(' + ') || '—';
-        return `<div class="tv-mission-row ${cls}"
-                     onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">
-            <img class="tv-mission-thumb" src="assets/cards/missions/${m.filename}" alt="${m.name}"
-                 data-peek="assets/cards/missions/${m.filename}">
-            <div class="tv-mission-info">
-                <span class="tv-mission-name">${m.name}</span>
-                <span class="tv-mission-meta">${m.favorValue || 0} Favor · ${reqs}</span>
-            </div>
-            <span class="tv-mission-tag">${tag}</span>
-        </div>`;
-    };
-    active.forEach(m => rows += entry(m, 'active', '●'));
-    done.forEach(m => rows += entry(m, 'done', '✓'));
-    failed.forEach(m => rows += entry(m, 'failed', '✕'));
-    if (!rows) rows = '<div class="tv-right-empty">No missions taken yet.<br>Play a mission card to acquire one.</div>';
-
-    el.innerHTML = `<div class="tv-right-title">Your Missions</div>${rows}`;
-}
-
-// ── Drawer state (hand auto-opens on your turn; all have manual arrows) ──
-let tvHandOpen = true;
-let tvLeftOpen = false;
-let tvRightOpen = false;
-let _tvTurnSig = null;
-
-function applyDrawerStates() {
-    const hd = document.getElementById('tvHandDrawer');
-    const ld = document.getElementById('tvLeftDrawer');
-    const rd = document.getElementById('tvRightDrawer');
-    const ht = document.getElementById('tvHandTab');
-    const lt = document.getElementById('tvLeftTab');
-    const rt = document.getElementById('tvRightTab');
-    if (hd) hd.classList.toggle('open', tvHandOpen);
-    if (ld) ld.classList.toggle('open', tvLeftOpen);
-    if (rd) rd.classList.toggle('open', tvRightOpen);
-    if (ht) ht.textContent = tvHandOpen ? '▾' : '▴';
-    if (lt) lt.textContent = tvLeftOpen ? '◂' : '▸';
-    if (rt) rt.textContent = tvRightOpen ? '▸' : '◂';
-    if (typeof coachTick === 'function') coachTick();
-}
-function toggleHandDrawer(e) { if (e) e.stopPropagation(); tvHandOpen = !tvHandOpen; applyDrawerStates(); }
-function toggleLeftDrawer(e) { if (e) e.stopPropagation(); tvLeftOpen = !tvLeftOpen; if (tvLeftOpen && typeof coachMarkSeen === 'function') coachMarkSeen('skills'); applyDrawerStates(); }
-function toggleRightDrawer(e) { if (e) e.stopPropagation(); tvRightOpen = !tvRightOpen; applyDrawerStates(); }
 
 // ═══ PHASE C — tabletop motion via per-player state diffing ═══
 // No engine edits: each render we compare each player's tokens / played-card
@@ -2099,12 +1863,6 @@ function renderTableView(state) {
     renderTvStage(state);
     renderTvHand(state);
 
-    // Legacy drawers (hidden by the HUD CSS) — kept warm until the kill pass.
-    renderTvCenter(state);
-    renderTvLeft(state);
-    renderTvRight(state);
-    applyDrawerStates();
-
     // Tabletop motion: animate any per-player deltas since the last render.
     tvAnimateDeltas(state);
 
@@ -2184,8 +1942,8 @@ function openSlidePickerFinal(onPick) {
 // landing halo + cost, click to pay & slide. The ring token overlaps the
 // current circle, exactly like the physical board.
 // Calibrated against the board scans (pixel-measured): the five circles
-// sit at these % of the board image. (The table mats' RING_SLOT_LEFTS are
-// rounded for their tiny size \u2014 at overlay size the drift shows.)
+// sit at these % of the board image. The board thumb (Z5) rides the same
+// track, so geometry transfers 1:1 between thumb and overlay.
 const BOARD_OV_TRACK = { lefts: [17, 33.4, 50, 66.3, 82.9], top: 84.7 };
 
 function renderBoardOvSlots() {
@@ -3676,12 +3434,6 @@ function _bloomSet(el) {
 document.addEventListener('pointerdown', (e) => {
     const card = e.target.closest && e.target.closest('.tv-hand .hand-card');
     if (!card) return;
-    // Touching your peeking hand raises the drawer — otherwise the bloom
-    // grows from a card whose bottom is still below the screen edge.
-    if (typeof tvHandOpen !== 'undefined' && !tvHandOpen) {
-        tvHandOpen = true;
-        applyDrawerStates();
-    }
     _bloomStartEl = card;
     _bloomSet(card);
 }, { passive: true });
@@ -3730,61 +3482,9 @@ function _bloomRelease() {
 document.addEventListener('pointerup', _bloomRelease, { passive: true });
 document.addEventListener('pointercancel', _bloomRelease, { passive: true });
 
-// ═══ RING DRAG — slide your ring on the board, pay 5 Gold per slot ═══
-// Grab anywhere along your board's slider track and drag the ring to a
-// slot. Release → confirm "Pay N Gold to slide here?". Uses the same
-// payToSlide engine path as the board overlay (one step at a time, so
-// slot events fire per space, exactly like the physical game).
-const RING_SLOT_LEFTS = [16, 33, 50, 67, 84];
-let _ringDrag = null;
-
-function _ringSlotFromX(clientX, rect) {
-    const pct = ((clientX - rect.left) / rect.width) * 100;
-    let best = 0, bestD = Infinity;
-    RING_SLOT_LEFTS.forEach((L, i) => {
-        const d = Math.abs(pct - L);
-        if (d < bestD) { bestD = d; best = i; }
-    });
-    return best;
-}
-
-document.addEventListener('pointerdown', (e) => {
-    if (!game || game.phase !== 'gameplay') return;
-    const wrap = e.target.closest && e.target.closest('.pmat.you .pmat-boardwrap');
-    if (!wrap) return;
-    const rect = wrap.getBoundingClientRect();
-    // Only the slider track zone (bottom quarter of the board) starts a drag.
-    if (e.clientY < rect.top + rect.height * 0.72) return;
-    const ring = wrap.querySelector('.pmat-ring');
-    if (!ring) return;
-    _ringDrag = { wrap, rect, ring, moved: false, slot: game.players[0].sliderPosition };
-    ring.classList.add('dragging');
-}, true);
-
-document.addEventListener('pointermove', (e) => {
-    if (!_ringDrag) return;
-    _ringDrag.moved = true;
-    const slot = _ringSlotFromX(e.clientX, _ringDrag.rect);
-    _ringDrag.slot = slot;
-    _ringDrag.ring.style.left = RING_SLOT_LEFTS[slot] + '%';
-}, { passive: true });
-
-function _ringDragEnd(e) {
-    if (!_ringDrag) return;
-    const { ring, slot, moved, rect } = _ringDrag;
-    ring.classList.remove('dragging');
-    _ringDrag = null;
-    const current = game.players[0].sliderPosition;
-    if (!moved || slot === current) { renderGameState(); return; }
-    // Block the mat's tap-to-inspect for this gesture.
-    if (e) { e.stopPropagation(); }
-    _peekSwallowClick = true;
-    setTimeout(() => { _peekSwallowClick = false; }, 400);
-    showSlideConfirm(slot, rect);
-}
-document.addEventListener('pointerup', _ringDragEnd, true);
-document.addEventListener('pointercancel', _ringDragEnd, true);
-
+// ═══ SLIDE CONFIRM — "Pay N Gold to slide here?" ═══════════════════════
+// Fired by the board overlay's track hotspots (the ring-drag gesture died
+// with the bottom-anchored you-mat; the overlay is the one slide surface).
 function showSlideConfirm(targetSlot, boardRect) {
     const ov = document.getElementById('slideConfirm');
     if (!ov) { renderGameState(); return; }

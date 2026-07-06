@@ -2964,13 +2964,29 @@ html, body {
     }
     .tv-mission-rail .tv-mission {
         width: 37px;
+        aspect-ratio: 46 / 64;
+        height: auto;
         border-radius: 4px;
+        object-fit: cover;
+        border: 1px solid rgba(201,168,76,0.35);
         box-shadow: 0 3px 8px rgba(0,0,0,0.5);
+        cursor: pointer;
+        transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
     }
     .tv-mission-rail .tv-mission:hover {
         transform: translateY(-2px) scale(1.05);
+        border-color: var(--gold);
         box-shadow: 0 6px 12px rgba(0,0,0,0.55), 0 0 10px rgba(201,168,76,0.3);
     }
+    /* Ghost seat (Wingspan): an empty mission slot still reads as a place. */
+    .tv-mission-rail .tv-mission.ghost {
+        display: inline-block;
+        background: rgba(201,168,76,0.045);
+        border: 1.5px dashed rgba(201,168,76,0.3);
+        box-shadow: inset 0 0 16px rgba(0,0,0,0.35);
+        cursor: default;
+    }
+    .tv-mission-rail .tv-mission.ghost:hover { transform: none; border-color: rgba(201,168,76,0.3); }
     .tv-mym {
         display: flex;
         flex-direction: column;
@@ -3134,131 +3150,21 @@ html, body {
     }
     .tv-pop-item:hover { border-color: var(--gold); background: rgba(201,168,76,0.14); }
 
-    /* ── Legacy center missions — replaced by the Z4 mission rail; the
-       ruleset below only feeds the shared .tv-mission thumb styles until
-       the kill pass removes it. ── */
-    .tv-center {
-        display: none;
-        position: absolute;
-        top: 46%; left: 50%;
-        transform: translate(-50%, -50%);
-        flex-direction: column;
-        align-items: center;
-        gap: 6px;
-        z-index: 4;
-    }
-    .tv-center-label {
-        font-family: 'Cinzel', serif;
-        font-size: 9px;
-        letter-spacing: 3px;
-        text-transform: uppercase;
-        color: var(--gold);
-        padding: 3px 16px;
-        border: 1px solid rgba(201,168,76,0.35);
-        border-radius: 12px;
-        background: linear-gradient(180deg, rgba(40,22,10,0.85), rgba(20,10,4,0.85));
-        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-    }
-    .tv-missions { display: flex; gap: 12px; }
-    .tv-mission {
-        width: clamp(78px, 13vw, 100px);
-        aspect-ratio: 46 / 64;
-        height: auto;
-        border-radius: 6px;
-        object-fit: cover;
-        border: 1px solid rgba(201,168,76,0.35);
-        box-shadow: 0 6px 16px rgba(0,0,0,0.55);
-        cursor: pointer;
-        transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
-    }
-    .tv-mission:hover {
-        transform: translateY(-4px) scale(1.06);
-        border-color: var(--gold);
-        box-shadow: 0 10px 22px rgba(0,0,0,0.6), 0 0 14px rgba(201,168,76,0.35);
-    }
-    /* Ghost seat (Wingspan): an empty mission slot still reads as a place. */
-    .tv-mission.ghost {
-        display: inline-block;
-        background: rgba(201,168,76,0.045);
-        border: 1.5px dashed rgba(201,168,76,0.3);
-        box-shadow: inset 0 0 16px rgba(0,0,0,0.35);
-        cursor: default;
-    }
-    .tv-mission.ghost:hover { transform: none; border-color: rgba(201,168,76,0.3); }
-
     /* The floating music/log buttons relocate into the ⚙ popover here. */
     .music-toggle, .log-toggle { display: none; }
 
-    /* ═══ LEGACY DRAWERS — replaced by the always-visible HUD zones.
-       Hidden here; DOM + JS die in the kill pass. ═══ */
-    .tv-drawer-tab { display: none; }
-
-    /* ── Left drawer: your skills / ring / act ── */
-    .tv-left-drawer {
-        display: none;
-        position: absolute;
-        top: 58px;
-        bottom: 38px;
-        left: 0;
-        width: 150px;
-        z-index: 45;
-        transform: translateX(-100%);
-        transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .tv-left-drawer.open { transform: translateX(0); }
-    .tv-left-content {
-        height: 100%;
-        overflow-y: auto;
-        padding: 8px 8px 10px;
-        background: linear-gradient(160deg, var(--wood-darker) 0%, var(--wood-deepest) 100%);
-        border: 2px solid var(--gold-dark);
-        border-left: none;
-        border-radius: 0 12px 12px 0;
-        box-shadow: 6px 0 20px rgba(0,0,0,0.5);
-    }
-    .tv-left-title {
-        font-family: 'Cinzel', serif;
-        font-size: 9px;
-        letter-spacing: 2px;
-        text-transform: uppercase;
-        color: var(--gold);
-        text-align: center;
-        margin-bottom: 4px;
-    }
-    .tv-left-content .act-badge {
-        font-size: 8px; text-align: center; color: var(--gold-dark);
-        padding-bottom: 4px; margin-bottom: 4px; letter-spacing: 2px;
-        text-transform: uppercase;
-        border-bottom: 1px solid rgba(201,168,76,0.12);
-    }
-    .tv-left-content .skills-grid { gap: 1px; }
-    .tv-left-content .skill-row { padding: 1px 3px; gap: 5px; }
-    .tv-left-content .skill-svg { width: 16px; height: 16px; }
-    .tv-left-content .skill-label { font-size: 8px; }
-    .tv-left-content .skill-value { font-size: 12px; }
-    .tv-left-content .ring-indicator { font-size: 8px; margin-top: 6px; }
-    .tv-drawer-tab.left {
-        top: 50%; right: -24px;
-        transform: translateY(-50%);
-        width: 24px; height: 58px;
-        border-left: none;
-        border-radius: 0 10px 10px 0;
-        font-size: 12px;
-    }
-
     /* ── Z7 · Hand strip — ALWAYS visible, card bottoms cropped ~18%.
-       The strip hangs 26px past the screen edge and #table-view's
+       The strip hangs 28px past the screen edge and #table-view's
        overflow:hidden does the cropping — never overflow on the strip
        itself, or it would clip the bloom. ── */
-    .tv-hand-drawer {
+    .tv-hand-strip {
         position: absolute;
         left: 0; right: 0;
         bottom: -28px;
         height: 148px;
         z-index: 45;
-        transform: none !important; /* the drawer never slides again */
     }
-    .tv-hand-drawer::before {
+    .tv-hand-strip::before {
         content: '';
         position: absolute; inset: 0;
         background: linear-gradient(0deg,
@@ -3268,7 +3174,7 @@ html, body {
     }
     /* "Your turn" pulse along the strip's top edge (replaces the
        auto-opening drawer as the signal that you're up). */
-    .tv-hand-drawer.your-turn::after {
+    .tv-hand-strip.your-turn::after {
         content: '';
         position: absolute;
         left: 8%; right: 8%; top: 24px;
@@ -3318,7 +3224,7 @@ html, body {
         z-index: 60;
     }
     @media (hover: hover) {
-        .tv-hand-drawer .tv-hand .hand-card:hover {
+        .tv-hand-strip .tv-hand .hand-card:hover {
             transform: translateX(var(--bloomShift, 0px)) translateY(-28px) scale(var(--bloomScale, 2.8)) !important;
             transform-origin: bottom center;
             z-index: 60;
@@ -3380,36 +3286,8 @@ html, body {
     .action-panel .action-buttons { gap: 6px; margin-top: 4px; }
     .action-panel .action-btn { padding: 8px 14px !important; font-size: 11px !important; }
 
-    /* ── Right drawer: your acquired missions (rows reused by the
-       My Missions popover — .tv-mission-row styles below stay) ── */
-    .tv-right-drawer {
-        display: none;
-        position: absolute;
-        top: 58px;
-        bottom: 38px;
-        right: 0;
-        width: 168px;
-        z-index: 45;
-        transform: translateX(100%);
-        transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .tv-right-drawer.open { transform: translateX(0); }
-    .tv-right-content {
-        height: 100%;
-        overflow-y: auto;
-        padding: 8px 8px 10px;
-        background: linear-gradient(160deg, var(--wood-darker) 0%, var(--wood-deepest) 100%);
-        border: 2px solid var(--gold-dark);
-        border-right: none;
-        border-radius: 12px 0 0 12px;
-        box-shadow: -6px 0 20px rgba(0,0,0,0.5);
-    }
-    .tv-right-title {
-        font-family: 'Cinzel', serif;
-        font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
-        color: var(--gold); text-align: center; margin-bottom: 6px;
-    }
-    .tv-right-empty {
+    /* ── My Missions popover rows (once the missions drawer's) ── */
+    .tv-pop-empty {
         font-family: 'EB Garamond', serif; font-style: italic;
         font-size: 10px; color: var(--gold-dark); opacity: 0.7;
         text-align: center; line-height: 1.5; margin-top: 10px;
@@ -3435,14 +3313,6 @@ html, body {
     .tv-mission-tag { font-size: 9px; color: var(--gold); }
     .tv-mission-row.done .tv-mission-tag { color: #6ede82; }
     .tv-mission-row.failed .tv-mission-tag { color: #e85454; }
-    .tv-drawer-tab.right {
-        top: 50%; left: -24px;
-        transform: translateY(-50%);
-        width: 24px; height: 58px;
-        border-right: none;
-        border-radius: 10px 0 0 10px;
-        font-size: 12px;
-    }
 
     /* ── FX layer (token drops / card tucks / mission reveals) ── */
     #tvFx {
@@ -4203,10 +4073,3 @@ html, body {
 .sc-actions { display: flex; gap: 8px; margin-top: 2px; }
 .sc-actions .btn-royal { padding: 6px 14px; font-size: 11px; min-width: 0; }
 
-/* Ring affordance: it's grabbable, and lifts while dragging */
-.pmat.you .pmat-ring { cursor: grab; transition: left 0.12s ease-out; }
-.pmat-ring.dragging {
-    transition: none;
-    filter: drop-shadow(0 0 8px rgba(240,210,120,0.9)) drop-shadow(0 3px 4px rgba(0,0,0,0.6));
-    scale: 1.25;
-}

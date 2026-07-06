@@ -191,9 +191,6 @@
 
                 <!-- Z3 · Seat chips — every player, YOU first (keeps .pmat/data-pi for FX) -->
                 <div class="tv-seats" id="tvSeats"></div>
-
-                <!-- legacy center missions — hidden by the HUD (dies with the drawers) -->
-                <div class="tv-center" id="tvCenter"></div>
             </div>
 
             <!-- Z1 · Purse + settings — top-left -->
@@ -211,27 +208,11 @@
             <!-- Popover host — gear menu / My Missions list -->
             <div class="tv-popover-host" id="tvPopoverHost"></div>
 
-            <!-- Left drawer — your skills / ring / act (arrow to open) -->
-            <div class="tv-left-drawer" id="tvLeftDrawer">
-                <div class="tv-left-content" id="tvLeftContent"></div>
-                <button class="tv-drawer-tab left" id="tvLeftTab"
-                        onclick="toggleLeftDrawer(event)" title="Your skills">▸</button>
-            </div>
-
-            <!-- Right drawer — your acquired missions (arrow to open) -->
-            <div class="tv-right-drawer" id="tvRightDrawer">
-                <div class="tv-right-content" id="tvRightContent"></div>
-                <button class="tv-drawer-tab right" id="tvRightTab"
-                        onclick="toggleRightDrawer(event)" title="Your missions">◂</button>
-            </div>
-
             <!-- FX layer — token drops, card tucks, mission reveals (survives re-renders) -->
             <div id="tvFx"></div>
 
-            <!-- Hand drawer — auto-opens on your turn, arrow to open/close -->
-            <div class="tv-hand-drawer open" id="tvHandDrawer">
-                <button class="tv-drawer-tab hand" id="tvHandTab"
-                        onclick="toggleHandDrawer(event)" title="Your hand">▾</button>
+            <!-- Z7 · Hand strip — always visible, card bottoms crop past the screen edge -->
+            <div class="tv-hand-strip" id="tvHandStrip">
                 <div class="tv-hand" id="tvHand"></div>
             </div>
         </div>
