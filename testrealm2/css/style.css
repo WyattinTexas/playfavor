@@ -2737,158 +2737,415 @@ html, body {
         animation: tvGlowBreathe 16s ease-in-out infinite;
     }
 
-    /* Slimmer phase bar, parked top-left so the rival rail owns top-center. */
-    .phase-bar { top: 6px; left: 10px; transform: none; padding: 3px 12px; gap: 8px; }
+    /* ── Z8 · Phase pill — slim, top-center just under the seat chips ── */
+    .phase-bar {
+        top: 52px;
+        padding: 2px 12px;
+        gap: 6px;
+        border-width: 1px;
+        z-index: 6;
+    }
+    .phase-bar .act-tag { font-size: 9px; }
+    .phase-bar .phase-text { font-size: 9px; letter-spacing: 1.5px; }
 
-    /* Your purse rides in the pill — gold readable at all times. */
-    .phase-bar .purse {
-        display: inline-flex;
+    /* The TEST REALM badge would sit on the mission rail — park it
+       bottom-left, out of every zone's way (build stamp stays legible). */
+    #testRealmBadge {
+        top: auto !important;
+        right: auto !important;
+        bottom: 0;
+        left: 0;
+        border-radius: 0 8px 0 0 !important;
+        padding: 2px 8px !important;
+        opacity: 0.7 !important;
+    }
+
+    /* ── Z1 · Purse — your four currencies + settings, top-left ── */
+    .tv-purse {
+        position: absolute;
+        top: 6px;
+        left: max(8px, env(safe-area-inset-left));
+        display: flex;
         align-items: center;
         gap: 4px;
-        margin-left: 6px;
-        padding-left: 10px;
-        border-left: 1px solid rgba(201,168,76,0.3);
+        z-index: 6;
     }
-    .phase-bar .purse img {
-        width: 15px; height: 15px;
-        border-radius: 50%;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.5);
-    }
-    .phase-bar .purse b {
-        font-family: 'Cinzel', serif;
-        font-size: 12px;
-        color: #ffd97a;
-    }
-
-    /* All mats live in an absolute layer, seated around the center. */
-    .tv-seats { position: absolute; inset: 0; z-index: 2; }
-
-    /* ── Player mat (shared: you + opponents) ── */
-    .pmat {
-        position: absolute;
-        display: flex;
-        flex-direction: column;
+    .tv-purse-chip {
+        display: inline-flex;
         align-items: center;
+        gap: 3px;
+        padding: 2px 6px 2px 3px;
+        border-radius: 10px;
+        background: rgba(10,6,3,0.68);
+        border: 1px solid rgba(201,168,76,0.25);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.5);
         cursor: pointer;
     }
-    .pmat:hover .pmat-boardwrap { border-color: var(--gold); }
+    .tv-purse-chip img {
+        width: 14px; height: 14px;
+        object-fit: contain;
+        filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6));
+    }
+    .tv-purse-chip.prestige img { border-radius: 50%; object-fit: cover; }
+    .tv-purse-chip b {
+        font-family: 'Cinzel', serif;
+        font-weight: 900;
+        font-size: 11px;
+        color: var(--gold-light);
+        line-height: 1;
+    }
+    .tv-purse-chip.scorn b { color: #f0a0a0; }
+    .tv-purse-chip.favor b { color: #a9d4ff; }
+    .tv-gear {
+        width: 22px; height: 22px;
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(10,6,3,0.68);
+        border: 1px solid rgba(201,168,76,0.25);
+        color: var(--gold);
+        font-size: 13px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 0;
+    }
+    .tv-gear:hover { color: var(--gold-light); border-color: var(--gold); }
 
-    .pmat-boardwrap {
+    /* Tap-a-chip name label (phones have no hover) */
+    #tvChipTip {
+        position: fixed;
+        z-index: 10500;
+        font-family: 'Cinzel', serif;
+        font-size: 10px;
+        letter-spacing: 1px;
+        color: var(--gold-light);
+        background: rgba(14,7,2,0.92);
+        border: 1px solid var(--gold-dark);
+        border-radius: 8px;
+        padding: 4px 10px;
+        pointer-events: none;
+        white-space: nowrap;
+        transition: opacity 0.25s;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.5);
+    }
+    #tvChipTip.out { opacity: 0; }
+
+    /* ── Z3 · Seat chips — every player in one top-center row, YOU first.
+       Chips keep .pmat + data-pi so the delta FX and coach-marks that
+       target #table-view .pmat[data-pi] keep landing. ── */
+    .tv-seats {
+        position: absolute;
+        top: 3px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 7px;
+        z-index: 6;
+    }
+    .tv-seats .pmat.seat-chip {
         position: relative;
+        width: 37px; height: 37px;
+        border-radius: 9px;
+        border: 2px solid var(--gold-dark);
+        background: var(--wood-deepest);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.55);
+        cursor: pointer;
+        transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+    }
+    .tv-seats .pmat.seat-chip:hover { border-color: var(--gold); }
+    .tv-seats .pmat.seat-chip.active {
+        border-color: var(--gold-light);
+        box-shadow: 0 0 12px rgba(201,168,76,0.65), 0 2px 8px rgba(0,0,0,0.55);
+        transform: translateY(1px) scale(1.07);
+    }
+    .chip-art {
+        position: absolute;
+        inset: 0;
+        width: 100%; height: 100%;
+        object-fit: cover;
+        border-radius: 7px;
+        display: block;
+    }
+    .chip-crown {
+        position: absolute;
+        top: -8px; right: -6px;
+        font-size: 11px;
+        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.8));
+        pointer-events: none;
+    }
+    .chip-you {
+        position: absolute;
+        bottom: -7px; left: 50%;
+        transform: translateX(-50%);
+        font-family: 'Cinzel', serif;
+        font-size: 6px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: var(--gold-light);
+        background: rgba(14,7,2,0.85);
+        border: 1px solid rgba(201,168,76,0.4);
+        border-radius: 4px;
+        padding: 0 4px;
+        pointer-events: none;
+    }
+    .chip-count {
+        position: absolute;
+        bottom: -5px; right: -5px;
+        min-width: 13px; height: 13px;
+        border-radius: 7px;
+        background: rgba(14,7,2,0.88);
+        border: 1px solid rgba(201,168,76,0.35);
+        color: var(--gold-dark);
+        font-family: 'Cinzel', serif;
+        font-size: 7px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 2px;
+        pointer-events: none;
+    }
+
+    /* ── Z2 · Skill rail — always-visible icon+number chips, left edge.
+       Sized off --railRows so all rows (skills + flex + specials) fit a
+       390px-tall screen and shrink gracefully as rows appear. ── */
+    .tv-skills {
+        position: absolute;
+        top: 42px;
+        bottom: 106px;
+        left: max(8px, env(safe-area-inset-left));
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        z-index: 5;
+        --railRows: 6;
+    }
+    .tv-skill-chip {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        padding: 0 6px 0 3px;
+        border-radius: 9px;
+        background: rgba(10,6,3,0.68);
+        border: 1px solid rgba(201,168,76,0.25);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        height: min(32px, calc((100dvh - 152px - (var(--railRows) - 1) * 3px) / var(--railRows)));
+        cursor: pointer;
+    }
+    .tv-skill-chip .skill-svg {
+        width: 17px; height: 17px;
+        min-width: 17px;
+        object-fit: contain;
+    }
+    .tv-skill-chip b {
+        font-family: 'Cinzel', serif;
+        font-weight: 900;
+        font-size: 11px;
+        color: var(--gold-light);
+        min-width: 9px;
+        text-align: center;
+        line-height: 1;
+    }
+    .tv-skill-chip.zero { opacity: 0.38; }
+    .tv-skill-chip.flex {
+        border-style: dashed;
+        border-color: rgba(201,168,76,0.5);
+    }
+    .tv-skill-chip.special { border-color: rgba(176,138,255,0.45); }
+
+    /* ── Z4 · Mission rail — Missions of the Realm + My Missions, top-right ── */
+    .tv-mission-rail {
+        position: absolute;
+        top: 6px;
+        right: max(8px, env(safe-area-inset-right));
+        display: flex;
+        align-items: stretch;
+        gap: 4px;
+        z-index: 6;
+    }
+    .tv-mission-rail .tv-mission {
+        width: 37px;
+        border-radius: 4px;
+        box-shadow: 0 3px 8px rgba(0,0,0,0.5);
+    }
+    .tv-mission-rail .tv-mission:hover {
+        transform: translateY(-2px) scale(1.05);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.55), 0 0 10px rgba(201,168,76,0.3);
+    }
+    .tv-mym {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 1px;
+        padding: 2px 5px;
+        border-radius: 8px;
+        background: rgba(10,6,3,0.68);
+        border: 1px solid rgba(201,168,76,0.25);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        cursor: pointer;
+        font-family: 'Cinzel', serif;
+        font-size: 7.5px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        line-height: 1.1;
+        text-align: left;
+    }
+    .tv-mym:hover { border-color: var(--gold); }
+    .tv-mym .mym-a { color: var(--gold-light); }
+    .tv-mym .mym-d { color: #6ede82; }
+    .tv-mym .mym-f { color: #e88; }
+
+    /* ── Z5 · Your board, small — right column under the missions.
+       The ring rides the same %-track as the big overlay. ── */
+    .tv-board-thumb {
+        position: absolute;
+        top: 64px;
+        right: max(8px, env(safe-area-inset-right));
+        width: 118px;
         border: 2px solid var(--gold-dark);
         border-radius: 6px;
         overflow: hidden;
-        box-shadow: 0 3px 12px rgba(0,0,0,0.6);
-        z-index: 2;
         background: var(--wood-deepest);
+        box-shadow: 0 3px 10px rgba(0,0,0,0.55);
+        cursor: pointer;
+        z-index: 5;
         transition: border-color 0.2s;
     }
-    .pmat.active .pmat-boardwrap {
-        border-color: var(--gold-light);
-        box-shadow: 0 0 14px rgba(201,168,76,0.55), 0 3px 12px rgba(0,0,0,0.6);
+    .tv-board-thumb:hover { border-color: var(--gold); }
+    .tv-board-thumb .tv-thumb-board {
+        display: block;
+        width: 100%;
+        height: auto;
     }
-    /* Full board (no crop) so the slider track at the bottom is visible.
-       Your board is the only full mat on the table now — give it presence. */
-    .pmat-board { display: block; height: auto; }
-    .pmat.you .pmat-board { width: 174px; }
-
-    /* Gold ring on the slider track (left% set inline per slider slot). */
-    .pmat-ring {
+    .tv-board-thumb .thumb-ring {
         position: absolute;
-        top: 88%;
         width: 11%;
         aspect-ratio: 1;
         transform: translate(-50%, -50%);
         pointer-events: none;
         filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
-        z-index: 3;
     }
-    .pmat.you .pmat-ring { width: 9.5%; }
 
-    .pmat-name {
+    /* ── Z6 · Center stage — YOUR played cards as tucked skill stacks.
+       Every focus moment (overlays, action panel, FX) lands over this. ── */
+    .tv-stage {
         position: absolute;
-        top: 2px; left: 3px;
-        font-family: 'Cinzel', serif;
-        font-size: 8px;
-        letter-spacing: 0.5px;
-        color: var(--gold-light);
-        background: rgba(14,7,2,0.72);
-        border-radius: 4px;
-        padding: 1px 6px;
-    }
-
-    /* ── Tokens laid out on the board (bottom-left corner cluster) ── */
-    .pmat-tokens {
-        position: absolute;
-        left: 3px; bottom: 3px;
-        display: flex;
-        gap: 3px;
-    }
-    .pmat-tok {
-        display: flex;
-        align-items: center;
-        gap: 2px;
-        padding: 1px 4px 1px 1px;
-        border-radius: 9px;
-        background: rgba(10,6,3,0.62);
-        box-shadow: 0 1px 3px rgba(0,0,0,0.5);
-    }
-    .pmat-tok img {
-        width: 14px; height: 14px; border-radius: 50%;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.5);
-    }
-    .pmat-tok-favor {
-        width: 14px; height: 14px; border-radius: 50%;
-        display: flex; align-items: center; justify-content: center;
-        background: radial-gradient(circle at 40% 35%, #8cc8ff, #2f6bb0);
-        color: #fff; font-size: 9px;
-    }
-    .pmat-tok b {
-        font-family: 'Cinzel', serif; font-weight: 900; font-size: 9px;
-        color: var(--gold-light); line-height: 1;
-    }
-    .pmat-tok.scorn b { color: #f0a0a0; }
-    .pmat-tok.favor b { color: #a9d4ff; }
-
-    /* Played cards tucked under the board (deeper tuck — peek less). */
-    .pmat-cards {
+        left: 66px;
+        right: 138px;
+        top: 62px;
+        bottom: 100px;
         display: flex;
         justify-content: center;
-        margin-top: -18px;
-        padding-top: 18px;
-        min-height: 18px;
-        z-index: 1;
+        align-items: flex-start;
+        gap: 10px;
+        z-index: 2;
+        --tvStackCardH: clamp(64px, 24dvh, 96px);
     }
-    .pmat-card {
-        width: 22px;
-        height: 31px;
-        border-radius: 2px;
-        object-fit: cover;
-        border: 1px solid rgba(201,168,76,0.3);
-        box-shadow: 0 2px 5px rgba(0,0,0,0.5);
-        margin-left: -13px;
-    }
-    .pmat-card:first-child { margin-left: 0; }
-    .pmat-empty {
-        font-family: 'Cinzel', serif;
-        font-size: 7px;
-        letter-spacing: 1px;
-        color: var(--gold-dark);
-        opacity: 0.6;
-        align-self: center;
-    }
-
-    /* ── Center stage — missions are the main event (Wingspan scale).
-       Big readable cards under a plaque, sitting in the pool of light. ── */
-    .tv-center {
-        position: absolute;
-        top: 46%; left: 50%;
-        transform: translate(-50%, -50%);
+    .tv-stack {
         display: flex;
         flex-direction: column;
         align-items: center;
+        position: relative;
+    }
+    .tv-stack-card {
+        width: calc(var(--tvStackCardH) * 0.666);
+        height: var(--tvStackCardH);
+        border-radius: 4px;
+        object-fit: cover;
+        border: 1px solid rgba(201,168,76,0.3);
+        box-shadow: 0 3px 10px rgba(0,0,0,0.55);
+    }
+    .tv-stack-card + .tv-stack-card {
+        margin-top: calc(var(--tvPeek, 20px) - var(--tvStackCardH));
+    }
+    .tv-stack-card.doubled {
+        box-shadow: 0 0 0 2px rgba(255,200,80,0.9), 0 0 12px rgba(255,190,60,0.5), 0 3px 10px rgba(0,0,0,0.55);
+    }
+    .tv-stack-label {
+        font-family: 'Cinzel', serif;
+        font-size: 6.5px;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: var(--gold-dark);
+        opacity: 0.75;
+        margin-top: 3px;
+    }
+    .tv-stage-empty {
+        font-family: 'EB Garamond', serif;
+        font-style: italic;
+        font-size: 12px;
+        color: var(--gold-dark);
+        opacity: 0.55;
+        align-self: center;
+        letter-spacing: 1px;
+    }
+
+    /* ── Popovers (gear menu / My Missions) ── */
+    .tv-popover-host { display: none; }
+    .tv-popover-host.active {
+        display: block;
+        position: absolute;
+        inset: 0;
+        z-index: 70;
+        background: rgba(8,4,2,0.45);
+    }
+    .tv-pop {
+        position: absolute;
+        background: linear-gradient(160deg, var(--wood-darker) 0%, var(--wood-deepest) 100%);
+        border: 2px solid var(--gold-dark);
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        padding: 8px;
+        max-height: calc(100dvh - 60px);
+        overflow-y: auto;
+    }
+    .tv-pop.gear {
+        top: 34px;
+        left: max(8px, env(safe-area-inset-left));
+        width: 150px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+    .tv-pop.mym {
+        top: 58px;
+        right: max(8px, env(safe-area-inset-right));
+        width: 216px;
+    }
+    .tv-pop-title {
+        font-family: 'Cinzel', serif;
+        font-size: 9px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: var(--gold);
+        text-align: center;
+        margin-bottom: 6px;
+    }
+    .tv-pop-item {
+        font-family: 'Cinzel', serif;
+        font-size: 11px;
+        letter-spacing: 0.5px;
+        text-align: left;
+        color: var(--gold-light);
+        background: rgba(201,168,76,0.08);
+        border: 1px solid rgba(201,168,76,0.25);
+        border-radius: 8px;
+        padding: 8px 10px;
+        cursor: pointer;
+    }
+    .tv-pop-item:hover { border-color: var(--gold); background: rgba(201,168,76,0.14); }
+
+    /* ── Legacy center missions — replaced by the Z4 mission rail; the
+       ruleset below only feeds the shared .tv-mission thumb styles until
+       the kill pass removes it. ── */
+    .tv-center {
+        display: none;
+        position: absolute;
+        top: 46%; left: 50%;
+        transform: translate(-50%, -50%);
+        flex-direction: column;
+        align-items: center;
         gap: 6px;
-        z-index: 4; /* above .tv-seats (2) so missions are tappable */
+        z-index: 4;
     }
     .tv-center-label {
         font-family: 'Cinzel', serif;
@@ -2929,99 +3186,16 @@ html, body {
     }
     .tv-mission.ghost:hover { transform: none; border-color: rgba(201,168,76,0.3); }
 
-    /* ── You: full mat anchored bottom-left (the Battlegrounds hero seat).
-       Rivals no longer take table space — they live in the top rail. */
-    .pmat.seat-bottom { bottom: 40px; left: 10px; transform: none; z-index: 46; }
+    /* The floating music/log buttons relocate into the ⚙ popover here. */
+    .music-toggle, .log-toggle { display: none; }
 
-    /* ── Rival rail (Battlegrounds-style): upright portrait plaques along
-       the top edge — same public info the old rotated mats carried
-       (tokens, ring slot, played-card count), a fraction of the space. */
-    .tv-rivals {
-        position: absolute;
-        top: 5px;
-        left: 50%;
-        transform: translateX(-50%);
-        display: flex;
-        gap: 8px;
-        z-index: 3;
-        max-width: calc(100vw - 300px); /* clear the phase pill + music/log buttons */
-    }
-    .tv-rivals .pmat.rplq {
-        position: static;              /* rail children flow; not seated absolutely */
-        flex-direction: row;
-        align-items: center;
-        gap: 6px;
-        padding: 4px 9px 4px 4px;
-        border: 2px solid var(--gold-dark);
-        border-radius: 10px;
-        background: linear-gradient(160deg, rgba(46,26,12,0.92), rgba(24,12,5,0.94));
-        box-shadow: 0 3px 10px rgba(0,0,0,0.55);
-        min-width: 0;
-        transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
-    }
-    .tv-rivals .pmat.rplq:hover { border-color: var(--gold); }
-    .tv-rivals .pmat.rplq.active {
-        border-color: var(--gold-light);
-        box-shadow: 0 0 14px rgba(201,168,76,0.6), 0 3px 10px rgba(0,0,0,0.55);
-        transform: translateY(2px) scale(1.04);
-    }
-    .rplq-portrait {
-        width: 42px; height: 42px;
-        border-radius: 7px;
-        overflow: hidden;
-        border: 1px solid rgba(201,168,76,0.45);
-        flex-shrink: 0;
-    }
-    .rplq-portrait img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .rplq-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .rplq-name {
-        font-family: 'Cinzel', serif;
-        font-size: 9px;
-        letter-spacing: 0.5px;
-        color: var(--gold-light);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 104px;
-    }
-    /* .pmat-tokens is absolutely positioned on full mats — flow it in the rail. */
-    .rplq-chips { position: static; left: auto; bottom: auto; }
-    .rplq-foot { display: flex; align-items: center; gap: 7px; }
-    .rplq-ring { display: flex; gap: 2px; align-items: center; }
-    .rplq-ringdot {
-        width: 5px; height: 5px;
-        border-radius: 50%;
-        background: rgba(201,168,76,0.25);
-        display: inline-block;
-    }
-    .rplq-ringdot.on {
-        background: var(--gold-light);
-        box-shadow: 0 0 4px rgba(240,210,120,0.9);
-    }
-    .rplq-cards {
-        font-family: 'Cinzel', serif;
-        font-size: 8px;
-        color: var(--gold-dark);
-        letter-spacing: 0.5px;
-    }
-
-    /* ═══ DRAWERS ═══ */
-    .tv-drawer-tab {
-        position: absolute;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: linear-gradient(180deg, var(--wood-dark), var(--wood-deepest));
-        border: 2px solid var(--gold-dark);
-        color: var(--gold);
-        cursor: pointer;
-        z-index: 2;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
-    }
-    .tv-drawer-tab:hover { color: var(--gold-light); border-color: var(--gold); }
+    /* ═══ LEGACY DRAWERS — replaced by the always-visible HUD zones.
+       Hidden here; DOM + JS die in the kill pass. ═══ */
+    .tv-drawer-tab { display: none; }
 
     /* ── Left drawer: your skills / ring / act ── */
     .tv-left-drawer {
+        display: none;
         position: absolute;
         top: 58px;
         bottom: 38px;
@@ -3072,33 +3246,37 @@ html, body {
         font-size: 12px;
     }
 
-    /* ── Hand drawer: auto/manual, slides up from the bottom ── */
+    /* ── Z7 · Hand strip — ALWAYS visible, card bottoms cropped ~18%.
+       The strip hangs 26px past the screen edge and #table-view's
+       overflow:hidden does the cropping — never overflow on the strip
+       itself, or it would clip the bloom. ── */
     .tv-hand-drawer {
         position: absolute;
-        left: 0; right: 0; bottom: 0;
-        height: 142px;
+        left: 0; right: 0;
+        bottom: -28px;
+        height: 148px;
         z-index: 45;
-        transform: translateY(calc(100% - 34px)); /* closed: card-tops peek */
-        transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+        transform: none !important; /* the drawer never slides again */
     }
-    .tv-hand-drawer.open { transform: translateY(0); }
     .tv-hand-drawer::before {
         content: '';
         position: absolute; inset: 0;
         background: linear-gradient(0deg,
-            rgba(22,10,3,0.98) 0%, rgba(35,18,7,0.9) 55%, rgba(42,22,10,0.35) 100%);
-        box-shadow: inset 0 6px 18px rgba(0,0,0,0.4);
+            rgba(22,10,3,0.95) 0%, rgba(35,18,7,0.8) 50%, rgba(42,22,10,0) 100%);
+        box-shadow: inset 0 6px 18px rgba(0,0,0,0.3);
         z-index: 0;
     }
-    /* Hand tab parked at the right corner — where a landscape thumb actually
-       rests — instead of mid-screen under the center mission. */
-    .tv-drawer-tab.hand {
-        top: -22px; left: auto; right: 12px;
-        transform: none;
-        width: 64px; height: 22px;
-        border-bottom: none;
-        border-radius: 10px 10px 0 0;
-        font-size: 12px;
+    /* "Your turn" pulse along the strip's top edge (replaces the
+       auto-opening drawer as the signal that you're up). */
+    .tv-hand-drawer.your-turn::after {
+        content: '';
+        position: absolute;
+        left: 8%; right: 8%; top: 24px;
+        height: 2px;
+        border-radius: 2px;
+        background: linear-gradient(90deg, transparent, rgba(240,210,120,0.85), transparent);
+        animation: tvTurnPulse 2.2s ease-in-out infinite;
+        pointer-events: none;
     }
     .tv-hand {
         position: relative;
@@ -3131,21 +3309,24 @@ html, body {
        both are set by _tvBloomLayout() in ui.js. Touch gets ONLY the
        JS-managed .bloom — sticky mobile :hover next to it showed two
        bloomed cards at once. */
+    /* The strip crops the resting card's bottom ~18% below the screen
+       edge, so the bloom lifts 28px: 22px to clear the crop + the old
+       6px of breathing room. _tvBloomLayout()'s breathe stays honest. */
     .tv-hand .hand-card.bloom {
-        transform: translateX(var(--bloomShift, 0px)) translateY(-6px) scale(var(--bloomScale, 2.8)) !important;
+        transform: translateX(var(--bloomShift, 0px)) translateY(-28px) scale(var(--bloomScale, 2.8)) !important;
         transform-origin: bottom center;
         z-index: 60;
     }
     @media (hover: hover) {
-        .tv-hand-drawer.open .tv-hand .hand-card:hover {
-            transform: translateX(var(--bloomShift, 0px)) translateY(-6px) scale(var(--bloomScale, 2.8)) !important;
+        .tv-hand-drawer .tv-hand .hand-card:hover {
+            transform: translateX(var(--bloomShift, 0px)) translateY(-28px) scale(var(--bloomScale, 2.8)) !important;
             transform-origin: bottom center;
             z-index: 60;
         }
     }
     /* Selected keeps a modest lift — the action sheet already shows it big. */
     .tv-hand .hand-card.selected {
-        transform: translateY(-24px) scale(1.16) !important;
+        transform: translateY(-38px) scale(1.16) !important;
         z-index: 30;
         filter: drop-shadow(0 0 10px rgba(240,210,120,0.65));
     }
@@ -3199,8 +3380,10 @@ html, body {
     .action-panel .action-buttons { gap: 6px; margin-top: 4px; }
     .action-panel .action-btn { padding: 8px 14px !important; font-size: 11px !important; }
 
-    /* ── Right drawer: your acquired missions ── */
+    /* ── Right drawer: your acquired missions (rows reused by the
+       My Missions popover — .tv-mission-row styles below stay) ── */
     .tv-right-drawer {
+        display: none;
         position: absolute;
         top: 58px;
         bottom: 38px;
@@ -3300,8 +3483,8 @@ html, body {
     .opp-turn-new-effect { font-size: 11px; max-width: 88vw; line-height: 1.35; }
     .spotlight-player { font-size: 12px !important; letter-spacing: 1px !important; }
     .spotlight-dismiss { font-size: 9px; }
-    /* Human's own quick banner clears the hand drawer. */
-    .mini-spotlight { bottom: 150px; }
+    /* Human's own quick banner clears the hand strip. */
+    .mini-spotlight { bottom: 128px; }
 
     /* ── Opponent inspect: big readable board + toggle to reveal cards ── */
     .opp-ov-inner {
@@ -3382,6 +3565,11 @@ html, body {
 }
 
 /* ─── PHASE C ANIMATIONS (global keyframes + FX element styles) ─── */
+@keyframes tvTurnPulse {
+    0%, 100% { opacity: 0.25; }
+    50%      { opacity: 1; }
+}
+
 .tv-token-drop {
     position: fixed;
     transform: translate(-50%, -140%);

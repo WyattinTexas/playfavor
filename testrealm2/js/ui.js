@@ -1047,15 +1047,9 @@ function renderPhaseBar(state) {
     const acts = ['I', 'II', 'III'];
     const compact = isCompactLandscape();
     const phaseText = compact ? formatPhaseShort(state.phase) : formatPhase(state.phase);
-    // On the table view the pill also carries your purse — gold must be
-    // readable at all times, not buried on the dimmed board.
-    const purse = compact
-        ? `<span class="purse"><img src="${TOKEN_IMG.gold}" alt="Gold"><b>${state.players[0].gold}</b></span>`
-        : '';
     bar.innerHTML = `
         <span class="act-tag">Act ${acts[state.currentAct - 1] || state.currentAct}</span>
         <span class="phase-text">${phaseText}</span>
-        ${purse}
     `;
 }
 
@@ -1514,6 +1508,295 @@ function buildRivalPlaque(i, state) {
         </div>`;
 }
 
+// ═══ WINGSPAN HUD ZONES (phone landscape) ═══════════════════
+// Every zone glanceable at once — no drawers. All CSS lives inside the
+// compact-landscape media query; desktop .game-layout is untouched.
+
+// Tap a HUD chip → a transient name label (phones have no hover).
+function tvChipTip(e, label) {
+    if (e) e.stopPropagation();
+    const old = document.getElementById('tvChipTip');
+    if (old) old.remove();
+    const target = e && (e.currentTarget || e.target);
+    if (!target || !target.getBoundingClientRect) return;
+    const r = target.getBoundingClientRect();
+    const tip = document.createElement('div');
+    tip.id = 'tvChipTip';
+    tip.textContent = label;
+    document.body.appendChild(tip);
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.max(6, Math.min(r.right + 8, window.innerWidth - w - 6)) + 'px';
+    tip.style.top = Math.max(6, Math.min(r.top + r.height / 2 - h / 2, window.innerHeight - h - 6)) + 'px';
+    setTimeout(() => { tip.classList.add('out'); setTimeout(() => tip.remove(), 260); }, 1300);
+}
+
+// ── Z1 · Purse — your four currencies + settings, top-left ──
+const PURSE_ICONS = {
+    gold:  'assets/icons/gold.png',
+    favor: 'assets/icons/favor.png',
+    scorn: 'assets/icons/scorn.png',
+};
+
+function renderTvPurse(state) {
+    const el = document.getElementById('tvPurse');
+    if (!el) return;
+    const p = state.players[0];
+    const chip = (k, img, val, label) =>
+        `<span class="tv-purse-chip ${k}" onclick="tvChipTip(event, '${label}')">
+            <img src="${img}" alt="${label}"><b>${val}</b></span>`;
+    el.innerHTML =
+        chip('gold', PURSE_ICONS.gold, p.gold, 'Gold')
+      + chip('favor', PURSE_ICONS.favor, p.favor || 0, 'Favor')
+      + chip('scorn', PURSE_ICONS.scorn, p.scorn, 'Scorn')
+      + chip('prestige', TOKEN_IMG.prestige, p.prestige, 'Prestige')
+      + `<button class="tv-gear" onclick="event.stopPropagation(); toggleGearPopover()" title="Settings">⚙</button>`;
+}
+
+// ── Z2 · Skill rail — always-visible icon+number chips, left edge.
+// Same data logic as the old skills drawer: six fixed skills (dim at 0),
+// flex-skill pairs as dashed ✦ chips, then Mind's Eye / Philosopher's
+// Stone only when owned. Icon + number only; tap a chip for its name.
+function renderTvSkills(state) {
+    const el = document.getElementById('tvSkills');
+    if (!el) return;
+    const player = state.players[0];
+    const gp = game.players[0];
+    const skills = player.skills || {};
+    const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+    let h = '', rows = 0;
+
+    ['survival', 'charisma', 'alchemy', 'prospecting', 'knowledge', 'power'].forEach(k => {
+        const val = skills[k] || 0;
+        h += `<span class="tv-skill-chip${val > 0 ? '' : ' zero'}"
+                    onclick="tvChipTip(event, '${cap(k)}')">${SKILL_ICONS[k]}<b>${val}</b></span>`;
+        rows++;
+    });
+
+    const flexPairs = {};
+    (player.flexSkills || []).forEach(pair => {
+        const key = pair.join('|');
+        flexPairs[key] = (flexPairs[key] || 0) + 1;
+    });
+    Object.entries(flexPairs).forEach(([key, n]) => {
+        const [a, b] = key.split('|');
+        h += `<span class="tv-skill-chip flex"
+                    onclick="tvChipTip(event, '${cap(a)} or ${cap(b)} — one per use, never both')">
+                    ${SKILL_ICONS[a]}<b>${n > 1 ? '×' + n : '✦'}</b></span>`;
+        rows++;
+    });
+
+    const hasPhil = gp.philosopherStone && gp.philosopherStone > 0;
+    const hasMindsEye = (gp.playedCards || []).some(c =>
+        c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_x2_philosopher_stone_x5');
+    if (hasPhil) {
+        h += `<span class="tv-skill-chip special"
+                    onclick="tvChipTip(event, 'Philosopher\\'s Stone — ${gp.philosopherStone}:1')">
+                    ${SKILL_ICONS.philosopher}<b>${gp.philosopherStone}</b></span>`;
+        rows++;
+    }
+    if (hasMindsEye) {
+        h += `<span class="tv-skill-chip special"
+                    onclick="tvChipTip(event, 'Mind\\'s Eye')">
+                    ${SKILL_ICONS.minds_eye}<b>✓</b></span>`;
+        rows++;
+    }
+
+    el.style.setProperty('--railRows', rows);
+    el.innerHTML = h;
+}
+
+// ── Z3 · Seat chips — one compact portrait per player, YOU first.
+// CRITICAL: every chip keeps .pmat + data-pi — tvAnimateDeltas /
+// tvDropToken / tvAnimateNewCard and the coach-marks all target
+// #table-view .pmat[data-pi] (tvMatEl).
+function buildSeatChip(i, state) {
+    const p = state.players[i];
+    const char = game.players[i] ? game.players[i].character : null;
+    const artSrc = char ? `assets/characters/${char.filename}` : '';
+    const isActive = state.activePlayerIndex === i;
+    const isYou = i === 0;
+    const crown = state.emblemHolder === i ? '<span class="chip-crown">👑</span>' : '';
+    const youTag = isYou ? '<span class="chip-you">YOU</span>' : '';
+    const cardCount = (p.playedCards || []).length;
+    const open = isYou ? 'openBoardOverlay()' : `openOppOverlay(${i})`;
+    return `
+        <div class="pmat ${isYou ? 'you' : 'opp'} seat-chip${isActive ? ' active' : ''}" data-pi="${i}"
+             onclick="event.stopPropagation(); ${open}" title="${p.name}">
+            <img class="chip-art" src="${artSrc}" alt="${p.name}">
+            ${crown}${youTag}
+            <span class="chip-count" title="Cards played">${cardCount}</span>
+        </div>`;
+}
+
+// ── Z4 · Mission rail — Missions of the Realm + the My Missions chip ──
+function renderTvMissionRail(state) {
+    const el = document.getElementById('tvMissionRail');
+    if (!el) return;
+    const ms = state.visibleMissions || [];
+    let h = '';
+    ms.forEach(m => {
+        h += `<img class="tv-mission" src="assets/cards/missions/${m.filename}"
+                   alt="${m.name}" data-peek="assets/cards/missions/${m.filename}"
+                   onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
+    });
+    for (let g = ms.length; g < 3; g++) h += '<span class="tv-mission ghost"></span>';
+
+    const gp = game.players[0];
+    const a = (gp.missions || []).length;
+    const d = (gp.completedMissions || []).length;
+    const f = (gp.failedMissions || []).length;
+    h += `<button class="tv-mym" title="Your missions"
+                  onclick="event.stopPropagation(); toggleMyMissions()">
+            <span class="mym-a">● ${a}</span>
+            <span class="mym-d">✓ ${d}</span>
+            <span class="mym-f">✕ ${f}</span>
+          </button>`;
+    el.innerHTML = h;
+}
+
+// ── Z5 · Your board, small — the ring rides BOARD_OV_TRACK exactly like
+// the big overlay, so the mini board always shows where you stand. ──
+function renderTvBoardThumb(state) {
+    const el = document.getElementById('tvBoardThumb');
+    if (!el) return;
+    const char = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
+    if (!char) return;
+    const cur = (game && game.players[0]) ? game.players[0].sliderPosition : 2;
+    el.innerHTML = `
+        <img class="tv-thumb-board" src="assets/characters/${char.filename}" alt="${char.name}">
+        <img class="thumb-ring" src="assets/ui/slider-ring.png" alt=""
+             style="left:${BOARD_OV_TRACK.lefts[cur]}%; top:${BOARD_OV_TRACK.top}%">`;
+    el.onclick = () => openBoardOverlay();
+}
+
+// ── Z6 · Center stage — YOUR played cards as tucked skill stacks.
+// The stage is also where every focus moment lands (action panel,
+// overlays, melee splash, #tvFx deltas) — those live above it.
+function renderTvStage(state) {
+    const el = document.getElementById('tvStage');
+    if (!el) return;
+    const cards = state.players[0].playedCards || [];
+    if (!cards.length) {
+        el.innerHTML = '<div class="tv-stage-empty">Cards you play gather here</div>';
+        return;
+    }
+    const groups = {};
+    cards.forEach(c => {
+        const g = getCardSkillGroup(c);
+        (groups[g] = groups[g] || []).push(c);
+    });
+    const keys = Object.keys(groups).sort((x, y) =>
+        (SKILL_GROUPS[x] ? SKILL_GROUPS[x].order : 99) - (SKILL_GROUPS[y] ? SKILL_GROUPS[y].order : 99));
+    let h = '';
+    keys.forEach(k => {
+        const list = groups[k];
+        // Tall stacks tighten their tuck so the stage never overflows.
+        const peek = list.length > 5 ? Math.max(11, Math.floor(100 / (list.length - 1))) : 20;
+        h += `<div class="tv-stack" style="--tvPeek:${peek}px">`;
+        list.forEach(c => {
+            h += `<img class="tv-stack-card${c._favorDoubled ? ' doubled' : ''}"
+                       src="assets/cards/regular/${c.filename}" alt="${c.name}"
+                       data-peek="assets/cards/regular/${c.filename}">`;
+        });
+        h += `<span class="tv-stack-label">${SKILL_GROUPS[k] ? SKILL_GROUPS[k].label : 'Other'}</span></div>`;
+    });
+    el.innerHTML = h;
+}
+
+// ── Popovers (gear menu / My Missions) — the action panel steps aside
+// while one is up (#actionPanel is a ROOT child at z 9999 and would
+// otherwise paint over it), then comes back on close. ──
+let _tvPopover = null;
+let _tvPanelAside = false;
+
+function _tvPanelStepAside() {
+    const panel = document.getElementById('actionPanel');
+    if (panel && panel.classList.contains('active')) {
+        panel.classList.remove('active');   // direct toggle — survives the _finalChoicePending guard
+        _tvPanelAside = true;
+    }
+}
+function _tvPanelRestore() {
+    if (!_tvPanelAside) return;
+    _tvPanelAside = false;
+    const panel = document.getElementById('actionPanel');
+    if (panel) panel.classList.add('active');
+}
+
+function closeTvPopover(restorePanel = true) {
+    if (!_tvPopover) return;
+    _tvPopover = null;
+    const host = document.getElementById('tvPopoverHost');
+    if (host) { host.classList.remove('active'); host.innerHTML = ''; }
+    if (restorePanel) _tvPanelRestore();
+    if (typeof coachTick === 'function') coachTick();
+}
+
+function _gearMusicLabel() {
+    return `♫ Music: ${musicPlaying ? 'On' : 'Off'}`;
+}
+
+function toggleGearPopover() {
+    if (_tvPopover === 'gear') return closeTvPopover();
+    openTvPopover('gear');
+}
+function toggleMyMissions() {
+    if (_tvPopover === 'mym') return closeTvPopover();
+    openTvPopover('mym');
+}
+
+// One dismissible list row per acquired mission — same info and lightbox
+// tap as the old missions drawer. Rows close the popover first so the
+// lightbox has the stage to itself.
+function buildMyMissionRows() {
+    const gp = game.players[0];
+    let rows = '';
+    const entry = (m, cls, tag) => {
+        const reqs = (m.requirements || []).map(r => SKILL_ABBR[r] || r.slice(0, 3).toUpperCase()).join(' + ') || '—';
+        return `<div class="tv-mission-row ${cls}"
+                     onclick="event.stopPropagation(); closeTvPopover(false); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">
+            <img class="tv-mission-thumb" src="assets/cards/missions/${m.filename}" alt="${m.name}"
+                 data-peek="assets/cards/missions/${m.filename}">
+            <div class="tv-mission-info">
+                <span class="tv-mission-name">${m.name}</span>
+                <span class="tv-mission-meta">${m.favorValue || 0} Favor · ${reqs}</span>
+            </div>
+            <span class="tv-mission-tag">${tag}</span>
+        </div>`;
+    };
+    (gp.missions || []).forEach(m => rows += entry(m, 'active', '●'));
+    (gp.completedMissions || []).forEach(m => rows += entry(m, 'done', '✓'));
+    (gp.failedMissions || []).forEach(m => rows += entry(m, 'failed', '✕'));
+    if (!rows) rows = '<div class="tv-right-empty">No missions taken yet.<br>Play a mission card to acquire one.</div>';
+    return rows;
+}
+
+function openTvPopover(kind) {
+    const host = document.getElementById('tvPopoverHost');
+    if (!host) return;
+    closeTvPopover(false);
+    _tvPanelStepAside();
+    _tvPopover = kind;
+    if (kind === 'gear') {
+        host.innerHTML = `
+            <div class="tv-pop gear" onclick="event.stopPropagation()">
+                <button class="tv-pop-item" id="gearMusic"
+                        onclick="event.stopPropagation(); toggleMusic(); this.textContent = _gearMusicLabel();">${_gearMusicLabel()}</button>
+                <button class="tv-pop-item" onclick="closeTvPopover(); toggleLog();">📜 Game Log</button>
+                <button class="tv-pop-item" onclick="closeTvPopover(); showRules();">? How to Play</button>
+            </div>`;
+    } else {
+        host.innerHTML = `
+            <div class="tv-pop mym" onclick="event.stopPropagation()">
+                <div class="tv-pop-title">Your Missions</div>
+                ${buildMyMissionRows()}
+            </div>`;
+    }
+    host.classList.add('active');
+    host.onclick = () => closeTvPopover();
+    if (typeof coachTick === 'function') coachTick();
+}
+
 function renderTvCenter(state) {
     const c = document.getElementById('tvCenter');
     if (!c) return;
@@ -1538,6 +1821,15 @@ function renderTvHand(state) {
     if (!zone) return;
     const hand = state.players[0].hand;
 
+    // Playable glow (Battlegrounds-style): on your turn, cards you can
+    // actually play get a soft green edge so options read at a glance.
+    const myTurn = state.activePlayerIndex === 0 && state.phase === 'gameplay';
+
+    // "Your turn" pulse on the always-visible strip (replaces the old
+    // auto-opening drawer as the turn signal).
+    const strip = document.getElementById('tvHandStrip') || document.getElementById('tvHandDrawer');
+    if (strip) strip.classList.toggle('your-turn', myTurn && !!(hand && hand.length));
+
     if (!hand || hand.length === 0) {
         zone.innerHTML = game.phase === 'gameplay'
             ? '<div class="tv-hand-waiting">Waiting for next phase…</div>' : '';
@@ -1548,10 +1840,6 @@ function renderTvHand(state) {
     const maxAngle = Math.min(count * 3, 12);
     const step = count > 1 ? (maxAngle * 2) / (count - 1) : 0;
     const startAngle = -maxAngle;
-
-    // Playable glow (Battlegrounds-style): on your turn, cards you can
-    // actually play get a soft green edge so options read at a glance.
-    const myTurn = state.activePlayerIndex === 0 && state.phase === 'gameplay';
 
     let html = '<div class="hand-arc">';
     hand.forEach((card, i) => {
@@ -1800,37 +2088,24 @@ function renderTableView(state) {
     const seatsEl = document.getElementById('tvSeats');
     if (!seatsEl) return;
 
-    // You: full mat, bottom-left anchor. Rivals: compact plaque rail, top.
-    let html = buildPlayerMat(0, state, true, 'bottom');
-    html += '<div class="tv-rivals">';
-    state.players.forEach((p, i) => { if (i !== 0) html += buildRivalPlaque(i, state); });
-    html += '</div>';
-    seatsEl.innerHTML = html;
+    // Z3 — one seat chip per player, YOU first (seat order = index order).
+    seatsEl.innerHTML = state.players.map((p, i) => buildSeatChip(i, state)).join('');
 
-    renderTvCenter(state);
+    renderTvPurse(state);
+    renderTvSkills(state);
+    renderTvMissionRail(state);
+    renderTvBoardThumb(state);
+    renderTvStage(state);
     renderTvHand(state);
+
+    // Legacy drawers (hidden by the HUD CSS) — kept warm until the kill pass.
+    renderTvCenter(state);
     renderTvLeft(state);
     renderTvRight(state);
+    applyDrawerStates();
 
     // Tabletop motion: animate any per-player deltas since the last render.
     tvAnimateDeltas(state);
-
-    // Auto-open the hand when the turn context changes to the human's turn to
-    // act; tuck it otherwise. Manual arrow toggles persist within a turn.
-    const sig = state.phase + ':' + state.activePlayerIndex;
-    if (sig !== _tvTurnSig) {
-        _tvTurnSig = sig;
-        const hand = state.players[0].hand;
-        const myTurn = state.activePlayerIndex === 0
-            && hand && hand.length > 0
-            && state.phase !== 'scoring' && state.phase !== 'game_over';
-        tvHandOpen = myTurn;
-    }
-    // Tutorial: while the early tips (board, missions) are still up, keep the
-    // hand tucked so the "this is your board" prompt isn't blocked. The 'hand'
-    // tip itself opens the drawer when it's reached.
-    if (typeof coachTuckHand === 'function' && coachTuckHand()) tvHandOpen = false;
-    applyDrawerStates();
 
     // Prong 2: re-evaluate contextual coach-marks after each table render.
     coachTick();

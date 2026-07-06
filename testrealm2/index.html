@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — Test Realm</title>
     <link rel="stylesheet" href="css/style.css?v=20260706174540">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
@@ -10,7 +10,7 @@
 <body>
 
     <!-- TEST REALM build marker -->
-    <div style="position:fixed;top:0;right:0;z-index:99999;background:#7a1f1f;color:#ffd97a;font:700 9px 'Cinzel',serif;letter-spacing:2px;padding:3px 10px;border-radius:0 0 0 8px;pointer-events:none;opacity:.85;text-align:center">TEST REALM<div id="buildVersion" style="font:600 8px monospace;letter-spacing:0;color:#e8caa0;margin-top:1px"></div></div>
+    <div id="testRealmBadge" style="position:fixed;top:0;right:0;z-index:99999;background:#7a1f1f;color:#ffd97a;font:700 9px 'Cinzel',serif;letter-spacing:2px;padding:3px 10px;border-radius:0 0 0 8px;pointer-events:none;opacity:.85;text-align:center">TEST REALM<div id="buildVersion" style="font:600 8px monospace;letter-spacing:0;color:#e8caa0;margin-top:1px"></div></div>
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         var ui = document.querySelector('script[src*="ui.js"]');
@@ -179,16 +179,37 @@
             <div class="hand-zone" id="handZone"></div>
         </div>
 
-        <!-- ═══ TABLE VIEW (phone landscape only) ═══ -->
+        <!-- ═══ TABLE VIEW (phone landscape only) — Wingspan-style HUD ═══
+             Every zone glanceable at once: purse (Z1), skill rail (Z2),
+             seat chips (Z3), mission rail (Z4), board thumb (Z5),
+             center stage (Z6), hand strip (Z7), phase pill (Z8, screen-level). -->
         <div id="table-view">
             <!-- The table itself — always visible -->
             <div class="tv-table">
-                <!-- Center — available missions -->
-                <div class="tv-center" id="tvCenter"></div>
+                <!-- Z6 · Center stage — YOUR played cards; every focus moment lands here -->
+                <div class="tv-stage" id="tvStage"></div>
 
-                <!-- Player mats — seated around the center by player count -->
+                <!-- Z3 · Seat chips — every player, YOU first (keeps .pmat/data-pi for FX) -->
                 <div class="tv-seats" id="tvSeats"></div>
+
+                <!-- legacy center missions — hidden by the HUD (dies with the drawers) -->
+                <div class="tv-center" id="tvCenter"></div>
             </div>
+
+            <!-- Z1 · Purse + settings — top-left -->
+            <div class="tv-purse" id="tvPurse"></div>
+
+            <!-- Z2 · Skill rail — left edge, always visible -->
+            <div class="tv-skills" id="tvSkills"></div>
+
+            <!-- Z4 · Missions of the Realm + My Missions — top-right -->
+            <div class="tv-mission-rail" id="tvMissionRail"></div>
+
+            <!-- Z5 · Your board + ring — right, under the missions -->
+            <div class="tv-board-thumb" id="tvBoardThumb"></div>
+
+            <!-- Popover host — gear menu / My Missions list -->
+            <div class="tv-popover-host" id="tvPopoverHost"></div>
 
             <!-- Left drawer — your skills / ring / act (arrow to open) -->
             <div class="tv-left-drawer" id="tvLeftDrawer">
