@@ -3163,7 +3163,11 @@ html, body {
         bottom: -28px;
         height: 148px;
         z-index: 45;
+        /* Only the cards are interactive — the full-width band must not
+           eat taps aimed at the skill rail's bottom chip or the table. */
+        pointer-events: none;
     }
+    .tv-hand-strip .hand-card { pointer-events: auto; }
     .tv-hand-strip::before {
         content: '';
         position: absolute; inset: 0;

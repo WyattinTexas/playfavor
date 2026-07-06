@@ -83,11 +83,21 @@ console.log('── Phone: glide blooms exactly one card (no sticky-hover double
     const rests = cards.filter(c => !c.classList.contains('bloom')).map(c => c.getBoundingClientRect().height);
     const restH = Math.min(...rests);
     const bloomed = cards.filter(c => c.getBoundingClientRect().height > restH * 1.6);
-    return { bloomedCount: bloomed.length, bloomClassCount: cards.filter(c => c.classList.contains('bloom')).length };
+    const b = document.querySelector('.tv-hand .hand-card.bloom');
+    const r = b ? b.getBoundingClientRect() : null;
+    return {
+      bloomedCount: bloomed.length,
+      bloomClassCount: cards.filter(c => c.classList.contains('bloom')).length,
+      bloom: r ? { top: r.top, bottom: r.bottom, h: r.height, vh: window.innerHeight } : null,
+    };
   });
   await page.screenshot({ path: join(SHOTS, 'phone-glide.png') });
   ok(mid.bloomedCount === 1, `mid-glide: exactly one enlarged card (got ${mid.bloomedCount})`);
   ok(mid.bloomClassCount === 1, 'exactly one .bloom class');
+  ok(mid.bloom && mid.bloom.h >= mid.bloom.vh * 0.88,
+    `bloom fills the screen (${mid.bloom ? Math.round(mid.bloom.h / mid.bloom.vh * 100) : 0}% of height)`);
+  ok(mid.bloom && mid.bloom.top >= 0 && mid.bloom.bottom <= mid.bloom.vh + 1,
+    'bloomed card fully on-screen despite the strip crop');
 
   await page.touchscreen.touchEnd();
   await sleep(400);
@@ -142,6 +152,14 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
     const strip = document.getElementById('tvHandStrip');
     return strip && getComputedStyle(strip).transform === 'none' && strip.querySelectorAll('.hand-card').length === 3;
   }), 'hand strip pinned open with the fan visible');
+
+  // Tap a skill chip → its transient name label (no hover on phones).
+  await page.evaluate(() => document.querySelector('#tvSkills .tv-skill-chip').click());
+  await sleep(150);
+  ok(await page.evaluate(() => {
+    const t = document.getElementById('tvChipTip');
+    return !!t && /survival/i.test(t.textContent);
+  }), 'skill chip tap shows its name tooltip');
 
   // Rival chip → full overlay, played cards one tap deeper.
   await page.evaluate(() => document.querySelector('#tvSeats .pmat.opp').click());
@@ -306,6 +324,67 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
   ok(coach.shown && coach.firstIsWelcome && coach.anchored, 'welcome tip shows framed on your seat chip');
   ok(coach.cleanCopy, 'no coach copy mentions drawers or arrows');
   await page.evaluate(() => skipAllCoach());
+  await page.close();
+}
+
+// ═══ PHONE: the HUD holds at every reference viewport — 5-player worst case ═══
+console.log('── Phone: 844/932/667 × 5 players — zones fit, nothing overlaps, no h-scroll');
+for (const [w, h] of [[844, 390], [932, 430], [667, 375]]) {
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push(`vp${w}: ` + m.text()); });
+  page.on('pageerror', e => consoleErrors.push(`vp${w} pageerror: ` + e.message));
+  await page.setViewport({ width: w, height: h, hasTouch: true, isMobile: true });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+      .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
+    b.click();
+  });
+  await page.waitForFunction(() => document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent, { timeout: 20000 });
+  await page.evaluate(() => {
+    document.getElementById('playerCountSelect').value = '5';
+    document.querySelector('.character-card').click();
+  });
+  await page.waitForFunction(() => document.getElementById('confirmBtn') && document.getElementById('confirmBtn').offsetParent, { timeout: 20000 });
+  await page.evaluate(() => document.getElementById('confirmBtn').click());
+  await page.waitForFunction(() => typeof game !== 'undefined' && game && game.players.length === 5, { timeout: 20000 });
+  await sleep(1000);
+  await page.evaluate(() => {
+    // Fullest rails: all skills + a flex chip + a special + missions.
+    const p = game.players[0];
+    p.skills = { survival: 2, charisma: 1, alchemy: 3, prospecting: 1, knowledge: 2, power: 1 };
+    p.flexSkills = [['charisma', 'prospecting']];
+    p.philosopherStone = 1;
+    p.missions = [{ ...FAVOR_DATA.missions[3] }];
+    p.completedMissions = [{ ...FAVOR_DATA.missions[4] }];
+    if (typeof skipAllCoach === 'function') skipAllCoach();
+    renderGameState();
+    document.getElementById('notifications').innerHTML = '';
+    const fx = document.getElementById('tvFx'); if (fx) fx.innerHTML = '';
+  });
+  await sleep(300);
+  const m = await page.evaluate(() => {
+    const rect = id => { const r = document.getElementById(id).getBoundingClientRect(); return { id, l: r.left, t: r.top, r: r.right, b: r.bottom }; };
+    const zones = ['tvPurse', 'tvSkills', 'tvSeats', 'tvMissionRail', 'tvBoardThumb', 'phaseBar'].map(rect);
+    const z = id => zones.find(x => x.id === id);
+    const overlap = (a, b) => !(a.r <= b.l || b.r <= a.l || a.b <= b.t || b.b <= a.t);
+    const pairs = [
+      ['tvPurse', 'tvSeats'], ['tvSeats', 'tvMissionRail'], ['tvPurse', 'tvMissionRail'],
+      ['tvPurse', 'phaseBar'], ['tvSeats', 'phaseBar'], ['phaseBar', 'tvMissionRail'],
+      ['tvMissionRail', 'tvBoardThumb'], ['phaseBar', 'tvBoardThumb'],
+    ];
+    return {
+      chips: document.querySelectorAll('#tvSeats .pmat[data-pi]').length,
+      hits: pairs.filter(([a, b]) => overlap(z(a), z(b))).map(p => p.join('×')),
+      off: zones.filter(x => x.l < -1 || x.t < -1 || x.r > window.innerWidth + 1 || x.b > window.innerHeight + 1).map(x => x.id),
+      hscroll: document.documentElement.scrollWidth > window.innerWidth,
+    };
+  });
+  ok(m.chips === 5, `${w}x${h}: five seat chips render (${m.chips})`);
+  ok(m.hits.length === 0, `${w}x${h}: no HUD zones overlap (${m.hits.join(', ') || 'clean'})`);
+  ok(m.off.length === 0, `${w}x${h}: every zone fully on-screen (${m.off.join(', ') || 'clean'})`);
+  ok(!m.hscroll, `${w}x${h}: no horizontal scroll`);
+  await page.screenshot({ path: join(SHOTS, `hud-5p-${w}x${h}.png`) });
   await page.close();
 }
 
