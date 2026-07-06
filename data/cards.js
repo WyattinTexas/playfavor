@@ -20,7 +20,7 @@ window.FAVOR_DATA.cards = [
     cost: null, skills: ["alchemy"], requirements: [], rewards: {} },
 
   { id: cid(), name: "Cooking", audit: "1 Survival, 1 Alchemy. Req: 1 Knowledge, Act 1", filename: "Cooking Card.jpg", act: 1, type: "endeavor",
-    cost: null, skills: ["survival","alchemy"], requirements: ["knowledge"], rewards: {} },
+    cost: null, skills: ["survival", "alchemy"], requirements: ["knowledge"], rewards: {} },
 
   { id: cid(), name: "Dark Cauldron", audit: "2 Alchemy, Cost 1 Gold to play. Act 2", filename: "Dark Cauldron Card.jpg", act: 2, type: "endeavor",
     cost: 1, skills: ["alchemy", "alchemy"], requirements: [], rewards: {} },
@@ -29,7 +29,7 @@ window.FAVOR_DATA.cards = [
     cost: 1, skills: ["survival", "survival", "survival"], requirements: [], rewards: {} },
 
   { id: cid(), name: "Hunting", audit: "2 Survival, Req: 1 Power. Act 1", filename: "Hunting Card.jpg", act: 1, type: "endeavor",
-    cost: null, skills: ["survival","survival"], requirements: ["power"], rewards: {} },
+    cost: null, skills: ["survival", "survival"], requirements: ["power"], rewards: {} },
 
   { id: cid(), name: "Maester's Favor", audit: "3 Charisma, Cost 1 Gold to play. Act 2", filename: "Golden Feather Card.jpg", act: 2, type: "endeavor",
     cost: 1, skills: ["charisma", "charisma", "charisma"], requirements: [], rewards: {} },
@@ -44,7 +44,7 @@ window.FAVOR_DATA.cards = [
     cost: 2, skills: [], requirements: [], rewards: {}, special: "charisma_or_prospecting" },
 
   { id: cid(), name: "Pearl Diving", audit: "2 Prospecting, Req: 1 Survival. Act 1", filename: "Obsidian Card.jpg", act: 1, type: "endeavor",
-    cost: null, skills: ["prospecting","prospecting"], requirements: ["survival"], rewards: {} },
+    cost: null, skills: ["prospecting", "prospecting"], requirements: ["survival"], rewards: {} },
 
   { id: cid(), name: "Gemstone Mine", audit: "3 Prospecting, Cost 2 Gold to play. Act 2", filename: "Obsidian Source Card.jpg", act: 2, type: "endeavor",
     cost: 2, skills: ["prospecting", "prospecting", "prospecting"], requirements: [], rewards: {} },
@@ -59,111 +59,105 @@ window.FAVOR_DATA.cards = [
     cost: null, skills: ["survival"], requirements: [], rewards: {} },
 
   { id: cid(), name: "Negotiate", audit: "1 Charisma. Act 1. No Req.", filename: "Negotiate Card.jpg", act: 1, type: "wisdom",
-    cost: null, skills: ["charisma"], requirements: [], rewards: { prestige: 1 } },
+    cost: null, skills: ["charisma"], requirements: [], rewards: {} },
 
   { id: cid(), name: "Diplomacy", audit: "1 Charisma. Act 1. No Req.", filename: "Roost Feather Card.jpg", act: 1, type: "wisdom",
-    cost: null, skills: ["charisma"], requirements: [], rewards: { prestige: 1 } },
+    cost: null, skills: ["charisma"], requirements: [], rewards: {} },
 
   { id: cid(), name: "New Frontier", audit: "4 Survival, 2 Charisma, Req: 1 Mind's Eye, Act 2", filename: "New Frontier Card.jpg", act: 2, type: "adventure",
-    cost: null, skills: ["survival", "survival"], requirements: ["minds_eye"], rewards: { prestige: 1 },
-    special: "minds_eye" },
+    cost: null, skills: ["survival", "survival", "survival", "survival", "charisma", "charisma"], requirements: ["minds_eye"], rewards: {} },
 
   { id: cid(), name: "Favor of the Princess", audit: "2 Alchemy, 2 Survival, 2 Charisma, 2 Prospecting, 2 Power, Req: 3 Charisma, Act 3", filename: "Nimbus 2000 Card.jpg", act: 3, type: "adventure",
     cost: null, skills: ["alchemy", "alchemy", "survival", "survival", "charisma", "charisma", "prospecting", "prospecting", "power", "power"],
-    requirements: ["charisma", "charisma", "charisma"], rewards: {},
-    special: "philosopher_stone" },
+    requirements: ["charisma", "charisma", "charisma"], rewards: {} },
 
   { id: cid(), name: "Fierce Rival", audit: "2 Knowledge, 2 Power, Req: 2 Power, Act 3", filename: "Rigorous Training Card.jpg", act: 3, type: "adventure",
-    cost: null, skills: ["knowledge","knowledge","power","power"], requirements: ["power","power"], rewards: { gold: 2 } },
+    cost: null, skills: ["knowledge", "knowledge", "power", "power"], requirements: ["power", "power"], rewards: {} },
 
   // ═══ ACT 2 — GREEN/TEAL BORDER ═════════════════════════════════
 
   { id: cid(), name: "Alchemist Apprentice", audit: "2 Alchemy, Req: 1 Alchemy, Act 1", filename: "Alchemist Apprentice Card.jpg", act: 1, type: "endeavor",
-    cost: null, skills: ["alchemy", "alchemy", "alchemy"], requirements: ["alchemy"], rewards: {},
-    special: "minds_eye" },
+    cost: null, skills: ["alchemy", "alchemy"], requirements: ["alchemy"], rewards: {} },
 
   { id: cid(), name: "Moment of Reflection", grantsMap: "Lost North Map", audit: "1 Knowledge, 2 Favor, Lost North Map Map, Req: 1 Power, Act 1", filename: "A Moment with the Stars Card.jpg", act: 1, type: "adventure",
-    cost: null, skills: ["power", "knowledge"], requirements: ["power"], rewards: {}, favor: 2,
+    cost: null, skills: ["knowledge"], requirements: ["power"], rewards: {}, favor: 2,
     special: "map_lost_north" },
 
   { id: cid(), name: "Melee Spectacular", audit: "Gain 2 Gold for each Power that both of your two neighboring players currently have. Req: 1 Power, Act 2", filename: "Aerial Spectacular Card.jpg", act: 2, type: "adventure",
-    cost: null, skills: ["power"], requirements: ["power"], rewards: {}, special: "power_x2" },
+    cost: null, skills: [], requirements: ["power"], rewards: {}, special: "gold_2_per_power_neighbors" },
 
   { id: cid(), name: "Settling Claims", audit: "3 Charisma, 5 Favor Req: 2 Charisma, Act 2", filename: "Befriending Eagles Card.jpg", act: 2, type: "adventure",
-    cost: 3, skills: ["charisma","charisma","charisma"], requirements: ["charisma", "charisma"], rewards: {}, favor: 5 },
+    cost: 3, skills: ["charisma", "charisma", "charisma"], requirements: ["charisma", "charisma"], rewards: {}, favor: 5 },
 
   { id: cid(), name: "Chemical X", audit: "Move Character Slider to any slot, Req: 3 Alchemy, Act 3,", filename: "Chemical D1 Card.jpg", act: 3, type: "potion",
-    cost: 2, skills: ["alchemy"], requirements: ["alchemy","alchemy","alchemy"], rewards: {},
+    cost: 2, skills: [], requirements: ["alchemy", "alchemy", "alchemy"], rewards: {},
     special: "move_slider_any", combo: "1/2" },
 
   { id: cid(), name: "Chemical Y", audit: "Choose an Adventure card you have, multiply its Favor amount by 2. Req: 6 Alchemy & 1 Philosopher's Stone. If you own Chemical X: 15 Favor, Act 3", filename: "Chemical D2 Card.jpg", act: 3, type: "potion",
-    cost: 6, skills: ["alchemy", "prospecting"], requirements: ["alchemy","alchemy","alchemy","alchemy","alchemy","alchemy","philosopher_stone"], rewards: {}, favor: 15,
+    cost: 6, skills: [], requirements: ["alchemy", "alchemy", "alchemy", "alchemy", "alchemy", "alchemy", "philosopher_stone"], rewards: {},
     special: "double_adventure_favor", combo: "2/2" },
 
   { id: cid(), name: "Fuzzy Head", audit: "Reduce the power of other players during this melee round by 3. Req: 2 Alchemy, Act 2", filename: "Cursed Coating Card.jpg", act: 2, type: "potion",
-    cost: 3, skills: ["alchemy"], requirements: ["alchemy","alchemy"], rewards: {},
+    cost: 3, skills: [], requirements: ["alchemy", "alchemy"], rewards: {},
     special: "minus_3_power_all_others" },
 
   { id: cid(), name: "Endless Sparring", audit: "2 Knowledge, 5 Scorn, Req: 1 Power, Act 1", filename: "Dual of Novices.jpg", act: 1, type: "adventure",
-    cost: null, skills: ["knowledge","knowledge"], requirements: ["power"], rewards: { scorn: 5 } },
+    cost: null, skills: ["knowledge", "knowledge"], requirements: ["power"], rewards: { scorn: 5 } },
 
   { id: cid(), name: "Leading the Charge", audit: "2 Survival, 10 Favor Req: 8 Charisma, Act 3", filename: "Enter the Tree Card.jpg", act: 3, type: "adventure",
-    cost: 8, skills: ["survival","survival"], requirements: ["charisma","charisma","charisma","charisma","charisma","charisma","charisma","charisma"], rewards: {}, favor: 10 },
+    cost: 8, skills: ["survival", "survival"], requirements: ["charisma", "charisma", "charisma", "charisma", "charisma", "charisma", "charisma", "charisma"], rewards: {}, favor: 10 },
 
   { id: cid(), name: "Mind Warper", audit: "Turns your Scorn into Prestige when played, Req: 6 Alchemy & 1 Philosopher's Stone, Act 3", filename: "Experiment 66 Card.jpg", act: 3, type: "potion",
-    cost: 6, skills: [], requirements: ["alchemy","alchemy","alchemy","alchemy","alchemy","alchemy","philosopher_stone"], rewards: {},
+    cost: 6, skills: [], requirements: ["alchemy", "alchemy", "alchemy", "alchemy", "alchemy", "alchemy", "philosopher_stone"], rewards: {},
     special: "scorn_to_prestige" },
 
   { id: cid(), name: "Facing the River Fiend", reqMaps: ["The Minister's Plan"], audit: "15 Favor, Req: 7 Survival & 7 Power OR The Minister's Plan Map, Act 3", filename: "Facing Fiendfyre Card.jpg", act: 3, type: "adventure",
-    cost: null, skills: ["survival", "survival", "survival", "survival", "power", "power", "power", "power", "power", "power"],
-    requirements: ["survival","survival","survival","survival","survival","survival","survival","power","power","power","power","power","power","power"], rewards: { prestige: 5 }, favor: 18,
+    cost: null, skills: [],
+    requirements: ["survival", "survival", "survival", "survival", "survival", "survival", "survival", "power", "power", "power", "power", "power", "power", "power"], rewards: {}, favor: 15,
     combo: "The Minister's Plan" },
 
   { id: cid(), name: "Finding the Lost Corridor", grantsMap: "Reunited", reqMaps: ["Her Lost Father", "Golden Fiddle"], audit: "10 Favor & Reunited Map, Req: 2 Mind's Eye OR Her Lost Father Map OR The Magic Fiddle Map, Act 2", filename: "Finding the Lost Corridor Card.jpg", act: 2, type: "adventure",
-    cost: 2, skills: ["knowledge"], requirements: ["minds_eye","minds_eye"], rewards: {}, favor: 10,
-    special: "minds_eye", combo: "Reunited" },
+    cost: 2, skills: [], requirements: ["minds_eye", "minds_eye"], rewards: {}, favor: 10, combo: "Reunited" },
 
   { id: cid(), name: "Forming a Bond", audit: "1 Survival, 7 Favor, Req: 1 Charisma, Act 1", filename: "Forming a Bond Card.jpg", act: 1, type: "adventure",
     cost: null, skills: ["survival"], requirements: ["charisma"], rewards: {}, favor: 7 },
 
-  { id: cid(), name: "The Tree Tunnels", audit: "5 Survival, 2 Knowledge, 1 Philosopher's Stone, 3 Favor, Req: 1 Mind's Eye, Act 3", filename: "Friends in the Sky Card.jpg", act: 3, type: "adventure",
-    cost: null, skills: ["survival", "knowledge", "knowledge", "knowledge"], requirements: ["minds_eye"], rewards: {},
-    favor: 5, special: "minds_eye" },
+  { id: cid(), name: "The Tree Tunnels", special: "philosopher_stone", audit: "5 Survival, 2 Knowledge, 1 Philosopher's Stone, 3 Favor, Req: 1 Mind's Eye, Act 3", filename: "Friends in the Sky Card.jpg", act: 3, type: "adventure",
+    cost: null, skills: ["survival", "survival", "survival", "survival", "survival", "knowledge", "knowledge"], requirements: ["minds_eye"], rewards: {}, favor: 3 },
 
   { id: cid(), name: "Fur Trading", audit: "8 Gold, 3 Favor, Req: 1 Charisma, Act 1", filename: "Fur Trading Card.jpg", act: 1, type: "adventure",
     cost: null, skills: [], requirements: ["charisma"], rewards: { gold: 8 }, favor: 3 },
 
   { id: cid(), name: "Generous Donations", audit: "3 Knowledge, 25 Favor, Req: 18 Gold, Act 2", filename: "Generous Donation Card.jpg", act: 2, type: "adventure",
-    cost: 18, skills: ["knowledge"], reqGold: 18, requirements: [], rewards: {}, favor: 25 },
+    cost: 18, skills: ["knowledge", "knowledge", "knowledge"], reqGold: 18, requirements: [], rewards: {}, favor: 25 },
 
-  { id: cid(), name: "A Hidden Door", grantsMap: "The Shadow Guide", audit: "5 Favor, Req: 3 Survival & 1 Knowledge, The Shadow Guide Map, Act 2", filename: "Ghost Studies Card.jpg", act: 2, type: "adventure",
-    cost: 3, skills: [], reqMaps: ["The Shadow Guide"], requirements: ["survival","survival","survival","knowledge"], rewards: {}, favor: 5,
-    special: "The Shadow Guide" },
+  { id: cid(), name: "A Hidden Door", grantsMap: "The Shadow Guide", audit: "5 Favor & The Shadow Guide Map, Req: 3 Survival & 1 Knowledge, Act 2", filename: "Ghost Studies Card.jpg", act: 2, type: "adventure",
+    cost: 3, skills: [], requirements: ["survival", "survival", "survival", "knowledge"], rewards: {}, favor: 5 },
 
   { id: cid(), name: "Gold Luster", audit: "Req: 3 Alchemy & 1 Philosopher's Stone, Turn all your gold into prestige, Act 2", filename: "Glowing Manipulation Card.jpg", act: 2, type: "potion",
-    cost: 3, skills: [], requirements: ["alchemy","alchemy","alchemy","philosopher_stone"], rewards: {},
+    cost: 3, skills: [], requirements: ["alchemy", "alchemy", "alchemy", "philosopher_stone"], rewards: {},
     special: "gold_to_prestige" },
 
   { id: cid(), name: "Her Lost Father", grantsMap: "Finding the Lost Corridor", audit: "1 Prospecting & 3 Gold & 3 Scorn & Finding the Lost Corridor Map, No Req, Act 1", filename: "Her Lost Father Card.jpg", act: 1, type: "adventure",
-    cost: null, skills: [], requirements: [], rewards: {}, favor: 3,
+    cost: null, skills: ["prospecting"], requirements: [], rewards: { gold: 3, scorn: 3 },
     special: "map_finding_lost_corridor" },
 
   { id: cid(), name: "Chemical Z", audit: "1 Philosopher's Stone & 5 Scorn & 15 Scorn to all other players, Req: 5 Alchemy & 5 Prospecting, Act 3", filename: "Liquid Doom Card.jpg", act: 3, type: "potion",
     cost: null, skills: [],
-    requirements: ["alchemy","alchemy","alchemy","alchemy","alchemy","prospecting","prospecting","prospecting","prospecting","prospecting"],
-    rewards: { prestige: 5 }, special: "others_5_scorn" },
+    requirements: ["alchemy", "alchemy", "alchemy", "alchemy", "alchemy", "prospecting", "prospecting", "prospecting", "prospecting", "prospecting"],
+    rewards: { scorn: 5 }, special: "others_5_scorn" },
 
   { id: cid(), name: "Duplicating Goo", audit: "Gain gold equal to the amount of gold you have, Req: 3 Alchemy & 1 Philosopher's Stone, Act 2", filename: "Liquid Gold Card.jpg", act: 2, type: "potion",
-    cost: null, skills: [], requirements: ["alchemy","alchemy","alchemy","philosopher_stone"], rewards: {},
+    cost: null, skills: [], requirements: ["alchemy", "alchemy", "alchemy", "philosopher_stone"], rewards: {},
     special: "multiply_gold_x2" },
 
   { id: cid(), name: "Shot of Courage", audit: "Pick one of your missions to no longer have a requirement to succeed, Req: 4 Alchemy & 1 Minds Eye, Act 3", filename: "Liquid Wind Card.jpg", act: 3, type: "potion",
     cost: null, skills: [],
-    requirements: ["alchemy","alchemy","alchemy","alchemy","minds_eye"],
+    requirements: ["alchemy", "alchemy", "alchemy", "alchemy", "minds_eye"],
     rewards: {}, special: "coin_flip_4_power" },
 
   { id: cid(), name: "Life Essence", audit: "Next Melee Flip a coin if the result is heads gain +5 Power, Req: 3 Alchemy & 3 Prospecting, Act 3", filename: "Stream of Life Card.jpg", act: 3, type: "potion",
-    cost: null, skills: ["alchemy"], requirements: ["alchemy","alchemy","alchemy","prospecting","prospecting","prospecting"], rewards: {},
+    cost: null, skills: [], requirements: ["alchemy", "alchemy", "alchemy", "prospecting", "prospecting", "prospecting"], rewards: {},
     special: "remove_mission_requirements" },
 
   { id: cid(), name: "Mind Eraser", audit: "Remove 15 Scorn, Req: 1 Prospecting & 1 Alchemy, Act 3", filename: "Trouble Brew Card.jpg", act: 2, type: "potion",
@@ -171,13 +165,13 @@ window.FAVOR_DATA.cards = [
     special: "remove_13_scorn" },
 
   { id: cid(), name: "Marketplace Sales", audit: "Gain 2 Gold for each Alchemy that both of your two neighboring players and yourself currently have. Req: 1 Alchemy & 1 Charisma, Act 2", filename: "Perscription Elixers Card.jpg", act: 2, type: "potion",
-    cost: null, skills: ["alchemy", "charisma"], requirements: ["alchemy","charisma"], rewards: {},
-    special: "philosopher_stone", combo: "x2" },
+    cost: null, skills: [], requirements: ["alchemy", "charisma"], rewards: {},
+    special: "gold_2_per_alchemy_triangle" },
 
   { id: cid(), name: "Market Trade Exchange", reqMaps: ["Great North Connection"], audit: "6 Charisma & 10 Gold Req: 4 Charisma & 4 Knowledge OR The Great North Connection Map, Act 3", filename: "Market Trade Exhange Card.jpg", act: 3, type: "adventure",
-    cost: null, skills: [],
-    requirements: ["charisma","charisma","charisma","charisma","knowledge","knowledge","knowledge","knowledge"],
-    rewards: { gold: 15 }, special: "trade_route" },
+    cost: null, skills: ["charisma", "charisma", "charisma", "charisma", "charisma", "charisma"],
+    requirements: ["charisma", "charisma", "charisma", "charisma", "knowledge", "knowledge", "knowledge", "knowledge"],
+    rewards: { gold: 10 }, special: "trade_route" },
 
   { id: cid(), name: "Prospecting Journal", audit: "1 Knowledge & 1 Prospecting, Req: 1 Prospecting, Act 1", filename: "Prospecting Journal Card.jpg", act: 1, type: "wisdom",
     cost: null, skills: ["knowledge", "prospecting"], requirements: ["prospecting"], rewards: {} },
@@ -187,10 +181,10 @@ window.FAVOR_DATA.cards = [
     rewards: {}, favor: 5 },
 
   { id: cid(), name: "Thorns of Treachery", audit: "4 Knowledge, Req: 3 Charisma, Act 2", filename: "Mystery Dueling Culb Card.jpg", act: 2, type: "endeavor",
-    cost: 3, skills: ["knowledge","knowledge","knowledge","knowledge"], requirements: ["charisma","charisma","charisma"], rewards: { prestige: 1 } },
+    cost: 3, skills: ["knowledge", "knowledge", "knowledge", "knowledge"], requirements: ["charisma", "charisma", "charisma"], rewards: {} },
 
-  { id: cid(), name: "Fang's Truce", audit: "4 Survival & 2 Favor for each Survival you have, Req: 4 Survival, Act 3", filename: "nduring Hardship Card.jpg", act: 3, type: "endeavor",
-    cost: 4, skills: ["survival","survival","survival","survival"], requirements: ["survival","survival","survival","survival"], rewards: {}, favor: 2 },
+  { id: cid(), name: "Fang's Truce", special: "favor_per_survival_x2", audit: "4 Survival & 2 Favor for each Survival you have, Req: 4 Survival, Act 3", filename: "nduring Hardship Card.jpg", act: 3, type: "endeavor",
+    cost: 4, skills: ["survival", "survival", "survival", "survival"], requirements: ["survival", "survival", "survival", "survival"], rewards: {} },
 
   { id: cid(), name: "Mystery Intrigue Club", audit: "7 Knowledge, Req: 2 Prospecting & 5 Gold, Act 3", filename: "Protecting Your Friends Card.jpg", act: 3, type: "endeavor",
     cost: 5, skills: ["knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge"],
@@ -199,13 +193,13 @@ window.FAVOR_DATA.cards = [
   { id: cid(), name: "Reckless Training", audit: "2 Power & 5 Scorn, Req none, Act 1", filename: "Reckless Training Card.jpg", act: 1, type: "endeavor",
     cost: null, skills: ["power", "power"], requirements: [], rewards: { scorn: 5 } },
 
-  { id: cid(), name: "Reunited", reqMaps: ["Finding the Lost Corridor"], audit: "22 Favor & 1 Philosopher's Stone, Req: 12 Knowledge & 1 Mind's Eye & 1 Philosopher's Stone OR Finding the Lost Corridor Map, Act 3", filename: "Reunited Card.jpg", act: 3, type: "adventure",
-    cost: null, skills: ["prospecting"],
-    requirements: ["knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","minds_eye","philosopher_stone"],
+  { id: cid(), name: "Reunited", special: "philosopher_stone", reqMaps: ["Finding the Lost Corridor"], audit: "22 Favor & 1 Philosopher's Stone, Req: 12 Knowledge & 1 Mind's Eye & 1 Philosopher's Stone OR Finding the Lost Corridor Map, Act 3", filename: "Reunited Card.jpg", act: 3, type: "adventure",
+    cost: null, skills: [],
+    requirements: ["knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "minds_eye", "philosopher_stone"],
     rewards: {}, favor: 22, combo: "Finding the Lost Corridor" },
 
   { id: cid(), name: "Great North Connection", grantsMap: "Market Trade Exchange", reqMaps: ["Helping the Merchant"], audit: "You may borrow Survival/Alchemy/Charisma/Prospecting from any player & 10 Favor & Market Trade Exchange Map, Req: 3 Charisma & 3 Power OR Helping the Merchant Map, Act 2", filename: "The Great Nort Connection Card.jpg", act: 2, type: "adventure",
-    cost: null, skills: ["survival", "prospecting"], requirements: ["charisma","charisma","charisma","power","power","power"], rewards: { prestige: 5 },
+    cost: null, skills: [], requirements: ["charisma", "charisma", "charisma", "power", "power", "power"], rewards: {}, favor: 10,
     special: "trade_route" },
 
   { id: cid(), name: "The Alchemist's Daughter", audit: "1 Alchemy & 1 Mind's Eye & 18 Favor, Req: 5 Charisma, 5 Alchemy, 5 Power, Act 3", filename: "The Great Eagle Rider Card.jpg", act: 3, type: "adventure",
@@ -214,7 +208,7 @@ window.FAVOR_DATA.cards = [
     rewards: {}, favor: 18, special: "minds_eye" },
 
   { id: cid(), name: "Shattering the Mirror Prison", reqMaps: ["The Shadow Guide"], audit: "4 Mind's Eye & 5 Favor, Req: 9 Knowledge OR The Shadow Guide Map, Act 3", filename: "Shattering the Mirror Prison Card.jpg", act: 3, type: "adventure",
-    cost: null, skills: ["knowledge"], requirements: ["knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge","knowledge"],
+    cost: null, skills: [], requirements: ["knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge"],
     rewards: {}, favor: 5, special: "minds_eye" },
 
   { id: cid(), name: "Tribute to the Fallen", audit: "10 Favor, Act 2,Req: None", filename: "Tribute to the Fallen Card.jpg", act: 2, type: "adventure",
@@ -224,8 +218,8 @@ window.FAVOR_DATA.cards = [
     cost: null, skills: [], requirements: [], rewards: {}, favor: 8 },
 
   { id: cid(), name: "Enchanted Flames", audit: "3 Charisma & 2 Power, Req: 3 Prospecting & 3 Knowledge, Act 3", filename: "Flash Enchantment Card.jpg", act: 3, type: "weapon",
-    cost: null, skills: ["power", "power", "alchemy", "alchemy", "alchemy"],
-    requirements: ["knowledge", "knowledge", "knowledge", "prospecting", "prospecting", "prospecting"], rewards: {} },
+    cost: null, skills: ["charisma", "charisma", "charisma", "power", "power"],
+    requirements: ["prospecting", "prospecting", "prospecting", "knowledge", "knowledge", "knowledge"], rewards: {} },
 
   // ═══ ACT 3 — PINK/PURPLE BORDER ════════════════════════════════
 
@@ -233,19 +227,18 @@ window.FAVOR_DATA.cards = [
     cost: null, skills: ["knowledge"], requirements: [], rewards: {} },
 
   { id: cid(), name: "Philosopher's Stone", audit: "1 Knowledge & 1 Philosopher's Stone, Req: 1 Knowledge & 1 Prospecting & 1 Alchemy, Act 2", filename: "Elder Wand Card.jpg", act: 2, type: "artifact",
-    cost: null, skills: ["knowledge", "prospecting"], requirements: ["alchemy", "prospecting", "knowledge"], rewards: {},
+    cost: null, skills: ["knowledge"], requirements: ["knowledge", "prospecting", "alchemy"], rewards: {},
     special: "philosopher_stone" },
 
   { id: cid(), name: "Fortune Teller", audit: "1 Mind's Eye & 3 Scorn, Req: None, Act 2", filename: "Fortune Teller Card.jpg", act: 2, type: "artifact",
-    cost: null, skills: [], requirements: [], rewards: { prestige: 3 }, special: "minds_eye" },
+    cost: null, skills: [], requirements: [], rewards: { scorn: 3 }, special: "minds_eye" },
 
   { id: cid(), name: "Forgotten Temple", grantsMap: "Sacred Chest", audit: "Map of Sacred Chest & 1 Knowledge & 2 Scorn, Req: None, Act 1", filename: "Forgotten Temple.jpg", act: 1, type: "adventure",
-    cost: null, skills: ["knowledge"], requirements: [], rewards: { prestige: 2 },
+    cost: null, skills: ["knowledge"], requirements: [], rewards: { scorn: 2 },
     special: "sacred_chest" },
 
-  { id: cid(), name: "Philosopher's Scepter", grantsMap: "Sacred Chest", audit: "Map of Sacred Chest & 1 Knowledge & 2 Scorn, Req: None, Act 1", filename: "Apprentice Wand Card.jpg", act: 3, type: "artifact",
-    cost: null, skills: ["knowledge", "prospecting"], requirements: [], rewards: {},
-    favor: 2, special: "philosopher_stone" },
+  { id: cid(), name: "Philosopher's Scepter", audit: "2 Knowledge & 1 Philosopher's Stone, No Req, Act 3", filename: "Apprentice Wand Card.jpg", act: 3, type: "artifact",
+    cost: null, skills: ["knowledge", "knowledge"], requirements: [], rewards: {}, special: "philosopher_stone" },
 
   { id: cid(), name: "Oaths of the Crown", audit: "1 Knowledge, Req: none, Act 1", filename: "Oaths Crown.jpg", act: 1, type: "wisdom",
     cost: null, skills: ["knowledge"], requirements: [], rewards: {} },
@@ -254,44 +247,44 @@ window.FAVOR_DATA.cards = [
     cost: null, skills: ["knowledge"], requirements: [], rewards: {} },
 
   { id: cid(), name: "Lens of Truth", audit: "3 Survival & 1 Mind's Eye, Req: None, Act 3", filename: "Lens of Truth Card.jpg", act: 3, type: "wisdom",
-    cost: null, skills: ["survival"], requirements: [], rewards: {}, special: "minds_eye" },
+    cost: null, skills: ["survival", "survival", "survival"], requirements: [], rewards: {}, special: "minds_eye" },
 
   { id: cid(), name: "Mind's Eye", audit: "1 Alchemy & 1 Mind's Eye, Req: 1 Alchemy & 1 Prospecting & 1 Knowledge, Act 2", filename: "Mind_s Eye Card.jpg", act: 2, type: "artifact",
-    cost: null, skills: ["alchemy"], requirements: ["alchemy","prospecting","knowledge"], rewards: {},
+    cost: null, skills: ["alchemy"], requirements: ["alchemy", "prospecting", "knowledge"], rewards: {},
     special: "minds_eye" },
 
   { id: cid(), name: "Royal Library", audit: "5 Knowledge, Req: None, Act 3", filename: "Royal Library.jpg", act: 3, type: "endeavor",
-    cost: null, skills: ["knowledge"], requirements: [], rewards: {}, special: "knowledge_x5" },
+    cost: null, skills: ["knowledge", "knowledge", "knowledge", "knowledge", "knowledge"], requirements: [], rewards: {}, special: "knowledge_x5" },
 
   { id: cid(), name: "Sacred Stone", audit: "1 Philosopher's Stone & 5 Scorn, Req: None, Act 2", filename: "Sacred Stone Card.jpg", act: 2, type: "artifact",
-    cost: null, skills: ["prospecting"], requirements: [], rewards: { prestige: 5 }, special: "philosopher_stone" },
+    cost: null, skills: [], requirements: [], rewards: { scorn: 5 }, special: "philosopher_stone" },
 
   { id: cid(), name: "Family Ring", audit: "Favor equal to your total Knowledge x2,Req: 3 Knowledge & 1 Philosopher's Stone, Act 3", filename: "Time Turner Card.jpg", act: 3, type: "artifact",
-    cost: 3, skills: ["knowledge", "prospecting"], requirements: ["knowledge","knowledge","knowledge","philosopher_stone"], rewards: {},
+    cost: 3, skills: [], requirements: ["knowledge", "knowledge", "knowledge", "philosopher_stone"], rewards: {},
     special: "knowledge_x2" },
 
-  { id: cid(), name: "Lucky Pendant", audit: "Favor equal to your total Successful Quests x5,Req: 5 Prospecting, Act 3", filename: "Lucky Pendant Card.jpg", act: 3, type: "artifact",
-    cost: 5, skills: [], requirements: ["prospecting","prospecting","prospecting","prospecting","prospecting"], rewards: {}, favor: 5 },
+  { id: cid(), name: "Lucky Pendant", special: "favor_per_quest_x5", audit: "Favor equal to your total Successful Quests x5,Req: 5 Prospecting, Act 3", filename: "Lucky Pendant Card.jpg", act: 3, type: "artifact",
+    cost: 5, skills: [], requirements: ["prospecting", "prospecting", "prospecting", "prospecting", "prospecting"], rewards: {} },
 
-  { id: cid(), name: "Great Vault Key", audit: "1 Favor for each Survival you have & 1 Favor for each Charisma you have & 1 Favor for each Prospecting you have, Req: 4 Gold, Act 3", filename: "Great Vault Key Card.jpg", act: 3, type: "artifact",
-    cost: 4, skills: ["survival", "charisma", "prospecting"], reqGold: 4, requirements: [], rewards: {} },
+  { id: cid(), name: "Great Vault Key", special: "favor_per_sur_cha_pro", audit: "1 Favor for each Survival you have & 1 Favor for each Charisma you have & 1 Favor for each Prospecting you have, Req: 4 Gold, Act 3", filename: "Great Vault Key Card.jpg", act: 3, type: "artifact",
+    cost: 4, skills: [], reqGold: 4, requirements: [], rewards: {} },
 
   { id: cid(), name: "Sacred Chest", reqMaps: ["Forgotten Temple"], audit: "8 Favor for each Wisdom Card you have, Req: 12 Gold OR Forgotten Temple Map,Act 3", filename: "Sacred Chest Card.jpg", act: 3, type: "artifact",
-    cost: 12, skills: [], reqGold: 12, requirements: [], rewards: {}, special: "philosopher_stone_x8" },
+    cost: 12, skills: [], reqGold: 12, requirements: [], rewards: {}, special: "favor_per_wisdom_x8" },
 
   { id: cid(), name: "Secret Lab", audit: "5 Favor for each Potions Card you have, Req: 2 Mind's Eye,Act 3", filename: "Secret Lab Card.jpg", act: 3, type: "artifact",
-    cost: null, skills: [], requirements: ["minds_eye","minds_eye"], rewards: {},
+    cost: null, skills: [], requirements: ["minds_eye", "minds_eye"], rewards: {},
     special: "minds_eye_x2_philosopher_stone_x5" },
 
   { id: cid(), name: "Royal Hilt", audit: "1 Favor for each Power your left & right neighbor have, Req: 2 Power & 1 Mind's Eye, Act 3", filename: "Golden Snitch Card.jpg", act: 3, type: "weapon",
-    cost: 2, skills: ["power"], requirements: ["power","power","minds_eye"], rewards: {}, special: "minds_eye" },
+    cost: 2, skills: [], requirements: ["power", "power", "minds_eye"], rewards: {}, special: "favor_per_neighbor_power" },
 
   { id: cid(), name: "Lost North Map", reqMaps: ["Man's Best Friend", "Moment of Reflection"], audit: "5 Favor, Req: 3 Survival & 3 Prospecting & 1 Mind's Eye OR Man's Best Friend Map OR Moment of Reflection Map, Act 2", filename: "Lost North Map.jpg", act: 2, type: "adventure",
-    cost: null, skills: [], requirements: ["survival","survival","survival","prospecting","prospecting","prospecting","minds_eye"], rewards: {}, favor: 5,
+    cost: null, skills: [], requirements: ["survival", "survival", "survival", "prospecting", "prospecting", "prospecting", "minds_eye"], rewards: {}, favor: 5,
     combo: "1/2", special: "map" },
 
   { id: cid(), name: "Lost South Map", reqMaps: ["Cameron's Expedition", "Tunnel of Trinkets"], audit: "5 Favor & If you have the Lost North Map 20 additional Favor, Req: 3 Survival & 3 Charisma & 1 Mind's Eye OR The Thinking Tree Map OR Tunnel of Trinkets Map, Act 2", filename: "Lost South Map.jpg", act: 2, type: "adventure",
-    cost: null, skills: [], requirements: ["survival","survival","survival","charisma","charisma","charisma","minds_eye"], rewards: { gold: 20 }, favor: 5,
+    cost: null, skills: [], requirements: ["survival", "survival", "survival", "charisma", "charisma", "charisma", "minds_eye"], rewards: {}, favor: 5,
     combo: "2/2", special: "map" },
 
   // ═══ GREY/SILVER — WEAPONS ══════════════════════════════════════
@@ -309,30 +302,28 @@ window.FAVOR_DATA.cards = [
     cost: null, skills: ["power"], requirements: [], rewards: {} },
 
   { id: cid(), name: "Deadeye", audit: "5 Survival, Req: 1 Power & 2 Mind's Eye, Act 3", filename: "All Seer Card.jpg", act: 3, type: "weapon",
-    cost: null, skills: ["power"],
-    requirements: ["power","minds_eye","minds_eye"], rewards: {},
-    special: "minds_eye" },
+    cost: null, skills: ["survival", "survival", "survival", "survival", "survival"],
+    requirements: ["power", "minds_eye", "minds_eye"], rewards: {} },
 
   { id: cid(), name: "Blind Faith", audit: "1 power, req: none, Act 2", filename: "Griffin Boots Card.jpg", act: 2, type: "weapon",
     cost: null, skills: ["power"], requirements: [], rewards: {}, combo: "1/2" },
 
-  { id: cid(), name: "Heaven's Blade", audit: "2 Power & 6 Additional Power if you own Blind Faith, Req: 2 Knowledge, Act 3", filename: "Griffin Talons Card.jpg", act: 3, type: "weapon",
-    cost: 2, skills: ["power"], requirements: ["knowledge", "knowledge"], rewards: {},
-    favor: 6, combo: "2/2" },
+  { id: cid(), name: "Heaven's Blade", special: "power_6_if_blind_faith", audit: "2 Power & 6 Additional Power if you own Blind Faith, Req: 2 Knowledge, Act 3", filename: "Griffin Talons Card.jpg", act: 3, type: "weapon",
+    cost: 2, skills: ["power", "power"], requirements: ["knowledge", "knowledge"], rewards: {}, combo: "2/2" },
 
   { id: cid(), name: "Archeus", audit: "5 Scorn & All other Players must discard 1 weapon card they have & 6 Additional Power if you own Blind Faith, Req: 4 Survival, 4 Knowledge, 1 Mind's Eye, Act 3", filename: "Griffin Wings Card.jpg", act: 3, type: "weapon",
-    cost: null, skills: ["power"], requirements: ["survival","survival","survival","survival","knowledge","knowledge","knowledge","knowledge","minds_eye"], rewards: {}, favor: 5,
+    cost: null, skills: [], requirements: ["survival", "survival", "survival", "survival", "knowledge", "knowledge", "knowledge", "knowledge", "minds_eye"], rewards: { scorn: 5 },
     combo: "2/2", special: "discard_opponent_weapon" },
 
   { id: cid(), name: "Wild Steel", audit: "2 Power, 2 Survival, Req: 2 Prospecting & 1 Prospecting, Act 2", filename: "Seeker Goggles Card.jpg", act: 2, type: "weapon",
-    cost: 2, skills: ["power", "power", "survival", "survival"], requirements: ["prospecting","prospecting","prospecting"], rewards: {} },
+    cost: 2, skills: ["power", "power", "survival", "survival"], requirements: ["prospecting", "prospecting", "prospecting"], rewards: {} },
 
   { id: cid(), name: "Dawnharbinger", grantsMap: "King of the Sky", audit: "1 Power, 2 Charisma, The King of the Sky Map, Req: 1 Survival & 1 Prospecting, Act 2", filename: "Keeper Gloves Card.jpg", act: 2, type: "weapon",
     cost: null, skills: ["power", "charisma", "charisma"], requirements: ["survival", "prospecting"], rewards: {},
     special: "king_of_the_sky" },
 
   { id: cid(), name: "Destroyer", audit: "4 Power, Req: 3 Prospecting, Act 2", filename: "Angry Beaters Card.jpg", act: 2, type: "weapon",
-    cost: 3, skills: ["power", "power", "power", "power"], requirements: ["prospecting","prospecting","prospecting"], rewards: {} },
+    cost: 3, skills: ["power", "power", "power", "power"], requirements: ["prospecting", "prospecting", "prospecting"], rewards: {} },
 
   { id: cid(), name: "Guardian", grantsMap: "Defend the Throne", audit: "2 Power, 1 Prospecting, Defend the Throne Map, Req: 1 Power & 1 Prospecting, Act 2", filename: "Guardian Card.jpg", act: 2, type: "weapon",
     cost: null, skills: ["power", "power", "prospecting"], requirements: ["power", "prospecting"], rewards: {},

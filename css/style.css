@@ -389,11 +389,11 @@ html, body {
 /* ── Phase Bar (top-center of play area) ── */
 
 .phase-bar {
-    position: absolute;
+    position: fixed;   /* screen-level: visible in both desktop grid and table view */
     top: 10px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 10;
+    z-index: 30;
     display: flex;
     align-items: center;
     gap: 12px;
@@ -433,7 +433,7 @@ html, body {
     position: relative;
     display: flex;
     align-items: flex-start;
-    padding: 50px 24px 160px;
+    padding: 50px 24px calc(var(--handCardH) + 40px);
     padding-left: 220px;
     overflow-y: auto;
     overflow-x: hidden;
@@ -473,6 +473,22 @@ html, body {
     width: 100%;
     height: auto;
     border-radius: 6px;
+}
+
+/* Ring token on the thumbnail — same %-track as the big overlay, so it
+   scales with the thumb and always marks the current slot. */
+.board-thumb .thumb-boardwrap {
+    position: relative;
+}
+
+.board-thumb .thumb-ring {
+    position: absolute;
+    width: 9%;
+    height: auto;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.65));
 }
 
 .board-thumb .thumb-footer {
@@ -606,6 +622,15 @@ html, body {
     margin-top: 2px;
     padding-top: 5px;
 }
+
+/* Flex skill (Mining Guild etc.): one unit, either option per use. */
+.skill-row.flex-skill {
+    border: 1px dashed rgba(201, 168, 76, 0.35);
+    background: rgba(201, 168, 76, 0.04);
+    margin-top: 2px;
+}
+.skill-row.flex-skill .skill-label { font-style: normal; }
+.skill-row.flex-skill .skill-label i { color: var(--gold); font-size: 0.85em; }
 
 .skill-icon {
     width: 18px;
@@ -753,8 +778,8 @@ html, body {
 }
 
 .mission-strip .mission-pip {
-    width: 28px;
-    height: 39px;
+    width: clamp(28px, 4.6vh, 50px);
+    height: clamp(39px, 6.44vh, 70px);
     border-radius: 3px;
     object-fit: cover;
     cursor: pointer;
@@ -804,7 +829,7 @@ html, body {
     display: flex;
     flex-direction: column;
     position: relative;
-    min-width: 125px;
+    min-width: calc(var(--stackCardH) * 0.714);
     transition: gap 0.3s ease;
 }
 
@@ -820,8 +845,8 @@ html, body {
 }
 
 .card-stack .stack-card {
-    width: 125px;
-    height: 175px;
+    width: calc(var(--stackCardH) * 0.714);
+    height: var(--stackCardH);
     border-radius: 5px;
     box-shadow: 0 3px 12px rgba(0,0,0,0.65);
     object-fit: cover;
@@ -831,7 +856,7 @@ html, body {
 }
 
 .card-stack .stack-card + .stack-card {
-    margin-top: -137px; /* card-h (175) - peek (38) */
+    margin-top: calc(38px - var(--stackCardH)); /* tucked: 38px peek */
 }
 
 .card-stack .stack-card:hover {
@@ -842,7 +867,7 @@ html, body {
 }
 
 .card-stack:hover .stack-card + .stack-card {
-    margin-top: -121px; /* peek + 16px spread */
+    margin-top: calc(54px - var(--stackCardH)); /* peek + 16px spread */
 }
 
 /* Empty stacks placeholder */
@@ -985,7 +1010,7 @@ html, body {
     bottom: 0;
     left: 0;
     right: 220px;
-    height: 160px;
+    height: calc(var(--handCardH) + 40px);
     display: flex;
     align-items: flex-end;
     justify-content: center;
@@ -1023,13 +1048,23 @@ html, body {
     align-items: flex-end;
 }
 
+/* Resting card sizes scale with the window (Battlegrounds proportions) —
+   fixed laptop-era pixels left fullscreen tables feeling empty. The 0.714
+   factor is the 333x500 card-scan aspect. Phone table view overrides these
+   with its own tuned sizes inside the landscape media query. */
+:root {
+    --handCardH: clamp(133px, 21vh, 230px);
+    --stackCardH: clamp(175px, 24vh, 250px);
+}
+
 .hand-card {
-    width: 95px;
-    height: 133px;
+    width: calc(var(--handCardH) * 0.714);
+    height: var(--handCardH);
     border-radius: 6px;
     overflow: hidden;
     cursor: pointer;
-    transition: all 0.3s ease;
+    /* ease-out (fast start) so the card answers the cursor instantly. */
+    transition: all 0.22s ease-out;
     border: 2px solid rgba(201, 168, 76, 0.3);
     position: relative;
     margin: 0 -6px;
@@ -1043,12 +1078,26 @@ html, body {
     object-fit: cover;
 }
 
-.hand-card:hover {
-    transform: translateY(-32px) scale(1.15) rotate(0deg) !important;
-    z-index: 30;
-    margin: 0 5px;
-    border-color: var(--gold);
-    box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 20px rgba(201,168,76,0.1);
+/* Battlegrounds bloom: the hovered card grows to near screen height in
+   place. --bloomScaleDesk fits it to the actual window and --bloomShift
+   keeps edge cards fully on-screen (set by _bloomLayout in ui.js).
+   Margins never change, so the fan never reflows under the cursor.
+   MICE ONLY: touch browsers keep :hover stuck on the last-touched card,
+   which double-bloomed alongside the JS glide (.bloom) — so touch relies
+   on .bloom exclusively. */
+@media (hover: hover) {
+    .hand-card:hover {
+        transform: translateX(var(--bloomShift, 0px)) translateY(-14px) scale(var(--bloomScaleDesk, 4)) rotate(0deg) !important;
+        transform-origin: bottom center;
+        z-index: 30;
+        border-color: var(--gold);
+        box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 20px rgba(201,168,76,0.1);
+    }
+
+    /* While a card blooms, the hand must outrank the fixed phase bar (z 30)
+       — .game-layout is a z-1 stacking context, so bump the layout itself. */
+    .game-layout:has(.hand-card:hover) { z-index: 31; }
+    .hand-zone:has(.hand-card:hover) { z-index: 40; }
 }
 
 .hand-card.selected {
@@ -1136,12 +1185,71 @@ html, body {
 }
 .board-overlay.active { display: flex; }
 
+.board-ov-boardwrap {
+    position: relative;
+    display: inline-block;
+    line-height: 0;
+    animation: ovZoom 0.45s cubic-bezier(0.16,1,0.3,1);
+}
+
 .board-ov-full {
     max-width: 90vw;
-    max-height: 55vh;
+    max-height: 74vh; /* the board IS the sheet now — give it the screen */
     border-radius: 12px;
     box-shadow: 0 0 120px rgba(201,168,76,0.08), 0 24px 80px rgba(0,0,0,0.7);
-    animation: ovZoom 0.45s cubic-bezier(0.16,1,0.3,1);
+}
+
+/* The ring token, sitting ON the track's slot circle (same geometry the
+   table mats use: slot centers at 16/33/50/67/84%, track at 88% height). */
+.board-ov-ring {
+    position: absolute;
+    top: 88%;
+    width: 9%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    filter: drop-shadow(0 2px 5px rgba(0,0,0,0.65));
+    transition: left 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 3;
+}
+
+/* Invisible hotspots on the art's slot circles — hover shows the landing
+   halo + cost tooltip, click pays & slides the ring there. */
+.board-ov-slot {
+    position: absolute;
+    top: 88%;
+    width: 9.5%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 4;
+}
+.board-ov-slot:hover {
+    box-shadow: 0 0 0 2px rgba(240,210,120,0.9), 0 0 22px 6px rgba(201,168,76,0.45);
+}
+.board-ov-slot.current { cursor: default; }
+.board-ov-slot.current:hover { box-shadow: none; }
+
+/* Pick-a-slot mode (⇄ Discard: Slide Ring) — the circles one step from
+   the ring glow and take the click; everything farther is dead. */
+.board-ov-slot.pickable {
+    animation: slotPulse 1.1s ease-in-out infinite;
+}
+.board-ov-slot.dimmed { pointer-events: none; cursor: default; }
+@keyframes slotPulse {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(240,210,120,0.95), 0 0 26px 8px rgba(201,168,76,0.55); }
+    50%      { box-shadow: 0 0 0 3px rgba(240,210,120,0.65), 0 0 36px 14px rgba(201,168,76,0.3); }
+}
+
+.board-ov-hint {
+    margin-top: 6px;
+    font-family: 'EB Garamond', serif;
+    font-size: 15px;
+    color: var(--gold-light);
+    letter-spacing: 0.5px;
+    min-height: 18px;
+    text-shadow: 0 0 18px rgba(201,168,76,0.35);
 }
 
 .board-ov-name {
@@ -1159,187 +1267,6 @@ html, body {
     color: rgba(240,230,211,0.35);
     font-style: italic;
     margin-top: 4px;
-}
-
-.board-ov-slider {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 16px;
-    padding: 10px 14px;
-    border-radius: 16px;
-    background: rgba(42,22,10,0.6);
-    border: 1px solid rgba(201, 168, 76, 0.12);
-    max-width: 90vw;
-}
-
-.board-ov-slider .slider-btn {
-    font-size: 14px;
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--gold);
-    background: rgba(201, 168, 76, 0.15);
-    color: var(--gold);
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-}
-
-.board-ov-slider .slider-btn:hover:not(.disabled) {
-    background: rgba(201, 168, 76, 0.35);
-    box-shadow: 0 0 12px rgba(201, 168, 76, 0.4);
-}
-
-.board-ov-slider .slider-btn.disabled {
-    opacity: 0.25;
-    cursor: default;
-    pointer-events: none;
-}
-
-.board-ov-slider .slider-pos {
-    font-family: 'Cinzel', serif;
-    font-size: 12px;
-    color: var(--gold-light);
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    min-width: 60px;
-    text-align: center;
-}
-
-.board-ov-slider .slider-cost {
-    font-size: 9px;
-    opacity: 0.6;
-}
-
-/* ── Slot Track (5-cell ring slider) ── */
-
-.slot-track {
-    display: flex;
-    position: relative;
-    gap: 2px;
-    border-radius: 12px;
-    overflow: hidden;
-}
-
-.slot-cell {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 8px 10px;
-    min-width: 90px;
-    background: rgba(42, 22, 10, 0.5);
-    border: 1px solid rgba(201, 168, 76, 0.08);
-    position: relative;
-    transition: all 0.3s ease;
-    z-index: 1;
-}
-
-.slot-cell.current {
-    background: rgba(201, 168, 76, 0.15);
-    border-color: rgba(201, 168, 76, 0.4);
-    box-shadow: 0 0 16px rgba(201, 168, 76, 0.15);
-}
-
-.slot-cell.claimed {
-    background: rgba(42, 22, 10, 0.4);
-    border-color: rgba(201, 168, 76, 0.12);
-}
-
-.slot-cell.unclaimed {
-    opacity: 0.5;
-}
-
-.slot-pos-name {
-    font-family: 'Cinzel', serif;
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-    color: rgba(240, 230, 211, 0.4);
-    margin-bottom: 4px;
-}
-
-.slot-cell.current .slot-pos-name {
-    color: var(--gold-light);
-}
-
-.slot-rewards {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-}
-
-.slot-reward-line {
-    font-family: 'EB Garamond', serif;
-    font-size: 11px;
-    color: rgba(240, 230, 211, 0.7);
-    white-space: nowrap;
-    line-height: 1.3;
-}
-
-.slot-cell.current .slot-reward-line {
-    color: var(--gold-light);
-    text-shadow: 0 0 8px rgba(201, 168, 76, 0.3);
-}
-
-.slot-claimed-check {
-    position: absolute;
-    top: 3px;
-    right: 5px;
-    font-size: 10px;
-    color: rgba(201, 168, 76, 0.5);
-}
-
-.slot-ring {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: calc(100% / 5);
-    height: 100%;
-    border: 2px solid var(--gold);
-    border-radius: 10px;
-    box-shadow: 0 0 20px rgba(201, 168, 76, 0.35), inset 0 0 12px rgba(201, 168, 76, 0.08);
-    pointer-events: none;
-    z-index: 2;
-    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.board-ov-strip {
-    display: flex;
-    gap: 10px;
-    margin-top: 16px;
-    padding: 10px 20px;
-    border-radius: 30px;
-    background: rgba(42,22,10,0.5);
-    border: 1px solid rgba(201, 168, 76, 0.08);
-}
-
-.board-ov-strip .char-option {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 2px solid rgba(201, 168, 76, 0.15);
-    cursor: pointer;
-    transition: all 0.25s;
-    opacity: 0.4;
-}
-
-.board-ov-strip .char-option:hover {
-    opacity: 0.7;
-    border-color: var(--gold-dark);
-    transform: scale(1.08);
-}
-
-.board-ov-strip .char-option.active {
-    opacity: 1;
-    border-color: var(--gold-light);
-    box-shadow: 0 0 20px rgba(201, 168, 76, 0.25);
-    transform: scale(1.1);
 }
 
 /* ── Hand Inspect Overlay ── */
@@ -1556,6 +1483,27 @@ html, body {
     letter-spacing: 3px;
 }
 
+/* Turn-in row: shown only for YOUR active missions during gameplay. */
+.mission-lb-action {
+    position: absolute;
+    bottom: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    z-index: 2;
+}
+.mission-lb-action:empty { display: none; }
+.mission-lb-due {
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: 13px;
+    color: rgba(240,230,211,0.65);
+    text-shadow: 0 2px 6px rgba(0,0,0,0.8);
+}
+
 /* ── Lend Toast ── */
 
 .lend-toast {
@@ -1621,7 +1569,7 @@ html, body {
 
 .action-panel {
     position: fixed;
-    bottom: 180px;
+    bottom: calc(var(--handCardH) + 47px); /* clears the hand zone at any size */
     left: 50%;
     transform: translateX(-50%);
     display: none;
@@ -1675,12 +1623,41 @@ html, body {
     display: none;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
     background: linear-gradient(180deg, var(--royal-deep) 0%, #0a0612 100%);
     z-index: 950;
+    overflow-y: auto; /* short screens scroll instead of clipping */
 }
 
 #scoring-screen.active { display: flex; }
+
+/* margin:auto centers when the content fits and scrolls when it doesn't —
+   justify-content:center would clip the top on short screens. */
+#scoringContent {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: auto;
+    padding: 16px;
+    max-width: 100vw;
+}
+
+.scoring-title {
+    font-family: 'Cinzel', serif;
+    color: var(--gold);
+    font-size: 28px;
+    margin: 20px 0;
+    text-align: center;
+}
+
+.scoring-sub {
+    color: var(--text-light);
+    opacity: 0.7;
+    margin-bottom: 20px;
+}
+
+.scoring-scroll { max-width: 96vw; overflow-x: auto; }
+
+.scoring-actions { margin: 40px 0 12px; }
 
 .scoring-table {
     border-collapse: collapse;
@@ -1982,7 +1959,9 @@ html, body {
     position: absolute;
     inset: 0;
     background:
-        radial-gradient(ellipse at center, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.92) 70%, rgba(0,0,0,0.97) 100%);
+        radial-gradient(ellipse at center, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.95) 70%, rgba(0,0,0,0.98) 100%);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
     animation: spotlightFadeIn calc(0.3s * var(--cinematic-speed, 1)) ease-out forwards;
 }
 
@@ -2705,8 +2684,9 @@ html, body {
 
 @media (orientation: landscape) and (max-height: 540px) {
 
-    /* Dynamic viewport height so mobile browser chrome doesn't clip. */
-    html, body { height: 100dvh; }
+    /* Dynamic viewport height so mobile browser chrome doesn't clip;
+       no rubber-banding so hand glides never fight a page scroll. */
+    html, body { height: 100dvh; overscroll-behavior: none; }
 
     /* ── Title screen: fit landscape — shrink cover so Play is on-screen ── */
     #title-screen {
@@ -2743,8 +2723,42 @@ html, body {
     /* The table is a positioning canvas; mats seat around the center. */
     .tv-table { position: relative; height: 100dvh; }
 
-    /* Slimmer phase bar. */
-    .phase-bar { top: 4px; padding: 3px 12px; gap: 8px; }
+    /* Scene depth (Wingspan-style): a warm pool of light on the play area
+       and a soft vignette at the edges, breathing very slowly. */
+    .tv-table::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+            radial-gradient(ellipse 62% 55% at 50% 44%, rgba(255,196,110,0.10), transparent 70%),
+            radial-gradient(ellipse 130% 120% at 50% 50%, transparent 55%, rgba(0,0,0,0.42) 100%);
+        pointer-events: none;
+        z-index: 1;
+        animation: tvGlowBreathe 16s ease-in-out infinite;
+    }
+
+    /* Slimmer phase bar, parked top-left so the rival rail owns top-center. */
+    .phase-bar { top: 6px; left: 10px; transform: none; padding: 3px 12px; gap: 8px; }
+
+    /* Your purse rides in the pill — gold readable at all times. */
+    .phase-bar .purse {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: 6px;
+        padding-left: 10px;
+        border-left: 1px solid rgba(201,168,76,0.3);
+    }
+    .phase-bar .purse img {
+        width: 15px; height: 15px;
+        border-radius: 50%;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    }
+    .phase-bar .purse b {
+        font-family: 'Cinzel', serif;
+        font-size: 12px;
+        color: #ffd97a;
+    }
 
     /* All mats live in an absolute layer, seated around the center. */
     .tv-seats { position: absolute; inset: 0; z-index: 2; }
@@ -2773,10 +2787,10 @@ html, body {
         border-color: var(--gold-light);
         box-shadow: 0 0 14px rgba(201,168,76,0.55), 0 3px 12px rgba(0,0,0,0.6);
     }
-    /* Full board (no crop) so the slider track at the bottom is visible. */
+    /* Full board (no crop) so the slider track at the bottom is visible.
+       Your board is the only full mat on the table now — give it presence. */
     .pmat-board { display: block; height: auto; }
-    .pmat.opp .pmat-board { width: 128px; }
-    .pmat.you .pmat-board { width: 156px; }
+    .pmat.you .pmat-board { width: 174px; }
 
     /* Gold ring on the slider track (left% set inline per slider slot). */
     .pmat-ring {
@@ -2864,53 +2878,131 @@ html, body {
         align-self: center;
     }
 
-    /* ── Center — available missions (raised; above mats so taps land) ── */
+    /* ── Center stage — missions are the main event (Wingspan scale).
+       Big readable cards under a plaque, sitting in the pool of light. ── */
     .tv-center {
         position: absolute;
-        top: 43%; left: 50%;
+        top: 46%; left: 50%;
         transform: translate(-50%, -50%);
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 3px;
+        gap: 6px;
         z-index: 4; /* above .tv-seats (2) so missions are tappable */
     }
     .tv-center-label {
         font-family: 'Cinzel', serif;
-        font-size: 8px;
-        letter-spacing: 2px;
+        font-size: 9px;
+        letter-spacing: 3px;
         text-transform: uppercase;
-        color: var(--gold-dark);
+        color: var(--gold);
+        padding: 3px 16px;
+        border: 1px solid rgba(201,168,76,0.35);
+        border-radius: 12px;
+        background: linear-gradient(180deg, rgba(40,22,10,0.85), rgba(20,10,4,0.85));
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
     }
-    .tv-missions { display: flex; gap: 7px; }
+    .tv-missions { display: flex; gap: 12px; }
     .tv-mission {
-        width: 46px;
-        height: 64px;
-        border-radius: 3px;
+        width: clamp(78px, 13vw, 100px);
+        aspect-ratio: 46 / 64;
+        height: auto;
+        border-radius: 6px;
         object-fit: cover;
-        border: 1px solid rgba(201,168,76,0.25);
-        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        border: 1px solid rgba(201,168,76,0.35);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.55);
         cursor: pointer;
-        transition: transform 0.2s, border-color 0.2s;
+        transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
     }
-    .tv-mission:hover { transform: scale(1.12); border-color: var(--gold); }
+    .tv-mission:hover {
+        transform: translateY(-4px) scale(1.06);
+        border-color: var(--gold);
+        box-shadow: 0 10px 22px rgba(0,0,0,0.6), 0 0 14px rgba(201,168,76,0.35);
+    }
+    /* Ghost seat (Wingspan): an empty mission slot still reads as a place. */
+    .tv-mission.ghost {
+        display: inline-block;
+        background: rgba(201,168,76,0.045);
+        border: 1.5px dashed rgba(201,168,76,0.3);
+        box-shadow: inset 0 0 16px rgba(0,0,0,0.35);
+        cursor: default;
+    }
+    .tv-mission.ghost:hover { transform: none; border-color: rgba(201,168,76,0.3); }
 
-    /* ── Seats in a ring around the center, each mat FACING the center ──
-       You stay upright; top/left/right flip so their boards face inward. */
-    .pmat.seat-bottom   { bottom: 36px; left: 50%;  transform: translateX(-50%); }
-    .pmat.seat-top      { top: 18px;    left: 50%;  transform: translateX(-50%) rotate(180deg); }
-    .pmat.seat-topleft  { top: 18px;    left: 28%;  transform: translateX(-50%) rotate(180deg); }
-    .pmat.seat-topright { top: 18px;    right: 28%; transform: translateX(50%) rotate(180deg); }
-    .pmat.seat-left  { top: 45%; left: 30%;  transform: translate(-50%, -50%) rotate(90deg); }
-    .pmat.seat-right { top: 45%; right: 30%; transform: translate(50%, -50%) rotate(-90deg); }
+    /* ── You: full mat anchored bottom-left (the Battlegrounds hero seat).
+       Rivals no longer take table space — they live in the top rail. */
+    .pmat.seat-bottom { bottom: 40px; left: 10px; transform: none; z-index: 46; }
 
-    /* Facing-center mats reverse their stack so cards still tuck toward center. */
-    .pmat.seat-top, .pmat.seat-topleft, .pmat.seat-topright,
-    .pmat.seat-left, .pmat.seat-right { flex-direction: column-reverse; }
-    .pmat.seat-top .pmat-cards, .pmat.seat-topleft .pmat-cards, .pmat.seat-topright .pmat-cards,
-    .pmat.seat-left .pmat-cards, .pmat.seat-right .pmat-cards {
-        margin-top: 0; margin-bottom: -18px;
-        padding-top: 0; padding-bottom: 18px;
+    /* ── Rival rail (Battlegrounds-style): upright portrait plaques along
+       the top edge — same public info the old rotated mats carried
+       (tokens, ring slot, played-card count), a fraction of the space. */
+    .tv-rivals {
+        position: absolute;
+        top: 5px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 8px;
+        z-index: 3;
+        max-width: calc(100vw - 300px); /* clear the phase pill + music/log buttons */
+    }
+    .tv-rivals .pmat.rplq {
+        position: static;              /* rail children flow; not seated absolutely */
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 9px 4px 4px;
+        border: 2px solid var(--gold-dark);
+        border-radius: 10px;
+        background: linear-gradient(160deg, rgba(46,26,12,0.92), rgba(24,12,5,0.94));
+        box-shadow: 0 3px 10px rgba(0,0,0,0.55);
+        min-width: 0;
+        transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+    }
+    .tv-rivals .pmat.rplq:hover { border-color: var(--gold); }
+    .tv-rivals .pmat.rplq.active {
+        border-color: var(--gold-light);
+        box-shadow: 0 0 14px rgba(201,168,76,0.6), 0 3px 10px rgba(0,0,0,0.55);
+        transform: translateY(2px) scale(1.04);
+    }
+    .rplq-portrait {
+        width: 42px; height: 42px;
+        border-radius: 7px;
+        overflow: hidden;
+        border: 1px solid rgba(201,168,76,0.45);
+        flex-shrink: 0;
+    }
+    .rplq-portrait img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .rplq-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .rplq-name {
+        font-family: 'Cinzel', serif;
+        font-size: 9px;
+        letter-spacing: 0.5px;
+        color: var(--gold-light);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 104px;
+    }
+    /* .pmat-tokens is absolutely positioned on full mats — flow it in the rail. */
+    .rplq-chips { position: static; left: auto; bottom: auto; }
+    .rplq-foot { display: flex; align-items: center; gap: 7px; }
+    .rplq-ring { display: flex; gap: 2px; align-items: center; }
+    .rplq-ringdot {
+        width: 5px; height: 5px;
+        border-radius: 50%;
+        background: rgba(201,168,76,0.25);
+        display: inline-block;
+    }
+    .rplq-ringdot.on {
+        background: var(--gold-light);
+        box-shadow: 0 0 4px rgba(240,210,120,0.9);
+    }
+    .rplq-cards {
+        font-family: 'Cinzel', serif;
+        font-size: 8px;
+        color: var(--gold-dark);
+        letter-spacing: 0.5px;
     }
 
     /* ═══ DRAWERS ═══ */
@@ -2931,8 +3023,8 @@ html, body {
     /* ── Left drawer: your skills / ring / act ── */
     .tv-left-drawer {
         position: absolute;
-        top: 28px;
-        bottom: 34px;
+        top: 58px;
+        bottom: 38px;
         left: 0;
         width: 150px;
         z-index: 45;
@@ -2984,9 +3076,9 @@ html, body {
     .tv-hand-drawer {
         position: absolute;
         left: 0; right: 0; bottom: 0;
-        height: 120px;
+        height: 142px;
         z-index: 45;
-        transform: translateY(calc(100% - 30px)); /* closed: 30px card-tops peek */
+        transform: translateY(calc(100% - 34px)); /* closed: card-tops peek */
         transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .tv-hand-drawer.open { transform: translateY(0); }
@@ -2998,10 +3090,12 @@ html, body {
         box-shadow: inset 0 6px 18px rgba(0,0,0,0.4);
         z-index: 0;
     }
+    /* Hand tab parked at the right corner — where a landscape thumb actually
+       rests — instead of mid-screen under the center mission. */
     .tv-drawer-tab.hand {
-        top: -22px; left: 50%;
-        transform: translateX(-50%);
-        width: 70px; height: 22px;
+        top: -22px; left: auto; right: 12px;
+        transform: none;
+        width: 64px; height: 22px;
         border-bottom: none;
         border-radius: 10px 10px 0 0;
         font-size: 12px;
@@ -3017,15 +3111,48 @@ html, body {
     }
     .tv-hand .hand-arc { display: flex; align-items: flex-end; }
     .tv-hand .hand-card {
-        width: 66px; height: 92px;
-        margin: 0 -8px;
-        border-radius: 5px;
+        width: 86px; height: 120px;
+        margin: 0 -11px;
+        border-radius: 6px;
+        /* Transform is the only animated property, in AND out, and margins
+           never change — so gliding across the fan is pure GPU and the tray
+           itself never reflows under the finger. */
+        transition: transform 0.15s cubic-bezier(0.33, 1, 0.68, 1);
+        touch-action: none;          /* the glide owns the gesture — no browser pan / pointercancel */
+        -webkit-touch-callout: none; /* long-press must not summon the image save sheet */
+        -webkit-user-select: none;
+        user-select: none;
     }
-    .tv-hand .hand-card:hover,
+    .tv-hand .hand-card img { -webkit-user-drag: none; }
+    /* Touch or hover BLOOMS the card in place — the Battlegrounds tray feel.
+       Slide along the fan and each card blooms in turn (JS .bloom).
+       --bloomScale fits the card to the actual screen height and
+       --bloomShift walks edge cards inward so nothing is ever cut off;
+       both are set by _tvBloomLayout() in ui.js. Touch gets ONLY the
+       JS-managed .bloom — sticky mobile :hover next to it showed two
+       bloomed cards at once. */
+    .tv-hand .hand-card.bloom {
+        transform: translateX(var(--bloomShift, 0px)) translateY(-6px) scale(var(--bloomScale, 2.8)) !important;
+        transform-origin: bottom center;
+        z-index: 60;
+    }
+    @media (hover: hover) {
+        .tv-hand-drawer.open .tv-hand .hand-card:hover {
+            transform: translateX(var(--bloomShift, 0px)) translateY(-6px) scale(var(--bloomScale, 2.8)) !important;
+            transform-origin: bottom center;
+            z-index: 60;
+        }
+    }
+    /* Selected keeps a modest lift — the action sheet already shows it big. */
     .tv-hand .hand-card.selected {
-        transform: translateY(-16px) scale(1.1) !important;
-        margin: 0 3px;
+        transform: translateY(-24px) scale(1.16) !important;
         z-index: 30;
+        filter: drop-shadow(0 0 10px rgba(240,210,120,0.65));
+    }
+    /* Battlegrounds-style playable glow: these you can act on right now. */
+    .tv-hand .hand-card.playable {
+        box-shadow: 0 0 0 2px rgba(140,225,125,0.95), 0 0 18px 4px rgba(120,220,120,0.55);
+        animation: playableBreathe 2.2s ease-in-out infinite;
     }
     .tv-hand-waiting {
         color: var(--gold); opacity: 0.4;
@@ -3034,14 +3161,49 @@ html, body {
         align-self: center;
     }
 
-    /* Action panel sits above the hand drawer. */
-    .action-panel { bottom: 130px; padding: 12px 18px; min-width: 220px; }
+    /* ── Action sheet: the selected card sits big and readable beside its
+       actions (Battlegrounds "the card is the dialog") instead of a menu
+       floating over a hidden card. ── */
+    .action-panel {
+        bottom: 10px;
+        padding: 10px 16px;
+        min-width: 0;
+        max-width: 96vw;
+        max-height: calc(100dvh - 16px);
+        flex-direction: row;
+        align-items: center;
+        gap: 16px;
+    }
+    .action-panel .action-card-img {
+        /* !important: outranks the desktop-default display:none that sits
+           later in the sheet (same specificity, later source order). */
+        display: block !important;
+        height: clamp(150px, 54dvh, 214px);
+        width: auto;
+        border-radius: 8px;
+        box-shadow: 0 8px 22px rgba(0,0,0,0.65);
+    }
+    .action-panel .action-body {
+        align-items: stretch;
+        min-width: 216px;
+        max-width: 52vw;
+        overflow-y: auto;
+        max-height: calc(100dvh - 40px);
+    }
+    .action-panel .action-header { margin-bottom: 2px; }
+    /* No text summaries — the card image IS the description. */
+    .action-panel .action-card-name,
+    .action-panel .action-card-type,
+    .action-panel .action-skills,
+    .action-panel .action-rewards { display: none; }
+    .action-panel .action-buttons { gap: 6px; margin-top: 4px; }
+    .action-panel .action-btn { padding: 8px 14px !important; font-size: 11px !important; }
 
     /* ── Right drawer: your acquired missions ── */
     .tv-right-drawer {
         position: absolute;
-        top: 28px;
-        bottom: 34px;
+        top: 58px;
+        bottom: 38px;
         right: 0;
         width: 168px;
         z-index: 45;
@@ -3124,17 +3286,22 @@ html, body {
     .opp-slot-num { font-size: 6px; }
     .opp-slot-line { font-size: 7px; }
     .opp-turn-stats .stat-pill { font-size: 9px; padding: 1px 7px; }
+    /* Decluttered AI-turn spotlight: WHO + THE CARD + what it does. Slot
+       strips and played-card history belong in tap-to-inspect, not in a
+       two-second moment — and the card itself gets the screen. */
+    .opp-turn-ring, .opp-turn-played { display: none; }
+    .opp-turn-inner { gap: 8px; }
     .opp-turn-cards-area { gap: 4px; }
     .opp-turn-played-card { width: 22px; height: 31px; }
     .opp-turn-new-card { gap: 3px; }
-    .opp-turn-new-card img { width: 104px; height: 146px; }
+    .opp-turn-new-card img { width: 148px; height: 208px; }
     .opp-turn-new-tag { font-size: 8px; padding: 1px 8px; letter-spacing: 2px; }
     .opp-turn-new-name { font-size: 13px; letter-spacing: 1px; }
     .opp-turn-new-effect { font-size: 11px; max-width: 88vw; line-height: 1.35; }
     .spotlight-player { font-size: 12px !important; letter-spacing: 1px !important; }
     .spotlight-dismiss { font-size: 9px; }
     /* Human's own quick banner clears the hand drawer. */
-    .mini-spotlight { bottom: 128px; }
+    .mini-spotlight { bottom: 150px; }
 
     /* ── Opponent inspect: big readable board + toggle to reveal cards ── */
     .opp-ov-inner {
@@ -3382,6 +3549,16 @@ html, body {
     .howto-text { font-size: 14px; line-height: 1.35; min-height: 44px; }
     .howto-dots { margin: 8px 0 8px; }
     .howto-btn { padding: 7px 16px; font-size: 12px; }
+
+    /* ── Final scoring: the whole ceremony fits a short screen ── */
+    #scoringContent { padding: 8px 10px; }
+    .scoring-title { font-size: 17px; margin: 6px 0 2px; }
+    .scoring-sub { font-size: 11px; margin-bottom: 6px; }
+    .scoring-table { margin-top: 8px; }
+    .scoring-table th, .scoring-table td { padding: 4px 9px; font-size: 11px; }
+    .scoring-table th { font-size: 8px; letter-spacing: 0.5px; }
+    .scoring-actions { margin: 12px 0 6px; }
+    .scoring-actions .btn-royal { padding: 8px 22px; font-size: 12px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -3475,3 +3652,351 @@ html, body {
 }
 #coach-glow.show { display: block; animation: coachPulse 1.7s ease-in-out infinite; }
 @keyframes coachPulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+
+/* ═══ CARD PEEK — press & hold "boom" (Battlegrounds-style) ═══════════
+   Any card held for a beat blows up to full readable size, with keyword
+   plaques alongside explaining exactly what it does. Global: works on the
+   phone table view AND the desktop layout. */
+
+[data-peek] {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.card-peek {
+    position: fixed;
+    inset: 0;
+    z-index: 10500; /* above the action panel (9999) — the peek outranks everything */
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: 10px;
+    background: rgba(6,3,1,0.82);
+    backdrop-filter: blur(4px);
+    cursor: pointer;
+}
+.card-peek.active { display: flex; }
+
+.peek-card {
+    max-height: 92dvh;
+    max-width: 58vw;
+    border-radius: 12px;
+    box-shadow: 0 0 60px rgba(201,168,76,0.45), 0 18px 50px rgba(0,0,0,0.8);
+    animation: peekIn 0.18s cubic-bezier(0.2, 1.3, 0.3, 1);
+}
+
+.peek-plaques {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: min(300px, 36vw);
+    max-height: 92dvh;
+    overflow-y: auto;
+    animation: peekPlaques 0.26s ease;
+}
+.peek-plaques:empty { display: none; }
+
+.peek-plaque {
+    border: 1px solid rgba(201,168,76,0.4);
+    border-radius: 10px;
+    background: linear-gradient(160deg, rgba(50,28,13,0.96), rgba(26,13,5,0.97));
+    box-shadow: 0 4px 14px rgba(0,0,0,0.55);
+    padding: 7px 12px;
+}
+.peek-plaque .pk-title {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--gold-light);
+    margin-bottom: 2px;
+}
+.peek-plaque .pk-body {
+    font-family: 'EB Garamond', serif;
+    font-size: 13px;
+    color: #e8d9bf;
+    line-height: 1.35;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    align-items: center;
+}
+.pk-skill { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.pk-skill img { width: 16px; height: 16px; border-radius: 3px; }
+.peek-plaque.scorn { border-color: rgba(200,80,80,0.5); }
+.peek-plaque.scorn .pk-title { color: #f09a9a; }
+.peek-plaque.special { border-color: rgba(140,180,255,0.4); }
+.peek-plaque.special .pk-title { color: #a9c8f5; }
+.peek-plaque.type { border-color: rgba(201,168,76,0.6); }
+
+@keyframes peekIn { from { transform: scale(0.6); opacity: 0; } }
+@keyframes peekPlaques { from { transform: translateX(14px); opacity: 0; } }
+
+/* ═══ HOVER PEEK — point at any small card, see it huge ═══════════════
+   Desktop mice only (touch uses hold-to-peek). A fixed, non-interactive
+   full-size card floats beside whatever small card the cursor is on —
+   played stacks, mission pips, sidebar minis — Battlegrounds-big, never
+   clipped by the scroll panes those small cards live inside. */
+
+.hover-peek {
+    position: fixed;
+    z-index: 10400; /* over everything except the hold-peek overlay (10500) */
+    pointer-events: none;
+    display: none;
+}
+.hover-peek.active { display: block; }
+.hover-peek img {
+    display: block;
+    height: min(88vh, 680px); /* card scans are 333x500 — past ~680px they go soft */
+    width: auto;
+    border-radius: 14px;
+    box-shadow: 0 0 70px rgba(201,168,76,0.4), 0 24px 60px rgba(0,0,0,0.75);
+    animation: peekIn 0.14s cubic-bezier(0.2, 1.3, 0.3, 1);
+}
+
+/* ═══ MELEE SPLASH — end-of-act tournament moment ═══════════════════ */
+
+#meleeSplash {
+    position: fixed;
+    inset: 0;
+    z-index: 10600; /* the act's big moment — nothing sits on top of the Melee */
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(30,14,6,0.88), rgba(8,4,2,0.96));
+    backdrop-filter: blur(3px);
+    cursor: pointer;
+}
+#meleeSplash.active { display: flex; animation: msFade 0.3s ease; }
+
+.ms-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    max-width: 94vw;
+    max-height: 96dvh;
+}
+.ms-banner {
+    font-family: 'Cinzel', serif;
+    font-weight: 900;
+    letter-spacing: 8px;
+    font-size: clamp(20px, 7dvh, 36px);
+    color: var(--gold-light);
+    text-transform: uppercase;
+    text-shadow: 0 0 24px rgba(201,168,76,0.55), 0 3px 6px rgba(0,0,0,0.8);
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    animation: msBanner 0.5s cubic-bezier(0.2, 1.4, 0.3, 1);
+}
+.ms-act {
+    font-size: 0.45em;
+    letter-spacing: 4px;
+    color: var(--gold-dark);
+}
+.ms-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: min(500px, 92vw);
+    overflow-y: auto;
+    overflow-x: hidden;   /* rows slide in from ±46px — no scrollbar flash */
+    padding: 4px;
+}
+.ms-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 14px;
+    border: 1px solid rgba(201,168,76,0.25);
+    border-radius: 10px;
+    background: linear-gradient(90deg, rgba(46,26,12,0.88), rgba(24,12,5,0.92));
+    opacity: 0;
+    transform: translateX(-46px);
+    animation: msRow 0.45s cubic-bezier(0.2, 1.2, 0.3, 1) forwards;
+}
+.ms-row:nth-child(even) { transform: translateX(46px); }
+.ms-row.winner {
+    border-color: var(--gold-light);
+    box-shadow: 0 0 20px rgba(201,168,76,0.45);
+}
+.ms-place {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    color: var(--gold-dark);
+    width: 30px;
+    flex-shrink: 0;
+}
+.ms-row.winner .ms-place { color: var(--gold-light); }
+.ms-portrait {
+    width: 34px; height: 34px;
+    border-radius: 6px;
+    object-fit: cover;
+    border: 1px solid rgba(201,168,76,0.4);
+    flex-shrink: 0;
+}
+.ms-name {
+    font-family: 'Cinzel', serif;
+    font-size: 13px;
+    color: var(--gold);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ms-row.winner .ms-name { color: #ffe9ad; }
+.ms-power { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.ms-power img { width: 18px; height: 18px; }
+.ms-power b {
+    font-family: 'Cinzel', serif;
+    font-size: 16px;
+    color: #ffd97a;
+    min-width: 26px;
+    text-align: right;
+}
+.ms-prestige {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    color: #8fd4ff;
+    width: 88px;
+    text-align: right;
+    flex-shrink: 0;
+}
+.ms-hint {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--gold-dark);
+    opacity: 0.7;
+}
+@keyframes msRow { to { opacity: 1; transform: none; } }
+@keyframes msBanner { from { opacity: 0; transform: scale(1.35); } }
+@keyframes msFade { from { opacity: 0; } }
+
+/* ═══ ACTION PANEL — shared body wrapper + table-scene breathing ═════ */
+
+/* Desktop keeps the classic centered column; the card image is a
+   table-view feature (shown inside the landscape media query). */
+.action-panel .action-card-img { display: none; }
+.action-panel .action-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+}
+
+@keyframes tvGlowBreathe { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }
+
+@keyframes playableBreathe {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(140,225,125,0.95), 0 0 18px 4px rgba(120,220,120,0.55); }
+    50%      { box-shadow: 0 0 0 2px rgba(140,225,125,0.7),  0 0 10px 2px rgba(120,220,120,0.35); }
+}
+
+/* Purse line inside the action sheet — gold where you're spending it. */
+.action-purse {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-family: 'EB Garamond', serif;
+    font-size: 12px;
+    color: var(--gold-dark);
+    margin-top: 4px;
+}
+.action-purse img { width: 14px; height: 14px; border-radius: 50%; }
+.action-purse b { color: #ffd97a; font-family: 'Cinzel', serif; font-size: 12px; }
+
+/* ═══ A PROMISE — sacrifice picker ═══════════════════════════════════ */
+#promisePicker {
+    position: fixed; inset: 0; z-index: 10550;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(8,4,2,0.93);
+    backdrop-filter: blur(4px);
+}
+#promisePicker.active { display: flex; }
+.pp-inner { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 94vw; max-height: 96dvh; }
+.pp-title {
+    font-family: 'Cinzel', serif; font-weight: 900; font-size: clamp(18px, 5dvh, 26px);
+    letter-spacing: 4px; color: var(--gold-light); text-transform: uppercase;
+    text-shadow: 0 0 18px rgba(201,168,76,0.5);
+}
+.pp-sub { font-family: 'EB Garamond', serif; font-size: 13px; color: #e8d9bf; }
+.pp-sub b { color: #8fd4ff; }
+.pp-cards {
+    display: flex; gap: 10px; flex-wrap: nowrap; overflow-x: auto;
+    max-width: 94vw; padding: 10px 6px;
+}
+.pp-card {
+    position: relative; cursor: pointer; flex-shrink: 0;
+    border-radius: 6px; transition: transform 0.15s, box-shadow 0.15s;
+}
+.pp-card img { width: 92px; border-radius: 6px; display: block; box-shadow: 0 6px 16px rgba(0,0,0,0.55); }
+.pp-card:hover { transform: translateY(-4px); }
+.pp-card .pp-x {
+    position: absolute; inset: 0;
+    display: none; align-items: center; justify-content: center;
+    font-size: 40px; color: #ff6b5e; font-weight: 900;
+    background: rgba(60,10,6,0.45); border-radius: 6px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+}
+.pp-card.chosen { box-shadow: 0 0 0 2px #ff6b5e, 0 0 18px rgba(255,107,94,0.5); }
+.pp-card.chosen .pp-x { display: flex; }
+.pp-actions { display: flex; gap: 12px; }
+
+/* Chemical Y flavor of the picker: choosing is a BOON — gold, not
+   sacrifice-red — and each card wears its favor math. */
+.pp-inner.chemy .pp-card.chosen { box-shadow: 0 0 0 2px var(--gold-light), 0 0 20px rgba(201,168,76,0.6); }
+.pp-card .pp-favor {
+    position: absolute;
+    bottom: 5px; left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Cinzel', serif;
+    font-size: 10px; font-weight: 700;
+    color: #ffe9a8;
+    background: rgba(20,10,4,0.88);
+    border: 1px solid rgba(201,168,76,0.5);
+    border-radius: 8px;
+    padding: 1px 7px;
+    white-space: nowrap;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+
+/* A doubled adventure card wears its ×2 in the played stacks. */
+.stack-card.doubled {
+    box-shadow: 0 0 0 2px rgba(255,225,140,0.9), 0 0 16px rgba(201,168,76,0.5), 0 3px 12px rgba(0,0,0,0.65);
+}
+
+/* ═══ SLIDE CONFIRM — pay gold to slide the ring ═════════════════════ */
+#slideConfirm {
+    position: fixed; z-index: 10560;
+    display: none;
+    transform: translate(-50%, -100%);
+}
+#slideConfirm.active { display: block; }
+.sc-bubble {
+    background: linear-gradient(160deg, rgba(50,28,13,0.98), rgba(26,13,5,0.98));
+    border: 1.5px solid var(--gold);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.7), 0 0 18px rgba(201,168,76,0.25);
+    padding: 10px 14px;
+    display: flex; flex-direction: column; gap: 6px; align-items: center;
+    min-width: 210px;
+}
+.sc-text { font-family: 'EB Garamond', serif; font-size: 14px; color: #efe2c8; }
+.sc-text b, .sc-cost b { color: var(--gold-light); }
+.sc-cost { font-family: 'Cinzel', serif; font-size: 11px; color: #ffd97a; letter-spacing: 0.5px; }
+.sc-actions { display: flex; gap: 8px; margin-top: 2px; }
+.sc-actions .btn-royal { padding: 6px 14px; font-size: 11px; min-width: 0; }
+
+/* Ring affordance: it's grabbable, and lifts while dragging */
+.pmat.you .pmat-ring { cursor: grab; transition: left 0.12s ease-out; }
+.pmat-ring.dragging {
+    transition: none;
+    filter: drop-shadow(0 0 8px rgba(240,210,120,0.9)) drop-shadow(0 3px 4px rgba(0,0,0,0.6));
+    scale: 1.25;
+}

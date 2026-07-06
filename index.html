@@ -4,10 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FAVOR — A Game of Royal Succession</title>
-    <link rel="stylesheet" href="css/style.css?v=20260703164204">
+    <link rel="stylesheet" href="css/style.css?v=20260706174540">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
+
+    <!-- Build version stamp (subtle, bottom-right) — self-reads the ?v= cache stamp -->
+    <div id="buildVersion" style="position:fixed;bottom:2px;right:6px;z-index:99999;font:600 8px monospace;color:#e8caa0;opacity:.35;pointer-events:none"></div>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var ui = document.querySelector('script[src*="ui.js"]');
+        var stamp = ui ? (ui.src.split('?v=')[1] || '?') : '?';
+        document.getElementById('buildVersion').textContent = 'v' + stamp;
+    });
+    </script>
 
     <!-- ═══ ROTATE GATE (phones held in portrait) ═══ -->
     <div id="rotate-gate">
@@ -82,13 +92,17 @@
     <!-- ═══ GAME SCREEN — Final Cut Layout ═══ -->
     <div id="game-screen">
 
-        <!-- Board Expand Overlay -->
+        <!-- Board Expand Overlay — the art IS the sheet: the ring sits on
+             the track's slot circles; click a circle to pay & slide. -->
         <div class="board-overlay" id="boardOverlay" onclick="closeBoardOverlay()">
-            <img class="board-ov-full" id="boardOvImg" src="" onclick="event.stopPropagation()">
+            <div class="board-ov-boardwrap" onclick="event.stopPropagation()">
+                <img class="board-ov-full" id="boardOvImg" src="">
+                <img class="board-ov-ring" id="boardOvRing" src="assets/ui/slider-ring.png" alt="">
+                <div id="boardOvSlots"></div>
+            </div>
             <div class="board-ov-name" id="boardOvName"></div>
             <div class="board-ov-sub">Character Board</div>
-            <div class="board-ov-slider" id="boardOvSlider" onclick="event.stopPropagation()"></div>
-            <div class="board-ov-strip" id="boardOvStrip" onclick="event.stopPropagation()"></div>
+            <div class="board-ov-hint" id="boardOvHint"></div>
             <div class="ov-close" onclick="closeBoardOverlay()">ESC</div>
         </div>
 
@@ -127,19 +141,21 @@
             <img class="mission-lb-card" id="missionLBImg" src="" onclick="event.stopPropagation()">
             <div class="ov-close" onclick="closeMissionLB()">ESC</div>
             <div class="mission-lb-label" id="missionLBLabel"></div>
+            <div class="mission-lb-action" id="missionLBAction" onclick="event.stopPropagation()"></div>
         </div>
 
         <!-- Lend Toast -->
         <div class="lend-toast" id="lendToast"></div>
+
+        <!-- Phase indicator — lives at screen level so BOTH layouts show it
+             (inside .game-layout it never rendered on the phone table view) -->
+        <div class="phase-bar" id="phaseBar"></div>
 
         <!-- ═══ MAIN GAME GRID ═══ -->
         <div class="game-layout">
 
             <!-- Play Area (left/center) -->
             <div class="play-area">
-                <!-- Phase indicator -->
-                <div class="phase-bar" id="phaseBar"></div>
-
                 <!-- Left rail — display:contents on desktop, flex column in landscape -->
                 <div class="left-rail">
                     <!-- Board thumbnail — top-left -->
@@ -226,6 +242,21 @@
         <img id="zoomImg" src="" alt="Card">
     </div>
 
+    <!-- ═══ CARD PEEK — press & hold any card for the big read ═══ -->
+    <div class="card-peek" id="cardPeek" onclick="closeCardPeek()"></div>
+
+    <!-- ═══ HOVER PEEK — mouse over any small card, see it huge ═══ -->
+    <div class="hover-peek" id="hoverPeek"><img id="hoverPeekImg" src="" alt=""></div>
+
+    <!-- ═══ MELEE SPLASH — end-of-act tournament moment ═══ -->
+    <div id="meleeSplash"></div>
+
+    <!-- ═══ A PROMISE — sacrifice picker ═══ -->
+    <div id="promisePicker"></div>
+
+    <!-- ═══ SLIDE CONFIRM — pay gold to move your ring ═══ -->
+    <div id="slideConfirm"></div>
+
     <!-- ═══ SCORING SCREEN ═══ -->
     <div id="scoring-screen">
         <h1 class="select-title">The Queen Has Decided</h1>
@@ -242,10 +273,10 @@
     </audio>
 
     <!-- ═══ SCRIPTS ═══ -->
-    <script src="data/cards.js?v=20260703164204"></script>
-    <script src="data/missions.js?v=20260703164204"></script>
-    <script src="data/characters.js?v=20260703164204"></script>
-    <script src="engine/gameState.js?v=20260703164204"></script>
-    <script src="js/ui.js?v=20260703164204"></script>
+    <script src="data/cards.js?v=20260706174540"></script>
+    <script src="data/missions.js?v=20260706174540"></script>
+    <script src="data/characters.js?v=20260706174540"></script>
+    <script src="engine/gameState.js?v=20260706174540"></script>
+    <script src="js/ui.js?v=20260706174540"></script>
 </body>
 </html>

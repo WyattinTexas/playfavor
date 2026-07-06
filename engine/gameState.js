@@ -238,6 +238,9 @@ class FavorGame {
                 reqCounts[req] = (reqCounts[req] || 0) + 1;
             });
 
+            // Skill requirements resolve together so flex units (Mining
+            // Guild etc.) can be assigned wherever they're short.
+            const skillReqs = {};
             for (const [req, needed] of Object.entries(reqCounts)) {
                 if (req === 'minds_eye') {
                     const have = this.getMindsEyeCount(playerIndex);
@@ -246,15 +249,13 @@ class FavorGame {
                     const have = player.philosopherStone || 0;
                     for (let i = 0; i < needed - have; i++) missingSpecial.push("Philosopher's Stone");
                 } else {
-                    const have = this.getPlayerSkillTotal(playerIndex, req);
-                    if (have < needed) {
-                        // Add the shortfall to missing array
-                        for (let i = 0; i < needed - have; i++) {
-                            missing.push(req);
-                        }
-                    }
+                    skillReqs[req] = needed;
                 }
             }
+            const unmet = this.unmetSkillReqs(playerIndex, skillReqs);
+            Object.entries(unmet).forEach(([req, short]) => {
+                for (let i = 0; i < short; i++) missing.push(req);
+            });
         }
 
         // Gold / Favor floor requirements (having, not spending)
@@ -289,15 +290,31 @@ class FavorGame {
             if (c.special === 'minds_eye_x5') count += 5;
             if (c.special === 'minds_eye_x2_philosopher_stone_x5') count += 2;
         }
+        count += player.bonusMindsEye || 0; // mission success rewards
         return count;
     }
 
     /**
      * Maps a player holds — granted by playing source cards with grantsMap.
+     * A map answers to BOTH its names: the destination it leads to (the
+     * source card's grantsMap, e.g. "Finding the Lost Corridor") AND the
+     * source card it came from (destination audits say "OR Her Lost Father
+     * Map"). reqMaps lists source-card names, so both must resolve.
      */
     getPlayerMaps(playerIndex) {
         const player = this.players[playerIndex];
-        return player.playedCards.filter(c => c.grantsMap).map(c => c.grantsMap);
+        const held = [];
+        const collect = (c) => {
+            if (c && c.grantsMap) {
+                held.push(c.grantsMap);  // destination name
+                held.push(c.name);       // source name (reqMaps convention)
+            }
+        };
+        player.playedCards.forEach(collect);
+        // Completed missions grant their maps too (e.g. The Minister's Plan
+        // → Facing the River Fiend).
+        (player.completedMissions || []).forEach(collect);
+        return held;
     }
 
     /**
@@ -414,12 +431,17 @@ class FavorGame {
                 });
             }
 
-            // Pay card cost if any
-            if (card.cost && card.cost > 0) {
+            // Pay card cost if any — unless a held Map plays it for free
+            // (tutorial/rulebook: "A Map lets you play its linked card for free").
+            const mapFree = card.reqMaps && card.reqMaps.length > 0 &&
+                this.getPlayerMaps(playerIndex).some(m => card.reqMaps.includes(m));
+            if (card.cost && card.cost > 0 && !mapFree) {
                 if (player.gold < card.cost) {
                     return { success: false, error: 'Not enough gold' };
                 }
                 player.gold -= card.cost;
+            } else if (card.cost && card.cost > 0 && mapFree) {
+                this.addLog(`${player.name}'s Map plays ${card.name} for free`);
             }
 
             // Play the card
@@ -585,6 +607,12 @@ class FavorGame {
         }
 
         // Re-add skills from all played cards
+        // Flex skills (either/or cards) are collected separately: one unit
+        // usable as EITHER option, chosen per check, never both and never
+        // twice. They stay OUT of player.skills so displayed totals don't
+        // wander as other skills change; requirement checks allocate them
+        // against whatever is short (see unmetSkillReqs).
+        player.flexSkills = [];
         player.playedCards.forEach(c => {
             if (c.skills) {
                 c.skills.forEach(skill => {
@@ -607,18 +635,61 @@ class FavorGame {
                 player.skills.knowledge = (player.skills.knowledge || 0) + 2;
             }
             if (c.special === 'charisma_or_prospecting') {
-                const charCount = player.skills.charisma || 0;
-                const prospCount = player.skills.prospecting || 0;
-                const chosen = charCount <= prospCount ? 'charisma' : 'prospecting';
-                player.skills[chosen] = (player.skills[chosen] || 0) + 1;
+                player.flexSkills.push(['charisma', 'prospecting']);
             }
             if (c.special === 'alchemy_or_prospecting') {
-                const alchC = player.skills.alchemy || 0;
-                const prospC = player.skills.prospecting || 0;
-                const chosen = alchC <= prospC ? 'alchemy' : 'prospecting';
-                player.skills[chosen] = (player.skills[chosen] || 0) + 1;
+                player.flexSkills.push(['alchemy', 'prospecting']);
             }
         });
+
+        // Mission success rewards ("3 Prospecting") persist for the rest of
+        // the game — they must survive this rebuild.
+        if (player.bonusSkills) {
+            Object.entries(player.bonusSkills).forEach(([skill, n]) => {
+                if (SKILLS.includes(skill)) {
+                    player.skills[skill] = (player.skills[skill] || 0) + n;
+                }
+            });
+        }
+    }
+
+    /**
+     * Which of `reqCounts` ({skill: n}) can't be covered by fixed skills
+     * plus flex units? Each flex unit covers ONE unit of either of its two
+     * options — never both. Exact search over flex assignments (the list is
+     * tiny), so "1 Charisma & 1 Prospecting with one Mining Guild + one
+     * fixed Prospecting" resolves correctly no matter the order.
+     * Returns a {skill: unitsStillMissing} map — empty means satisfied.
+     */
+    unmetSkillReqs(playerIndex, reqCounts) {
+        const player = this.players[playerIndex];
+        const deficit = {};
+        Object.entries(reqCounts).forEach(([skill, n]) => {
+            const short = n - (player.skills[skill] || 0);
+            if (short > 0) deficit[skill] = short;
+        });
+        const flex = player.flexSkills || [];
+        const total = (d) => Object.values(d).reduce((a, b) => a + b, 0);
+        if (!total(deficit) || !flex.length) return deficit;
+
+        let best = deficit;
+        const tryAssign = (i, def) => {
+            if (!total(def)) { best = def; return true; }
+            if (i >= flex.length) {
+                if (total(def) < total(best)) best = def;
+                return false;
+            }
+            for (const opt of flex[i]) {
+                if (def[opt]) {
+                    const next = { ...def };
+                    if (next[opt] === 1) delete next[opt]; else next[opt]--;
+                    if (tryAssign(i + 1, next)) return true;
+                }
+            }
+            return tryAssign(i + 1, def); // this flex unit goes unused
+        };
+        tryAssign(0, deficit);
+        return best;
     }
 
     /**
@@ -803,25 +874,17 @@ class FavorGame {
                 break;
 
             case 'charisma_or_prospecting':
-                // Mining Guild: auto-pick whichever the player has less of
-                {
-                    const charCount = player.skills.charisma || 0;
-                    const prospCount = player.skills.prospecting || 0;
-                    const chosen = charCount <= prospCount ? 'charisma' : 'prospecting';
-                    player.skills[chosen] = (player.skills[chosen] || 0) + 1;
-                    this.addLog(`${player.name}'s ${card.name}: gained ${chosen} (auto-picked lesser)`);
-                }
+                // Mining Guild: a flex skill — counts as Charisma OR
+                // Prospecting per check, never both, never twice. The card
+                // is already in playedCards, so a recalc registers it.
+                this.applySlotSkills(player);
+                this.addLog(`${player.name}'s ${card.name}: +1 Charisma OR Prospecting (chosen when needed)`);
                 break;
 
             case 'alchemy_or_prospecting':
-                // Forbidden Lab: auto-pick whichever the player has less of
-                {
-                    const alchC = player.skills.alchemy || 0;
-                    const prospC = player.skills.prospecting || 0;
-                    const chosen = alchC <= prospC ? 'alchemy' : 'prospecting';
-                    player.skills[chosen] = (player.skills[chosen] || 0) + 1;
-                    this.addLog(`${player.name}'s ${card.name}: gained ${chosen} (auto-picked lesser)`);
-                }
+                // Forbidden Lab: flex — Alchemy OR Prospecting per check.
+                this.applySlotSkills(player);
+                this.addLog(`${player.name}'s ${card.name}: +1 Alchemy OR Prospecting (chosen when needed)`);
                 break;
 
             // --- Philosopher's Stone variants (end-of-game gold→favor) ---
@@ -948,19 +1011,27 @@ class FavorGame {
             // --- Favor/economy specials ---
 
             case 'double_adventure_favor':
-                // Chemical Y: double all favor earned from adventure cards played so far
+                // Chemical Y, per the card: "Choose an Adventure card you
+                // have, multiply its Favor amount by 2" — ONE card, chosen.
+                // The pick is marked on the card and pays at scoring, so a
+                // later discard takes the doubling with it. A card doubles
+                // at most once; a second Chemical Y picks a different one.
+                // (Pair bonus +15 w/ Chemical X pays in dynamicCardFavor.)
                 {
-                    let adventureFavor = 0;
-                    player.playedCards.forEach(c => {
-                        if (c.type === 'adventure' && c.favor) {
-                            adventureFavor += c.favor;
-                        }
-                    });
-                    if (adventureFavor > 0) {
-                        player.favor += adventureFavor;
-                        this.addLog(`${player.name}'s Chemical Y: doubled adventure favor (+${adventureFavor})`);
-                    } else {
+                    const advs = player.playedCards.filter(c =>
+                        c.type === 'adventure' && (c.favor || 0) > 0 && !c._favorDoubled);
+                    if (!advs.length) {
                         this.addLog(`${player.name}'s Chemical Y: no adventure favor to double`);
+                        break;
+                    }
+                    if (playerIndex === 0) {
+                        // Human chooses via the picker (UI shows it right
+                        // after this activation resolves).
+                        player._pendingChemYPick = true;
+                    } else {
+                        const best = advs.reduce((a, b) => ((b.favor || 0) > (a.favor || 0) ? b : a));
+                        best._favorDoubled = true;
+                        this.addLog(`${player.name}'s Chemical Y doubles ${best.name} (+${best.favor} Favor at scoring)`);
                     }
                 }
                 break;
@@ -1009,6 +1080,35 @@ class FavorGame {
                     const before = player.gold;
                     player.gold *= 2;
                     this.addLog(`${player.name}'s Duplicating Goo: Gold ${before} → ${player.gold}`);
+                }
+                break;
+
+            case 'gold_2_per_alchemy_triangle':
+                // Marketplace Sales: 2 Gold for each Alchemy you AND both
+                // neighbors currently have.
+                {
+                    const n = this.playerCount;
+                    const left = this.players[(playerIndex + n - 1) % n];
+                    const right = this.players[(playerIndex + 1) % n];
+                    const alch = (player.skills.alchemy || 0)
+                        + (left.skills.alchemy || 0) + (right.skills.alchemy || 0);
+                    const gained = 2 * alch;
+                    player.gold += gained;
+                    this.addLog(`${player.name}'s Marketplace Sales: ${alch} Alchemy around the table → +${gained} Gold`);
+                }
+                break;
+
+            case 'gold_2_per_power_neighbors':
+                // Melee Spectacular: 2 Gold for each Power your two
+                // neighboring players currently have.
+                {
+                    const n = this.playerCount;
+                    const left = this.players[(playerIndex + n - 1) % n];
+                    const right = this.players[(playerIndex + 1) % n];
+                    const pow = (left.skills.power || 0) + (right.skills.power || 0);
+                    const gained = 2 * pow;
+                    player.gold += gained;
+                    this.addLog(`${player.name}'s Melee Spectacular: neighbors' ${pow} Power → +${gained} Gold`);
                 }
                 break;
 
@@ -1129,20 +1229,22 @@ class FavorGame {
             return;
         }
 
-        // 1/2 + 2/2 weapon combos (Blind Faith + Heaven's Blade, Chemical X + Chemical Y)
+        // 1/2 + 2/2 pairs: the 2/2 card prints its OWN bonus for owning the
+        // 1/2 partner — there is no generic combo reward. Heaven's Blade and
+        // Archeus each pay +6 Power at the Melee (calculatePower, ongoing
+        // while both are down); Chemical Y pays +15 Favor at scoring
+        // (dynamicCardFavor). Here we just announce a pairing completing.
         if (card.combo === '1/2' || card.combo === '2/2') {
-            const partnerCombo = card.combo === '1/2' ? '2/2' : '1/2';
-            // Find partner among played cards that shares the same combo system
-            // (same act+type or explicitly linked)
-            const partner = player.playedCards.find(c =>
-                c.id !== card.id &&
-                c.combo === partnerCombo &&
-                c.type === card.type
-            );
-            if (partner && !player[`combo_${Math.min(card.id, partner.id)}_${Math.max(card.id, partner.id)}`]) {
-                player[`combo_${Math.min(card.id, partner.id)}_${Math.max(card.id, partner.id)}`] = true;
-                player.favor += 5;
-                this.addLog(`${player.name} combo! ${card.name} + ${partner.name}: +5 Favor`);
+            const own = (n) => player.playedCards.some(c => c.name === n);
+            if (own('Blind Faith')) {
+                const partners = ["Heaven's Blade", 'Archeus'].filter(own);
+                if (partners.length && ['Blind Faith', "Heaven's Blade", 'Archeus'].includes(card.name)) {
+                    this.addLog(`${player.name}'s Blind Faith pairing: +6 Power from ${partners.join(' and from ')} at the Melee`);
+                }
+            }
+            if (own('Chemical X') && own('Chemical Y') &&
+                (card.name === 'Chemical X' || card.name === 'Chemical Y')) {
+                this.addLog(`${player.name}'s Chemical X + Chemical Y pairing: +15 Favor at scoring`);
             }
             return;
         }
@@ -1183,10 +1285,14 @@ class FavorGame {
     removePendingCard(playerIndex, cardId) {
         const pending = this.pendingActivations[playerIndex];
         if (Array.isArray(pending)) {
-            this.pendingActivations[playerIndex] = pending.filter(c => c.id !== cardId);
-            if (this.pendingActivations[playerIndex].length === 0) {
-                this.pendingActivations[playerIndex] = null;
-            }
+            // Remove ONE instance only — duplicate ids (two Mission Letters)
+            // must not wipe the sibling card. Build a NEW array: callers
+            // (activateAllCards) iterate a captured snapshot of the old one,
+            // so mutating it in place would skip the cards after this one.
+            const idx = pending.findIndex(c => c && c.id === cardId);
+            const next = idx === -1 ? pending.slice()
+                : pending.slice(0, idx).concat(pending.slice(idx + 1));
+            this.pendingActivations[playerIndex] = next.length === 0 ? null : next;
         } else {
             this.pendingActivations[playerIndex] = null;
         }
@@ -1223,6 +1329,130 @@ class FavorGame {
 
     // ─── MISSIONS PHASE ────────────────────────────────────────
 
+    /**
+     * A mission's DUE act — the last act in its printed window. Audits read
+     * "Act 1 OR Act 2 OR Act 3": the mission may be turned in during ANY
+     * listed act (player's choice, see turnInMission) and is only FORCED to
+     * resolve — failing if unmet — at the end of its final listed act.
+     * Parsed from the audit head (before "Success Reward", so failure text
+     * that mentions acts can't skew it) and cached on the mission.
+     */
+    missionDueAct(mission) {
+        if (mission.dueAct) return mission.dueAct;
+        const head = (mission.audit || '').split(/Success Reward/i)[0];
+        const acts = [...head.matchAll(/Act\s*(\d)/gi)].map(m => parseInt(m[1], 10));
+        mission.dueAct = acts.length ? Math.max(...acts) : (mission.activationRound || mission.act || 1);
+        return mission.dueAct;
+    }
+
+    /**
+     * Turn a held mission in EARLY, by choice — it resolves immediately,
+     * success or failure, exactly as it would at its due date.
+     */
+    turnInMission(playerIndex, missionIndex) {
+        const player = this.players[playerIndex];
+        const mission = player.missions[missionIndex];
+        if (!mission) return { success: false, error: 'No such mission' };
+
+        const { success, details } = this.checkMissionRequirements(playerIndex, mission);
+        player.missions.splice(missionIndex, 1);
+        if (success) {
+            this.applyMissionRewards(playerIndex, mission);
+            player.completedMissions.push(mission);
+        } else {
+            player.failedMissions.push(mission);
+            this.applyMissionFailure(playerIndex, mission);
+            this.addLog(`${player.name} turns in ${mission.name} early — and fails it`);
+        }
+        return { success, details, mission };
+    }
+
+    /**
+     * Can borrowed skills rescue this mission? Returns {borrowFrom, cost}
+     * exactly like card borrows (2g per unit, paid to the lender), or null
+     * when it can't: any Mind's Eye / Philosopher's Stone / Gold / Favor gap
+     * is unborrowable, and gold must cover the fee WITHOUT breaking a
+     * hold-N-gold requirement. Pure analysis — no side effects (never calls
+     * checkMissionRequirements, which consumes Life Essence).
+     */
+    missionBorrowPlan(playerIndex, mission) {
+        const player = this.players[playerIndex];
+        if (player.removeMissionRequirements) return null; // succeeds on its own
+
+        const reqCounts = {};
+        (mission.requirements || []).forEach(req => { reqCounts[req] = (reqCounts[req] || 0) + 1; });
+        const skillReqs = {};
+        for (const [req, n] of Object.entries(reqCounts)) {
+            if (req === 'minds_eye') {
+                if (this.getMindsEyeCount(playerIndex) < n) return null;
+            } else if (req === 'philosopher_stone') {
+                if ((player.philosopherStone || 0) < n) return null;
+            } else {
+                skillReqs[req] = n;
+            }
+        }
+        if (mission.reqFavor && player.favor < mission.reqFavor) return null;
+        if (mission.reqSpecial === 'favor_5_per_minds_eye' &&
+            player.favor < 5 * this.getMindsEyeCount(playerIndex)) return null;
+
+        const gaps = this.unmetSkillReqs(playerIndex, skillReqs);
+        const borrowable = this.getBorrowableSkills(playerIndex);
+        const borrowFrom = [];
+        for (const [skill, short] of Object.entries(gaps)) {
+            if (!borrowable[skill] || borrowable[skill].length === 0) return null;
+            for (let k = 0; k < short; k++) {
+                borrowFrom.push({ skill, neighborIndex: borrowable[skill][0] });
+            }
+        }
+        if (borrowFrom.length === 0) return null; // nothing missing — no borrow needed
+
+        const cost = borrowFrom.length * BORROW_SKILL_COST;
+        // Covers both the fee and any hold-N-gold requirement — the borrow
+        // may not pay for itself by breaking the mission's gold check.
+        if (player.gold < cost + (mission.reqGold || 0)) return null;
+
+        return { borrowFrom, cost };
+    }
+
+    /**
+     * Borrow the missing skills and complete the mission — the player's
+     * CHOICE, never automatic. Gold pays the lending neighbors, exactly
+     * like card borrows.
+     */
+    completeMissionWithBorrow(playerIndex, missionIndex) {
+        const player = this.players[playerIndex];
+        const mission = player.missions[missionIndex];
+        if (!mission) return { success: false, error: 'No such mission' };
+        const plan = this.missionBorrowPlan(playerIndex, mission);
+        if (!plan) return { success: false, error: 'Borrowing cannot complete this mission' };
+
+        player.gold -= plan.cost;
+        plan.borrowFrom.forEach(b => {
+            this.players[b.neighborIndex].gold += BORROW_SKILL_COST;
+        });
+        player.missions.splice(missionIndex, 1);
+        this.applyMissionRewards(playerIndex, mission);
+        player.completedMissions.push(mission);
+        const skills = plan.borrowFrom.map(b => b.skill).join(', ');
+        this.addLog(`${player.name} borrows ${skills} (−${plan.cost}g) to complete ${mission.name}`);
+        return { success: true, mission, cost: plan.cost };
+    }
+
+    /**
+     * Decline the borrow offer — the mission fails now, penalties and all.
+     * (Failing on purpose is a legitimate play; see turnInMission.)
+     */
+    failMissionByChoice(playerIndex, missionIndex) {
+        const player = this.players[playerIndex];
+        const mission = player.missions[missionIndex];
+        if (!mission) return { success: false, error: 'No such mission' };
+        player.missions.splice(missionIndex, 1);
+        player.failedMissions.push(mission);
+        this.applyMissionFailure(playerIndex, mission);
+        this.addLog(`${player.name} lets ${mission.name} fail`);
+        return { success: false, mission };
+    }
+
     resolveMissions() {
         const results = [];
 
@@ -1232,27 +1462,73 @@ class FavorGame {
             const player = this.players[pi];
             const playerResults = [];
 
+            // Two passes: every due mission is CHECKED (and successes paid
+            // out) before any failure penalty lands. A failure that discards
+            // played cards must never strip the skills a sibling mission in
+            // this same phase was counting on.
+            const failed = [];
+            const resolved = new Set();
             player.missions.forEach((mission, mi) => {
-                // Check if mission activates this act or earlier
-                if (mission.activationRound && mission.activationRound <= this.currentAct) {
-                    const { success, details } = this.checkMissionRequirements(pi, mission);
+                if (!mission.activationRound || mission.activationRound > this.currentAct) return;
+                const due = this.missionDueAct(mission) <= this.currentAct;
 
-                    if (success) {
+                if (!due) {
+                    // In its window but not due. The AI banks a met mission
+                    // now; an unmet one is HELD, never auto-failed — the
+                    // human turns in by choice via turnInMission.
+                    if (pi !== 0) {
+                        const { success, details } = this.checkMissionRequirements(pi, mission);
+                        if (success) {
+                            this.applyMissionRewards(pi, mission);
+                            player.completedMissions.push(mission);
+                            resolved.add(mission);
+                            playerResults.push({ mission, success: true, details });
+                        }
+                    }
+                    return;
+                }
+
+                const { success, details } = this.checkMissionRequirements(pi, mission);
+                if (success) {
+                    resolved.add(mission);
+                    this.applyMissionRewards(pi, mission);
+                    player.completedMissions.push(mission);
+                    playerResults.push({ mission, success: true, details });
+                } else {
+                    // Unmet at its due date — can borrowed skills save it?
+                    // Borrowing is a CHOICE, never automatic: the human gets
+                    // a chooser (endActPhases pauses the phase, same pattern
+                    // as _pendingPenaltyDiscard); the AI borrows only when
+                    // the mission's favor clearly beats the gold fee.
+                    const plan = this.missionBorrowPlan(pi, mission);
+                    if (plan && pi === 0) {
+                        player._pendingMissionBorrows = player._pendingMissionBorrows || [];
+                        player._pendingMissionBorrows.push(mission);
+                        return; // stays in player.missions; the chooser resolves it
+                    }
+                    if (plan && pi !== 0 && (mission.favorValue || 0) >= plan.cost * 2) {
+                        player.gold -= plan.cost;
+                        plan.borrowFrom.forEach(b => {
+                            this.players[b.neighborIndex].gold += BORROW_SKILL_COST;
+                        });
+                        resolved.add(mission);
                         this.applyMissionRewards(pi, mission);
                         player.completedMissions.push(mission);
-                        playerResults.push({ mission, success: true, details });
-                    } else {
-                        this.applyMissionFailure(pi, mission);
-                        player.failedMissions.push(mission);
-                        playerResults.push({ mission, success: false, details });
+                        this.addLog(`${player.name} borrows ${plan.borrowFrom.map(b => b.skill).join(', ')} (−${plan.cost}g) to complete ${mission.name}`);
+                        playerResults.push({ mission, success: true, details, borrowed: plan.cost });
+                        return;
                     }
+                    resolved.add(mission);
+                    failed.push(mission);
+                    player.failedMissions.push(mission);
+                    playerResults.push({ mission, success: false, details });
                 }
             });
+            failed.forEach(mission => this.applyMissionFailure(pi, mission));
 
-            // Remove resolved missions from active list
-            player.missions = player.missions.filter(m =>
-                !m.activationRound || m.activationRound > this.currentAct
-            );
+            // Remove only what actually resolved — missions still inside
+            // their window carry over to the next act.
+            player.missions = player.missions.filter(m => !resolved.has(m));
 
             results.push({ playerIndex: pi, results: playerResults });
             pi = (pi + 1) % this.playerCount;
@@ -1277,14 +1553,43 @@ class FavorGame {
         const missing = [];
         let met = true;
 
-        if (mission.requirements) {
-            mission.requirements.forEach(req => {
-                const has = this.playerTotalSkill(playerIndex, req);
-                if (!has) {
-                    missing.push(req);
+        // Quantity-aware requirements: "3 Knowledge" needs knowledge >= 3
+        // (the old check only asked "do you have any"). minds_eye and
+        // philosopher_stone entries count against those totals. Skill
+        // requirements resolve together so flex units (Mining Guild's
+        // Charisma-OR-Prospecting) can cover whichever is short.
+        const reqCounts = {};
+        (mission.requirements || []).forEach(req => { reqCounts[req] = (reqCounts[req] || 0) + 1; });
+        const skillReqs = {};
+        Object.entries(reqCounts).forEach(([req, n]) => {
+            if (req === 'minds_eye') {
+                if (this.getMindsEyeCount(playerIndex) < n) {
+                    missing.push(n > 1 ? `${req} ×${n}` : req);
                     met = false;
                 }
-            });
+            } else if (req === 'philosopher_stone') {
+                if ((player.philosopherStone || 0) < n) {
+                    missing.push(n > 1 ? `${req} ×${n}` : req);
+                    met = false;
+                }
+            } else {
+                skillReqs[req] = n;
+            }
+        });
+        Object.entries(this.unmetSkillReqs(playerIndex, skillReqs)).forEach(([req, short]) => {
+            missing.push(short > 1 ? `${req} ×${short}` : req);
+            met = false;
+        });
+        if (mission.reqGold && player.gold < mission.reqGold) {
+            missing.push(`${mission.reqGold} Gold`); met = false;
+        }
+        if (mission.reqFavor && player.favor < mission.reqFavor) {
+            missing.push(`${mission.reqFavor} Favor`); met = false;
+        }
+        // The Shadow Guide: needs 5 Favor for each Mind's Eye you hold.
+        if (mission.reqSpecial === 'favor_5_per_minds_eye') {
+            const need = 5 * this.getMindsEyeCount(playerIndex);
+            if (player.favor < need) { missing.push(`${need} Favor (5 per Mind's Eye)`); met = false; }
         }
 
         return {
@@ -1300,22 +1605,213 @@ class FavorGame {
 
     applyMissionRewards(playerIndex, mission) {
         const player = this.players[playerIndex];
-        if (mission.successRewards) {
-            if (mission.successRewards.favor) player.favor += mission.successRewards.favor;
-            if (mission.successRewards.prestige) player.prestige += mission.successRewards.prestige;
-            if (mission.successRewards.gold) player.gold += mission.successRewards.gold;
+        const s = mission.successRewards || {};
+        if (s.favor) player.favor += s.favor;
+        if (s.prestige) player.prestige += s.prestige;
+        if (s.gold) player.gold += s.gold;
+        // Skill rewards persist in bonusSkills — applySlotSkills rebuilds
+        // the tally from scratch, so a direct write here would vanish on
+        // the next slider move.
+        if (s.skills) {
+            if (!player.bonusSkills) player.bonusSkills = {};
+            Object.entries(s.skills).forEach(([sk, n]) => {
+                player.bonusSkills[sk] = (player.bonusSkills[sk] || 0) + n;
+                player.skills[sk] = (player.skills[sk] || 0) + n;
+            });
         }
+        if (s.mindsEye) player.bonusMindsEye = (player.bonusMindsEye || 0) + s.mindsEye;
+        if (s.philosopherStone) {
+            player.philosopherStone = Math.max(player.philosopherStone || 0, s.philosopherStone);
+        }
+        if (mission.successSpecial) this.resolveMissionSuccessSpecial(playerIndex, mission);
         this.addLog(`${player.name} completes mission: ${mission.name}`);
+    }
+
+    resolveMissionSuccessSpecial(playerIndex, mission) {
+        const player = this.players[playerIndex];
+        switch (mission.successSpecial) {
+            case 'favor_per_charisma_x2': {
+                const f = 2 * (player.skills.charisma || 0);
+                player.favor += f;
+                this.addLog(`${player.name}: +${f} Favor (2 per Charisma)`);
+                break;
+            }
+            case 'favor_per_knowledge_x1': {
+                const f = player.skills.knowledge || 0;
+                player.favor += f;
+                this.addLog(`${player.name}: +${f} Favor (1 per Knowledge)`);
+                break;
+            }
+            case 'philosopher_stone_x2_grant':
+                player.philosopherStone = Math.max(player.philosopherStone || 0, 2);
+                this.addLog(`${player.name} gains 2 Philosopher's Stones`);
+                break;
+            case 'scorn_to_prestige_all': {
+                const s = player.scorn;
+                player.prestige += s;
+                player.scorn = 0;
+                this.addLog(`${player.name} turns ${s} Scorn into Prestige`);
+                break;
+            }
+            case 'remove_20_scorn':
+                player.scorn = Math.max(0, player.scorn - 20);
+                this.addLog(`${player.name} removes up to 20 Scorn`);
+                break;
+            case 'favor_per_philstone_x10': {
+                const f = 10 * (player.philosopherStone || 0);
+                player.favor += f;
+                this.addLog(`${player.name}: +${f} Favor (10 per Philosopher's Stone)`);
+                break;
+            }
+            case 'duplicate_artifact': {
+                const arts = player.playedCards.filter(c => c.type === 'artifact');
+                const pick = arts[arts.length - 1];
+                if (pick) {
+                    const copy = { ...pick, id: `${pick.id}_dup${Date.now() % 100000}` };
+                    player.playedCards.push(copy);
+                    (copy.skills || []).forEach(sk => { player.skills[sk] = (player.skills[sk] || 0) + 1; });
+                    this.addLog(`${player.name} duplicates ${pick.name}`);
+                }
+                break;
+            }
+            case 'duplicate_potion': {
+                const pots = player.playedCards.filter(c => c.type === 'potion');
+                const pick = pots[pots.length - 1];
+                if (pick) {
+                    const copy = { ...pick, id: `${pick.id}_dup${Date.now() % 100000}` };
+                    player.playedCards.push(copy);
+                    if (copy.special) this.resolveSpecial(playerIndex, copy); // potions fire instantly
+                    this.addLog(`${player.name} duplicates ${pick.name} — it fires again!`);
+                }
+                break;
+            }
+        }
+    }
+
+    /**
+     * "Discard N Cards" mission penalty. In the physical game the OWNER
+     * chooses which cards to give up — the old code silently took the N
+     * most recent, which could strip exactly the skills the player was
+     * keeping for later (how Wyatt lost Her Lost Father's Prospecting).
+     * Human: defer to a picker (UI shows it after mission resolution).
+     * AI: sacrifice dead weight — protect cards feeding remaining missions,
+     * maps, specials, and skill grants.
+     */
+    penaltyDiscard(playerIndex, n) {
+        const player = this.players[playerIndex];
+        if (!player.playedCards.length) return;
+        if (playerIndex === 0) {
+            player._pendingPenaltyDiscard = (player._pendingPenaltyDiscard || 0) + n;
+            return;
+        }
+        const needed = new Set();
+        (player.missions || []).forEach(m => (m.requirements || []).forEach(r => needed.add(r)));
+        const keepScore = (c) =>
+            ((c.skills || []).some(sk => needed.has(sk)) ? 100 : 0) +
+            (c.grantsMap ? 50 : 0) + (c.special ? 25 : 0) +
+            ((c.skills || []).length * 10) + (c.favor || 0);
+        const dump = [...player.playedCards].sort((a, b) => keepScore(a) - keepScore(b)).slice(0, n);
+        this.discardPlayedCards(playerIndex, c => dump.includes(c), n);
+    }
+
+    // Remove played cards (mission failure effects). Their skill grants come
+    // off the running tally so requirements/Melee stay truthful.
+    discardPlayedCards(playerIndex, filterFn, limit = Infinity) {
+        const player = this.players[playerIndex];
+        const removed = [];
+        for (let i = player.playedCards.length - 1; i >= 0 && removed.length < limit; i--) {
+            if (filterFn(player.playedCards[i])) removed.push(...player.playedCards.splice(i, 1));
+        }
+        if (removed.length) {
+            // Full recalc: fixed skills AND flex units (either/or cards)
+            // both come off the books together.
+            this.applySlotSkills(player);
+            this.addLog(`${player.name} discards ${removed.map(c => c.name).join(', ')}`);
+        }
+        return removed.length;
+    }
+
+    resolveMissionFailSpecial(playerIndex, mission) {
+        const player = this.players[playerIndex];
+        const everyoneElse = this.players.filter((_, i) => i !== playerIndex);
+        switch (mission.failSpecial) {
+            case 'others_gain_5_gold': everyoneElse.forEach(p => p.gold += 5); break;
+            case 'others_gain_3_gold': everyoneElse.forEach(p => p.gold += 3); break;
+            case 'others_gain_3_prestige': everyoneElse.forEach(p => p.prestige += 3); break;
+            case 'others_remove_15_scorn': everyoneElse.forEach(p => p.scorn = Math.max(0, p.scorn - 15)); break;
+            case 'all_gain_2_gold': this.players.forEach(p => p.gold += 2); break;
+            case 'you_gain_1_gold': player.gold += 1; break;
+            case 'gain_20_prestige': player.prestige += 20; break;
+            case 'scorn_2_per_charisma': player.scorn += 2 * (player.skills.charisma || 0); break;
+            case 'scorn_10_per_knowledge': player.scorn += 10 * (player.skills.knowledge || 0); break;
+            case 'prestige_2_per_knowledge': player.prestige += 2 * (player.skills.knowledge || 0); break;
+            case 'discard_1_played': this.penaltyDiscard(playerIndex, 1); break;
+            case 'discard_5_played': this.penaltyDiscard(playerIndex, 5); break;
+            case 'discard_1_artifact': this.discardPlayedCards(playerIndex, c => c.type === 'artifact', 1); break;
+            case 'discard_weapons_gain_5_prestige': {
+                const n = this.discardPlayedCards(playerIndex, c => c.type === 'weapon');
+                player.prestige += 5 * n;
+                break;
+            }
+            case 'discard_wisdom_gain_8_gold': {
+                const n = this.discardPlayedCards(playerIndex, c => c.type === 'wisdom');
+                player.gold += 8 * n;
+                break;
+            }
+            case 'discard_power_gain_15_prestige': {
+                const n = this.discardPlayedCards(playerIndex, c => c.type === 'weapon');
+                player.prestige += 15 * n;
+                break;
+            }
+            case 'discard_any_gain_10_prestige_each':
+                // A Promise: discard AS MANY of your played cards as you like,
+                // +10 Prestige each. The human picks via UI after mission
+                // resolution; the AI trades away its low-value cards.
+                if (playerIndex === 0) {
+                    player._pendingPromiseDiscard = true;
+                } else {
+                    const cheap = player.playedCards.filter(c =>
+                        !c.special && (c.favor || 0) < 10 && !(c.skills || []).includes('power'));
+                    const n = cheap.length
+                        ? this.discardPlayedCards(playerIndex, c => cheap.includes(c))
+                        : 0;
+                    if (n) {
+                        player.prestige += 10 * n;
+                        this.addLog(`${player.name} honors A Promise: ${n} card(s) discarded, +${10 * n} Prestige`);
+                    }
+                }
+                break;
+            case 'fortune_teller_50_prestige':
+                if (player.playedCards.some(c => c.name === 'Fortune Teller')) {
+                    player.prestige += 50;
+                    this.addLog(`${player.name}'s Fortune Teller foresaw this: +50 Prestige!`);
+                }
+                break;
+            case 'lose_all_prestige_and_scorn':
+                this.addLog(`${player.name} loses all Prestige (${player.prestige}) and Scorn (${player.scorn})`);
+                player.prestige = 0;
+                player.scorn = 0;
+                break;
+            case 'all_draw_act3_mission':
+                this.players.forEach(p => {
+                    const m = (this.missionDecks[3] || []).shift();
+                    if (m) { p.missions.push(m); this.addLog(`${p.name} draws an Act 3 mission: ${m.name}`); }
+                });
+                break;
+        }
     }
 
     applyMissionFailure(playerIndex, mission) {
         const player = this.players[playerIndex];
         if (mission.failurePenalties) {
             if (mission.failurePenalties.scorn) player.scorn += mission.failurePenalties.scorn;
+            // Audit "Failure Reward: N Gold" — some failures PAY the loser.
+            if (mission.failurePenalties.gold) player.gold += mission.failurePenalties.gold;
             if (mission.failurePenalties.goldLoss) {
                 player.gold = Math.max(0, player.gold - mission.failurePenalties.goldLoss);
             }
         }
+        if (mission.failSpecial) this.resolveMissionFailSpecial(playerIndex, mission);
 
         // Fiddler slot 4: gain 10 gold on mission failure while on that slot
         const char = player.character;
@@ -1387,6 +1883,17 @@ class FavorGame {
         // player.skills.power already includes all power from cards + slider
         // (accumulated by applyCardEffects and applySliderAbilities)
         let power = player.skills.power || 0;
+
+        // Blind Faith pairings: Heaven's Blade AND Archeus each print
+        // "+6 Additional Power if you own Blind Faith" — so each grants
+        // its own +6 while Blind Faith is down (both owned = +12).
+        if (player.playedCards.some(c => c.name === 'Blind Faith')) {
+            player.playedCards.forEach(c => {
+                if (c.special === 'power_6_if_blind_faith' || c.name === 'Archeus') {
+                    power += 6;
+                }
+            });
+        }
 
         // --- Apply special melee modifiers ---
 
@@ -1466,6 +1973,33 @@ class FavorGame {
 
     // ─── SCORING ───────────────────────────────────────────────
 
+    // Cards whose Favor is computed from game state at scoring time.
+    dynamicCardFavor(playerIndex, card) {
+        const p = this.players[playerIndex];
+        const n = this.playerCount;
+        switch (card.special) {
+            case 'favor_per_survival_x2':
+                return 2 * (p.skills.survival || 0);
+            case 'favor_per_quest_x5':
+                return 5 * (p.completedMissions || []).length;
+            case 'favor_per_sur_cha_pro':
+                return (p.skills.survival || 0) + (p.skills.charisma || 0) + (p.skills.prospecting || 0);
+            case 'favor_per_wisdom_x8':
+                return 8 * p.playedCards.filter(c => c.type === 'wisdom').length;
+            case 'favor_per_neighbor_power': {
+                const left = this.players[(playerIndex + n - 1) % n];
+                const right = this.players[(playerIndex + 1) % n];
+                return (left.skills.power || 0) + (right.skills.power || 0);
+            }
+            case 'double_adventure_favor':
+                // Chemical Y's printed pair bonus: "If you own Chemical X:
+                // 15 Favor" (its doubling effect fires at play time).
+                return p.playedCards.some(c => c.name === 'Chemical X') ? 15 : 0;
+            default:
+                return 0;
+        }
+    }
+
     calculateFinalScores() {
         return this.players.map((p, i) => {
             // Favor from completed missions
@@ -1474,10 +2008,12 @@ class FavorGame {
                 if (m.favorValue) missionFavor += m.favorValue;
             });
 
-            // Favor from adventure and artifact cards
+            // Favor from adventure and artifact cards (static + dynamic).
+            // Chemical Y's chosen adventure counts double (_favorDoubled).
             let cardFavor = 0;
             p.playedCards.forEach(card => {
-                if (card.favor) cardFavor += card.favor;
+                if (card.favor) cardFavor += card.favor * (card._favorDoubled ? 2 : 1);
+                cardFavor += this.dynamicCardFavor(i, card);
             });
 
             // Character favor from current slider position
@@ -1570,6 +2106,7 @@ class FavorGame {
                 // Only show hand to the owning player
                 hand: (forPlayerIndex === i) ? p.hand : null,
                 skills: p.skills,
+                flexSkills: p.flexSkills || [],
                 pendingCard: this.pendingActivations[i] !== null
             })),
             log: this.log.slice(-20)
