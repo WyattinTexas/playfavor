@@ -4,13 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FAVOR — Test Realm</title>
-    <link rel="stylesheet" href="css/style.css?v=20260705145920">
+    <link rel="stylesheet" href="css/style.css?v=20260706173056">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
 
     <!-- TEST REALM build marker -->
-    <div style="position:fixed;top:0;right:0;z-index:99999;background:#7a1f1f;color:#ffd97a;font:700 9px 'Cinzel',serif;letter-spacing:2px;padding:3px 10px;border-radius:0 0 0 8px;pointer-events:none;opacity:.85">TEST REALM</div>
+    <div style="position:fixed;top:0;right:0;z-index:99999;background:#7a1f1f;color:#ffd97a;font:700 9px 'Cinzel',serif;letter-spacing:2px;padding:3px 10px;border-radius:0 0 0 8px;pointer-events:none;opacity:.85;text-align:center">TEST REALM<div id="buildVersion" style="font:600 8px monospace;letter-spacing:0;color:#e8caa0;margin-top:1px"></div></div>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var ui = document.querySelector('script[src*="ui.js"]');
+        var stamp = ui ? (ui.src.split('?v=')[1] || '?') : '?';
+        document.getElementById('buildVersion').textContent = 'v' + stamp;
+    });
+    </script>
 
     <!-- ═══ ROTATE GATE (phones held in portrait) ═══ -->
     <div id="rotate-gate">
@@ -266,10 +273,10 @@
     </audio>
 
     <!-- ═══ SCRIPTS ═══ -->
-    <script src="data/cards.js?v=20260705145920"></script>
-    <script src="data/missions.js?v=20260705145920"></script>
-    <script src="data/characters.js?v=20260705145920"></script>
-    <script src="engine/gameState.js?v=20260705145920"></script>
-    <script src="js/ui.js?v=20260705145920"></script>
+    <script src="data/cards.js?v=20260706173056"></script>
+    <script src="data/missions.js?v=20260706173056"></script>
+    <script src="data/characters.js?v=20260706173056"></script>
+    <script src="engine/gameState.js?v=20260706173056"></script>
+    <script src="js/ui.js?v=20260706173056"></script>
 </body>
 </html>
