@@ -1366,6 +1366,13 @@ html, body {
     margin-top: 6px;
 }
 
+/* Wrapper + ring + stacks exist for the phone layout; on desktop the
+   wrapper dissolves (display:contents) and the extras stay hidden, so
+   the desktop overlay renders exactly as before. */
+.opp-ov-boardwrap { display: contents; }
+.opp-ov-ring { display: none; }
+.opp-ov-stacks { display: none; }
+
 .opp-ov-board {
     max-width: 70vw;
     max-height: 28vh;
@@ -2796,20 +2803,6 @@ html, body {
     }
     .tv-purse-chip.scorn b { color: #f0a0a0; }
     .tv-purse-chip.favor b { color: #a9d4ff; }
-    .tv-gear {
-        width: 22px; height: 22px;
-        border-radius: 50%;
-        display: flex; align-items: center; justify-content: center;
-        background: rgba(10,6,3,0.68);
-        border: 1px solid rgba(201,168,76,0.25);
-        color: var(--gold);
-        font-size: 13px;
-        line-height: 1;
-        cursor: pointer;
-        padding: 0;
-    }
-    .tv-gear:hover { color: var(--gold-light); border-color: var(--gold); }
-
     /* Tap-a-chip name label (phones have no hover) */
     #tvChipTip {
         position: fixed;
@@ -3114,14 +3107,6 @@ html, body {
         max-height: calc(100dvh - 60px);
         overflow-y: auto;
     }
-    .tv-pop.gear {
-        top: 34px;
-        left: max(8px, env(safe-area-inset-left));
-        width: 150px;
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-    }
     .tv-pop.mym {
         top: 58px;
         right: max(8px, env(safe-area-inset-right));
@@ -3136,19 +3121,6 @@ html, body {
         text-align: center;
         margin-bottom: 6px;
     }
-    .tv-pop-item {
-        font-family: 'Cinzel', serif;
-        font-size: 11px;
-        letter-spacing: 0.5px;
-        text-align: left;
-        color: var(--gold-light);
-        background: rgba(201,168,76,0.08);
-        border: 1px solid rgba(201,168,76,0.25);
-        border-radius: 8px;
-        padding: 8px 10px;
-        cursor: pointer;
-    }
-    .tv-pop-item:hover { border-color: var(--gold); background: rgba(201,168,76,0.14); }
 
     /* The floating music/log buttons relocate into the ⚙ popover here. */
     .music-toggle, .log-toggle { display: none; }
@@ -3360,82 +3332,61 @@ html, body {
     /* Human's own quick banner clears the hand strip. */
     .mini-spotlight { bottom: 128px; }
 
-    /* ── Opponent inspect: big readable board + toggle to reveal cards ── */
+    /* ── Opponent inspect: board (left, ring on its track) + their played
+       cards as tucked stacks (right) — all visible at once, nothing more.
+       No stat pills, no reveal toggle: board + cards is what you'd see
+       across a real table. ── */
     .opp-ov-inner {
-        justify-content: center;
-        gap: 8px;
-        max-height: 100dvh;
-        padding: 6px 0;
-    }
-    .opp-ov-header { gap: 10px; margin-bottom: 4px; }
-    .opp-ov-avatar { width: 40px; height: 40px; }
-    .opp-ov-name { font-size: 18px; letter-spacing: 2px; }
-    .opp-ov-stats { margin-top: 4px; }
-    .opp-ov-stats .stat-pill { font-size: 10px; padding: 2px 8px; }
-    /* Bigger board — the main readable element. */
-    .opp-ov-board {
-        max-width: 92vw;
-        max-height: 56dvh;
-        width: auto;
-        margin-bottom: 6px;
-    }
-    /* Show the toggle; hide the inline cards panel until opened. */
-    .opp-ov-toggle {
-        display: block;
-        font-family: 'Cinzel', serif;
-        font-size: 12px;
-        letter-spacing: 1px;
-        color: var(--gold-light);
-        background: linear-gradient(180deg, var(--wood-dark), var(--wood-deepest));
-        border: 1px solid var(--gold);
-        border-radius: 10px;
-        padding: 8px 20px;
-        cursor: pointer;
-    }
-    .opp-ov-toggle:hover { box-shadow: 0 0 14px rgba(201,168,76,0.3); }
-    .opp-ov-cards-panel { display: none; }
-
-    /* When opened: cards panel becomes a centered overlay above the board. */
-    .opp-overlay.cards-open .opp-ov-cards-panel {
-        display: flex;
-        position: fixed;
-        inset: 0;
-        z-index: 5;
+        flex-direction: row;
+        flex-wrap: wrap;
         justify-content: center;
         align-items: center;
-        gap: 10px;
-        padding: 12px;
-        background: rgba(10,6,3,0.92);
-        backdrop-filter: blur(6px);
-    }
-    .opp-overlay.cards-open .opp-ov-section-label {
-        position: absolute; top: 12px; left: 0; right: 0;
-        text-align: center; margin: 0; font-size: 9px;
-    }
-    .opp-overlay.cards-open .opp-ov-cards {
-        flex-wrap: nowrap;
-        overflow-x: auto;
+        gap: 8px 18px;
+        max-height: 100dvh;
         max-width: 96vw;
-        gap: 12px;
-        padding: 8px 4px;
+        padding: 6px 0;
     }
-    .opp-overlay.cards-open .opp-ov-cards .opp-ov-card-wrap img { width: 104px; height: 146px; }
-    .opp-overlay.cards-open .lend-btn { opacity: 1; } /* always visible on touch */
-    .opp-ov-cards-close {
+    /* Header spans the top row; board + stacks share the second. */
+    .opp-ov-header { width: 100%; justify-content: center; gap: 10px; margin-bottom: 0; }
+    .opp-ov-avatar { width: 40px; height: 40px; }
+    .opp-ov-name { font-size: 18px; letter-spacing: 2px; }
+    .opp-ov-stats { display: none; }
+    .opp-ov-boardwrap {
+        display: block;
+        position: relative;
+        flex-shrink: 0;
+        animation: ovZoom 0.45s cubic-bezier(0.16,1,0.3,1);
+    }
+    .opp-ov-board {
+        display: block;
+        max-width: 50vw;
+        max-height: 62dvh;
+        width: auto;
+        margin-bottom: 0;
+        animation: none;   /* the wrapper animates so the ring rides along */
+    }
+    .opp-ov-ring {
         display: block;
         position: absolute;
-        bottom: 12px; left: 50%;
-        transform: translateX(-50%);
-        font-family: 'Cinzel', serif;
-        font-size: 11px;
-        letter-spacing: 1px;
-        color: var(--gold);
-        background: rgba(42,22,10,0.9);
-        border: 1px solid var(--gold);
-        border-radius: 10px;
-        padding: 7px 22px;
-        cursor: pointer;
+        width: 11%;
+        aspect-ratio: 1;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
     }
+    .opp-ov-stacks {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        max-width: 40vw;
+        max-height: 84dvh;
+        overflow-x: auto;
+        padding: 4px 2px;
+        --tvStackCardH: clamp(76px, 28dvh, 112px);
+        animation: ovFan 0.45s cubic-bezier(0.16,1,0.3,1);
+    }
+    .opp-ov-toggle,
+    .opp-ov-cards-panel { display: none; }
 }
 
 /* ─── PHASE C ANIMATIONS (global keyframes + FX element styles) ─── */

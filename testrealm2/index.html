@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — Test Realm</title>
-    <link rel="stylesheet" href="css/style.css?v=20260706192901">
+    <link rel="stylesheet" href="css/style.css?v=20260706200631">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
@@ -123,8 +123,14 @@
                         <div class="opp-ov-stats" id="oppOvStats"></div>
                     </div>
                 </div>
-                <img class="opp-ov-board" id="oppOvBoard" src="">
-                <!-- Toggle (landscape): reveals the played-cards panel -->
+                <!-- Board + ring (ring shows on phone; wrapper is display:contents on desktop) -->
+                <div class="opp-ov-boardwrap">
+                    <img class="opp-ov-board" id="oppOvBoard" src="">
+                    <img class="opp-ov-ring" id="oppOvRing" src="assets/ui/slider-ring.png" alt="">
+                </div>
+                <!-- Phone: their played cards as tucked stacks, right of the board -->
+                <div class="opp-ov-stacks" id="oppOvStacks"></div>
+                <!-- Toggle (desktop landscape fallback): reveals the played-cards panel -->
                 <button class="opp-ov-toggle" id="oppOvToggle" onclick="toggleOppCards(event)"></button>
                 <!-- Played-cards panel: inline on desktop, toggled overlay on landscape -->
                 <div class="opp-ov-cards-panel" id="oppOvCardsPanel" onclick="event.stopPropagation()">
@@ -275,10 +281,10 @@
     </audio>
 
     <!-- ═══ SCRIPTS ═══ -->
-    <script src="data/cards.js?v=20260706192901"></script>
-    <script src="data/missions.js?v=20260706192901"></script>
-    <script src="data/characters.js?v=20260706192901"></script>
-    <script src="engine/gameState.js?v=20260706192901"></script>
-    <script src="js/ui.js?v=20260706192901"></script>
+    <script src="data/cards.js?v=20260706200631"></script>
+    <script src="data/missions.js?v=20260706200631"></script>
+    <script src="data/characters.js?v=20260706200631"></script>
+    <script src="engine/gameState.js?v=20260706200631"></script>
+    <script src="js/ui.js?v=20260706200631"></script>
 </body>
 </html>

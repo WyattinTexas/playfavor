@@ -1427,7 +1427,7 @@ function tvChipTip(e, label) {
     setTimeout(() => { tip.classList.add('out'); setTimeout(() => tip.remove(), 260); }, 1300);
 }
 
-// ── Z1 · Purse — your four currencies + settings, top-left ──
+// ── Z1 · Purse — your four currencies, top-left ──
 const PURSE_ICONS = {
     gold:  'assets/icons/gold.png',
     favor: 'assets/icons/favor.png',
@@ -1445,8 +1445,7 @@ function renderTvPurse(state) {
         chip('gold', PURSE_ICONS.gold, p.gold, 'Gold')
       + chip('favor', PURSE_ICONS.favor, p.favor || 0, 'Favor')
       + chip('scorn', PURSE_ICONS.scorn, p.scorn, 'Scorn')
-      + chip('prestige', TOKEN_IMG.prestige, p.prestige, 'Prestige')
-      + `<button class="tv-gear" onclick="event.stopPropagation(); toggleGearPopover()" title="Settings">⚙</button>`;
+      + chip('prestige', TOKEN_IMG.prestige, p.prestige, 'Prestige');
 }
 
 // ── Z2 · Skill rail — always-visible icon+number chips, left edge.
@@ -1566,17 +1565,9 @@ function renderTvBoardThumb(state) {
     el.onclick = () => openBoardOverlay();
 }
 
-// ── Z6 · Center stage — YOUR played cards as tucked skill stacks.
-// The stage is also where every focus moment lands (action panel,
-// overlays, melee splash, #tvFx deltas) — those live above it.
-function renderTvStage(state) {
-    const el = document.getElementById('tvStage');
-    if (!el) return;
-    const cards = state.players[0].playedCards || [];
-    if (!cards.length) {
-        el.innerHTML = '<div class="tv-stage-empty">Cards you play gather here</div>';
-        return;
-    }
+// Tucked skill-group stacks — shared by the center stage (your cards)
+// and the rival overlay (their cards read exactly like yours).
+function buildSkillStacks(cards) {
     const groups = {};
     cards.forEach(c => {
         const g = getCardSkillGroup(c);
@@ -1587,7 +1578,7 @@ function renderTvStage(state) {
     let h = '';
     keys.forEach(k => {
         const list = groups[k];
-        // Tall stacks tighten their tuck so the stage never overflows.
+        // Tall stacks tighten their tuck so the zone never overflows.
         const peek = list.length > 5 ? Math.max(11, Math.floor(100 / (list.length - 1))) : 20;
         h += `<div class="tv-stack" style="--tvPeek:${peek}px">`;
         list.forEach(c => {
@@ -1597,7 +1588,19 @@ function renderTvStage(state) {
         });
         h += `<span class="tv-stack-label">${SKILL_GROUPS[k] ? SKILL_GROUPS[k].label : 'Other'}</span></div>`;
     });
-    el.innerHTML = h;
+    return h;
+}
+
+// ── Z6 · Center stage — YOUR played cards as tucked skill stacks.
+// The stage is also where every focus moment lands (action panel,
+// overlays, melee splash, #tvFx deltas) — those live above it.
+function renderTvStage(state) {
+    const el = document.getElementById('tvStage');
+    if (!el) return;
+    const cards = state.players[0].playedCards || [];
+    el.innerHTML = cards.length
+        ? buildSkillStacks(cards)
+        : '<div class="tv-stage-empty">Cards you play gather here</div>';
 }
 
 // ── Popovers (gear menu / My Missions) — the action panel steps aside
@@ -1629,14 +1632,6 @@ function closeTvPopover(restorePanel = true) {
     if (typeof coachTick === 'function') coachTick();
 }
 
-function _gearMusicLabel() {
-    return `♫ Music: ${musicPlaying ? 'On' : 'Off'}`;
-}
-
-function toggleGearPopover() {
-    if (_tvPopover === 'gear') return closeTvPopover();
-    openTvPopover('gear');
-}
 function toggleMyMissions() {
     if (_tvPopover === 'mym') return closeTvPopover();
     openTvPopover('mym');
@@ -1674,21 +1669,11 @@ function openTvPopover(kind) {
     closeTvPopover(false);
     _tvPanelStepAside();
     _tvPopover = kind;
-    if (kind === 'gear') {
-        host.innerHTML = `
-            <div class="tv-pop gear" onclick="event.stopPropagation()">
-                <button class="tv-pop-item" id="gearMusic"
-                        onclick="event.stopPropagation(); toggleMusic(); this.textContent = _gearMusicLabel();">${_gearMusicLabel()}</button>
-                <button class="tv-pop-item" onclick="closeTvPopover(); toggleLog();">📜 Game Log</button>
-                <button class="tv-pop-item" onclick="closeTvPopover(); showRules();">? How to Play</button>
-            </div>`;
-    } else {
-        host.innerHTML = `
-            <div class="tv-pop mym" onclick="event.stopPropagation()">
-                <div class="tv-pop-title">Your Missions</div>
-                ${buildMyMissionRows()}
-            </div>`;
-    }
+    host.innerHTML = `
+        <div class="tv-pop mym" onclick="event.stopPropagation()">
+            <div class="tv-pop-title">Your Missions</div>
+            ${buildMyMissionRows()}
+        </div>`;
     host.classList.add('active');
     host.onclick = () => closeTvPopover();
     if (typeof coachTick === 'function') coachTick();
@@ -2041,6 +2026,33 @@ function openOppOverlay(playerIndex) {
     document.getElementById('oppOvAvatar').src = `assets/characters/${char.filename}`;
     document.getElementById('oppOvName').textContent = p.name;
     document.getElementById('oppOvBoard').src = `assets/characters/${char.filename}`;
+
+    // Their ring on the board's track (phone shows it; desktop hides it) —
+    // same BOARD_OV_TRACK geometry as your board overlay and thumb.
+    const oppRing = document.getElementById('oppOvRing');
+    if (oppRing) {
+        const pos = game.players[playerIndex].sliderPosition;
+        oppRing.style.left = BOARD_OV_TRACK.lefts[pos] + '%';
+        oppRing.style.top = BOARD_OV_TRACK.top + '%';
+    }
+
+    // Phone: their played cards sit beside the board as tucked skill
+    // stacks — read exactly like your own on the stage. (Hidden on desktop,
+    // which keeps its inline cards panel.)
+    const oppStacks = document.getElementById('oppOvStacks');
+    if (oppStacks) {
+        const played = p.playedCards || [];
+        oppStacks.innerHTML = played.length
+            ? buildSkillStacks(played)
+            : '<div class="tv-stage-empty">No cards played yet</div>';
+        // Fit-to-width: size the stacks so every skill group is visible at
+        // once (floor 64px card height — past that the row scrolls).
+        const groups = Math.max(1, new Set(played.map(getCardSkillGroup)).size);
+        const avail = window.innerWidth * 0.40 - 4;          // tracks the CSS max-width: 40vw
+        const per = (avail - (groups - 1) * 10) / groups;    // 10px stack gap
+        const fitH = Math.max(64, Math.min(Math.round(per / 0.666), Math.round(window.innerHeight * 0.28)));
+        oppStacks.style.setProperty('--tvStackCardH', fitH + 'px');
+    }
 
     document.getElementById('oppOvStats').innerHTML = `
         <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${p.gold}</span>

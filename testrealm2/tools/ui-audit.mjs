@@ -161,19 +161,40 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
     return !!t && /survival/i.test(t.textContent);
   }), 'skill chip tap shows its name tooltip');
 
-  // Rival chip → full overlay, played cards one tap deeper.
+  // Rival chip → board (ring on its track) + played cards, all at once;
+  // no stat pills, no reveal toggle — board + cards only.
   await page.evaluate(() => document.querySelector('#tvSeats .pmat.opp').click());
-  await sleep(350);
-  ok(await page.evaluate(() => document.getElementById('oppOverlay').classList.contains('active')), 'rival chip opens the rival overlay');
+  await sleep(400);
+  const opp = await page.evaluate(() => {
+    const ring = document.getElementById('oppOvRing');
+    const wrap = ring ? ring.parentElement.getBoundingClientRect() : null;
+    const r = ring ? ring.getBoundingClientRect() : null;
+    const vis = el => !!el && el.offsetParent !== null && el.getBoundingClientRect().width > 0;
+    return {
+      active: document.getElementById('oppOverlay').classList.contains('active'),
+      stacks: document.querySelectorAll('#oppOvStacks .tv-stack-card').length,
+      played: game.players[1].playedCards.length,
+      ringShown: vis(ring) && r.width > 4,
+      ringPct: ring ? ((r.left + r.width / 2 - wrap.left) / wrap.width) * 100 : -1,
+      expectPct: BOARD_OV_TRACK.lefts[game.players[1].sliderPosition],
+      statsShown: vis(document.getElementById('oppOvStats')),
+      toggleShown: vis(document.getElementById('oppOvToggle')),
+      boardLeftOfStacks: (() => {
+        const b = document.querySelector('.opp-ov-boardwrap').getBoundingClientRect();
+        const s = document.getElementById('oppOvStacks').getBoundingClientRect();
+        return b.right <= s.left + 2;
+      })(),
+    };
+  });
+  ok(opp.active, 'rival chip opens the rival overlay');
+  ok(opp.stacks === opp.played && opp.played >= 1,
+    `their played cards show immediately as stacks (${opp.stacks}/${opp.played})`);
+  ok(opp.boardLeftOfStacks, 'board sits left, cards beside it');
+  ok(opp.ringShown && Math.abs(opp.ringPct - opp.expectPct) < 2,
+    `their ring rides the board track (${opp.ringPct.toFixed(1)}% vs ${opp.expectPct}%)`);
+  ok(!opp.statsShown, 'no stat pills — board + cards is all that is revealed');
+  ok(!opp.toggleShown, 'no View Played Cards toggle');
   await page.screenshot({ path: join(SHOTS, 'hud-rival-overlay.png') });
-  await page.evaluate(() => document.getElementById('oppOvToggle').click());
-  await sleep(300);
-  const oppCards = await page.evaluate(() => ({
-    open: document.getElementById('oppOverlay').classList.contains('cards-open'),
-    n: document.querySelectorAll('#oppOvCards .opp-ov-card-wrap').length,
-  }));
-  ok(oppCards.open && oppCards.n >= 1, `played-cards panel reveals with Lend Skills (${oppCards.n} cards)`);
-  await page.screenshot({ path: join(SHOTS, 'hud-rival-cards.png') });
   await page.evaluate(() => closeOppOverlay());
   await sleep(250);
 
@@ -231,34 +252,10 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
   await page.keyboard.press('Escape');
   await sleep(250);
 
-  // Gear popover: music toggles, log opens, how-to opens.
-  await page.evaluate(() => document.querySelector('.tv-gear').click());
-  await sleep(250);
-  ok(await page.evaluate(() => !!document.querySelector('#tvPopoverHost .tv-pop.gear')), 'gear popover opens');
-  const musicBefore = await page.evaluate(() => musicPlaying);
-  await page.evaluate(() => document.getElementById('gearMusic').click());
-  await sleep(400);
-  const musicAfter = await page.evaluate(() => musicPlaying);
-  ok(musicAfter !== musicBefore, `gear toggles music (${musicBefore} → ${musicAfter})`);
-  await page.evaluate(() => {
-    [...document.querySelectorAll('#tvPopoverHost .tv-pop-item')].find(b => /game log/i.test(b.textContent)).click();
-  });
-  await sleep(300);
-  const logState = await page.evaluate(() => ({
-    log: document.getElementById('gameLog').classList.contains('open'),
-    pop: document.getElementById('tvPopoverHost').classList.contains('active'),
-  }));
-  ok(logState.log && !logState.pop, 'gear opens the Game Log and closes itself');
-  await page.evaluate(() => toggleLog());
-  await page.evaluate(() => document.querySelector('.tv-gear').click());
-  await sleep(250);
-  await page.evaluate(() => {
-    [...document.querySelectorAll('#tvPopoverHost .tv-pop-item')].find(b => /how to play/i.test(b.textContent)).click();
-  });
-  await sleep(300);
-  ok(await page.evaluate(() => document.getElementById('howto-overlay').classList.contains('active')), 'gear opens How to Play');
-  await page.evaluate(() => closeHowto());
-  await sleep(200);
+  // Gear menu is removed (Wyatt 7/6): nothing but the four purse chips top-left.
+  ok(await page.evaluate(() =>
+    !document.querySelector('.tv-gear') && document.querySelectorAll('#tvPurse .tv-purse-chip').length === 4),
+    'purse is four chips, no gear button');
 
   // Panel-aside: hand panel up → rival chip → panel steps aside → returns on close.
   await page.evaluate(() => selectHandCard(0));
