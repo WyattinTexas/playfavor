@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — Test Realm</title>
-    <link rel="stylesheet" href="css/style.css?v=20260707132452">
+    <link rel="stylesheet" href="css/style.css?v=20260707133755">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
@@ -155,6 +155,20 @@
             <div class="mission-lb-action" id="missionLBAction" onclick="event.stopPropagation()"></div>
         </div>
 
+        <!-- Mission Journal — royal ledger: Current Missions + Completed;
+             tap a card to open it in the mission browser (openMissionJournal) -->
+        <div class="mission-journal" id="missionJournal" onclick="closeMissionJournal()">
+            <div class="mj-scroll" onclick="event.stopPropagation()">
+                <div class="mj-roller top"></div>
+                <div class="mj-head">
+                    <div class="mj-title">Mission Journal</div>
+                </div>
+                <div class="mj-body" id="mjBody"></div>
+                <div class="mj-roller bottom"></div>
+            </div>
+            <div class="ov-close" onclick="closeMissionJournal()">ESC</div>
+        </div>
+
         <!-- Lend Toast -->
         <div class="lend-toast" id="lendToast"></div>
 
@@ -286,10 +300,10 @@
     </audio>
 
     <!-- ═══ SCRIPTS ═══ -->
-    <script src="data/cards.js?v=20260707132452"></script>
-    <script src="data/missions.js?v=20260707132452"></script>
-    <script src="data/characters.js?v=20260707132452"></script>
-    <script src="engine/gameState.js?v=20260707132452"></script>
-    <script src="js/ui.js?v=20260707132452"></script>
+    <script src="data/cards.js?v=20260707133755"></script>
+    <script src="data/missions.js?v=20260707133755"></script>
+    <script src="data/characters.js?v=20260707133755"></script>
+    <script src="engine/gameState.js?v=20260707133755"></script>
+    <script src="js/ui.js?v=20260707133755"></script>
 </body>
 </html>

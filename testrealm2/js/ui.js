@@ -660,8 +660,9 @@ window.resetCoach = resetCoach;
 // Never surface a tip while a full-screen modal / action panel is up.
 function coachOverlayOpen() {
     return ['howto-overlay', 'boardOverlay', 'handInspectOv', 'oppOverlay',
-            'missionLB', 'cardZoom', 'scoring-screen', 'missionSelect', 'actionPanel',
-            'cardPeek', 'meleeSplash', 'promisePicker', 'slideConfirm', 'tvPopoverHost']
+            'missionLB', 'missionJournal', 'cardZoom', 'scoring-screen', 'missionSelect',
+            'actionPanel', 'cardPeek', 'meleeSplash', 'promisePicker', 'slideConfirm',
+            'tvPopoverHost']
         .some(id => { const el = document.getElementById(id); return el && el.classList.contains('active'); });
 }
 
@@ -988,6 +989,10 @@ function renderGameState() {
     renderHand(state);
     renderBottomStats(state);
     renderTableView(state);
+
+    // The journal reads live sections — keep it honest if it's up while
+    // state moves (e.g. a Turn In from the browser layered above it).
+    if (missionJournalOpen()) renderMissionJournal();
 }
 
 function formatPhase(phase) {
@@ -1221,12 +1226,18 @@ function renderMissionStrip(state) {
                     onclick="openMissionBrowser('realm', '${m.name.replace(/'/g, "\\'")}')">`;
     });
 
+    const head = `
+        <div class="mission-strip-head">
+            <span class="strip-label">Missions</span>
+            <button class="mj-open" onclick="event.stopPropagation(); openMissionJournal()">Journal</button>
+        </div>`;
     strip.innerHTML = pips
         ? `<div class="mission-section">
-               <span class="strip-label">Missions</span>
+               ${head}
                <div class="mission-pips">${pips}</div>
            </div>`
-        : '<span class="strip-label">No Missions</span>';
+        : `<div class="mission-section">${head}
+           <span class="strip-label" style="opacity:0.5">None yet</span></div>`;
 
     // Position below stats panel (desktop only — compact landscape uses flex flow)
     if (isCompactLandscape()) {
@@ -1544,15 +1555,14 @@ function renderTvMissionRail(state) {
     });
     for (let g = ms.length; g < 3; g++) h += '<span class="tv-mission ghost"></span>';
 
-    const gp = game.players[0];
-    const a = (gp.missions || []).length;
-    const d = (gp.completedMissions || []).length;
-    const f = (gp.failedMissions || []).length;
-    h += `<button class="tv-mym" title="Your missions"
-                  onclick="event.stopPropagation(); toggleMyMissions()">
-            <span class="mym-a">● ${a}</span>
-            <span class="mym-d">✓ ${d}</span>
-            <span class="mym-f">✕ ${f}</span>
+    // Journal button — replaces the old ● ✓ ✕ tally chip. Count = current
+    // missions only; the ledger inside holds the rest.
+    const cur = (game.players[0].missions || []).length;
+    h += `<button class="tv-mym" title="Mission Journal"
+                  onclick="event.stopPropagation(); openMissionJournal()">
+            <img class="mym-icon" src="assets/icons/mission.png" alt="">
+            <span class="mym-label">Missions</span>
+            <b class="mym-count">${cur}</b>
           </button>`;
     el.innerHTML = h;
 }
@@ -1639,51 +1649,61 @@ function closeTvPopover(restorePanel = true) {
     if (typeof coachTick === 'function') coachTick();
 }
 
-function toggleMyMissions() {
-    if (_tvPopover === 'mym') return closeTvPopover();
-    openTvPopover('mym');
+// ── Mission Journal — a royal ledger of where you stand: Current
+// Missions (with their due act) and Completed. Failed missions are
+// discarded in the fiction and do NOT appear (gp.failedMissions data
+// stays intact for scoring/log). Cards are BIG scans; tapping one opens
+// the mission browser focused on it (Turn In lives there).
+function openMissionJournal() {
+    if (!game) return;
+    if (typeof coachMarkSeen === 'function') coachMarkSeen('missions');
+    _tvPanelStepAside();   // root-level action panel would paint over the journal
+    renderMissionJournal();
+    document.getElementById('missionJournal').classList.add('active');
 }
 
-// One dismissible list row per acquired mission — same info and lightbox
-// tap as the old missions drawer. Rows close the popover first so the
-// lightbox has the stage to itself.
-function buildMyMissionRows() {
+function renderMissionJournal() {
+    const body = document.getElementById('mjBody');
+    if (!body || !game) return;
     const gp = game.players[0];
-    let rows = '';
-    const entry = (m, cls, tag) => {
-        const reqs = (m.requirements || []).map(r => SKILL_ABBR[r] || r.slice(0, 3).toUpperCase()).join(' + ') || '—';
-        return `<div class="tv-mission-row ${cls}"
-                     onclick="event.stopPropagation(); closeTvPopover(false); openMissionBrowser('mine', '${m.name.replace(/'/g, "\\'")}')">
-            <img class="tv-mission-thumb" src="assets/cards/missions/${m.filename}" alt="${m.name}"
-                 data-peek="assets/cards/missions/${m.filename}">
-            <div class="tv-mission-info">
-                <span class="tv-mission-name">${m.name}</span>
-                <span class="tv-mission-meta">${m.favorValue || 0} Favor · ${reqs}</span>
-            </div>
-            <span class="tv-mission-tag">${tag}</span>
+    const esc = (s) => s.replace(/'/g, "\\'");
+    const entry = (m, done) => `
+        <div class="mj-card${done ? ' done' : ''}"
+             onclick="event.stopPropagation(); openMissionBrowser('mine', '${esc(m.name)}')">
+            <img src="assets/cards/missions/${m.filename}" alt="${m.name}"
+                 data-peek="assets/cards/missions/${m.filename}" draggable="false">
+            ${done ? '<div class="mj-ribbon">✓ Completed</div>'
+                   : `<div class="mj-due">${mjDueNote(m)}</div>`}
         </div>`;
-    };
-    (gp.missions || []).forEach(m => rows += entry(m, 'active', '●'));
-    (gp.completedMissions || []).forEach(m => rows += entry(m, 'done', '✓'));
-    (gp.failedMissions || []).forEach(m => rows += entry(m, 'failed', '✕'));
-    if (!rows) rows = '<div class="tv-pop-empty">No missions taken yet.<br>Play a mission card to acquire one.</div>';
-    return rows;
+    const cur = (gp.missions || []).map(m => entry(m, false)).join('');
+    const done = (gp.completedMissions || []).map(m => entry(m, true)).join('');
+    body.innerHTML = `
+        <div class="mj-section">
+            <div class="mj-section-title">Current Missions</div>
+            ${cur ? `<div class="mj-grid">${cur}</div>`
+                  : '<div class="mj-empty">None yet — play a mission card to take one.</div>'}
+        </div>
+        <div class="mj-section">
+            <div class="mj-section-title">Completed</div>
+            ${done ? `<div class="mj-grid">${done}</div>`
+                   : '<div class="mj-empty">The ledger awaits your first success.</div>'}
+        </div>`;
 }
 
-function openTvPopover(kind) {
-    const host = document.getElementById('tvPopoverHost');
-    if (!host) return;
-    closeTvPopover(false);
-    _tvPanelStepAside();
-    _tvPopover = kind;
-    host.innerHTML = `
-        <div class="tv-pop mym" onclick="event.stopPropagation()">
-            <div class="tv-pop-title">Your Missions</div>
-            ${buildMyMissionRows()}
-        </div>`;
-    host.classList.add('active');
-    host.onclick = () => closeTvPopover();
-    if (typeof coachTick === 'function') coachTick();
+function mjDueNote(m) {
+    const due = game.missionDueAct(m);
+    return due > game.currentAct ? `Due end of Act ${due}` : 'Due THIS act';
+}
+
+function closeMissionJournal() {
+    const el = document.getElementById('missionJournal');
+    if (el) el.classList.remove('active');
+    setTimeout(_tvPanelRestore, 0);   // after this click's outside-click handler
+}
+
+function missionJournalOpen() {
+    const el = document.getElementById('missionJournal');
+    return !!el && el.classList.contains('active');
 }
 
 function renderTvHand(state) {
@@ -2271,7 +2291,10 @@ function renderMissionLBTurnIn(name) {
 
 function closeMissionLB() {
     document.getElementById('missionLB').classList.remove('active');
-    setTimeout(_tvPanelRestore, 0);   // after this click's outside-click handler
+    // If the journal is still holding the stage beneath the browser, the
+    // action panel must NOT come back yet — it would paint over the
+    // journal (root-level z 9999). The journal's own close restores it.
+    if (!missionJournalOpen()) setTimeout(_tvPanelRestore, 0);
 }
 
 // ── ESC closes all overlays ──
@@ -2281,6 +2304,7 @@ function closeAllOverlays() {
     closeHandInspect();
     closeOppOverlay();
     closeMissionLB();
+    closeMissionJournal();
     if (typeof closeTvPopover === 'function') closeTvPopover();
 }
 

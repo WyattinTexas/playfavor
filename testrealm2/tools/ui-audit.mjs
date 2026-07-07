@@ -333,33 +333,56 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
   await page.keyboard.press('Escape');
   await sleep(250);
 
-  // Mission rail thumb → lightbox.
+  // Mission rail thumb → the browser.
   await page.evaluate(() => document.querySelector('#tvMissionRail .tv-mission:not(.ghost)').click());
   await sleep(300);
-  ok(await page.evaluate(() => document.getElementById('missionLB').classList.contains('active')), 'mission thumb opens the lightbox');
+  ok(await page.evaluate(() => document.getElementById('missionLB').classList.contains('active')), 'mission thumb opens the browser');
   await page.keyboard.press('Escape');
   await sleep(250);
 
-  // My Missions popover: ● ✓ ✕ rows, row hands off to the lightbox with Turn In.
+  // Mission Journal: the rail chip is a journal button now — no ✓/✕
+  // tally. Inside: Current + Completed as BIG cards; failed absent;
+  // tapping a current card layers the browser (with Turn In) on top,
+  // closing the browser lands BACK on the journal.
+  const chip = await page.evaluate(() => {
+    const c = document.querySelector('.tv-mym');
+    return { text: c.textContent, hasIcon: !!c.querySelector('.mym-icon') };
+  });
+  ok(!/[✓✕●]/.test(chip.text) && chip.hasIcon, 'rail chip is a journal button (no tally glyphs)');
   await page.evaluate(() => document.querySelector('.tv-mym').click());
-  await sleep(300);
-  const mym = await page.evaluate(() => ({
-    open: document.getElementById('tvPopoverHost').classList.contains('active'),
-    rows: [...document.querySelectorAll('#tvPopoverHost .tv-mission-row')].map(r => r.className.replace('tv-mission-row', '').trim()),
+  await sleep(400);
+  const mj = await page.evaluate(() => ({
+    open: document.getElementById('missionJournal').classList.contains('active'),
+    sections: [...document.querySelectorAll('#mjBody .mj-section-title')].map(t => t.textContent),
+    current: document.querySelectorAll('#mjBody .mj-card:not(.done)').length,
+    done: document.querySelectorAll('#mjBody .mj-card.done').length,
+    failedShown: [...document.querySelectorAll('#mjBody .mj-card img')]
+      .some(i => (game.players[0].failedMissions || []).some(f => f.name === i.alt)),
+    dueNote: document.querySelector('#mjBody .mj-card:not(.done) .mj-due')?.textContent || '',
   }));
-  ok(mym.open, 'My Missions popover opens');
-  ok(mym.rows.includes('active') && mym.rows.includes('done') && mym.rows.includes('failed'),
-    `popover lists active/done/failed rows (${mym.rows.join(',')})`);
-  await page.screenshot({ path: join(SHOTS, 'hud-mymissions.png') });
-  await page.evaluate(() => document.querySelector('#tvPopoverHost .tv-mission-row.active').click());
-  await sleep(350);
-  const afterRow = await page.evaluate(() => ({
+  ok(mj.open, 'journal button opens the Mission Journal');
+  ok(mj.sections.length === 2 && /Current/.test(mj.sections[0]) && /Completed/.test(mj.sections[1]),
+    `journal has Current + Completed sections (${mj.sections.join(' / ')})`);
+  ok(mj.current >= 1 && mj.done >= 1, `both sections hold cards (${mj.current} current, ${mj.done} done)`);
+  ok(!mj.failedShown, 'failed missions do NOT appear in the journal');
+  ok(/Due/.test(mj.dueNote), `current cards carry a due note (${mj.dueNote})`);
+  await page.screenshot({ path: join(SHOTS, 'hud-mission-journal.png') });
+  await page.evaluate(() => document.querySelector('#mjBody .mj-card:not(.done)').click());
+  await sleep(500);
+  const layered = await page.evaluate(() => ({
     lb: document.getElementById('missionLB').classList.contains('active'),
-    pop: document.getElementById('tvPopoverHost').classList.contains('active'),
+    journalStillUp: document.getElementById('missionJournal').classList.contains('active'),
     turnIn: !!document.getElementById('missionTurnIn'),
   }));
-  ok(afterRow.lb && !afterRow.pop, 'popover row hands off to the lightbox');
-  ok(afterRow.turnIn, 'held mission shows Turn In inside the lightbox');
+  ok(layered.lb && layered.turnIn, 'journal card opens the browser focused with Turn In');
+  ok(layered.journalStillUp, 'journal keeps the stage beneath the browser');
+  await page.evaluate(() => closeMissionLB());
+  await sleep(300);
+  const backTo = await page.evaluate(() => ({
+    journal: document.getElementById('missionJournal').classList.contains('active'),
+    panel: document.getElementById('actionPanel').classList.contains('active'),
+  }));
+  ok(backTo.journal && !backTo.panel, 'closing the browser lands back on the journal (panel stays aside)');
   await page.keyboard.press('Escape');
   await sleep(250);
 
@@ -849,6 +872,18 @@ console.log('── Mission browser: full set, focus browsing, Life Essence stay
     'browsing every card moved nothing (essence held, gold unchanged)');
   await page.screenshot({ path: join(SHOTS, 'mission-browser-mine.png') });
   await page.evaluate(() => { game.players[0].removeMissionRequirements = false; closeMissionLB(); });
+  await sleep(250);
+
+  // Desktop entry: the strip's Journal button opens the same ledger.
+  await page.evaluate(() => document.querySelector('.mj-open').click());
+  await sleep(400);
+  const dj = await page.evaluate(() => ({
+    open: document.getElementById('missionJournal').classList.contains('active'),
+    cards: document.querySelectorAll('#mjBody .mj-card').length,
+  }));
+  ok(dj.open && dj.cards === 2, `desktop Journal button opens the ledger (${dj.cards} cards)`);
+  await page.screenshot({ path: join(SHOTS, 'mission-journal-desktop.png') });
+  await page.evaluate(() => closeMissionJournal());
   await page.close();
 }
 
