@@ -2247,6 +2247,113 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
     margin-bottom: 20px;
 }
 
+/* ── Victory ceremony — headline, deltas, placement ladder ── */
+
+.vs-head {
+    position: relative;
+    overflow: hidden;
+    text-align: center;
+    padding: 26px 46px 18px;
+    border-radius: 16px;
+    max-width: min(720px, 94vw);
+}
+.vs-head.win {
+    background: radial-gradient(ellipse 90% 85% at 50% 0%, rgba(232, 195, 75, 0.13), transparent 65%);
+}
+.vs-head .champ-rays { inset: -120% -60%; }
+.vs-headline {
+    position: relative;
+    font-family: 'Cinzel Decorative', 'Cinzel', serif;
+    font-size: clamp(24px, 5vw, 42px);
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--gold);
+    text-shadow: 0 0 34px rgba(232, 195, 75, 0.45);
+}
+.vs-head.win .vs-headline {
+    color: #f4dd8f;
+    text-shadow: 0 0 40px rgba(232, 195, 75, 0.65);
+}
+.vs-personal {
+    position: relative;
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: clamp(14px, 2.2vw, 19px);
+    color: var(--parchment-dark);
+    margin-top: 7px;
+}
+
+.vs-deltas {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 12px 0 4px;
+}
+.vs-delta {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    font-family: 'Cinzel', serif;
+    font-size: clamp(15px, 2.4vw, 20px);
+    padding: 9px 20px;
+    border: 1px solid rgba(201, 168, 76, 0.45);
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(60, 40, 14, 0.55), rgba(30, 18, 7, 0.65));
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+.vs-delta b { color: var(--gold-light); font-size: 1.3em; }
+.vs-delta.stars b { color: #ffd97a; }
+.vs-d-what { color: var(--gold); letter-spacing: 1px; }
+.vs-d-arrow { color: var(--parchment-dark); opacity: 0.8; }
+
+.vs-places {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 16px;
+    width: min(460px, 92vw);
+}
+.vs-place {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 18px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    font-family: 'Cinzel', serif;
+    letter-spacing: 1px;
+}
+.vs-place .vs-ord { width: 34px; text-align: right; font-size: 13px; opacity: 0.85; }
+.vs-trophy { width: 22px; height: 22px; flex: 0 0 22px; }
+.vs-trophy.none { display: inline-block; }
+.vs-place .vs-name { flex: 1; }
+.vs-place .vs-total { font-size: 21px; }
+.vs-place.p1 {
+    color: #f4dd8f;
+    border-color: rgba(232, 195, 75, 0.75);
+    background: linear-gradient(90deg, rgba(232, 195, 75, 0.16), rgba(232, 195, 75, 0.05));
+    box-shadow: 0 0 22px rgba(232, 195, 75, 0.15);
+}
+.vs-place.p2 {
+    color: #d8dde4;
+    border-color: rgba(198, 204, 214, 0.5);
+    background: linear-gradient(90deg, rgba(198, 204, 214, 0.11), rgba(198, 204, 214, 0.03));
+}
+.vs-place.p3 {
+    color: #e0a877;
+    border-color: rgba(205, 138, 75, 0.5);
+    background: linear-gradient(90deg, rgba(205, 138, 75, 0.12), rgba(205, 138, 75, 0.03));
+}
+.vs-place.pn { color: #9b8f7e; opacity: 0.75; }
+.vs-place.me .vs-name { font-weight: 700; }
+
+/* Breakdown rows wear the same placement colors. */
+.scoring-table tr.vs-p1 td { color: #f4dd8f; background: rgba(232, 195, 75, 0.10); }
+.scoring-table tr.vs-p2 td { color: #d8dde4; background: rgba(198, 204, 214, 0.06); }
+.scoring-table tr.vs-p3 td { color: #e0a877; background: rgba(205, 138, 75, 0.06); }
+.scoring-table tr.vs-pn td { color: #9b8f7e; }
+
 .scoring-scroll { max-width: 96vw; overflow-x: auto; }
 
 .scoring-actions { margin: 40px 0 12px; }
@@ -4224,6 +4331,18 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     .scoring-table th { font-size: 8px; letter-spacing: 0.5px; }
     .scoring-actions { margin: 12px 0 6px; }
     .scoring-actions .btn-royal { padding: 8px 22px; font-size: 12px; }
+
+    /* Victory ceremony tightens to the same short-screen budget. */
+    .vs-head { padding: 10px 20px 6px; }
+    .vs-headline { font-size: clamp(19px, 4.6vh, 24px); }
+    .vs-personal { font-size: 12px; margin-top: 3px; }
+    .vs-deltas { gap: 8px; margin: 6px 0 2px; }
+    .vs-delta { font-size: 13px; padding: 5px 12px; gap: 6px; }
+    .vs-places { gap: 3px; margin-top: 8px; }
+    .vs-place { padding: 4px 12px; gap: 8px; }
+    .vs-place .vs-ord { font-size: 10px; width: 26px; }
+    .vs-place .vs-total { font-size: 15px; }
+    .vs-trophy { width: 16px; height: 16px; flex-basis: 16px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════

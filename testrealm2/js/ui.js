@@ -3349,10 +3349,34 @@ function showChemYPicker() {
     });
 }
 
-// ─── SCORING ───────────────────────────────────────────────
+// ─── SCORING — the victory ceremony ─────────────────────────
+
+// Placement colors: 1st gold, 2nd silver, 3rd bronze, the rest muted.
+// Indexed by finish order so every table size (3/4/5) reads the same.
+const VS_PLACES = [
+    { cls: 'p1', color: '#e8c34b' },
+    { cls: 'p2', color: '#c6ccd6' },
+    { cls: 'p3', color: '#cd8a4b' },
+];
+const VS_ORDINAL = ['1st', '2nd', '3rd', '4th', '5th'];
+
+// Inline trophy cup — ours, never an emoji (same doctrine as .crown-ico).
+function vsTrophy(color) {
+    return `<svg class="vs-trophy" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 3h10v6a5 5 0 0 1-10 0Z" fill="${color}" stroke="rgba(0,0,0,0.35)" stroke-width="0.8"/>
+        <path d="M7 4.2H4.1a3.5 3.5 0 0 0 3.4 4.4M17 4.2h2.9a3.5 3.5 0 0 1-3.4 4.4" fill="none" stroke="${color}" stroke-width="1.7"/>
+        <path d="M10.7 13.4h2.6v3.2h-2.6z" fill="${color}"/>
+        <rect x="7.6" y="16.9" width="8.8" height="2.7" rx="0.7" fill="${color}" stroke="rgba(0,0,0,0.35)" stroke-width="0.8"/>
+    </svg>`;
+}
 
 function showScoring() {
     const scores = game.getWinner();
+
+    // Snapshot BEFORE posting — the deltas below say what THIS game did,
+    // measured against where you stood when it began.
+    const before = (window.FLB && typeof FLB.snapshot === 'function')
+        ? FLB.snapshot() : { rating: 0, stars: 0 };
 
     // Post YOUR result to the leaderboard the moment scoring resolves —
     // rating points vs the table + best-Favor for today's daily board.
@@ -3362,12 +3386,62 @@ function showScoring() {
     document.getElementById('game-screen').classList.remove('active');
     document.getElementById('scoring-screen').classList.add('active');
 
+    // Late toasts (melee results, mission payouts) float above this screen
+    // — the ceremony opens on a clean stage.
+    const toasts = document.getElementById('notifications');
+    if (toasts) toasts.innerHTML = '';
+
     const content = document.getElementById('scoringContent');
     const winner = scores[0];
+    const place = scores.findIndex(s => s.playerIndex === 0);
+    const youWon = place === 0;
+
+    const headline = youWon ? 'You Are Victorious!' : `${winner.name} Claims the Throne`;
+    const personal = youWon
+        ? 'The realm bows before its new sovereign.'
+        : `You finished ${VS_ORDINAL[place] || (place + 1) + 'th'}.`;
+
+    // Rating + Stars deltas, shown BIG. Rating persists via postGameResult
+    // (works offline too — the local adapter keeps the same ledgers);
+    // per-game Stars appear once the store economy exposes FLB.gameStars.
+    const fmtDelta = (n) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '±0');
+    let deltas = '';
+    if (window.FLB && place >= 0) {
+        const rDelta = FLB.ratingDelta(place, scores.length);
+        const newRating = Math.max(0, (before.rating || 0) + rDelta);
+        deltas += `<div class="vs-delta rating">
+            <span class="vs-d-what">✦ Rating</span><b>${fmtDelta(rDelta)}</b>
+            <span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${newRating}">0</b>
+        </div>`;
+        if (typeof FLB.gameStars === 'function') {
+            const sDelta = FLB.gameStars(place, scores.length);
+            const newStars = (before.stars || 0) + sDelta;
+            deltas += `<div class="vs-delta stars">
+                <span class="vs-d-what">★ Stars</span><b>+${sDelta}</b>
+                <span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${newStars}">0</b>
+            </div>`;
+        }
+    }
+
+    // Placement ladder — color-coded, trophies for the podium, totals roll.
+    const rows = scores.map((s, i) => {
+        const p = VS_PLACES[i];
+        return `<div class="vs-place ${p ? p.cls : 'pn'}${s.playerIndex === 0 ? ' me' : ''}">
+            <span class="vs-ord">${VS_ORDINAL[i] || (i + 1) + 'th'}</span>
+            ${p ? vsTrophy(p.color) : '<span class="vs-trophy none"></span>'}
+            <span class="vs-name">${s.name}</span>
+            <b class="vs-total" data-total="${s.finalScore}">0</b>
+        </div>`;
+    }).join('');
 
     content.innerHTML = `
-        <h2 class="scoring-title">${winner.name} Claims the Throne!</h2>
-        <p class="scoring-sub">Final Score: ${winner.finalScore} points</p>
+        <div class="vs-head${youWon ? ' win' : ''}">
+            ${youWon ? '<div class="champ-rays"></div>' : ''}
+            <div class="vs-headline">${headline}</div>
+            <div class="vs-personal">${personal}</div>
+        </div>
+        ${deltas ? `<div class="vs-deltas">${deltas}</div>` : ''}
+        <div class="vs-places">${rows}</div>
         <div class="scoring-scroll">
             <table class="scoring-table">
                 <tr>
@@ -3381,7 +3455,7 @@ function showScoring() {
                     <th>Gold (Tiebreaker)</th>
                 </tr>
                 ${scores.map((s, i) => `
-                    <tr class="${i === 0 ? 'winner' : ''}">
+                    <tr class="vs-${VS_PLACES[i] ? VS_PLACES[i].cls : 'pn'}${i === 0 ? ' winner' : ''}">
                         <td>${s.name}</td>
                         <td>${s.missionFavor}</td>
                         <td>${s.cardFavor}</td>
@@ -3400,6 +3474,20 @@ function showScoring() {
             </button>
         </div>
     `;
+
+    // Roll every total up from 0 (the Melee splash count-up, ease-out).
+    content.querySelectorAll('[data-total]').forEach(b => {
+        const target = parseInt(b.dataset.total, 10) || 0;
+        const dur = 900;
+        let t0 = null;
+        const tick = (t) => {
+            if (t0 === null) t0 = t;
+            const k = Math.min(1, (t - t0) / dur);
+            b.textContent = Math.round(target * (1 - Math.pow(1 - k, 3)));
+            if (k < 1) requestAnimationFrame(tick);
+        };
+        setTimeout(() => requestAnimationFrame(tick), 350);
+    });
 }
 
 // ─── PLAYER STATS (renderStats alias for backward compat) ──

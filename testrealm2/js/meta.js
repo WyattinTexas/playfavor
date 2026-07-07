@@ -308,6 +308,13 @@
 
     let _me = null;
 
+    // Synchronous view of the last-read player record — the victory screen
+    // snapshots this BEFORE posting so its deltas measure THIS game.
+    function snapshot() {
+        const p = _me || {};
+        return { rating: p.rating || 0, stars: p.stars || 0 };
+    }
+
     async function renderProfileChip() {
         const chip = document.getElementById('profileChip');
         if (!chip) return;
@@ -418,7 +425,7 @@
     // Public surface
     window.FLB = {
         postGameResult, openLeaderboard, closeLeaderboard, openProfile, closeProfile,
-        queueSize, rename, renderProfileChip,
+        queueSize, rename, renderProfileChip, snapshot,
         settleDue, drainMsgs, currentDateKey, ratingDelta, generateName,
         get mode() { return mode; }, uid,
     };

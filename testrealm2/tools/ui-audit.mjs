@@ -1788,6 +1788,148 @@ for (const mode of ['desktop', 'phone']) {
   await page.close();
 }
 
+// ═══ VICTORY SCREEN: dynamic headline, placement colors, deltas, count-up ═══
+console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit');
+{
+  const AUDIT_UID = 'uaudit' + Math.random().toString(36).slice(2, 8);
+  // Favor rigs are exact: no cards played + every hero's center slot grants
+  // zero favor, so these values ARE the finish order.
+  const rigScoring = (pg, youFavor, p1Favor, p2Favor) => pg.evaluate((a, b, c) => {
+    game.players[0].favor = a;
+    game.players[1].favor = b;
+    game.players[2].favor = c;
+    showScoring();
+  }, youFavor, p1Favor, p2Favor);
+
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('victory: ' + m.text()); });
+  await page.evaluateOnNewDocument((u) => {
+    localStorage.setItem('favorUid', u);
+    localStorage.setItem('favorName', 'Audit Herald');
+    localStorage.setItem('favorQueue', '3');
+  }, AUDIT_UID);
+  await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+
+  // ── WIN ──
+  await rigScoring(page, 100, 10, 5);
+  await sleep(300);
+  const win = await page.evaluate(() => ({
+    headline: (document.querySelector('.vs-headline') || {}).textContent,
+    personal: (document.querySelector('.vs-personal') || {}).textContent,
+    rays: !!document.querySelector('.vs-head.win .champ-rays'),
+    oldH1: !!document.querySelector('#scoring-screen .select-title'),
+    places: [...document.querySelectorAll('.vs-place')].map(el => ({
+      cls: el.className, trophy: !!el.querySelector('svg.vs-trophy'),
+      name: el.querySelector('.vs-name').textContent,
+    })),
+    ratingDelta: (document.querySelector('.vs-delta.rating b') || {}).textContent,
+    ratingNew: (document.querySelector('.vs-delta.rating .vs-d-new') || { dataset: {} }).dataset.total,
+    starRow: !!document.querySelector('.vs-delta.stars'),
+    tableCls: [...document.querySelectorAll('.scoring-table tr')].slice(1).map(r => r.className),
+    playAgain: !!([...document.querySelectorAll('.scoring-actions .btn-royal')].find(b => /play again/i.test(b.textContent))),
+    hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
+  }));
+  ok(win.headline === 'You Are Victorious!', `win headline (${win.headline})`);
+  ok(win.rays, 'gold rays crown a human win');
+  ok(win.personal === 'The realm bows before its new sovereign.', `win personal line (${win.personal})`);
+  ok(!win.oldH1, '"The Queen Has Decided" h1 is gone');
+  ok(win.places.length === 3, `placement ladder rows = table size (${win.places.length})`);
+  ok(/\bp1\b/.test(win.places[0].cls) && win.places[0].trophy && win.places[0].name === 'You',
+    '1st row: gold class + trophy + You');
+  ok(/\bp2\b/.test(win.places[1].cls) && win.places[1].trophy, '2nd row: silver class + trophy');
+  ok(/\bp3\b/.test(win.places[2].cls) && win.places[2].trophy, '3rd row: bronze class + trophy');
+  ok(win.ratingDelta === '+25', `rating delta reads +25 (${win.ratingDelta})`);
+  ok(win.ratingNew === '25', `fresh player's new rating target = 25 (${win.ratingNew})`);
+  ok(!win.starRow, 'no star row until the store economy exposes FLB.gameStars');
+  ok(win.tableCls.every((c, i) => c.includes(['vs-p1', 'vs-p2', 'vs-p3'][i])),
+    `breakdown rows wear placement colors (${win.tableCls.join(' · ')})`);
+  ok(win.playAgain, 'Play Again survives');
+  ok(!win.hscroll, 'no horizontal scroll');
+
+  // Count-up actually lands on the totals.
+  await sleep(1500);
+  const landed = await page.evaluate(() => ({
+    top: (document.querySelector('.vs-place.p1 .vs-total') || {}).textContent,
+    target: (document.querySelector('.vs-place.p1 .vs-total') || { dataset: {} }).dataset.total,
+    rating: (document.querySelector('.vs-delta.rating .vs-d-new') || {}).textContent,
+  }));
+  ok(landed.top === landed.target && landed.rating === '25',
+    `count-up lands (score ${landed.top}/${landed.target}, rating ${landed.rating})`);
+  await page.screenshot({ path: join(SHOTS, 'vs-desktop-win.png') });
+
+  // ── NON-WIN (finish 3rd) — startGame navigates fresh ──
+  await startGame(page);
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await rigScoring(page, 5, 100, 50);
+  await sleep(300);
+  const loss = await page.evaluate(() => ({
+    headline: (document.querySelector('.vs-headline') || {}).textContent,
+    rays: !!document.querySelector('.vs-head .champ-rays'),
+    personal: (document.querySelector('.vs-personal') || {}).textContent,
+    myRow: ((document.querySelector('.vs-place.me') || {}).className || ''),
+    ratingDelta: (document.querySelector('.vs-delta.rating b') || {}).textContent,
+  }));
+  ok(/Claims the Throne$/.test(loss.headline) && !/You/.test(loss.headline),
+    `rival win headline (${loss.headline})`);
+  ok(!loss.rays, 'no rays when a rival takes the throne');
+  ok(loss.personal === 'You finished 3rd.', `personal line (${loss.personal})`);
+  ok(/\bp3\b/.test(loss.myRow), 'your row wears bronze in 3rd');
+  ok(loss.ratingDelta === '−10', `last place reads −10 (${loss.ratingDelta})`);
+  await page.screenshot({ path: join(SHOTS, 'vs-desktop-loss.png') });
+
+  // ── Firebase hygiene: remove every trace of the audit player ──
+  const cleaned = await page.evaluate(async (u) => {
+    if (FLB.mode !== 'firebase') return 'local-mode (nothing remote to clean)';
+    const KEY = FLB.currentDateKey();
+    await firebase.database().ref(`favor/players/${u}`).remove();
+    await firebase.database().ref(`favor/daily/${KEY}/scores/${u}`).remove();
+    const p = await firebase.database().ref(`favor/players/${u}`).get();
+    const d = await firebase.database().ref(`favor/daily/${KEY}/scores/${u}`).get();
+    return (!p.exists() && !d.exists()) ? 'clean' : 'RESIDUE';
+  }, AUDIT_UID);
+  ok(cleaned !== 'RESIDUE', `audit player scrubbed from favor/* (${cleaned})`);
+  await page.close();
+
+  // ── PHONE: the ceremony fits 844×390 ──
+  const phone = await browser.newPage();
+  phone.on('console', m => { if (m.type() === 'error') consoleErrors.push('victory-phone: ' + m.text()); });
+  await phone.evaluateOnNewDocument((u) => {
+    localStorage.setItem('favorUid', u);
+    localStorage.setItem('favorName', 'Audit Herald');
+    localStorage.setItem('favorQueue', '3');
+  }, AUDIT_UID + 'p');
+  await phone.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  await startGame(phone);
+  await phone.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await rigScoring(phone, 100, 10, 5);
+  await sleep(1500);
+  const pfit = await phone.evaluate(() => {
+    const vis = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 2 && r.top < window.innerHeight; };
+    const btn = [...document.querySelectorAll('.scoring-actions .btn-royal')].find(b => /play again/i.test(b.textContent));
+    btn.scrollIntoView({ block: 'end' });
+    return {
+      headline: vis(document.querySelector('.vs-headline')),
+      deltas: vis(document.querySelector('.vs-delta.rating')),
+      hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
+      btnReachable: vis(btn),
+      screenScrolls: document.getElementById('scoring-screen').scrollHeight >= document.getElementById('scoring-screen').clientHeight,
+    };
+  });
+  ok(pfit.headline && pfit.deltas, 'phone: headline + rating delta visible');
+  ok(pfit.btnReachable, 'phone: Play Again reachable (scrolls into view)');
+  ok(!pfit.hscroll, 'phone: no horizontal scroll');
+  await phone.screenshot({ path: join(SHOTS, 'vs-phone.png') });
+  await phone.evaluate(async (u) => {
+    if (FLB.mode !== 'firebase') return;
+    const KEY = FLB.currentDateKey();
+    await firebase.database().ref(`favor/players/${u}`).remove();
+    await firebase.database().ref(`favor/daily/${KEY}/scores/${u}`).remove();
+  }, AUDIT_UID + 'p');
+  await phone.close();
+}
+
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));
 
 await browser.close();
