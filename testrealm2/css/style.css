@@ -1108,6 +1108,12 @@ html, body {
     box-shadow: 0 12px 40px rgba(201,168,76,0.3), 0 0 30px rgba(201,168,76,0.15);
 }
 
+/* A selected card must beat the phase bar (z 30) even with no hover —
+   same layout bump as :hover above, but hover-independent: without it
+   the card only outranks the pill while the mouse happens to rest on it. */
+.game-layout:has(.hand-card.selected) { z-index: 31; }
+.hand-zone:has(.hand-card.selected) { z-index: 40; }
+
 /* Hand waiting text */
 .hand-zone .hand-waiting {
     color: var(--gold);

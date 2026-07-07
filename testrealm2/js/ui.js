@@ -1028,6 +1028,19 @@ function renderPhaseBar(state) {
     const bar = document.getElementById('phaseBar');
     const acts = ['I', 'II', 'III'];
     const compact = isCompactLandscape();
+    // #table-view is a stacking context (z:1), so a screen-level sibling pill
+    // can only sit entirely above or below the WHOLE table — it could never
+    // interleave (above the board, below a bloomed hand card). While compact,
+    // the pill lives INSIDE the table view and joins its ladder at z:6:
+    // above stage/board/rails, below hand strip (45) / bloom (60) / drag (70).
+    // position:fixed keeps it viewport-placed; overflow:hidden can't clip it.
+    const home = compact
+        ? document.getElementById('table-view')
+        : document.getElementById('game-screen');
+    if (bar.parentElement !== home) {
+        if (compact) home.appendChild(bar);
+        else home.insertBefore(bar, home.querySelector('.game-layout'));
+    }
     const phaseText = compact ? formatPhaseShort(state.phase) : formatPhase(state.phase);
     bar.innerHTML = `
         <span class="act-tag">Act ${acts[state.currentAct - 1] || state.currentAct}</span>

@@ -99,6 +99,29 @@ console.log('── Phone: glide blooms exactly one card (no sticky-hover double
   ok(mid.bloom && mid.bloom.top >= 0 && mid.bloom.bottom <= mid.bloom.vh + 1,
     'bloomed card fully on-screen despite the strip crop');
 
+  // ── Task-1 layering: the bloomed card must PAINT above the phase pill.
+  // elementFromPoint exercises real hit-test stacking — synthetic clicks
+  // bypass it, which is exactly how this class of bug slips through.
+  const layer = await page.evaluate(() => {
+    const b = document.querySelector('.tv-hand .hand-card.bloom');
+    const pill = document.getElementById('phaseBar');
+    if (!b || !pill) return { miss: true };
+    const br = b.getBoundingClientRect(), pr = pill.getBoundingClientRect();
+    const l = Math.max(br.left, pr.left), r = Math.min(br.right, pr.right);
+    const t = Math.max(br.top, pr.top), bo = Math.min(br.bottom, pr.bottom);
+    if (l >= r || t >= bo) return { overlap: false };
+    const el = document.elementFromPoint((l + r) / 2, (t + bo) / 2);
+    return {
+      overlap: true,
+      hitCard: b === el || b.contains(el),
+      hit: el ? (el.className.toString() || el.id || el.tagName) : 'none',
+      pillInTable: document.getElementById('table-view').contains(pill),
+    };
+  });
+  ok(layer.overlap === true, 'bloomed card overlaps the phase pill (fixture valid)');
+  ok(layer.hitCard === true, `bloomed card paints ABOVE the phase pill (hit: ${layer.hit})`);
+  ok(layer.pillInTable === true, 'phase pill lives inside #table-view while compact');
+
   await page.touchscreen.touchEnd();
   await sleep(400);
   const after = await page.evaluate(() => ({
@@ -526,6 +549,72 @@ console.log('── Desktop: last two cards — player chooses BOTH fates');
     }));
     ok(acted && state.pendingCleared, `choice applied (${acted}), round continued`);
   }
+  await page.close();
+}
+
+// ═══ DESKTOP: hand outranks the phase pill without DOM-order luck ═══
+console.log('── Desktop: hover-bloom and selected cards paint above the phase pill');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('desktop-pill: ' + m.text()); });
+  // 620px tall: still desktop layout (compact needs ≤540), but short enough
+  // that the 680px-capped bloom actually reaches the pill band at the top.
+  await page.setViewport({ width: 1420, height: 620 });
+  await startGame(page);
+  await sleep(400);
+
+  // Reparent restore: on desktop the pill lives at game-screen level.
+  const home = await page.evaluate(() => {
+    const pill = document.getElementById('phaseBar');
+    return {
+      inTable: document.getElementById('table-view').contains(pill),
+      inScreen: document.getElementById('game-screen').contains(pill),
+    };
+  });
+  ok(!home.inTable && home.inScreen, 'phase pill parked at #game-screen level on desktop');
+
+  // Hover-bloom the center card with a REAL mouse move; the bloom reaches
+  // the pill band, and the card must win the hit-test there.
+  const c = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.hand-zone .hand-card')];
+    const mid = cards[Math.floor(cards.length / 2)];
+    const r = mid.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await page.mouse.move(c.x, c.y);
+  await sleep(450);
+  const hoverLayer = await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.hand-zone .hand-card')]
+      .find(x => x.matches(':hover'));
+    const pill = document.getElementById('phaseBar');
+    if (!b || !pill) return { miss: true };
+    const br = b.getBoundingClientRect(), pr = pill.getBoundingClientRect();
+    const l = Math.max(br.left, pr.left), r = Math.min(br.right, pr.right);
+    const t = Math.max(br.top, pr.top), bo = Math.min(br.bottom, pr.bottom);
+    if (l >= r || t >= bo) return { overlap: false };
+    const el = document.elementFromPoint((l + r) / 2, (t + bo) / 2);
+    return { overlap: true, hitCard: b === el || b.contains(el),
+             hit: el ? (el.className.toString() || el.id || el.tagName) : 'none' };
+  });
+  ok(hoverLayer.overlap === true, 'desktop hover-bloom overlaps the pill (fixture valid)');
+  ok(hoverLayer.hitCard === true, `hover-bloomed card paints ABOVE the pill (hit: ${hoverLayer.hit})`);
+  await page.screenshot({ path: join(SHOTS, 'desktop-pill-bloom.png') });
+
+  // Selected state must not depend on the mouse still hovering: the layout
+  // bump has to fire for .selected on its own.
+  await page.mouse.move(5, 400);           // park the mouse away from the hand
+  await sleep(250);
+  await page.evaluate(() => selectHandCard(0));
+  await sleep(350);
+  const selLayer = await page.evaluate(() => {
+    const layout = document.querySelector('.game-layout');
+    const z = parseInt(getComputedStyle(layout).zIndex, 10);
+    const pillZ = parseInt(getComputedStyle(document.getElementById('phaseBar')).zIndex, 10);
+    return { z, pillZ, selected: !!document.querySelector('.hand-card.selected') };
+  });
+  ok(selLayer.selected, 'a hand card is selected (fixture valid)');
+  ok(selLayer.z > selLayer.pillZ,
+    `.game-layout outranks the pill while a card is selected (${selLayer.z} > ${selLayer.pillZ})`);
   await page.close();
 }
 
