@@ -877,7 +877,14 @@ function showCharacterSelect() {
         return;
     }
 
-    _offeredHeroes = shuffleArray(window.FAVOR_DATA.characters).slice(0, 3);
+    // The offer draws from the heroes YOU OWN (first five are everyone's;
+    // store purchases join the pool — FLB.ownedIds). Owned is always ≥5,
+    // so three offerings never starve. Bots still draw from all ten.
+    const ownedIds = (window.FLB && typeof FLB.ownedIds === 'function')
+        ? FLB.ownedIds()
+        : window.FAVOR_DATA.characters.slice(0, 5).map(c => c.id);
+    const ownedChars = window.FAVOR_DATA.characters.filter(c => ownedIds.includes(c.id));
+    _offeredHeroes = shuffleArray(ownedChars).slice(0, 3);
     _offeredHeroes.forEach(char => {
         const card = document.createElement('div');
         card.className = 'character-card fade-in';
@@ -2331,7 +2338,11 @@ function closeAllOverlays() {
     closeMissionLB();
     closeMissionJournal();
     if (typeof closeTvPopover === 'function') closeTvPopover();
-    if (window.FLB) { FLB.closeLeaderboard(); FLB.closeProfile(); }
+    if (window.FLB) {
+        FLB.closeLeaderboard();
+        FLB.closeProfile();
+        if (typeof FLB.closeStore === 'function') FLB.closeStore();
+    }
 }
 
 function selectHandCard(index) {

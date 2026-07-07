@@ -42,6 +42,19 @@
     const PLACE_WORD = ['1st', '2nd', '3rd'];
     const CHAMP_KEYS = ['gold', 'silver', 'bronze'];
 
+    // ── Store economy (defaults for Wyatt to veto) ───────────────────
+    // Every finished game pays Stars by finish position; Daily Champions
+    // (50/25/10 above) stays the nightly jackpot on top of these.
+    const STORE_PRICE = 100;
+    const FREE_CHAR_COUNT = 5;   // data/characters.js order: first five are free
+
+    function gameStars(place, count) {
+        if (place === 0) return 10;
+        if (place === 1) return 6;
+        if (place === 2) return 4;
+        return 2;
+    }
+
     // Small gold crown — inline SVG so the champion mark is OURS (royal,
     // never an emoji from somebody else's set).
     const CROWN_SVG = '<svg class="crown-ico" viewBox="0 0 24 16" aria-hidden="true">'
@@ -197,6 +210,7 @@
     async function readPlayer() {
         const me = await dbGet(`players/${uid()}`);
         if (me && me.name) localStorage.setItem('favorName', me.name);
+        if (me && me.owned) mirrorOwned(me.owned);
         return me;
     }
 
@@ -220,8 +234,13 @@
             const delta = ratingDelta(place, scores.length);
 
             await dbTxn(`players/${uid()}/rating`, r => Math.max(0, (r || 0) + delta));
+            // Per-game Stars — every game pays something (store economy).
+            const starsWon = gameStars(place, scores.length);
+            await dbTxn(`players/${uid()}/stars`, s => (s || 0) + starsWon);
             // First result materializes the record (lazy join — see above).
-            dbUpdate(`players/${uid()}`, { name: myName(), lastSeen: Date.now() });
+            // AWAITED: a trailing fire-and-forget here can land after a
+            // caller's subsequent reads/cleanup and resurrect the row.
+            await dbUpdate(`players/${uid()}`, { name: myName(), lastSeen: Date.now() });
 
             // Daily board: best single-game Favor score in this window.
             const key = currentDateKey();
@@ -364,6 +383,7 @@
             if (tab === 'alltime') {
                 const players = await dbGet('players') || {};
                 rows = Object.entries(players)
+                    .filter(([, p]) => p && p.name)   // nameless stubs stay off the board
                     .map(([u, p]) => ({ uid: u, name: p.name, score: p.rating || 0,
                                         gold: (p.champs && p.champs.gold) || 0 }))
                     .sort((a, b) => b.score - a.score)
@@ -391,6 +411,177 @@
         }
     }
     function closeLeaderboard() { document.getElementById('lbPanel').classList.remove('active'); }
+
+    // ═══ Character store — buy heroes with Stars ═════════════════════
+    // Ownership lives at favor/players/{uid}/owned/{charId}: true, with a
+    // localStorage mirror (favorOwned) so hero select works synchronously
+    // and offline. The first five characters are everyone's.
+
+    function freeIds() {
+        return ((window.FAVOR_DATA || {}).characters || [])
+            .slice(0, FREE_CHAR_COUNT).map(c => c.id);
+    }
+
+    function ownedIds() {
+        let bought = [];
+        try { bought = JSON.parse(localStorage.getItem('favorOwned')) || []; }
+        catch (e) { /* fresh mirror */ }
+        return [...new Set([...freeIds(), ...bought])];
+    }
+
+    function mirrorOwned(ownedMap) {
+        const bought = Object.keys(ownedMap || {}).filter(k => ownedMap[k]);
+        localStorage.setItem('favorOwned', JSON.stringify(bought));
+    }
+
+    // Purchase — ONE transaction on the whole player record: the balance
+    // check and the ownership write commit together or not at all. The
+    // client's displayed balance is never trusted for the write, and a
+    // missing record materializes here (lazy join, same as rename).
+    async function buyCharacter(charId) {
+        const char = ((window.FAVOR_DATA || {}).characters || []).find(c => c.id === charId);
+        if (!char) return { ok: false, why: 'unknown' };
+        if (ownedIds().includes(charId)) return { ok: false, why: 'owned' };
+        // Offline the store is browse-only: a local-ledger purchase would
+        // evaporate when the next online session re-mirrors remote owned
+        // (stars spent, hero gone) — refuse honestly instead.
+        if (mode !== 'firebase') return { ok: false, why: 'offline' };
+        // Server-side pre-read: a player who can't afford it never reaches
+        // the transaction — otherwise the null-guess stub below would
+        // materialize nameless rows that pollute the all-time board. The
+        // txn stays the sole authority for the actual purchase.
+        try {
+            const current = await dbGet(`players/${uid()}`);
+            if (((current && current.stars) || 0) < STORE_PRICE) return { ok: false, why: 'stars' };
+            if (current && current.owned && current.owned[charId]) return { ok: false, why: 'owned' };
+        } catch (e) {
+            return { ok: false, why: 'offline' };
+        }
+        const res = await dbTxn(`players/${uid()}`, p => {
+            if (p == null) {
+                // Firebase hands the update fn its LOCAL guess first — null
+                // when nothing is cached. Returning undefined here would
+                // CANCEL the transaction before the server's real record is
+                // consulted, so return a provisional stub instead: the
+                // server compare rejects it and re-runs us with the truth.
+                // A genuinely-new player commits the stub (lazy join) and
+                // is still refused below — no stars, no ownership.
+                return { stars: 0 };
+            }
+            const stars = p.stars || 0;
+            if (stars < STORE_PRICE) return;            // abort — can't afford
+            if (p.owned && p.owned[charId]) return;     // abort — exactly once
+            return { ...p, stars: stars - STORE_PRICE,
+                     owned: { ...(p.owned || {}), [charId]: true } };
+        });
+        if (!res.committed || !res.value || !res.value.owned || !res.value.owned[charId]) {
+            return { ok: false, why: 'stars' };
+        }
+        dbUpdate(`players/${uid()}`, { name: myName(), lastSeen: Date.now() });
+        _me = res.value;
+        mirrorOwned(res.value.owned);
+        renderProfileChip();
+        return { ok: true };
+    }
+
+    // ── Store panel (lb-panel pattern: art IS the UI) ────────────────
+
+    let _confirmingBuy = null;
+
+    async function openStore() {
+        const panel = document.getElementById('storePanel');
+        if (!panel) return;
+        _confirmingBuy = null;
+        panel.classList.add('active');
+        renderStore();
+        // Freshen the record so the balance is honest, then re-render.
+        // A one-shot get() REJECTS when the wire hiccups — the stale
+        // shelf already painted above is the graceful fallback.
+        try {
+            _me = await dbGet(`players/${uid()}`) || _me;
+            if (_me && _me.owned) mirrorOwned(_me.owned);
+            renderStore();
+        } catch (e) { /* keep the already-rendered shelf */ }
+    }
+
+    function closeStore() {
+        const panel = document.getElementById('storePanel');
+        if (panel) panel.classList.remove('active');
+        _confirmingBuy = null;
+    }
+
+    function renderStore() {
+        const body = document.getElementById('storeBody');
+        if (!body) return;
+        const chars = ((window.FAVOR_DATA || {}).characters || []);
+        const owned = ownedIds();
+        const stars = (_me && _me.stars) || 0;
+        document.getElementById('storeStars').innerHTML =
+            `★ ${stars}${mode !== 'firebase' ? ' <span class="st-local">OFFLINE — BROWSE ONLY</span>' : ''}`;
+        body.innerHTML = chars.map(c => {
+            const isOwned = owned.includes(c.id);
+            let action;
+            if (isOwned) {
+                action = '<span class="st-owned">Owned</span>';
+            } else if (mode !== 'firebase') {
+                // Browse-only offline — see buyCharacter's offline guard.
+                action = `<button class="st-buy poor" disabled>★ ${STORE_PRICE}</button>`;
+            } else if (_confirmingBuy === c.id) {
+                action = `<button class="st-buy confirm" onclick="event.stopPropagation(); FLB.confirmBuy('${c.id}')">Buy — ★ ${STORE_PRICE}?</button>`;
+            } else if (stars < STORE_PRICE) {
+                action = `<button class="st-buy poor" onclick="event.stopPropagation(); FLB.askBuy('${c.id}')">★ ${STORE_PRICE}</button>`;
+            } else {
+                action = `<button class="st-buy" onclick="event.stopPropagation(); FLB.askBuy('${c.id}')">★ ${STORE_PRICE}</button>`;
+            }
+            return `<div class="st-card${isOwned ? ' owned' : ''}" data-char="${c.id}">
+                <img src="assets/characters/${c.filename}" alt="${c.name}">
+                <div class="st-plate">
+                    <span class="st-name">${c.name}</span>
+                    ${action}
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function askBuy(charId) {
+        const stars = (_me && _me.stars) || 0;
+        if (stars < STORE_PRICE) {
+            // Can't afford — the button says so for a beat.
+            const btn = document.querySelector(`.st-card[data-char="${charId}"] .st-buy`);
+            if (btn) { btn.textContent = 'Not enough ★'; setTimeout(renderStore, 1200); }
+            return;
+        }
+        _confirmingBuy = charId;
+        renderStore();
+    }
+
+    async function confirmBuy(charId) {
+        _confirmingBuy = null;
+        const res = await buyCharacter(charId);
+        renderStore();
+        if (res.ok) {
+            const char = window.FAVOR_DATA.characters.find(c => c.id === charId);
+            await showPurchaseCelebration(char);
+        } else if (res.why === 'stars') {
+            const btn = document.querySelector(`.st-card[data-char="${charId}"] .st-buy`);
+            if (btn) { btn.textContent = 'Not enough ★'; setTimeout(renderStore, 1200); }
+        }
+    }
+
+    // Short royal celebration — the champ overlay dressed for a purchase.
+    function showPurchaseCelebration(char) {
+        return new Promise(resolve => {
+            const ov = document.getElementById('champOverlay');
+            if (!ov || !char) { resolve(); return; }
+            document.getElementById('champTitle').textContent = `${char.name} Joins Your Court!`;
+            document.getElementById('champSub').innerHTML =
+                `${CROWN_SVG} A new hero enters your select pool`;
+            ov.classList.add('active');
+            const done = () => { ov.classList.remove('active'); resolve(); };
+            ov.onclick = done;
+            document.getElementById('champBtn').onclick = (e) => { e.stopPropagation(); done(); };
+        });
+    }
 
     // ── Queue picker persistence (3/4/5-player queues) ───────────────
 
@@ -427,6 +618,7 @@
         postGameResult, openLeaderboard, closeLeaderboard, openProfile, closeProfile,
         queueSize, rename, renderProfileChip, snapshot,
         settleDue, drainMsgs, currentDateKey, ratingDelta, generateName,
+        gameStars, ownedIds, buyCharacter, openStore, closeStore, askBuy, confirmBuy,
         get mode() { return mode; }, uid,
     };
 })();

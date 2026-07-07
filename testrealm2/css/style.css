@@ -247,6 +247,101 @@ html, body {
 .lb-foot { margin-top: 10px; }
 .lb-loading { padding: 34px 0; }
 
+/* ── Character store — the art IS the shelf ── */
+
+.st-inner { width: min(920px, 94vw); }
+.st-stars {
+    margin-left: 14px;
+    color: #ffd97a;
+    letter-spacing: 1px;
+    font-size: 0.92em;
+    white-space: nowrap;
+}
+.st-local {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: #f0a0a0;
+    vertical-align: middle;
+}
+.st-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+    overflow-y: auto;
+    min-height: 0;   /* flex child: without this the grid refuses to shrink-and-scroll */
+    padding: 2px 2px 6px;
+}
+.st-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(201, 168, 76, 0.35);
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(26, 15, 40, 0.45);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    transition: border-color 0.25s, box-shadow 0.25s;
+}
+.st-card:hover { border-color: var(--gold); }
+.st-card.owned {
+    border-color: rgba(232, 195, 75, 0.75);
+    box-shadow: 0 0 18px rgba(232, 195, 75, 0.16), 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.st-card img {
+    width: 100%;
+    display: block;
+    aspect-ratio: 3 / 2;
+    object-fit: cover;
+}
+.st-card:not(.owned) img { filter: saturate(0.55) brightness(0.82); }
+.st-plate {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 8px 9px;
+}
+.st-name {
+    font-family: 'Cinzel', serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--gold);
+}
+.st-owned {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #f4dd8f;
+    border: 1px solid rgba(232, 195, 75, 0.55);
+    border-radius: 8px;
+    padding: 3px 12px;
+    background: linear-gradient(180deg, rgba(232, 195, 75, 0.16), rgba(232, 195, 75, 0.05));
+}
+.st-buy {
+    font-family: 'Cinzel', serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #2a1810;
+    background: linear-gradient(180deg, #f0d278, #c9a84c);
+    border: 1px solid #8a6a1f;
+    border-radius: 8px;
+    padding: 4px 14px;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+.st-buy:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(232, 195, 75, 0.35); }
+.st-buy.confirm {
+    background: linear-gradient(180deg, #ffe9a8, #e8c34b);
+    box-shadow: 0 0 14px rgba(232, 195, 75, 0.5);
+    animation: ntPulse 1.5s ease-in-out infinite;
+}
+.st-buy.poor { opacity: 0.55; }
+
 .pf-row {
     display: flex;
     justify-content: space-between;
@@ -4331,6 +4426,12 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     .scoring-table th { font-size: 8px; letter-spacing: 0.5px; }
     .scoring-actions { margin: 12px 0 6px; }
     .scoring-actions .btn-royal { padding: 8px 22px; font-size: 12px; }
+
+    /* Store shelf on a short screen: smaller cells, the grid scrolls. */
+    .st-grid { grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); gap: 8px; margin-top: 8px; }
+    .st-name { font-size: 10px; }
+    .st-buy { font-size: 10px; padding: 3px 10px; }
+    .st-owned { font-size: 8px; padding: 2px 8px; }
 
     /* Victory ceremony tightens to the same short-screen budget. */
     .vs-head { padding: 10px 20px 6px; }

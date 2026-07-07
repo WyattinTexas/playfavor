@@ -1826,7 +1826,8 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
     })),
     ratingDelta: (document.querySelector('.vs-delta.rating b') || {}).textContent,
     ratingNew: (document.querySelector('.vs-delta.rating .vs-d-new') || { dataset: {} }).dataset.total,
-    starRow: !!document.querySelector('.vs-delta.stars'),
+    starDelta: (document.querySelector('.vs-delta.stars b') || {}).textContent,
+    starNew: (document.querySelector('.vs-delta.stars .vs-d-new') || { dataset: {} }).dataset.total,
     tableCls: [...document.querySelectorAll('.scoring-table tr')].slice(1).map(r => r.className),
     playAgain: !!([...document.querySelectorAll('.scoring-actions .btn-royal')].find(b => /play again/i.test(b.textContent))),
     hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
@@ -1842,7 +1843,8 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
   ok(/\bp3\b/.test(win.places[2].cls) && win.places[2].trophy, '3rd row: bronze class + trophy');
   ok(win.ratingDelta === '+25', `rating delta reads +25 (${win.ratingDelta})`);
   ok(win.ratingNew === '25', `fresh player's new rating target = 25 (${win.ratingNew})`);
-  ok(!win.starRow, 'no star row until the store economy exposes FLB.gameStars');
+  ok(win.starDelta === '+10', `win pays +10 Stars (${win.starDelta})`);
+  ok(win.starNew === '10', `fresh player's star target = 10 (${win.starNew})`);
   ok(win.tableCls.every((c, i) => c.includes(['vs-p1', 'vs-p2', 'vs-p3'][i])),
     `breakdown rows wear placement colors (${win.tableCls.join(' · ')})`);
   ok(win.playAgain, 'Play Again survives');
@@ -1879,10 +1881,18 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
   ok(loss.ratingDelta === '−10', `last place reads −10 (${loss.ratingDelta})`);
   await page.screenshot({ path: join(SHOTS, 'vs-desktop-loss.png') });
 
-  // ── Firebase hygiene: remove every trace of the audit player ──
+  // ── Firebase hygiene: remove every trace of the audit player.
+  // postGameResult's LAST write is the daily best — wait for it so the
+  // remove can't race a still-in-flight write (which would resurrect
+  // the row moments after the scrub and flake this very check). ──
   const cleaned = await page.evaluate(async (u) => {
     if (FLB.mode !== 'firebase') return 'local-mode (nothing remote to clean)';
     const KEY = FLB.currentDateKey();
+    for (let i = 0; i < 40; i++) {
+      const d = await firebase.database().ref(`favor/daily/${KEY}/scores/${u}`).get();
+      if (d.exists()) break;
+      await new Promise(r => setTimeout(r, 250));
+    }
     await firebase.database().ref(`favor/players/${u}`).remove();
     await firebase.database().ref(`favor/daily/${KEY}/scores/${u}`).remove();
     const p = await firebase.database().ref(`favor/players/${u}`).get();
@@ -1924,9 +1934,206 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
   await phone.evaluate(async (u) => {
     if (FLB.mode !== 'firebase') return;
     const KEY = FLB.currentDateKey();
+    for (let i = 0; i < 40; i++) {   // wait out in-flight posts (see above)
+      const d = await firebase.database().ref(`favor/daily/${KEY}/scores/${u}`).get();
+      if (d.exists()) break;
+      await new Promise(r => setTimeout(r, 250));
+    }
     await firebase.database().ref(`favor/players/${u}`).remove();
     await firebase.database().ref(`favor/daily/${KEY}/scores/${u}`).remove();
   }, AUDIT_UID + 'p');
+  await phone.close();
+}
+
+// ═══ CHARACTER STORE: grid, gating, seeded purchase, hero-select pool ═══
+console.log('── Store: 10-hero shelf, transaction gating, purchase joins the select pool');
+{
+  const AUDIT_UID = 'uaudit' + Math.random().toString(36).slice(2, 8);
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('store: ' + m.text()); });
+  await page.evaluateOnNewDocument((u) => {
+    localStorage.setItem('favorUid', u);
+    localStorage.setItem('favorName', 'Audit Herald');
+    localStorage.setItem('favorQueue', '3');
+    localStorage.removeItem('favorOwned');
+  }, AUDIT_UID);
+  await page.setViewport({ width: 1280, height: 800 });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await sleep(400);
+
+  // Menu carries the Store button; Skylar's hooks survive beside it.
+  const menu = await page.evaluate(() => ({
+    store: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /store/i.test(b.textContent))),
+    howto: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /how to play/i.test(b.textContent))),
+    promptTest: !!document.getElementById('promptTestToggle'),
+  }));
+  ok(menu.store && menu.howto && menu.promptTest, 'menu: Store button beside How to Play + Prompt Test');
+
+  // Fresh player: 10 heroes on the shelf, five free, five for sale.
+  await page.evaluate(() => FLB.openStore());
+  await sleep(600);
+  const shelf = await page.evaluate(() => ({
+    cards: document.querySelectorAll('.st-card').length,
+    owned: document.querySelectorAll('.st-card .st-owned').length,
+    forSale: [...document.querySelectorAll('.st-card .st-buy')].map(b => b.textContent.trim()),
+    balance: document.getElementById('storeStars').textContent.trim(),
+    art: [...document.querySelectorAll('.st-card img')].every(i => i.src.includes('assets/characters/')),
+  }));
+  ok(shelf.cards === 10, `all ten heroes on the shelf (${shelf.cards})`);
+  ok(shelf.owned === 5, `five free heroes wear Owned (${shelf.owned})`);
+  ok(shelf.forSale.length === 5 && shelf.forSale.every(t => t === '★ 100'),
+    `five store heroes priced ★ 100 (${shelf.forSale.join(', ')})`);
+  ok(/★ 0/.test(shelf.balance), `fresh balance reads ★ 0 (${shelf.balance})`);
+  ok(shelf.art, 'every shelf card shows the real character art');
+
+  // Broke: the buy path refuses and nothing is written.
+  const broke = await page.evaluate(async () => {
+    const r = await FLB.buyCharacter('duchess');
+    return { r, owned: FLB.ownedIds().length };
+  });
+  ok(broke.r.ok === false && broke.r.why === 'stars' && broke.owned === 5,
+    `broke player refused (${broke.r.why}); pool stays at 5`);
+
+  // Seed a purse (the champions-test pattern), then buy the Duchess.
+  await page.evaluate(async () => {
+    if (FLB.mode === 'firebase') {
+      await firebase.database().ref(`favor/players/${FLB.uid()}/stars`).set(250);
+    } else {
+      const t = JSON.parse(localStorage.getItem('favorLB') || '{}');
+      t.players = t.players || {}; t.players[FLB.uid()] = { ...(t.players[FLB.uid()] || {}), stars: 250 };
+      localStorage.setItem('favorLB', JSON.stringify(t));
+    }
+  });
+  await page.evaluate(() => FLB.openStore());
+  await sleep(600);
+  ok(/★ 250/.test(await page.evaluate(() => document.getElementById('storeStars').textContent)),
+    'seeded balance shows ★ 250');
+  await page.evaluate(() => FLB.askBuy('duchess'));
+  await sleep(200);
+  const confirmTxt = await page.evaluate(() =>
+    (document.querySelector('.st-card[data-char="duchess"] .st-buy') || {}).textContent);
+  ok(/Buy — ★ 100\?/.test(confirmTxt || ''), `tap asks for confirmation (${confirmTxt})`);
+  // Fire WITHOUT awaiting: confirmBuy's promise includes the celebration,
+  // which only a click resolves — awaiting it from evaluate deadlocks the
+  // protocol (180s timeout). Braces make the arrow return undefined.
+  await page.evaluate(() => { FLB.confirmBuy('duchess'); });
+  await page.waitForFunction(() => document.getElementById('champOverlay').classList.contains('active'), { timeout: 8000 });
+  const cheer = await page.evaluate(() => document.getElementById('champTitle').textContent);
+  ok(cheer === 'Duchess Joins Your Court!', `royal celebration fires (${cheer})`);
+  await page.screenshot({ path: join(SHOTS, 'store-celebration.png') });
+  await page.evaluate(() => document.getElementById('champBtn').click());
+  await sleep(400);
+
+  const after = await page.evaluate(async () => {
+    const remote = FLB.mode === 'firebase'
+      ? (await firebase.database().ref(`favor/players/${FLB.uid()}`).get()).val()
+      : JSON.parse(localStorage.getItem('favorLB')).players[FLB.uid()];
+    return {
+      balance: document.getElementById('storeStars').textContent.trim(),
+      duchessOwnedBadge: !!document.querySelector('.st-card[data-char="duchess"] .st-owned'),
+      mirror: JSON.parse(localStorage.getItem('favorOwned') || '[]'),
+      pool: FLB.ownedIds(),
+      remoteStars: remote && remote.stars,
+      remoteOwned: remote && remote.owned && remote.owned.duchess === true,
+      remoteName: remote && remote.name,
+    };
+  });
+  ok(/★ 150/.test(after.balance), `balance drops to ★ 150 (${after.balance})`);
+  ok(after.duchessOwnedBadge, 'Duchess card flips to Owned');
+  ok(after.mirror.includes('duchess'), `localStorage mirror carries the purchase (${after.mirror})`);
+  ok(after.pool.length === 6 && after.pool.includes('duchess'), 'owned pool grows to 6');
+  ok(after.remoteStars === 150 && after.remoteOwned === true,
+    `ledger: stars 150 + owned/duchess true (${after.remoteStars})`);
+  ok(!!after.remoteName, 'first purchase materialized the player row (lazy join)');
+  await page.screenshot({ path: join(SHOTS, 'store-desktop.png') });
+
+  // Exactly-once + can't-afford gating straight at the transaction.
+  const guards = await page.evaluate(async () => {
+    const twice = await FLB.buyCharacter('duchess');
+    if (FLB.mode === 'firebase') {
+      await firebase.database().ref(`favor/players/${FLB.uid()}/stars`).set(50);
+    } else {
+      const t = JSON.parse(localStorage.getItem('favorLB')); t.players[FLB.uid()].stars = 50;
+      localStorage.setItem('favorLB', JSON.stringify(t));
+    }
+    const poor = await FLB.buyCharacter('scientist');
+    const remote = FLB.mode === 'firebase'
+      ? (await firebase.database().ref(`favor/players/${FLB.uid()}`).get()).val()
+      : JSON.parse(localStorage.getItem('favorLB')).players[FLB.uid()];
+    return { twice, poor, stars: remote.stars, scientistOwned: !!(remote.owned && remote.owned.scientist) };
+  });
+  ok(guards.twice.ok === false, 'double-buy refused (exactly once)');
+  ok(guards.poor.ok === false && guards.stars === 50 && !guards.scientistOwned,
+    `50★ can't buy a 100★ hero — no decrement, no ownership (${guards.stars})`);
+
+  // Hero select draws ONLY from owned — and the Duchess now shows up.
+  const pool = await page.evaluate(() => {
+    const owned = new Set(FLB.ownedIds());
+    let allOwned = true, duchessSeen = false;
+    for (let i = 0; i < 20; i++) {
+      showCharacterSelect();
+      _offeredHeroes.forEach(c => {
+        if (!owned.has(c.id)) allOwned = false;
+        if (c.id === 'duchess') duchessSeen = true;
+      });
+    }
+    return { allOwned, duchessSeen };
+  });
+  ok(pool.allOwned, 'every hero-select offer is an OWNED hero (20 shuffles)');
+  ok(pool.duchessSeen, 'the bought Duchess joins the offer pool');
+
+  // Victory ceremony now shows the star delta against the live balance.
+  await startGame(page);
+  await page.evaluate(() => {
+    game.players[0].favor = 100; game.players[1].favor = 10; game.players[2].favor = 5;
+    showScoring();
+  });
+  await sleep(1600);
+  const vs = await page.evaluate(() => ({
+    delta: (document.querySelector('.vs-delta.stars b') || {}).textContent,
+    target: (document.querySelector('.vs-delta.stars .vs-d-new') || { dataset: {} }).dataset.total,
+  }));
+  ok(vs.delta === '+10' && vs.target === '60', `ceremony stars: +10 → 60 on a 50★ purse (${vs.delta} → ${vs.target})`);
+
+  // Leave no trace (wait out the in-flight post first — see victory flow).
+  const scrub = await page.evaluate(async () => {
+    if (FLB.mode !== 'firebase') { localStorage.removeItem('favorLB'); return 'local'; }
+    const KEY = FLB.currentDateKey();
+    for (let i = 0; i < 40; i++) {
+      const d = await firebase.database().ref(`favor/daily/${KEY}/scores/${FLB.uid()}`).get();
+      if (d.exists()) break;
+      await new Promise(r => setTimeout(r, 250));
+    }
+    await firebase.database().ref(`favor/players/${FLB.uid()}`).remove();
+    await firebase.database().ref(`favor/daily/${KEY}/scores/${FLB.uid()}`).remove();
+    const p = await firebase.database().ref(`favor/players/${FLB.uid()}`).get();
+    return p.exists() ? 'RESIDUE' : 'clean';
+  });
+  ok(scrub !== 'RESIDUE', `audit player scrubbed from favor/* (${scrub})`);
+  await page.close();
+
+  // Phone: the shelf fits 844×390 (grid scrolls, no horizontal spill).
+  const phone = await browser.newPage();
+  phone.on('console', m => { if (m.type() === 'error') consoleErrors.push('store-phone: ' + m.text()); });
+  await phone.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  await phone.goto(URL, { waitUntil: 'networkidle2' });
+  await phone.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await phone.evaluate(() => FLB.openStore());
+  await sleep(600);
+  const pfit = await phone.evaluate(() => {
+    const grid = document.getElementById('storeBody');
+    const inner = document.querySelector('.st-inner');
+    return {
+      cards: grid.querySelectorAll('.st-card').length,
+      scrolls: grid.scrollHeight > grid.clientHeight + 1,
+      innerFits: inner.getBoundingClientRect().height <= window.innerHeight + 1,
+      hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
+    };
+  });
+  ok(pfit.cards === 10 && pfit.innerFits && !pfit.hscroll,
+    `phone shelf: 10 heroes, panel fits, no h-scroll (scrolls=${pfit.scrolls})`);
+  await phone.screenshot({ path: join(SHOTS, 'store-phone.png') });
   await phone.close();
 }
 
