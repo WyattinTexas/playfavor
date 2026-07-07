@@ -628,7 +628,7 @@ const COACH_STEPS = [
       place: 'bottom',
       when: (s) => (s.visibleMissions || []).length > 0 },
     { id: 'hand',
-      text: `Your turn! <b>Tap a card</b> in your hand to see what you can do with it — play it, or discard it for gold.`,
+      text: `Your turn! <b>Drag a card up</b> out of your hand and let go — then choose: play it, discard it for gold, or more.`,
       anchor: () => document.getElementById('tvHandStrip'),
       place: 'top',
       when: (s) => coachMyTurn(s) },
@@ -1717,11 +1717,11 @@ function renderTvHand(state) {
                 try { playable = game.checkRequirements(0, card).canPlay; } catch (e) { playable = false; }
             }
         }
+        // No tap-to-select here: committing a card is the DRAG-UP gesture
+        // (touch = bloom to read, drag up + release = action sheet).
         html += `<div class="hand-card${isSelected ? ' selected' : ''}${playable ? ' playable' : ''}"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
-                    data-hand-i="${i}"
-                    onclick="event.stopPropagation(); selectHandCard(${i})"
-                    ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
+                    data-hand-i="${i}">
                     <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
                 </div>`;
     });
@@ -3387,10 +3387,12 @@ document.addEventListener('pointerdown', (e) => {
 }, true);
 document.addEventListener('scroll', _hoverPeekHide, true);
 
-// ── Hand bloom (Battlegrounds tray feel) ──
-// Touching a hand card blooms it to near screen height IN PLACE (CSS .bloom /
-// :hover). Slide your finger across the fan and each card blooms in turn;
-// release to open that card's action sheet. Mouse gets the same via :hover.
+// ── Hand gestures (Hearthstone/Battlegrounds) ──
+// Touch a hand card and it BLOOMS to near screen height in place — that's
+// the read. Slide along the fan and each card blooms in turn (browse).
+// DRAG UP past the lift line and the card detaches and follows your
+// finger; release up top → its action sheet (play / discard / …).
+// Release back down low, or a plain tap, commits nothing.
 let _bloomEl = null;
 let _bloomStartEl = null;
 
@@ -3443,12 +3445,68 @@ function _bloomSet(el) {
     if (el) el.classList.add('bloom');
 }
 
+// Drag-up state: how far the finger must climb before the bloom hands
+// the card to the drag (and the same line the release must clear to
+// commit — letting go below it just tucks the card home).
+const HAND_DRAG_LIFT = 60;
+let _handDrag = null;
+
 document.addEventListener('pointerdown', (e) => {
     const card = e.target.closest && e.target.closest('.tv-hand .hand-card');
     if (!card) return;
     _bloomStartEl = card;
+    _handDrag = { startX: e.clientX, startY: e.clientY, active: false, card: null, baseTransform: '' };
     _bloomSet(card);
 }, { passive: true });
+
+// The card detaches from the fan and rides the finger (straightened,
+// shrunk so the table stays readable — the Battlegrounds pull).
+function _handDragStart(ev) {
+    const card = _bloomEl || _bloomStartEl;
+    if (!card || !_handDrag) return;
+    _handDrag.active = true;
+    _handDrag.card = card;
+    _handDrag.baseTransform = card.style.transform;
+    card.classList.remove('bloom');
+    _bloomEl = null;                     // the drag owns the card now
+    card.classList.add('dragging');
+    const strip = document.getElementById('tvHandStrip');
+    if (strip) strip.classList.add('drag-from');
+    _handDragFollow(ev);
+}
+
+function _handDragFollow(ev) {
+    const d = _handDrag;
+    if (!d || !d.card) return;
+    const dx = ev.clientX - d.startX;
+    const dy = ev.clientY - d.startY;
+    // Inline !important: the hover-bloom rule is !important too, and a
+    // mouse-driven drag must not fight it mid-gesture.
+    d.card.style.setProperty('transform',
+        `translate(${Math.round(dx)}px, ${Math.round(dy - 24)}px) scale(1.45)`, 'important');
+}
+
+// Release: above the lift line → this card's action sheet is the next
+// beat; below it (or a cancelled pointer) → the card tucks back home.
+function _handDragEnd(e, allowCommit) {
+    const d = _handDrag;
+    _handDrag = null;
+    if (!d || !d.active || !d.card) return;
+    const card = d.card;
+    card.classList.remove('dragging');        // transition comes back on
+    card.style.removeProperty('transform');   // drop the !important drag transform
+    card.style.transform = d.baseTransform;   // snap home
+    const strip = document.getElementById('tvHandStrip');
+    if (strip) strip.classList.remove('drag-from');
+    if (allowCommit && (d.startY - e.clientY) > HAND_DRAG_LIFT) {
+        // Swallow this release's synthetic click so the outside-click
+        // handler can't instantly hide the sheet we're about to open.
+        _peekSwallowClick = true;
+        setTimeout(() => { _peekSwallowClick = false; }, 400);
+        const i = parseInt(card.getAttribute('data-hand-i'), 10);
+        if (!isNaN(i)) setTimeout(() => selectHandCard(i), 0);
+    }
+}
 
 // Glide: map finger X to the card whose RESTING slot is nearest — never
 // hit-test the screen, because the bloomed card itself sits on top and
@@ -3476,18 +3534,18 @@ document.addEventListener('pointermove', (e) => {
         const ev = _bloomMoveEv;
         _bloomMoveEv = null;
         if (!_bloomStartEl || !ev) return;
+        if (_handDrag && _handDrag.active) { _handDragFollow(ev); return; }
+        if (_handDrag && (_handDrag.startY - ev.clientY) > HAND_DRAG_LIFT) {
+            _handDragStart(ev);
+            return;
+        }
         const card = _bloomNearest(ev.clientX);
         if (card) _bloomSet(card);
     });
 }, { passive: true });
 
-function _bloomRelease() {
-    // Slid to a different card than the touch started on: the native click
-    // lands nowhere, so select the card that's blooming now.
-    if (_bloomEl && _bloomStartEl && _bloomEl !== _bloomStartEl && !_peekShowing) {
-        const i = parseInt(_bloomEl.getAttribute('data-hand-i'), 10);
-        if (!isNaN(i)) setTimeout(() => selectHandCard(i), 0);
-    }
+function _bloomRelease(e) {
+    _handDragEnd(e, e.type !== 'pointercancel');
     _bloomSet(null);
     _bloomStartEl = null;
 }

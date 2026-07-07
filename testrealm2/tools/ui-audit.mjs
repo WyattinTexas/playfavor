@@ -104,9 +104,66 @@ console.log('── Phone: glide blooms exactly one card (no sticky-hover double
   const after = await page.evaluate(() => ({
     bloomsLeft: document.querySelectorAll('.tv-hand .hand-card.bloom').length,
     enlarged: [...document.querySelectorAll('.tv-hand .hand-card')].filter(c => c.getBoundingClientRect().height > 260).length,
+    panel: !!document.querySelector('.action-panel.active'),
   }));
   ok(after.bloomsLeft === 0 && after.enlarged === 0, `release: all cards back to rest (bloom=${after.bloomsLeft}, big=${after.enlarged})`);
-  await page.evaluate(() => { const ap = document.querySelector('.action-panel'); if (ap) ap.classList.remove('active'); if (typeof deselectHandCard === 'function') try { deselectHandCard(); } catch (e) {} });
+  ok(!after.panel, 'glide release alone opens nothing');
+
+  // ── Drag-up commits (Hearthstone pull): lift a card out and release ──
+  console.log('── Phone: drag a card up and release → action sheet');
+  await page.touchscreen.touchStart(centers[1], y);
+  await sleep(150);
+  await page.touchscreen.touchMove(centers[1] + 4, y - 40);   // under the lift line: still browsing
+  await sleep(150);
+  ok(await page.evaluate(() => !document.querySelector('.hand-card.dragging')),
+    'small lift stays in browse mode');
+  await page.touchscreen.touchMove(centers[1] + 10, y - 160); // well past the line
+  await sleep(250);
+  const midDrag = await page.evaluate(() => ({
+    dragging: !!document.querySelector('.hand-card.dragging'),
+    dimmed: [...document.querySelectorAll('.tv-hand .hand-card:not(.dragging)')]
+      .every(c => parseFloat(getComputedStyle(c).opacity) < 0.7),
+  }));
+  ok(midDrag.dragging, 'past the lift line the card detaches and follows the finger');
+  ok(midDrag.dimmed, 'the rest of the fan dims during the drag');
+  await page.screenshot({ path: join(SHOTS, 'phone-drag-up.png') });
+  await page.touchscreen.touchEnd();
+  await sleep(500);
+  const committed = await page.evaluate(() => ({
+    panel: !!document.querySelector('.action-panel.active'),
+    buttons: [...document.querySelectorAll('.action-panel .action-btn')].map(b => b.textContent.trim()),
+    dragLeft: !!document.querySelector('.hand-card.dragging'),
+  }));
+  ok(committed.panel, 'release up top opens the action sheet');
+  ok(committed.buttons.some(t => /discard \(\+3g\)/i.test(t)),
+    `sheet offers the choices (${committed.buttons.slice(0, 3).join(' · ') || 'none'})`);
+  ok(!committed.dragLeft, 'the card snapped home');
+  await page.screenshot({ path: join(SHOTS, 'phone-drag-commit.png') });
+  await page.evaluate(() => { window._finalChoicePending = false; hideActionPanel(); });
+  await sleep(300);
+
+  // Plain tap = read only, never the sheet.
+  await page.touchscreen.touchStart(centers[0], y);
+  await sleep(150);
+  await page.touchscreen.touchEnd();
+  await sleep(450);
+  ok(await page.evaluate(() => !document.querySelector('.action-panel.active')),
+    'a plain tap opens nothing');
+
+  // Drag up, then back down = cancel.
+  await page.touchscreen.touchStart(centers[1], y);
+  await sleep(120);
+  await page.touchscreen.touchMove(centers[1], y - 160);
+  await sleep(180);
+  await page.touchscreen.touchMove(centers[1], y - 12);
+  await sleep(150);
+  await page.touchscreen.touchEnd();
+  await sleep(450);
+  const cancelled = await page.evaluate(() => ({
+    panel: !!document.querySelector('.action-panel.active'),
+    dragging: !!document.querySelector('.hand-card.dragging'),
+  }));
+  ok(!cancelled.panel && !cancelled.dragging, 'dragging back down cancels cleanly');
   await page.close();
 }
 

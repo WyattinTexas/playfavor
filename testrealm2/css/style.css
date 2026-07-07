@@ -2767,29 +2767,29 @@ html, body {
         opacity: 0.7 !important;
     }
 
-    /* ── Z1 · Purse — your four currencies + settings, top-left ── */
+    /* ── Z1 · Purse — your four currencies, top-left ── */
     .tv-purse {
         position: absolute;
         top: 6px;
         left: max(8px, env(safe-area-inset-left));
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 6px;
         z-index: 6;
     }
     .tv-purse-chip {
         display: inline-flex;
         align-items: center;
-        gap: 3px;
-        padding: 2px 6px 2px 3px;
-        border-radius: 10px;
+        gap: 4px;
+        padding: 3px 8px 3px 4px;
+        border-radius: 13px;
         background: rgba(10,6,3,0.68);
         border: 1px solid rgba(201,168,76,0.25);
         box-shadow: 0 1px 3px rgba(0,0,0,0.5);
         cursor: pointer;
     }
     .tv-purse-chip img {
-        width: 14px; height: 14px;
+        width: 18px; height: 18px;
         object-fit: contain;
         filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6));
     }
@@ -2797,7 +2797,7 @@ html, body {
     .tv-purse-chip b {
         font-family: 'Cinzel', serif;
         font-weight: 900;
-        font-size: 11px;
+        font-size: 14px;
         color: var(--gold-light);
         line-height: 1;
     }
@@ -2903,38 +2903,38 @@ html, body {
        390px-tall screen and shrink gracefully as rows appear. ── */
     .tv-skills {
         position: absolute;
-        top: 42px;
+        top: 46px;
         bottom: 106px;
         left: max(8px, env(safe-area-inset-left));
         display: flex;
         flex-direction: column;
-        gap: 3px;
+        gap: 4px;
         z-index: 5;
         --railRows: 6;
     }
     .tv-skill-chip {
         display: flex;
         align-items: center;
-        gap: 3px;
-        padding: 0 6px 0 3px;
-        border-radius: 9px;
+        gap: 4px;
+        padding: 0 8px 0 4px;
+        border-radius: 12px;
         background: rgba(10,6,3,0.68);
         border: 1px solid rgba(201,168,76,0.25);
         box-shadow: 0 1px 3px rgba(0,0,0,0.5);
-        height: min(32px, calc((100dvh - 152px - (var(--railRows) - 1) * 3px) / var(--railRows)));
+        height: min(42px, calc((100dvh - 158px - (var(--railRows) - 1) * 4px) / var(--railRows)));
         cursor: pointer;
     }
     .tv-skill-chip .skill-svg {
-        width: 17px; height: 17px;
-        min-width: 17px;
+        width: 22px; height: 22px;
+        min-width: 22px;
         object-fit: contain;
     }
     .tv-skill-chip b {
         font-family: 'Cinzel', serif;
         font-weight: 900;
-        font-size: 11px;
+        font-size: 14px;
         color: var(--gold-light);
-        min-width: 9px;
+        min-width: 12px;
         text-align: center;
         line-height: 1;
     }
@@ -3038,7 +3038,7 @@ html, body {
        Every focus moment (overlays, action panel, FX) lands over this. ── */
     .tv-stage {
         position: absolute;
-        left: 66px;
+        left: 80px;
         right: 138px;
         top: 62px;
         bottom: 100px;
@@ -3177,13 +3177,22 @@ html, body {
         /* Transform is the only animated property, in AND out, and margins
            never change — so gliding across the fan is pure GPU and the tray
            itself never reflows under the finger. */
-        transition: transform 0.15s cubic-bezier(0.33, 1, 0.68, 1);
-        touch-action: none;          /* the glide owns the gesture — no browser pan / pointercancel */
+        transition: transform 0.15s cubic-bezier(0.33, 1, 0.68, 1), opacity 0.2s;
+        touch-action: none;          /* the gesture owns the touch — no browser pan / pointercancel */
         -webkit-touch-callout: none; /* long-press must not summon the image save sheet */
         -webkit-user-select: none;
         user-select: none;
     }
     .tv-hand .hand-card img { -webkit-user-drag: none; }
+    /* Drag-up (Hearthstone pull): the card rides the finger via inline
+       transform — transition off so it tracks 1:1 — while the rest of
+       the fan dims to make room for the decision. */
+    .tv-hand .hand-card.dragging {
+        transition: none !important;
+        z-index: 70;
+        filter: drop-shadow(0 14px 26px rgba(0,0,0,0.65)) drop-shadow(0 0 16px rgba(240,210,120,0.4));
+    }
+    .tv-hand-strip.drag-from .hand-card:not(.dragging) { opacity: 0.45; }
     /* Touch or hover BLOOMS the card in place — the Battlegrounds tray feel.
        Slide along the fan and each card blooms in turn (JS .bloom).
        --bloomScale fits the card to the actual screen height and
