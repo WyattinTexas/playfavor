@@ -1015,6 +1015,9 @@ function renderGameState() {
     // The journal reads live sections — keep it honest if it's up while
     // state moves (e.g. a Turn In from the browser layered above it).
     if (missionJournalOpen()) renderMissionJournal();
+
+    // Neighbor-read marks survive the innerHTML rebuilds above.
+    applyTargetHighlights();
 }
 
 function formatPhase(phase) {
@@ -1346,7 +1349,7 @@ function renderSidebar(state) {
         const avatarSrc = char ? `assets/characters/${char.filename}` : '';
 
         html += `
-            <div class="opp-entry${isActive ? ' active-turn' : ''}"
+            <div class="opp-entry${isActive ? ' active-turn' : ''}" data-pi="${i}"
                  onclick="openOppOverlay(${i})">
                 <img class="opp-avatar" src="${avatarSrc}">
                 <div class="opp-details">
@@ -2340,6 +2343,69 @@ function selectHandCard(index) {
     showActionPanel(index);
 }
 
+// ─── NEIGHBOR-TARGET HIGHLIGHT ─────────────────────────────
+// Cards that read other players ("1 Favor for each Power your left &
+// right neighbor have") light up exactly WHO they read while selected:
+// pulsing gold ring + floating tag on the rival-rail portraits (desktop
+// sidebar AND phone seat chips); self-including cards also mark your own
+// stats/purse. Data-driven — future cards join by adding a row here.
+const TARGET_READ_SPECIALS = {
+    gold_2_per_power_neighbors:  { neighbors: true },              // Melee Spectacular
+    gold_2_per_alchemy_triangle: { neighbors: true, self: true },  // Marketplace Sales
+    favor_per_neighbor_power:    { neighbors: true },              // Royal Hilt
+};
+
+// Engine truth (getBorrowableSkills): left = (pi−1+n)%n, right = (pi+1)%n.
+// The human is player 0, so left = LAST player, right = players[1].
+let _targetHighlights = null;
+
+function setTargetHighlights(card) {
+    clearTargetHighlights();
+    const spec = card && card.special && TARGET_READ_SPECIALS[card.special];
+    if (!spec || !game) return;
+    const n = game.playerCount;
+    _targetHighlights = { left: (n - 1) % n, right: 1 % n, self: !!spec.self };
+    applyTargetHighlights();
+}
+
+function clearTargetHighlights() {
+    _targetHighlights = null;
+    document.querySelectorAll('.nt-read').forEach(el => {
+        el.classList.remove('nt-read', 'nt-left', 'nt-right', 'nt-self');
+    });
+    document.querySelectorAll('.nt-tag').forEach(t => t.remove());
+}
+
+function _ntMark(el, side, tagText) {
+    if (!el) return;
+    el.classList.add('nt-read', 'nt-' + side);
+    if (tagText && !el.querySelector(':scope > .nt-tag')) {
+        const tag = document.createElement('span');
+        tag.className = 'nt-tag';
+        tag.textContent = tagText;
+        el.appendChild(tag);
+    }
+}
+
+// Re-applied at the end of every renderGameState — the sidebar and seat
+// chips are rebuilt via innerHTML, which wipes marks mid-selection.
+function applyTargetHighlights() {
+    if (!_targetHighlights || !game) return;
+    const { left, right, self } = _targetHighlights;
+    const mark = (pi, side, text) => {
+        _ntMark(document.querySelector(`#gameSidebar .opp-entry[data-pi="${pi}"]`), side, text);
+        _ntMark(document.querySelector(`#tvSeats .pmat[data-pi="${pi}"]`), side, text);
+    };
+    mark(left, 'left', '◀ Left Neighbor');
+    mark(right, 'right', 'Right Neighbor ▶');
+    if (self) {
+        // Desktop: your stats/purse panel. Phone: your own seat chip
+        // (its built-in YOU badge is the label; the ring says "read").
+        _ntMark(document.getElementById('statsPanel'), 'self', 'You');
+        _ntMark(document.querySelector('#tvSeats .pmat[data-pi="0"]'), 'self', null);
+    }
+}
+
 // ─── ACTION PANEL ──────────────────────────────────────────
 
 function showActionPanel(cardIndex) {
@@ -2414,6 +2480,7 @@ function showActionPanel(cardIndex) {
 
     panel.innerHTML = html;
     panel.classList.add('active');
+    setTargetHighlights(card);
     if (typeof coachTick === 'function') coachTick();
 }
 
@@ -2424,6 +2491,7 @@ function hideActionPanel() {
     if (window._finalChoicePending) return;
     document.getElementById('actionPanel').classList.remove('active');
     selectedHandCard = null;
+    clearTargetHighlights();
     if (typeof coachTick === 'function') coachTick();
 }
 
@@ -2478,6 +2546,7 @@ function showFinalCardChoice(card) {
 
         panel.innerHTML = html;
         panel.classList.add('active');
+        setTargetHighlights(card);
         if (typeof coachTick === 'function') coachTick();
 
         panel.querySelectorAll('[data-act]').forEach(b => {
@@ -2489,12 +2558,14 @@ function showFinalCardChoice(card) {
                     openSlidePickerFinal((direction) => {
                         window._finalChoicePending = false;
                         panel.classList.remove('active');
+                        clearTargetHighlights();
                         resolve(direction < 0 ? 'discard_slide_left' : 'discard_slide_right');
                     });
                     return;
                 }
                 window._finalChoicePending = false;
                 panel.classList.remove('active');
+                clearTargetHighlights();
                 resolve(b.dataset.act);
             };
         });

@@ -1683,6 +1683,111 @@ console.log('── Phone: royal menu at 844×390');
   await page.close();
 }
 
+// ═══ NEIGHBOR-TARGET HIGHLIGHT: reader cards light up WHO they read ═══
+// Engine truth: for player 0, left neighbor = LAST player, right = players[1].
+// Desktop sidebar renders i ascending, so RIGHT = top entry, LEFT = bottom.
+for (const mode of ['desktop', 'phone']) {
+  console.log(`── ${mode}: neighbor-target highlight — select lights the players a card reads`);
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push(`nt-${mode}: ` + m.text()); });
+  if (mode === 'phone') await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  else await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+  await sleep(400);
+
+  // Rig a known hand: two readers + one inert card, then select each.
+  // The act-start toast floats over the seat row for a beat — clear it so
+  // the tag hit-tests probe the REAL resting layout, not a passing banner.
+  await page.evaluate(() => {
+    const byName = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    game.players[0].hand = [byName('Royal Hilt'), byName('Marketplace Sales'), byName('First Aid')];
+    renderGameState();
+    document.querySelectorAll('.game-toast').forEach(t => t.remove());
+  });
+  await sleep(200);
+
+  const sel = mode === 'phone' ? '#tvSeats .pmat' : '#gameSidebar .opp-entry';
+  const readMarks = (s) => page.evaluate((q) => {
+    const n = game.playerCount;
+    const grab = (pi) => {
+      const el = document.querySelector(`${q}[data-pi="${pi}"]`);
+      if (!el) return null;
+      const tag = el.querySelector(':scope > .nt-tag');
+      let tr = null, hit = null;
+      if (tag) {
+        tr = tag.getBoundingClientRect();
+        // Real hit-test on the tag (it's pointer-events:none, so flip it
+        // for the probe — occlusion bugs pass synthetic checks otherwise).
+        tag.style.pointerEvents = 'auto';
+        const at = document.elementFromPoint(tr.left + tr.width / 2, tr.top + tr.height / 2);
+        tag.style.pointerEvents = '';
+        hit = at === tag;
+      }
+      return { read: el.classList.contains('nt-read'), tag: tag ? tag.textContent : null,
+               onScreen: tr ? (tr.top >= 0 && tr.bottom <= innerHeight && tr.width > 10) : null,
+               hit, rect: tr ? { l: tr.left, t: tr.top, r: tr.right, b: tr.bottom } : null };
+    };
+    return { n, left: grab(n - 1), right: grab(1),
+             selfPanel: document.getElementById('statsPanel').classList.contains('nt-read'),
+             selfChip: (document.querySelector(`#tvSeats .pmat[data-pi="0"]`) || { classList: { contains: () => false } }).classList.contains('nt-read'),
+             total: document.querySelectorAll('.nt-read').length };
+  }, s);
+
+  // 1 · Royal Hilt (neighbors only)
+  await page.evaluate(() => selectHandCard(0));
+  await sleep(300);
+  let m = await readMarks(sel);
+  ok(m.left && m.left.read && m.left.tag === '◀ Left Neighbor',
+    `Royal Hilt marks the LAST player as left neighbor (${m.left && m.left.tag})`);
+  ok(m.right && m.right.read && m.right.tag === 'Right Neighbor ▶',
+    `Royal Hilt marks players[1] as right neighbor (${m.right && m.right.tag})`);
+  ok(m.left.onScreen === true && m.right.onScreen === true, 'both tags fully on screen');
+  ok(m.left.hit === true && m.right.hit === true, 'both tags win the hit-test — nothing paints over them');
+  ok(!m.selfPanel && !m.selfChip, 'no self mark for a neighbors-only card');
+  if (mode === 'phone') {
+    const apart = m.left.rect.t >= m.right.rect.b || m.right.rect.t >= m.left.rect.b
+      || m.left.rect.l >= m.right.rect.r || m.right.rect.l >= m.left.rect.r;
+    ok(apart, 'phone left/right tags never collide (staggered rungs)');
+  }
+  await page.screenshot({ path: join(SHOTS, `nt-${mode}.png`) });
+
+  // Marks must survive a full re-render mid-selection (innerHTML rebuilds).
+  await page.evaluate(() => renderGameState());
+  await sleep(150);
+  m = await readMarks(sel);
+  ok(m.left.read && m.right.read && m.left.tag === '◀ Left Neighbor',
+    'marks + tags survive renderGameState (re-applied after rebuild)');
+
+  // 2 · Marketplace Sales (neighbors + SELF)
+  await page.evaluate(() => selectHandCard(1));
+  await sleep(300);
+  m = await readMarks(sel);
+  ok(m.left.read && m.right.read, 'Marketplace Sales still marks both neighbors');
+  if (mode === 'phone') ok(m.selfChip, 'Marketplace Sales rings YOUR seat chip (self-read)');
+  else {
+    const selfTag = await page.evaluate(() =>
+      (document.querySelector('#statsPanel > .nt-tag') || {}).textContent || null);
+    ok(m.selfPanel && selfTag === 'You', `Marketplace Sales marks your stats panel with a "You" tag (${selfTag})`);
+  }
+  await page.screenshot({ path: join(SHOTS, `nt-${mode}-self.png`) });
+
+  // 3 · Inert card → nothing marked; close → everything clears.
+  await page.evaluate(() => selectHandCard(2));
+  await sleep(250);
+  m = await readMarks(sel);
+  ok(m.total === 0, `First Aid marks nobody (${m.total} marks)`);
+  await page.evaluate(() => { selectHandCard(0); });
+  await sleep(250);
+  await page.evaluate(() => hideActionPanel());
+  await sleep(150);
+  const after = await page.evaluate(() => ({
+    reads: document.querySelectorAll('.nt-read').length,
+    tags: document.querySelectorAll('.nt-tag').length,
+  }));
+  ok(after.reads === 0 && after.tags === 0, 'panel close clears every ring and tag');
+  await page.close();
+}
+
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));
 
 await browser.close();

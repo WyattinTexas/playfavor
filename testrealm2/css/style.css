@@ -1270,6 +1270,65 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
     padding-left: 10px;
 }
 
+/* ── Neighbor-target highlight — who does the selected card read? ──
+   .nt-read marks the entries/chips a selected card reads (see
+   TARGET_READ_SPECIALS in ui.js); .nt-tag is the floating label. */
+
+/* Scoped: sidebar rows are static and need a positioning context for the
+   tag; #statsPanel is ALREADY position:absolute — forcing relative on it
+   would yank the whole panel out of its place in the layout. */
+.opp-entry.nt-read { position: relative; z-index: 5; }
+
+.opp-entry.nt-read .opp-avatar,
+.tv-seats .pmat.nt-read,
+#statsPanel.nt-read {
+    animation: ntPulse 1.5s ease-in-out infinite;
+}
+.opp-entry.nt-read {
+    background: linear-gradient(135deg, rgba(72,52,16,0.55) 0%, rgba(42,26,8,0.5) 100%);
+}
+
+@keyframes ntPulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(232, 195, 75, 0.9), 0 0 12px 2px rgba(232, 195, 75, 0.35); }
+    50%      { box-shadow: 0 0 0 3px rgba(240, 210, 120, 1), 0 0 22px 7px rgba(232, 195, 75, 0.6); }
+}
+
+.nt-tag {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, #f0d278, #c9a84c);
+    color: #2a1810;
+    font: 700 9px 'Cinzel', serif;
+    letter-spacing: 0.5px;
+    padding: 2px 8px;
+    border-radius: 8px;
+    border: 1px solid #8a6a1f;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 7;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* Desktop sidebar rows: the tag sits INSIDE the row's bottom edge —
+   the sidebar scrolls (overflow-y:auto), anything hung outside clips. */
+.opp-entry .nt-tag { bottom: 3px; }
+
+/* Desktop stats panel: tag pinned inside the top edge. */
+#statsPanel .nt-tag { top: 4px; }
+
+/* Phone seat chips hug the top screen edge — tags hang BELOW their chip,
+   arrow end anchored under it: the left tag extends rightward (its ◀
+   points at the chip), the right tag extends leftward (its ▶ points at
+   the chip). Opposite directions = no collision on 3–4 player tables
+   where the two marked chips sit close. */
+.tv-seats .pmat.nt-left .nt-tag  { top: calc(100% + 6px); transform: translateX(-9%); }
+.tv-seats .pmat.nt-right .nt-tag { top: calc(100% + 6px); transform: translateX(-91%); }
+
+/* While marks are up, the seat row must outrank the phase pill (z:6,
+   reparented into #table-view AFTER the seats — DOM order would win). */
+.tv-seats:has(.nt-read) { z-index: 12; }
+
 /* ── Hand Zone — bottom tray ── */
 
 .hand-zone {
@@ -3681,8 +3740,14 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
         margin-bottom: 6px;
     }
 
-    /* The floating music/log buttons relocate into the ⚙ popover here. */
-    .music-toggle, .log-toggle { display: none; }
+    /* The floating music/log buttons relocate into the ⚙ popover here.
+       The in-game selector must repeat: `body:has(#game-screen.active)
+       .log-toggle { display:flex }` (the desktop slide-aside rule) beats a
+       bare class by specificity, so without it the log button REAPPEARS
+       on phones mid-game — floating over the seat row and eating taps. */
+    .music-toggle, .log-toggle,
+    body:has(#game-screen.active) .music-toggle,
+    body:has(#game-screen.active) .log-toggle { display: none; }
 
     /* ── Z7 · Hand strip — ALWAYS visible, card bottoms cropped ~18%.
        The strip hangs 28px past the screen edge and #table-view's
