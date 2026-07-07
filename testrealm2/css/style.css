@@ -1507,13 +1507,14 @@ body:has(#game-screen.active) .log-toggle { right: 294px; }
     background: rgba(201, 168, 76, 0.12);
 }
 
-/* ── Mission Lightbox ── */
+/* ── Mission Browser — the whole row of missions, one in focus ── */
 
 .mission-lb {
     position: fixed;
     inset: 0;
     z-index: 10000;
     display: none;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     background: rgba(14,7,2,0.94);
@@ -1521,13 +1522,94 @@ body:has(#game-screen.active) .log-toggle { right: 294px; }
 }
 .mission-lb.active { display: flex; }
 
-.mission-lb-card {
-    max-height: 78vh;
-    max-width: 50vw;
-    border-radius: 12px;
-    box-shadow: 0 0 80px rgba(201,168,76,0.12), 0 20px 60px rgba(0,0,0,0.8);
+.mb-title {
+    font-family: 'Cinzel', serif;
+    font-size: 13px;
+    color: var(--gold-dark);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
     animation: ovZoom 0.3s ease;
 }
+
+/* The film strip: half-viewport inline padding lets the first and last
+   cards reach dead center; JS settles the nearest card there on idle. */
+.mb-track {
+    display: flex;
+    align-items: center;
+    gap: clamp(16px, 3vw, 36px);
+    width: 100vw;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding: 26px 50vw;
+    scrollbar-width: none;
+}
+.mb-track::-webkit-scrollbar { display: none; }
+
+.mb-card {
+    position: relative;
+    flex: 0 0 auto;
+    cursor: pointer;
+    opacity: 0.5;
+    transform: scale(0.84);
+    transition: transform 0.32s cubic-bezier(0.16,1,0.3,1), opacity 0.32s;
+}
+.mb-card img {
+    display: block;
+    height: min(62vh, 560px);
+    border-radius: 12px;
+    box-shadow: 0 14px 50px rgba(0,0,0,0.75);
+    -webkit-user-drag: none;
+}
+.mb-card.focus {
+    opacity: 1;
+    transform: scale(1);
+}
+.mb-card.focus img {
+    box-shadow: 0 0 80px rgba(201,168,76,0.14), 0 20px 60px rgba(0,0,0,0.8);
+}
+.mb-card.done img { outline: 2px solid rgba(76,175,80,0.55); }
+.mb-done-ribbon {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #cfe8cf;
+    background: rgba(30,70,34,0.9);
+    border: 1px solid rgba(76,175,80,0.6);
+    border-radius: 10px;
+    padding: 3px 10px;
+    pointer-events: none;
+}
+
+.mb-nav {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 52px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Cinzel', serif;
+    font-size: 34px;
+    line-height: 1;
+    color: var(--gold);
+    background: rgba(20,10,4,0.75);
+    border: 1px solid rgba(201,168,76,0.35);
+    border-radius: 50%;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s;
+    z-index: 3;
+}
+.mb-nav:hover { color: var(--gold-light); border-color: var(--gold); }
+.mb-nav.prev { left: 26px; }
+.mb-nav.next { right: 26px; }
+.mission-lb.mb-solo .mb-nav { display: none; }
 
 .mission-lb-label {
     position: absolute;
@@ -3458,6 +3540,17 @@ body:has(#game-screen.active) .log-toggle { right: 294px; }
     }
     .opp-ov-toggle,
     .opp-ov-cards-panel { display: none; }
+
+    /* ── Mission browser on phones: slimmer edge nav, cards fill height ── */
+    .mb-title { margin-bottom: 0; }
+    .mb-card img { height: 64dvh; }
+    .mb-track { padding: 12px 50vw; }
+    .mb-nav { width: 40px; height: 40px; font-size: 26px; }
+    .mb-nav.prev { left: max(8px, env(safe-area-inset-left)); }
+    .mb-nav.next { right: max(8px, env(safe-area-inset-right)); }
+    .mission-lb-label { bottom: 8px; font-size: 12px; letter-spacing: 2px; }
+    .mission-lb-action { bottom: 30px; }
+    .mission-lb-action .btn-royal { padding: 7px 18px; font-size: 11px; }
 }
 
 /* ─── PHASE C ANIMATIONS (global keyframes + FX element styles) ─── */

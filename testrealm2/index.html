@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — Test Realm</title>
-    <link rel="stylesheet" href="css/style.css?v=20260707130832">
+    <link rel="stylesheet" href="css/style.css?v=20260707132452">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
@@ -142,9 +142,14 @@
             <div class="ov-close" onclick="closeOppOverlay()">ESC</div>
         </div>
 
-        <!-- Mission Lightbox -->
+        <!-- Mission Browser — the whole relevant set, clicked card focused;
+             swipe / arrows / click to browse (openMissionBrowser) -->
         <div class="mission-lb" id="missionLB" onclick="closeMissionLB()">
-            <img class="mission-lb-card" id="missionLBImg" src="" onclick="event.stopPropagation()">
+            <div class="mb-title" id="mbTitle"></div>
+            <div class="mb-track" id="mbTrack"
+                 onclick="if (event.target === this) closeMissionLB()"></div>
+            <div class="mb-nav prev" onclick="event.stopPropagation(); mbStep(-1)">&#8249;</div>
+            <div class="mb-nav next" onclick="event.stopPropagation(); mbStep(1)">&#8250;</div>
             <div class="ov-close" onclick="closeMissionLB()">ESC</div>
             <div class="mission-lb-label" id="missionLBLabel"></div>
             <div class="mission-lb-action" id="missionLBAction" onclick="event.stopPropagation()"></div>
@@ -281,10 +286,10 @@
     </audio>
 
     <!-- ═══ SCRIPTS ═══ -->
-    <script src="data/cards.js?v=20260707130832"></script>
-    <script src="data/missions.js?v=20260707130832"></script>
-    <script src="data/characters.js?v=20260707130832"></script>
-    <script src="engine/gameState.js?v=20260707130832"></script>
-    <script src="js/ui.js?v=20260707130832"></script>
+    <script src="data/cards.js?v=20260707132452"></script>
+    <script src="data/missions.js?v=20260707132452"></script>
+    <script src="data/characters.js?v=20260707132452"></script>
+    <script src="engine/gameState.js?v=20260707132452"></script>
+    <script src="js/ui.js?v=20260707132452"></script>
 </body>
 </html>

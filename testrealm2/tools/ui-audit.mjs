@@ -762,6 +762,125 @@ console.log('── Desktop: hover-bloom and selected cards paint above the phas
   await page.close();
 }
 
+// ═══ MISSION BROWSER: one click shows the whole row, never spends anything ═══
+console.log('── Mission browser: full set, focus browsing, Life Essence stays held');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('mission-browser: ' + m.text()); });
+  await page.setViewport({ width: 1440, height: 900 });
+  await startGame(page);
+  await page.evaluate(() => {
+    const p = game.players[0];
+    p.missions = [{ ...FAVOR_DATA.missions.find(m => m.name === 'A Day With the Birds') }];
+    p.completedMissions = [{ ...FAVOR_DATA.missions.find(m => m.name !== 'A Day With the Birds') }];
+    p.skills.knowledge = 3;   // meets A Day With the Birds on merits
+    renderGameState();
+  });
+  await sleep(500);
+
+  // From an AVAILABLE pip: the browser shows ALL the realm's missions.
+  const realm = await page.evaluate(() => {
+    const visible = game.getState(0).visibleMissions.map(m => m.name);
+    const pip = document.querySelector('.mission-pip.available');
+    const clicked = pip.alt;
+    pip.click();
+    return { visible, clicked };
+  });
+  await sleep(600);
+  const realmView = await page.evaluate(() => ({
+    open: document.getElementById('missionLB').classList.contains('active'),
+    title: document.getElementById('mbTitle').textContent,
+    cards: document.querySelectorAll('#mbTrack .mb-card').length,
+    focusLabel: document.getElementById('missionLBLabel').textContent,
+    turnIn: !!document.getElementById('missionTurnIn'),
+  }));
+  ok(realmView.open, 'available pip opens the browser');
+  ok(realmView.title === 'Missions of the Realm', `realm set titled right (${realmView.title})`);
+  ok(realmView.cards === realm.visible.length && realmView.cards >= 2,
+    `ALL ${realm.visible.length} realm missions laid out (${realmView.cards})`);
+  ok(realmView.focusLabel === realm.clicked, `clicked mission opens focused (${realmView.focusLabel})`);
+  ok(!realmView.turnIn, 'no Turn In on missions that are not yours');
+  await page.screenshot({ path: join(SHOTS, 'mission-browser-realm.png') });
+
+  // Arrows and click-to-focus move the center.
+  await page.evaluate(() => mbStep(1));
+  await sleep(500);
+  const after = await page.evaluate(() => document.getElementById('missionLBLabel').textContent);
+  ok(after === realm.visible[1], `arrow steps focus (${after})`);
+  await page.evaluate(() => document.querySelector('#mbTrack .mb-card[data-i="0"]').click());
+  await sleep(500);
+  const back = await page.evaluate(() => document.getElementById('missionLBLabel').textContent);
+  ok(back === realm.visible[0], 'clicking a card focuses it');
+  await page.evaluate(() => closeMissionLB());
+  await sleep(200);
+
+  // From YOUR pip: current + completed; Turn In only on the held one —
+  // and a held LIFE ESSENCE survives the whole browse (the old lightbox
+  // consumed it just to label the button).
+  const mine = await page.evaluate(() => {
+    const p = game.players[0];
+    p.removeMissionRequirements = true;   // Life Essence held
+    const goldBefore = p.gold;
+    document.querySelector('.mission-pip.active').click();
+    return { goldBefore, held: p.missions[0].name, done: p.completedMissions[0].name };
+  });
+  await sleep(600);
+  const mineView = await page.evaluate(() => ({
+    title: document.getElementById('mbTitle').textContent,
+    cards: document.querySelectorAll('#mbTrack .mb-card').length,
+    focusLabel: document.getElementById('missionLBLabel').textContent,
+    turnIn: !!document.getElementById('missionTurnIn'),
+    essence: game.players[0].removeMissionRequirements,
+  }));
+  ok(mineView.title === 'Your Missions', 'your pip opens YOUR set');
+  ok(mineView.cards === 2, `current + completed laid out (${mineView.cards})`);
+  ok(mineView.focusLabel === mine.held && mineView.turnIn, 'held mission focused with Turn In attached');
+  ok(mineView.essence === true, 'opening the browser did NOT consume the Life Essence');
+  await page.evaluate(() => mbStep(1));
+  await sleep(500);
+  const doneView = await page.evaluate(() => ({
+    label: document.getElementById('missionLBLabel').textContent,
+    turnIn: !!document.getElementById('missionTurnIn'),
+    essence: game.players[0].removeMissionRequirements,
+    gold: game.players[0].gold,
+  }));
+  ok(/completed/.test(doneView.label) && !doneView.turnIn, 'completed mission shows no Turn In');
+  ok(doneView.essence === true && doneView.gold === mine.goldBefore,
+    'browsing every card moved nothing (essence held, gold unchanged)');
+  await page.screenshot({ path: join(SHOTS, 'mission-browser-mine.png') });
+  await page.evaluate(() => { game.players[0].removeMissionRequirements = false; closeMissionLB(); });
+  await page.close();
+}
+
+// ═══ PHONE: mission browser panel-aside dance ═══
+console.log('── Phone: rail thumb opens the browser, action panel steps aside');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('mb-phone: ' + m.text()); });
+  await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  await startGame(page);
+  await sleep(400);
+  await page.evaluate(() => selectHandCard(0));
+  await sleep(300);
+  const panelBefore = await page.evaluate(() => document.querySelector('.action-panel').classList.contains('active'));
+  await page.evaluate(() => document.querySelector('.tv-mission').click());
+  await sleep(600);
+  const mid = await page.evaluate(() => ({
+    open: document.getElementById('missionLB').classList.contains('active'),
+    cards: document.querySelectorAll('#mbTrack .mb-card').length,
+    panel: document.querySelector('.action-panel').classList.contains('active'),
+  }));
+  ok(panelBefore, 'action panel was up (fixture valid)');
+  ok(mid.open && mid.cards >= 2, `rail thumb opens the realm browser (${mid.cards} cards)`);
+  ok(!mid.panel, 'action panel steps aside while the browser has the stage');
+  await page.screenshot({ path: join(SHOTS, 'mission-browser-phone.png') });
+  await page.evaluate(() => closeMissionLB());
+  await sleep(300);
+  const panelAfter = await page.evaluate(() => document.querySelector('.action-panel').classList.contains('active'));
+  ok(panelAfter, 'action panel restores after the browser closes');
+  await page.close();
+}
+
 // ═══ DESKTOP: mission turn-in by choice ═══
 console.log('── Desktop: held mission offers Turn In Now, resolves by choice');
 {
@@ -775,7 +894,7 @@ console.log('── Desktop: held mission offers Turn In Now, resolves by choice
     p.missions = [{ ...FAVOR_DATA.missions.find(m => m.name === 'Wanted: Crazy Lou') }];
     game.phase = 'gameplay';
     renderGameState();
-    openMissionLB('assets/cards/missions/' + p.missions[0].filename, 'Wanted: Crazy Lou');
+    openMissionBrowser('mine', 'Wanted: Crazy Lou');
   });
   await sleep(400);
 
@@ -791,7 +910,7 @@ console.log('── Desktop: held mission offers Turn In Now, resolves by choice
   await page.evaluate(() => {
     closeMissionLB();
     game.players[0].skills.power = 15;
-    openMissionLB('assets/cards/missions/' + game.players[0].missions[0].filename, 'Wanted: Crazy Lou');
+    openMissionBrowser('mine', 'Wanted: Crazy Lou');
   });
   await sleep(300);
   const met = await page.evaluate(() => document.getElementById('missionTurnIn').textContent);
@@ -1080,7 +1199,7 @@ console.log('── Desktop: Turn In Now offers Borrow & Complete when a neighbo
     game.players[1].playedCards.push({ ...kCard });
     game.phase = 'gameplay';
     renderGameState();
-    openMissionLB('assets/cards/missions/' + p.missions[0].filename, p.missions[0].name);
+    openMissionBrowser('mine', p.missions[0].name);
   });
   await sleep(400);
 

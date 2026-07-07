@@ -1540,13 +1540,35 @@ class FavorGame {
     checkMissionRequirements(playerIndex, mission) {
         const player = this.players[playerIndex];
 
-        // Life Essence: next mission auto-succeeds, ignore requirements
+        // Life Essence: next mission auto-succeeds, ignore requirements.
+        // THIS CONSUMES IT — only a real turn-in/resolve may call this.
+        // Anything that just wants a verdict (button labels, the mission
+        // browser) must use probeMissionRequirements below.
         if (player.removeMissionRequirements) {
             player.removeMissionRequirements = false; // Consumed
             this.addLog(`${player.name}'s Life Essence: mission requirements bypassed!`);
             return {
                 success: true,
                 details: { missing: [], canBorrow: {}, lifeEssenceUsed: true }
+            };
+        }
+
+        return this.probeMissionRequirements(playerIndex, mission);
+    }
+
+    /**
+     * PURE preview of checkMissionRequirements — same verdict, zero side
+     * effects: a held Life Essence still answers "success" but is NOT
+     * consumed, and nothing is logged. Rendering N missions in the
+     * browser calls this N times and the player's state never moves.
+     */
+    probeMissionRequirements(playerIndex, mission) {
+        const player = this.players[playerIndex];
+
+        if (player.removeMissionRequirements) {
+            return {
+                success: true,
+                details: { missing: [], canBorrow: {}, lifeEssenceWould: true }
             };
         }
 

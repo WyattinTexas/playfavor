@@ -1212,13 +1212,13 @@ function renderMissionStrip(state) {
         pips += `<img class="mission-pip${isComplete ? ' completed' : ' active'}"
                     src="assets/cards/missions/${m.filename}"
                     alt="${m.name}"
-                    onclick="openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
+                    onclick="openMissionBrowser('mine', '${m.name.replace(/'/g, "\\'")}')">`;
     });
     (state.visibleMissions || []).forEach(m => {
         pips += `<img class="mission-pip available"
                     src="assets/cards/missions/${m.filename}"
                     alt="${m.name}"
-                    onclick="openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
+                    onclick="openMissionBrowser('realm', '${m.name.replace(/'/g, "\\'")}')">`;
     });
 
     strip.innerHTML = pips
@@ -1540,7 +1540,7 @@ function renderTvMissionRail(state) {
     ms.forEach(m => {
         h += `<img class="tv-mission" src="assets/cards/missions/${m.filename}"
                    alt="${m.name}" data-peek="assets/cards/missions/${m.filename}"
-                   onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
+                   onclick="event.stopPropagation(); openMissionBrowser('realm', '${m.name.replace(/'/g, "\\'")}')">`;
     });
     for (let g = ms.length; g < 3; g++) h += '<span class="tv-mission ghost"></span>';
 
@@ -1653,7 +1653,7 @@ function buildMyMissionRows() {
     const entry = (m, cls, tag) => {
         const reqs = (m.requirements || []).map(r => SKILL_ABBR[r] || r.slice(0, 3).toUpperCase()).join(' + ') || '—';
         return `<div class="tv-mission-row ${cls}"
-                     onclick="event.stopPropagation(); closeTvPopover(false); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">
+                     onclick="event.stopPropagation(); closeTvPopover(false); openMissionBrowser('mine', '${m.name.replace(/'/g, "\\'")}')">
             <img class="tv-mission-thumb" src="assets/cards/missions/${m.filename}" alt="${m.name}"
                  data-peek="assets/cards/missions/${m.filename}">
             <div class="tv-mission-info">
@@ -2110,13 +2110,90 @@ function requestLend(oppIndex, cardName) {
 
 // ── Mission Lightbox ──
 
-function openMissionLB(src, name) {
+// ── Mission Browser — picking up one mission picks up the whole row.
+// kind 'realm' = the table's available missions; 'mine' = your current +
+// completed set. The clicked card opens centered; swipe / arrows / click
+// browse the rest, every card readable-big.
+let _mbList = [], _mbKind = null, _mbIndex = 0, _mbScrollT = null;
+
+function openMissionBrowser(kind, focusName) {
+    if (!game) return;
     if (typeof coachMarkSeen === 'function') coachMarkSeen('missions');
-    _tvPanelStepAside();   // the root-level action panel would paint over the lightbox
-    document.getElementById('missionLBImg').src = src;
-    document.getElementById('missionLBLabel').textContent = name;
-    renderMissionLBTurnIn(name);
-    document.getElementById('missionLB').classList.add('active');
+    _tvPanelStepAside();   // the root-level action panel would paint over the browser
+
+    const p = game.players[0];
+    _mbKind = kind;
+    _mbList = kind === 'mine'
+        ? [...(p.missions || []).map(m => ({ m, held: true })),
+           ...(p.completedMissions || []).map(m => ({ m, done: true }))]
+        : (game.getState(0).visibleMissions || []).map(m => ({ m }));
+    if (!_mbList.length) return;
+
+    document.getElementById('mbTitle').textContent =
+        kind === 'mine' ? 'Your Missions' : 'Missions of the Realm';
+
+    const track = document.getElementById('mbTrack');
+    track.innerHTML = _mbList.map((e, i) => `
+        <div class="mb-card${e.done ? ' done' : ''}" data-i="${i}"
+             onclick="event.stopPropagation(); mbFocus(${i}, true)">
+            <img src="assets/cards/missions/${e.m.filename}" alt="${e.m.name}"
+                 draggable="false">
+            ${e.done ? '<div class="mb-done-ribbon">✓ Completed</div>' : ''}
+        </div>`).join('');
+
+    // Swipe/scroll settles on the nearest card: while moving, focus tracks
+    // the center; on idle, snap it exactly (rAF + short debounce).
+    track.onscroll = () => {
+        requestAnimationFrame(_mbTrackFocus);
+        clearTimeout(_mbScrollT);
+        _mbScrollT = setTimeout(() => mbFocus(_mbIndex, true), 130);
+    };
+
+    const nav = _mbList.length > 1 ? '' : ' mb-solo';
+    document.getElementById('missionLB').className = 'mission-lb active' + nav;
+
+    const idx = Math.max(0, _mbList.findIndex(e => e.m.name === focusName));
+    requestAnimationFrame(() => mbFocus(idx, false));
+}
+
+// Which card sits nearest the track's center right now?
+function _mbTrackFocus() {
+    const track = document.getElementById('mbTrack');
+    const mid = track.scrollLeft + track.clientWidth / 2;
+    let best = 0, bestD = Infinity;
+    track.querySelectorAll('.mb-card').forEach((c, i) => {
+        const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid);
+        if (d < bestD) { bestD = d; best = i; }
+    });
+    if (best !== _mbIndex) { _mbIndex = best; _mbApplyFocus(); }
+}
+
+function mbFocus(i, smooth) {
+    _mbIndex = Math.max(0, Math.min(_mbList.length - 1, i));
+    const track = document.getElementById('mbTrack');
+    const el = track.querySelector(`.mb-card[data-i="${_mbIndex}"]`);
+    if (!el) return;
+    clearTimeout(_mbScrollT);   // this IS the snap — don't re-snap after it
+    const left = Math.round(el.offsetLeft - (track.clientWidth - el.offsetWidth) / 2);
+    if (Math.abs(track.scrollLeft - left) > 1) {
+        track.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
+    }
+    _mbApplyFocus();
+}
+
+function mbStep(d) { mbFocus(_mbIndex + d, true); }
+
+function _mbApplyFocus() {
+    const track = document.getElementById('mbTrack');
+    track.querySelectorAll('.mb-card').forEach((c, i) =>
+        c.classList.toggle('focus', i === _mbIndex));
+    const e = _mbList[_mbIndex];
+    if (!e) return;
+    document.getElementById('missionLBLabel').textContent =
+        e.m.name + (e.done ? ' — completed' : '');
+    // Turn In / Borrow attach to the focused card, held missions only
+    // (renderMissionLBTurnIn no-ops for realm/completed entries).
+    renderMissionLBTurnIn(e.m.name);
 }
 
 // "Turn In Now" — a held mission may be cashed in during ANY act of its
@@ -2133,7 +2210,10 @@ function renderMissionLBTurnIn(name) {
 
     const mission = p.missions[mi];
     const due = game.missionDueAct(mission);
-    const { success } = game.checkMissionRequirements(0, mission);
+    // PURE probe — the old checkMissionRequirements call CONSUMED a held
+    // Life Essence just to label this button; browsing N missions would
+    // have burned it N times over. Only the real turn-in may consume.
+    const { success } = game.probeMissionRequirements(0, mission);
     const dueNote = due > game.currentAct
         ? `<div class="mission-lb-due">Due at the end of Act ${due} — turn in any time before</div>` : '';
     // Short only on borrowable skills? Turning in now can borrow them too —
@@ -3686,12 +3766,16 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// ESC closes all game overlays
+// ESC closes all game overlays; arrows browse the mission browser
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
         closeAllOverlays();
         closeZoom();
         closeCardPeek();
+    }
+    if (document.getElementById('missionLB')?.classList.contains('active')) {
+        if (e.key === 'ArrowLeft') { e.preventDefault(); mbStep(-1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); mbStep(1); }
     }
 });
 

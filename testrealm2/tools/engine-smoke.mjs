@@ -520,5 +520,39 @@ console.log('── Mission borrowing: optional rescue at mission time, 2g/skill
   ok(ai7.failedMissions.length === 1 && ai7.gold === 10, 'AI refuses when 3 favor < 2× the fee');
 }
 
+// ═══ probeMissionRequirements: PURE — browsing must never mutate state ═══
+{
+  // A held Life Essence answers "success" to the probe WITHOUT being
+  // consumed (the old label path burned it just for opening the lightbox).
+  const g = newGame();
+  const p = g.players[0];
+  p.missions = [{ ...missionByName('A Day With the Birds') }]; // needs 3 Knowledge
+  p.skills.knowledge = 0;                                      // unmet on merits
+  p.removeMissionRequirements = true;                          // Life Essence held
+  const snap = () => JSON.stringify({ ...p, character: undefined });
+  const before = snap();
+  const r1 = g.probeMissionRequirements(0, p.missions[0]);
+  const r2 = g.probeMissionRequirements(0, p.missions[0]);
+  ok(r1.success === true && r2.success === true, 'probe: Life Essence answers success every time');
+  ok(p.removeMissionRequirements === true, 'probe does NOT consume the Life Essence');
+  ok(snap() === before, 'probe leaves the player byte-identical (essence held)');
+
+  // Without essence: probe agrees with the real check, still byte-pure.
+  p.removeMissionRequirements = false;
+  const before2 = snap();
+  const rMiss = g.probeMissionRequirements(0, p.missions[0]);
+  ok(rMiss.success === false && rMiss.details.missing.length > 0, 'probe reports unmet requirements');
+  ok(snap() === before2, 'probe leaves the player byte-identical (no essence)');
+  p.skills.knowledge = 3;
+  ok(g.probeMissionRequirements(0, p.missions[0]).success === true, 'probe: met requirements read as success');
+
+  // The real check still consumes — turn-in behavior unchanged.
+  p.skills.knowledge = 0;
+  p.removeMissionRequirements = true;
+  const rReal = g.checkMissionRequirements(0, p.missions[0]);
+  ok(rReal.success === true && p.removeMissionRequirements === false,
+    'checkMissionRequirements still consumes the essence on the real path');
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);
