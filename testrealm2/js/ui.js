@@ -915,7 +915,9 @@ function selectCharacter(id, cardEl) {
 function confirmCharacter() {
     if (!selectedCharacter) return;
 
-    const playerCount = parseInt(document.getElementById('playerCountSelect').value);
+    // Table size = the queue you joined on the menu (persisted; the old
+    // in-select dropdown moved there so Play Now can never skip past it).
+    const playerCount = (window.FLB && FLB.queueSize()) || 3;
 
     game = new FavorGame(playerCount);
     game.loadDecks();
@@ -2326,6 +2328,7 @@ function closeAllOverlays() {
     closeMissionLB();
     closeMissionJournal();
     if (typeof closeTvPopover === 'function') closeTvPopover();
+    if (window.FLB) { FLB.closeLeaderboard(); FLB.closeProfile(); }
 }
 
 function selectHandCard(index) {
@@ -3279,6 +3282,11 @@ function showChemYPicker() {
 
 function showScoring() {
     const scores = game.getWinner();
+
+    // Post YOUR result to the leaderboard the moment scoring resolves —
+    // rating points vs the table + best-Favor for today's daily board.
+    // Rivals present as people but never post (real players only).
+    if (window.FLB) FLB.postGameResult(scores);
 
     document.getElementById('game-screen').classList.remove('active');
     document.getElementById('scoring-screen').classList.add('active');

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — Test Realm</title>
-    <link rel="stylesheet" href="css/style.css?v=20260707134619">
+    <link rel="stylesheet" href="css/style.css?v=20260707141621">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
@@ -26,14 +26,29 @@
         <p class="rotate-text">FAVOR is played at the table &mdash; rotate to landscape to take your seat.</p>
     </div>
 
-    <!-- ═══ TITLE SCREEN ═══ -->
+    <!-- ═══ TITLE SCREEN — the royal menu (Nation flow, FAVOR art) ═══ -->
     <div id="title-screen">
+        <!-- Profile — top-right: royal anon name · rating · champion crowns -->
+        <button class="profile-chip" id="profileChip" onclick="FLB.openProfile()" title="Your profile"></button>
+
         <img src="assets/ui/cover.jpg" alt="FAVOR" class="title-cover" id="coverArt">
         <p class="title-subtitle">A Game of Royal Succession</p>
 
         <div class="title-buttons">
-            <button class="btn-royal primary" onclick="startGame()">
-                <span>Play</span>
+            <button class="btn-royal primary menu-play" onclick="startGame()">
+                <span>Play Now</span>
+            </button>
+            <!-- Queue picker: each count is its own queue you join -->
+            <label class="queue-pick" title="Choose your queue — each table size matches separately">
+                <span class="queue-label">Queue</span>
+                <select id="queueSelect">
+                    <option value="3">3 Players</option>
+                    <option value="4">4 Players</option>
+                    <option value="5">5 Players</option>
+                </select>
+            </label>
+            <button class="btn-royal" onclick="FLB.openLeaderboard()">
+                <span>Leaderboard</span>
             </button>
             <button class="btn-royal" onclick="showRules()">
                 <span>How to Play</span>
@@ -46,6 +61,40 @@
         </label>
 
         <p class="title-footer">3–5 Players &bull; 45–90 Minutes &bull; 1st Edition</p>
+    </div>
+
+    <!-- ═══ LEADERBOARD (title-screen panel) ═══ -->
+    <div class="lb-panel" id="lbPanel" onclick="FLB.closeLeaderboard()">
+        <div class="lb-inner" onclick="event.stopPropagation()">
+            <div class="lb-title">Leaderboard</div>
+            <div class="lb-tabs">
+                <button class="lb-tab on" data-tab="alltime" onclick="FLB.openLeaderboard('alltime')">All-Time</button>
+                <button class="lb-tab" data-tab="daily" onclick="FLB.openLeaderboard('daily')">Daily</button>
+            </div>
+            <div class="lb-localnote" id="lbLocal" style="display:none">LOCAL STANDINGS — leaderboard offline</div>
+            <div class="lb-body" id="lbBody"></div>
+            <div class="lb-foot">Daily champions are crowned at 10 PM Eastern — 50 ★ / 25 ★ / 10 ★</div>
+        </div>
+        <div class="ov-close" onclick="FLB.closeLeaderboard()">ESC</div>
+    </div>
+
+    <!-- ═══ PROFILE (rename · Stars · champion breakdown) ═══ -->
+    <div class="profile-panel" id="profilePanel" onclick="FLB.closeProfile()">
+        <div class="pf-inner" onclick="event.stopPropagation()">
+            <div class="pf-title">Your Standing</div>
+            <div id="profileBody"></div>
+        </div>
+        <div class="ov-close" onclick="FLB.closeProfile()">ESC</div>
+    </div>
+
+    <!-- ═══ DAILY CHAMPION — congratulations on next visit ═══ -->
+    <div class="champ-overlay" id="champOverlay">
+        <div class="champ-card" onclick="event.stopPropagation()">
+            <div class="champ-rays"></div>
+            <div class="champ-title" id="champTitle"></div>
+            <div class="champ-sub" id="champSub"></div>
+            <button class="btn-royal primary" id="champBtn"><span>Splendid</span></button>
+        </div>
     </div>
 
     <!-- ═══ HOW TO PLAY — card deck tutorial (Prong 1) ═══ -->
@@ -76,13 +125,8 @@
     <div id="character-select">
         <h1 class="select-title">Choose Your Hero</h1>
         <div class="character-grid" id="characterGrid"></div>
+        <!-- Player count moved to the menu's queue picker (FLB.queueSize) -->
         <div style="margin-top: 30px; display: flex; gap: 16px; align-items: center;">
-            <label style="font-family: 'Cinzel', serif; color: var(--gold);">Players:</label>
-            <select id="playerCountSelect" style="font-family: 'Cinzel', serif; font-size: 16px; padding: 8px 16px; background: var(--royal-deep); color: var(--gold); border: 1px solid var(--gold); border-radius: 4px;">
-                <option value="3">3 Players</option>
-                <option value="4">4 Players</option>
-                <option value="5">5 Players</option>
-            </select>
             <button class="btn-royal primary" onclick="confirmCharacter()" id="confirmBtn" style="display:none;">
                 <span>Begin Your Journey</span>
             </button>
@@ -300,10 +344,15 @@
     </audio>
 
     <!-- ═══ SCRIPTS ═══ -->
-    <script src="data/cards.js?v=20260707134619"></script>
-    <script src="data/missions.js?v=20260707134619"></script>
-    <script src="data/characters.js?v=20260707134619"></script>
-    <script src="engine/gameState.js?v=20260707134619"></script>
-    <script src="js/ui.js?v=20260707134619"></script>
+    <!-- Firebase compat (leaderboard/Daily Champions backend — meta.js
+         falls back to local standings if these can't reach the project) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="data/cards.js?v=20260707141621"></script>
+    <script src="data/missions.js?v=20260707141621"></script>
+    <script src="data/characters.js?v=20260707141621"></script>
+    <script src="engine/gameState.js?v=20260707141621"></script>
+    <script src="js/ui.js?v=20260707141621"></script>
+    <script src="js/meta.js?v=20260707141621"></script>
 </body>
 </html>

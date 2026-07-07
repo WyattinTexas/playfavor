@@ -480,7 +480,7 @@ for (const [w, h] of [[844, 390], [932, 430], [667, 375]]) {
   });
   await page.waitForFunction(() => document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent, { timeout: 20000 });
   await page.evaluate(() => {
-    document.getElementById('playerCountSelect').value = '5';
+    localStorage.setItem('favorQueue', '5');   // the menu queue picker owns table size now
     document.querySelector('.character-card').click();
   });
   await page.waitForFunction(() => document.getElementById('confirmBtn') && document.getElementById('confirmBtn').offsetParent, { timeout: 20000 });
@@ -1297,7 +1297,11 @@ console.log('── Desktop: Turn In Now offers Borrow & Complete when a neighbo
     p.missions = [{ ...FAVOR_DATA.missions.find(m => m.name === 'A Day With the Birds') }];
     p.skills.knowledge = 2;
     p.gold = 10;
-    game.players[1].playedCards.push({ ...kCard });
+    // PIN the lender: player 1 holds the only knowledge card on the
+    // table — a random AI having played their own knowledge card once
+    // routed the fee to player 2 and flaked the lender assert.
+    game.players[1].playedCards = [{ ...kCard }];
+    game.players[2].playedCards = [];
     game.phase = 'gameplay';
     renderGameState();
     openMissionBrowser('mine', p.missions[0].name);
@@ -1511,6 +1515,171 @@ console.log('── Desktop: final card slides via the picker, chooser survives 
   // are legitimate and expected, only the toll must be absent.
   ok(done.gold >= goldAtPick, `no slide fee charged (${goldAtPick}g → ${done.gold}g incl. slot bonus)`);
   ok(done.discarded && done.panelClosed, 'final card paid the toll and the chooser closed');
+  await page.close();
+}
+
+// ═══ ROYAL MENU + LEADERBOARD + DAILY CHAMPIONS (Task 5) ═══
+console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champion loop');
+{
+  const AUDIT_UID = 'uaudit' + Math.random().toString(36).slice(2, 8);
+  const PAST_KEY = '2020-01-02';   // synthetic long-dead window, never collides
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('menu: ' + m.text()); });
+  // Seed identity BEFORE meta.js boots (runs on every navigation).
+  await page.evaluateOnNewDocument((u) => {
+    localStorage.setItem('favorUid', u);
+    localStorage.setItem('favorName', 'Audit Herald');
+  }, AUDIT_UID);
+  await page.setViewport({ width: 1440, height: 900 });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await sleep(600);
+
+  // Menu renders: Play Now, queue picker, Leaderboard, profile chip.
+  const menu = await page.evaluate(() => ({
+    mode: FLB.mode,
+    play: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /play now/i.test(b.textContent))),
+    queue: !!document.getElementById('queueSelect'),
+    queueOpts: [...document.querySelectorAll('#queueSelect option')].map(o => o.textContent.trim()),
+    lbBtn: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /leaderboard/i.test(b.textContent))),
+    howto: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /how to play/i.test(b.textContent))),
+    promptTest: !!document.getElementById('promptTestToggle'),
+    chip: document.getElementById('profileChip').textContent.trim(),
+    oldDropdownGone: !document.getElementById('playerCountSelect'),
+  }));
+  console.log(`   (leaderboard backend: ${menu.mode})`);
+  ok(menu.play && menu.lbBtn && menu.queue, 'menu renders Play Now + queue picker + Leaderboard');
+  ok(menu.queueOpts.join('|') === '3 Players|4 Players|5 Players', `queue offers the three tables (${menu.queueOpts.join(', ')})`);
+  ok(menu.howto && menu.promptTest, "How to Play + Prompt Test survive (Skylar's tutorial hooks)");
+  ok(/Audit Herald/.test(menu.chip), `profile chip carries the royal name (${menu.chip.split('\n')[0]})`);
+  ok(menu.oldDropdownGone, 'player-count dropdown is gone from character select');
+  await page.screenshot({ path: join(SHOTS, 'menu-desktop.png') });
+
+  // Queue choice persists.
+  await page.evaluate(() => { const s = document.getElementById('queueSelect'); s.value = '4'; s.onchange(); });
+  ok(await page.evaluate(() => FLB.queueSize()) === 4, 'queue picker persists the chosen table size');
+
+  // Rating points table (+25 / +10 / −10 / 0 middle).
+  const pts = await page.evaluate(() => [
+    FLB.ratingDelta(0, 3), FLB.ratingDelta(1, 3), FLB.ratingDelta(2, 3),
+    FLB.ratingDelta(2, 5), FLB.ratingDelta(4, 5),
+  ]);
+  ok(pts.join(',') === '25,10,-10,0,-10', `rating points table (+25/+10/mid 0/last −10) → ${pts.join(',')}`);
+
+  // A finished game posts rating + daily best; bots never post.
+  await page.evaluate(async () => {
+    await FLB.postGameResult([
+      { name: 'You', finalScore: 55 },
+      { name: 'Prince Aldric', finalScore: 40 },
+      { name: 'Lady Elara', finalScore: 30 },
+    ]);
+  });
+  await sleep(600);
+  await page.evaluate(() => FLB.openLeaderboard('alltime'));
+  await sleep(900);
+  const at = await page.evaluate(() => document.getElementById('lbBody').textContent);
+  ok(/Audit Herald/.test(at) && /25/.test(at), 'ALL-TIME shows your rating (+25 for the win)');
+  ok(!/Aldric|Elara|Cassius/.test(at), 'bots stay OFF the leaderboard');
+  await page.evaluate(() => FLB.openLeaderboard('daily'));
+  await sleep(900);
+  const daily = await page.evaluate(() => document.getElementById('lbBody').textContent);
+  ok(/Audit Herald/.test(daily) && /55/.test(daily), 'DAILY shows your best single-game Favor (55)');
+  await page.screenshot({ path: join(SHOTS, 'leaderboard.png') });
+  await page.evaluate(() => FLB.closeLeaderboard());
+
+  // Rename persists (profile panel).
+  await page.evaluate(() => FLB.openProfile());
+  await sleep(400);
+  await page.evaluate(() => { document.getElementById('pfName').value = 'Sir Auditsworth'; });
+  await page.evaluate(() => document.getElementById('pfSave').click());
+  await sleep(700);
+  const renamed = await page.evaluate(() => ({
+    chip: document.getElementById('profileChip').textContent,
+    stored: localStorage.getItem('favorName'),
+  }));
+  ok(/Sir Auditsworth/.test(renamed.chip) && renamed.stored === 'Sir Auditsworth', 'rename persists to chip + storage');
+
+  // Daily Champion: plant a long-past window, then a FRESH LOAD must
+  // settle it, award stars, and greet the champion with the overlay.
+  await page.evaluate(async (KEY) => {
+    const me = FLB.uid();
+    if (FLB.mode === 'firebase') {
+      await firebase.database().ref(`favor/daily/${KEY}/scores/${me}`)
+        .set({ name: 'Sir Auditsworth', best: 61, at: 1577934245000 });
+      await firebase.database().ref(`favor/settled/${KEY}`).remove();
+    } else {
+      const t = JSON.parse(localStorage.getItem('favorLB') || '{}');
+      t.daily = t.daily || {};
+      t.daily[KEY] = { scores: { [me]: { name: 'Sir Auditsworth', best: 61, at: 1577934245000 } } };
+      if (t.settled) delete t.settled[KEY];
+      localStorage.setItem('favorLB', JSON.stringify(t));
+    }
+  }, PAST_KEY);
+  await page.reload({ waitUntil: 'networkidle2' });     // ← "next visit"
+  let champShown = false;
+  try {
+    await page.waitForFunction(() => document.getElementById('champOverlay').classList.contains('active'), { timeout: 12000 });
+    champShown = true;
+  } catch (e) {}
+  const champ = await page.evaluate(() => ({
+    title: document.getElementById('champTitle').textContent,
+    sub: document.getElementById('champSub').textContent,
+  }));
+  ok(champShown, 'congrats overlay greets the champion on next load');
+  ok(champ.title === 'You Placed 1st — You are the Daily Champion!', `1st-place wording exact (${champ.title})`);
+  ok(/50 Stars/.test(champ.sub), 'champion earned 50 Stars');
+  await page.screenshot({ path: join(SHOTS, 'champ-overlay.png') });
+  await page.evaluate(() => document.getElementById('champBtn').click());
+  await sleep(500);
+  const standing = await page.evaluate(async () => {
+    await FLB.renderProfileChip(); await new Promise(r => setTimeout(r, 400));
+    return document.getElementById('profileChip').textContent;
+  });
+  ok(/1/.test(standing.replace('Sir Auditsworth', '')), 'crown count rides the chip next to the rating');
+
+  // Second load: settled + drained → silence (idempotent).
+  await page.reload({ waitUntil: 'networkidle2' });
+  await sleep(2500);
+  ok(await page.evaluate(() => !document.getElementById('champOverlay').classList.contains('active')),
+    'no double congrats — settlement is exactly-once');
+
+  // Leave no trace: the audit's identity + planted windows are removed.
+  await page.evaluate(async (KEY) => {
+    const me = FLB.uid();
+    if (FLB.mode === 'firebase') {
+      await firebase.database().ref(`favor/players/${me}`).remove();
+      await firebase.database().ref(`favor/daily/${KEY}`).remove();
+      await firebase.database().ref(`favor/settled/${KEY}`).remove();
+      await firebase.database().ref(`favor/daily/${FLB.currentDateKey()}/scores/${me}`).remove();
+    } else {
+      localStorage.removeItem('favorLB');
+    }
+  }, PAST_KEY);
+  await page.close();
+}
+
+// ═══ PHONE: menu fits landscape ═══
+console.log('── Phone: royal menu at 844×390');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('menu-phone: ' + m.text()); });
+  await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await sleep(500);
+  const m = await page.evaluate(() => {
+    const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 2 && r.top < window.innerHeight; };
+    const play = [...document.querySelectorAll('#title-screen .btn-royal')].find(b => /play now/i.test(b.textContent));
+    return {
+      play: vis(play),
+      queue: vis(document.getElementById('queueSelect')),
+      chip: vis(document.getElementById('profileChip')),
+      hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
+    };
+  });
+  ok(m.play && m.queue && m.chip, 'Play Now + queue + profile chip all reachable on a phone');
+  ok(!m.hscroll, 'no horizontal scroll on the phone menu');
+  await page.screenshot({ path: join(SHOTS, 'menu-phone.png') });
   await page.close();
 }
 

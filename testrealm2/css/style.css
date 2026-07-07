@@ -61,6 +61,8 @@ html, body {
 
 .title-cover {
     width: min(380px, 70vw);
+    max-height: 42vh;
+    object-fit: contain;
     border-radius: 12px;
     box-shadow:
         0 0 60px rgba(201, 168, 76, 0.3),
@@ -97,6 +99,240 @@ html, body {
     margin-top: 40px;
     align-items: center;
 }
+
+/* ── Royal menu chrome — Play Now leads, queue picker beside it ── */
+
+.btn-royal.menu-play {
+    padding: 17px 64px;
+    font-size: clamp(17px, 2.4vw, 22px);
+    box-shadow: 0 0 34px rgba(201,168,76,0.22), 0 6px 20px rgba(0,0,0,0.45);
+}
+
+.queue-pick {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 14px;
+    border: 1px solid rgba(201,168,76,0.35);
+    border-radius: 999px;
+    background: rgba(20,10,4,0.55);
+}
+.queue-label {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--gold-dark);
+}
+.queue-pick select {
+    font-family: 'Cinzel', serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gold-light);
+    background: var(--wood-deepest);
+    border: 1px solid var(--gold-dark);
+    border-radius: 7px;
+    padding: 5px 10px;
+    cursor: pointer;
+}
+
+/* Profile chip — top-right of the menu */
+.profile-chip {
+    position: absolute;
+    top: max(14px, env(safe-area-inset-top));
+    right: max(16px, env(safe-area-inset-right));
+    display: inline-flex;
+    align-items: center;
+    gap: 11px;
+    padding: 8px 18px;
+    background: linear-gradient(160deg, rgba(42,22,10,0.88), rgba(20,10,4,0.92));
+    border: 1px solid var(--gold-dark);
+    border-radius: 999px;
+    cursor: pointer;
+    font-family: 'Cinzel', serif;
+    transition: all 0.2s;
+    z-index: 5;
+}
+.profile-chip:hover { border-color: var(--gold); box-shadow: 0 0 18px rgba(201,168,76,0.25); }
+.pc-name { color: var(--gold-light); font-size: 13px; font-weight: 700; letter-spacing: 1px; }
+.pc-rating { color: #a9d4ff; font-weight: 900; font-size: 14px; }
+.pc-crowns { display: inline-flex; align-items: center; gap: 4px; color: #e8c34b; font-weight: 900; font-size: 13px; }
+.crown-ico { width: 17px; height: 12px; display: inline-block; }
+
+/* ── Leaderboard + profile panels ── */
+.lb-panel, .profile-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 10005;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(14,7,2,0.92);
+    backdrop-filter: blur(14px);
+}
+.lb-panel.active, .profile-panel.active { display: flex; }
+
+.lb-inner, .pf-inner {
+    display: flex;
+    flex-direction: column;
+    width: min(560px, 92vw);
+    max-height: 88dvh;
+    background: linear-gradient(175deg, #2e1c0e 0%, #1a0d05 100%);
+    border: 2px solid var(--gold-dark);
+    border-radius: 14px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 30px 90px rgba(0,0,0,0.75), inset 0 1px 0 rgba(232,212,139,0.14);
+    padding: 20px 24px 16px;
+    animation: ovZoom 0.4s cubic-bezier(0.16,1,0.3,1);
+}
+
+.lb-title, .pf-title {
+    font-family: 'Cinzel', serif;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: var(--gold-light);
+    text-align: center;
+    text-shadow: 0 0 22px rgba(201,168,76,0.35);
+}
+
+.lb-tabs { display: flex; gap: 8px; justify-content: center; margin: 14px 0 10px; }
+.lb-tab {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 6px 20px;
+    border: 1px solid rgba(201,168,76,0.3);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--gold-dark);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.lb-tab.on { color: var(--gold-light); border-color: var(--gold); background: rgba(201,168,76,0.12); }
+
+.lb-localnote {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #e88;
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+.lb-body { overflow-y: auto; min-height: 140px; }
+.lb-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(201,168,76,0.08);
+    font-family: 'Cinzel', serif;
+}
+.lb-row.me { background: rgba(201,168,76,0.1); border-radius: 8px; }
+.lb-rank { width: 26px; text-align: right; color: var(--gold-dark); font-weight: 900; }
+.lb-name { flex: 1; color: var(--parchment); font-size: 13px; display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.lb-crowns { display: inline-flex; align-items: center; gap: 3px; color: #e8c34b; font-size: 12px; font-weight: 900; }
+.lb-score { color: var(--gold-light); font-size: 15px; }
+.lb-foot, .lb-loading, .pf-note {
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: 12.5px;
+    color: rgba(240,230,211,0.55);
+    text-align: center;
+}
+.lb-foot { margin-top: 10px; }
+.lb-loading { padding: 34px 0; }
+
+.pf-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 4px;
+    border-bottom: 1px solid rgba(201,168,76,0.08);
+    font-family: 'Cinzel', serif;
+    color: var(--parchment);
+}
+.pf-label { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--gold-dark); }
+.pf-row b { color: var(--gold-light); display: inline-flex; align-items: center; gap: 5px; }
+.pf-namerow { border-bottom: none; padding-top: 14px; }
+.pf-namerow input {
+    flex: 1;
+    min-width: 0;
+    font-family: 'Cinzel', serif;
+    font-size: 15px;
+    color: var(--gold-light);
+    background: rgba(0,0,0,0.35);
+    border: 1px solid var(--gold-dark);
+    border-radius: 8px;
+    padding: 9px 13px;
+}
+.pf-namerow input.bad { border-color: #e85454; }
+.pf-namerow .btn-royal { padding: 9px 20px; font-size: 12px; }
+.pf-note { margin-top: 12px; }
+.pf-local { color: #e88; font-style: normal; }
+
+/* ── Daily Champion — the royal moment, not a toast ── */
+.champ-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10008;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10,4,1,0.94);
+    backdrop-filter: blur(18px);
+}
+.champ-overlay.active { display: flex; }
+.champ-card {
+    position: relative;
+    overflow: hidden;
+    text-align: center;
+    padding: 46px 58px 40px;
+    max-width: min(560px, 92vw);
+    background:
+        radial-gradient(ellipse 90% 70% at 50% 0%, rgba(232,195,75,0.13), transparent 60%),
+        linear-gradient(175deg, #32200f 0%, #1a0d05 100%);
+    border: 2px solid var(--gold);
+    border-radius: 18px;
+    box-shadow: 0 0 120px rgba(232,195,75,0.22), 0 30px 90px rgba(0,0,0,0.8);
+    animation: ovZoom 0.5s cubic-bezier(0.16,1,0.3,1);
+}
+.champ-rays {
+    position: absolute;
+    inset: -60%;
+    background: repeating-conic-gradient(from 0deg,
+        transparent 0deg 14deg, rgba(232,195,75,0.06) 14deg 22deg);
+    animation: champSpin 26s linear infinite;
+    pointer-events: none;
+}
+@keyframes champSpin { to { transform: rotate(360deg); } }
+.champ-title {
+    position: relative;
+    font-family: 'Cinzel', serif;
+    font-size: clamp(19px, 3.4vw, 26px);
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--gold-light);
+    text-shadow: 0 0 30px rgba(232,195,75,0.5);
+}
+.champ-sub {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font-family: 'Cinzel', serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: #e8c34b;
+    margin: 14px 0 26px;
+}
+.champ-card .btn-royal { position: relative; }
 
 .btn-royal {
     font-family: 'Cinzel', serif;
@@ -211,12 +447,14 @@ html, body {
     box-shadow: 0 0 15px rgba(201, 168, 76, 0.3);
 }
 
-/* In-game the top-right corner belongs to the OPPONENTS rail — floating
-   toggles there ate real clicks aimed at the first rival (the log panel
-   opened instead of the rival overlay). They slide left of the 220px
-   sidebar while the game screen is up; title screen keeps the corner. */
-body:has(#game-screen.active) .music-toggle { right: 240px; }
-body:has(#game-screen.active) .log-toggle { right: 294px; }
+/* Pre-game the top-right corner belongs to the PROFILE CHIP: music parks
+   top-left and the game-log button waits until there is a game to log.
+   In-game the corner belongs to the OPPONENTS rail — floating toggles
+   there ate real clicks aimed at the first rival (the log panel opened
+   instead of the rival overlay) — so both slide left of the sidebar. */
+.music-toggle { right: auto; left: 20px; }
+body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
+/* (log-toggle placement lives with its base block below — cascade order) */
 
 .music-toggle.muted { opacity: 0.4; }
 
@@ -2090,6 +2328,11 @@ body:has(#game-screen.active) .log-toggle { right: 294px; }
     transition: all 0.3s ease;
 }
 
+/* No game yet, nothing to log: hidden pre-game (the profile chip owns the
+   corner); in-game it rides left of the sidebar beside the music note. */
+.log-toggle { display: none; }
+body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
+
 .log-toggle:hover {
     border-color: var(--gold);
     box-shadow: 0 0 15px rgba(201, 168, 76, 0.3);
@@ -2989,10 +3232,27 @@ body:has(#game-screen.active) .log-toggle { right: 294px; }
         padding: 8px 20px;
         overflow-y: auto; /* safety: Play always reachable */
     }
-    .title-cover { width: auto; max-height: 44dvh; margin: 0; }
-    .title-subtitle { margin-top: 8px; font-size: 12px; letter-spacing: 3px; }
-    .title-buttons { margin-top: 12px; gap: 9px; }
-    #title-screen .btn-royal { padding: 9px 26px; min-width: 190px; font-size: 13px; }
+    .title-cover { width: auto; max-height: 40dvh; margin: 0; }
+    .title-subtitle { margin-top: 6px; font-size: 12px; letter-spacing: 3px; }
+    .title-buttons {
+        margin-top: 10px;
+        gap: 8px;
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: center;
+        max-width: 96vw;
+    }
+    #title-screen .btn-royal { padding: 9px 26px; min-width: 0; font-size: 13px; }
+    #title-screen .btn-royal.menu-play { padding: 11px 34px; font-size: 15px; }
+    .queue-pick { padding: 4px 10px; gap: 6px; }
+    .queue-pick select { font-size: 11px; padding: 4px 7px; }
+    .profile-chip { padding: 5px 12px; gap: 8px; }
+    .pc-name { font-size: 11px; }
+    .pc-rating, .pc-crowns { font-size: 12px; }
+    .lb-inner, .pf-inner { max-height: 94dvh; padding: 12px 16px 10px; }
+    .lb-title, .pf-title { font-size: 14px; letter-spacing: 3px; }
+    .lb-tabs { margin: 8px 0 6px; }
+    .champ-card { padding: 26px 30px 24px; }
     .prompt-test-toggle { margin-top: 10px; padding: 6px 14px; font-size: 11px; }
     .title-footer { position: static; margin-top: 8px; bottom: auto; }
 
