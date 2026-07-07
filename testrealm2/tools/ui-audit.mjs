@@ -38,6 +38,22 @@ async function startGame(page) {
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     return b && b.offsetParent;
   }, { timeout: 20000 });
+  // Deterministic BOT characters, not just the pinned human hero: identity-
+  // shuffle the UI helper so the offer is always the first three of the
+  // roster and bots always draw merchant/fisherman(/duchess/scientist).
+  // Since hero select began offering only OWNED heroes, the five store
+  // heroes sit in the bot pool EVERY run — and a Scientist bot's center
+  // slot grants Knowledge, which makes him an alternate lender and breaks
+  // "player 1 sole lender" rigs by character draw. (The engine's own
+  // deck shuffle is game.shuffle — untouched by this.)
+  // ALSO pin the queue: favorQueue persists in the shared profile, and the
+  // 5-player viewport flow leaves '5' behind — a 5p game seats Scientist
+  // at p4 = the human's LEFT neighbor, and getBorrowableSkills iterates
+  // left-first, so HE gets picked as lender over the rigged player 1.
+  await page.evaluate(() => {
+    window.shuffleArray = (a) => [...a];
+    localStorage.setItem('favorQueue', '3');
+  });
   await page.evaluate(() => {
     const b = [...document.querySelectorAll('#title-screen .btn-royal')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
@@ -1533,7 +1549,12 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
   await page.setViewport({ width: 1440, height: 900 });
   await page.goto(URL, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
-  await sleep(600);
+  // The chip fills from an un-awaited async read — wait for the text, not
+  // a fixed beat (a slow Firebase get flaked this at 600ms).
+  await page.waitForFunction(() =>
+    (document.getElementById('profileChip').textContent || '').trim().length > 0, { timeout: 10000 })
+    .catch(() => {});
+  await sleep(200);
 
   // Menu renders: Play Now, queue picker, Leaderboard, profile chip.
   const menu = await page.evaluate(() => ({
@@ -1650,7 +1671,10 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
       await firebase.database().ref(`favor/players/${me}`).remove();
       await firebase.database().ref(`favor/daily/${KEY}`).remove();
       await firebase.database().ref(`favor/settled/${KEY}`).remove();
-      await firebase.database().ref(`favor/daily/${FLB.currentDateKey()}/scores/${me}`).remove();
+      const days = (await firebase.database().ref('favor/daily').get()).val() || {};
+      for (const k of Object.keys(days)) {   // all keys — boundary-straddle safe
+        await firebase.database().ref(`favor/daily/${k}/scores/${me}`).remove();
+      }
     } else {
       localStorage.removeItem('favorLB');
     }
@@ -1894,7 +1918,13 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
       await new Promise(r => setTimeout(r, 250));
     }
     await firebase.database().ref(`favor/players/${u}`).remove();
-    await firebase.database().ref(`favor/daily/${KEY}/scores/${u}`).remove();
+    // Sweep EVERY daily key — a run straddling the 22:00 ET boundary
+    // posts on one key while a KEY recomputed later points at another,
+    // and residue on yesterday's board would get CROWNED at settlement.
+    const days = (await firebase.database().ref('favor/daily').get()).val() || {};
+    for (const k of Object.keys(days)) {
+      await firebase.database().ref(`favor/daily/${k}/scores/${u}`).remove();
+    }
     const p = await firebase.database().ref(`favor/players/${u}`).get();
     const d = await firebase.database().ref(`favor/daily/${KEY}/scores/${u}`).get();
     return (!p.exists() && !d.exists()) ? 'clean' : 'RESIDUE';
@@ -1940,7 +1970,10 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
       await new Promise(r => setTimeout(r, 250));
     }
     await firebase.database().ref(`favor/players/${u}`).remove();
-    await firebase.database().ref(`favor/daily/${KEY}/scores/${u}`).remove();
+    const days = (await firebase.database().ref('favor/daily').get()).val() || {};
+    for (const k of Object.keys(days)) {   // all keys — see boundary note above
+      await firebase.database().ref(`favor/daily/${k}/scores/${u}`).remove();
+    }
   }, AUDIT_UID + 'p');
   await phone.close();
 }
@@ -2106,7 +2139,10 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
       await new Promise(r => setTimeout(r, 250));
     }
     await firebase.database().ref(`favor/players/${FLB.uid()}`).remove();
-    await firebase.database().ref(`favor/daily/${KEY}/scores/${FLB.uid()}`).remove();
+    const days = (await firebase.database().ref('favor/daily').get()).val() || {};
+    for (const k of Object.keys(days)) {   // all keys — see boundary note above
+      await firebase.database().ref(`favor/daily/${k}/scores/${FLB.uid()}`).remove();
+    }
     const p = await firebase.database().ref(`favor/players/${FLB.uid()}`).get();
     return p.exists() ? 'RESIDUE' : 'clean';
   });

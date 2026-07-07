@@ -562,9 +562,15 @@
         if (res.ok) {
             const char = window.FAVOR_DATA.characters.find(c => c.id === charId);
             await showPurchaseCelebration(char);
-        } else if (res.why === 'stars') {
+        } else if (res.why === 'stars' || res.why === 'offline') {
+            // Every refusal says WHY for a beat — a silently reverting
+            // confirm button reads as dead (e.g. the wire dropped after
+            // boot and the pre-read refused).
             const btn = document.querySelector(`.st-card[data-char="${charId}"] .st-buy`);
-            if (btn) { btn.textContent = 'Not enough ★'; setTimeout(renderStore, 1200); }
+            if (btn) {
+                btn.textContent = res.why === 'offline' ? 'Offline — try again' : 'Not enough ★';
+                setTimeout(renderStore, 1200);
+            }
         }
     }
 
@@ -603,6 +609,9 @@
         await connect();
         await readPlayer();
         renderProfileChip();
+        // A store opened during the 'connecting' window painted browse-only
+        // — repaint now that the backend verdict is in.
+        renderStore();
         await settleDue();     // pay out any boundary that passed while we were away
         await drainMsgs();     // then deliver congratulations
     }
