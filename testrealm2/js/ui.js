@@ -3449,6 +3449,11 @@ function _bloomSet(el) {
 // the card to the drag (and the same line the release must clear to
 // commit — letting go below it just tucks the card home).
 const HAND_DRAG_LIFT = 60;
+// Rise past this and the card in your hand LOCKS: an ascending pull that
+// drifts sideways must not glide onto a neighbor mid-play. Browsing stays
+// live while the finger rides level along the fan; dip back under the
+// band and the glide resumes (the check is per-move, not a latch).
+const HAND_GLIDE_BAND = 24;
 let _handDrag = null;
 
 document.addEventListener('pointerdown', (e) => {
@@ -3535,10 +3540,13 @@ document.addEventListener('pointermove', (e) => {
         _bloomMoveEv = null;
         if (!_bloomStartEl || !ev) return;
         if (_handDrag && _handDrag.active) { _handDragFollow(ev); return; }
-        if (_handDrag && (_handDrag.startY - ev.clientY) > HAND_DRAG_LIFT) {
+        const rise = _handDrag ? (_handDrag.startY - ev.clientY) : 0;
+        if (_handDrag && rise > HAND_DRAG_LIFT) {
             _handDragStart(ev);
             return;
         }
+        // Ascending past the band: the card is spoken for — no glide swap.
+        if (rise > HAND_GLIDE_BAND) return;
         const card = _bloomNearest(ev.clientX);
         if (card) _bloomSet(card);
     });

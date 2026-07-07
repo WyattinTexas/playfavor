@@ -164,6 +164,37 @@ console.log('── Phone: glide blooms exactly one card (no sticky-hover double
     dragging: !!document.querySelector('.hand-card.dragging'),
   }));
   ok(!cancelled.panel && !cancelled.dragging, 'dragging back down cancels cleanly');
+
+  // THE PICKUP-SWAP BUG (Wyatt 7/6 night): pulling a card up while the
+  // finger drifts sideways over a neighbor must NOT swap cards mid-play —
+  // past the glide band the card in hand is locked.
+  await page.touchscreen.touchStart(centers[2], y);
+  await sleep(150);
+  await page.touchscreen.touchMove(centers[2], y - 34);        // above the band, below the lift line
+  await sleep(140);
+  await page.touchscreen.touchMove(centers[4], y - 48);        // hard sideways drift over a neighbor
+  await sleep(160);
+  const lockedBloom = await page.evaluate(() => {
+    const b = document.querySelector('.tv-hand .hand-card.bloom');
+    return b ? parseInt(b.getAttribute('data-hand-i'), 10) : -1;
+  });
+  ok(lockedBloom === 2, `ascending drift cannot swap the card (still holding #${lockedBloom})`);
+  await page.touchscreen.touchMove(centers[4] + 20, y - 160);  // keep drifting on the way up
+  await sleep(220);
+  const draggedIdx = await page.evaluate(() => {
+    const d = document.querySelector('.hand-card.dragging');
+    return d ? parseInt(d.getAttribute('data-hand-i'), 10) : -1;
+  });
+  ok(draggedIdx === 2, `the drag carries the card you picked up (#${draggedIdx})`);
+  await page.touchscreen.touchEnd();
+  await sleep(500);
+  const pickedRight = await page.evaluate(() => ({
+    panel: !!document.querySelector('.action-panel.active'),
+    sel: selectedHandCard,
+  }));
+  ok(pickedRight.panel && pickedRight.sel === 2, `the sheet opens for that same card (selected #${pickedRight.sel})`);
+  await page.evaluate(() => { window._finalChoicePending = false; hideActionPanel(); });
+  await sleep(200);
   await page.close();
 }
 
