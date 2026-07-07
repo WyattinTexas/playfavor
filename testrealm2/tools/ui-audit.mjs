@@ -632,6 +632,70 @@ console.log('── Desktop: last two cards — player chooses BOTH fates');
   await page.close();
 }
 
+// ═══ DESKTOP: rival rail — quiet entries, REAL click opens the whole spread ═══
+console.log('── Desktop: rival rail entries + overlay (real mouse click)');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('rail: ' + m.text()); });
+  await page.setViewport({ width: 1440, height: 900 });
+  await startGame(page);
+  await page.evaluate(() => {
+    const take = (names) => names.map(n => ({ ...FAVOR_DATA.cards.find(c => c.name === n) }));
+    const r = game.players[1];
+    r.playedCards = take(['First Aid', 'Trapping', 'Hunting']);
+    r.gold = 9; r.favor = 6; r.scorn = 1; r.prestige = 12; r.sliderPosition = 3;
+    game.emblemHolder = 1;
+    renderGameState();
+  });
+  await sleep(500);
+
+  const rail = await page.evaluate(() => ({
+    ringDots: document.querySelectorAll('.opp-ring-row, .opp-entry .ring-dot').length,
+    statPills: document.querySelectorAll('.opp-entry .stat-pill').length,
+    goldArt: document.querySelectorAll('.opp-entry .opp-gold-row img').length,
+    emblems: document.querySelectorAll('.opp-entry .emblem-badge').length,
+    emoji: /[\u{1FA99}\u{2B50}\u{1F451}]/u.test(document.getElementById('gameSidebar').innerHTML),
+  }));
+  ok(rail.ringDots === 0, 'rail: 1-5 ring-dot rows are gone');
+  ok(rail.statPills === 0, 'rail: favor/scorn pills are gone');
+  ok(rail.goldArt >= 2, `rail: gold shows as real coin art (${rail.goldArt} entries)`);
+  ok(rail.emblems === 1, 'rail: emblem holder wears the Emblem token, not an emoji');
+  ok(!rail.emoji, 'rail: zero emoji glyphs in the sidebar');
+
+  // The regression that mattered: a REAL mouse click on the FIRST entry's
+  // top band (where the floating log/music buttons used to sit and eat
+  // the click). elementFromPoint + mouse.click — no synthetic el.click().
+  const spot = await page.evaluate(() => {
+    const e = document.querySelector('.opp-entry');
+    const r = e.getBoundingClientRect();
+    const el = document.elementFromPoint(r.left + r.width / 2, r.top + 10);
+    return { x: r.left + r.width / 2, y: r.top + 10, clear: e.contains(el),
+             hit: el ? (el.id || el.className.toString().slice(0, 30)) : 'none' };
+  });
+  ok(spot.clear, `first entry's top band takes the click (hit: ${spot.hit})`);
+  await page.mouse.click(spot.x, spot.y);
+  await sleep(700);
+  const ov = await page.evaluate(() => {
+    const ring = document.getElementById('oppOvRing').getBoundingClientRect();
+    const board = document.getElementById('oppOvBoard').getBoundingClientRect();
+    return {
+      open: document.getElementById('oppOverlay').classList.contains('active'),
+      boardBig: board.height > 250,
+      ringOnBoard: ring.width > 10 && ring.left > board.left && ring.right < board.right,
+      ringLeft: document.getElementById('oppOvRing').style.left,
+      cards: document.querySelectorAll('#oppOvCards img').length,
+      pillArt: document.querySelectorAll('#oppOvStats .pill-icon').length,
+    };
+  });
+  ok(ov.open, 'REAL click on the rail opens the rival overlay');
+  ok(ov.boardBig, 'overlay board is big (desktop)');
+  ok(ov.ringOnBoard && ov.ringLeft === '66.3%', `their ring rides the board track (${ov.ringLeft})`);
+  ok(ov.cards === 3, `all played cards shown (${ov.cards})`);
+  ok(ov.pillArt === 4, 'overlay stats use real token art');
+  await page.screenshot({ path: join(SHOTS, 'rival-overlay-desktop.png') });
+  await page.close();
+}
+
 // ═══ DESKTOP: hand outranks the phase pill without DOM-order luck ═══
 console.log('── Desktop: hover-bloom and selected cards paint above the phase pill');
 {

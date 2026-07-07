@@ -211,6 +211,13 @@ html, body {
     box-shadow: 0 0 15px rgba(201, 168, 76, 0.3);
 }
 
+/* In-game the top-right corner belongs to the OPPONENTS rail — floating
+   toggles there ate real clicks aimed at the first rival (the log panel
+   opened instead of the rival overlay). They slide left of the 220px
+   sidebar while the game screen is up; title screen keeps the corner. */
+body:has(#game-screen.active) .music-toggle { right: 240px; }
+body:has(#game-screen.active) .log-toggle { right: 294px; }
+
 .music-toggle.muted { opacity: 0.4; }
 
 /* ─── CHARACTER SELECT SCREEN ──────────────────────────── */
@@ -696,13 +703,33 @@ html, body {
 .stat-pill {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    padding: 2px 8px;
-    border-radius: 10px;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 12px;
     font-family: 'Cinzel', serif;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
+}
+
+/* Real token art inside stat pills (never emoji). */
+.stat-pill .pill-icon {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6));
+}
+.stat-pill.prestige .pill-icon { border-radius: 50%; object-fit: cover; }
+
+/* The Emblem marker, anywhere "emblem holder" shows — a round mini-token. */
+.emblem-badge {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid var(--gold-dark);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    vertical-align: -3px;
 }
 
 .stat-pill.gold {
@@ -729,14 +756,10 @@ html, body {
     border: 1px solid rgba(79, 195, 247, 0.22);
 }
 
-.stat-pill .coin-icon {
-    font-style: normal;
-}
-
 .stats-panel .emblem-tag {
     text-align: center;
     font-family: 'Cinzel', serif;
-    font-size: 8px;
+    font-size: 11px;
     color: var(--gold);
     letter-spacing: 1px;
     margin-top: 2px;
@@ -933,11 +956,12 @@ html, body {
 }
 
 .opp-entry .opp-avatar {
-    width: 36px;
-    height: 36px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
     object-fit: cover;
-    border: 2px solid rgba(201, 168, 76, 0.25);
+    border: 2px solid rgba(201, 168, 76, 0.45);
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.5);
     flex-shrink: 0;
 }
 
@@ -951,62 +975,56 @@ html, body {
 
 .opp-entry .opp-name {
     font-family: 'Cinzel', serif;
-    font-size: 11px;
-    color: var(--gold);
-}
-
-.opp-ring-row {
-    display: flex;
-    gap: 2px;
-    margin-top: 2px;
-}
-.ring-dot {
-    font-size: calc(11px * var(--sx));
-    font-family: 'Cinzel', serif;
-    color: rgba(255,255,255,0.25);
-    width: calc(22px * var(--sx));
-    height: calc(22px * var(--sx));
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    color: var(--gold-light);
     display: flex;
     align-items: center;
-    justify-content: center;
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 50%;
-}
-.ring-dot.ring-active {
-    color: var(--gold);
-    border-color: var(--gold);
-    background: rgba(212,175,55,0.2);
-    box-shadow: 0 0 4px rgba(212,175,55,0.4);
+    gap: 5px;
 }
 
-.opp-entry .opp-stats-row {
+/* Gold rides the rail (Wyatt keeps it glanceable) — the game's own coin
+   art, big Cinzel count. Everything else waits behind the click. */
+.opp-entry .opp-gold-row {
     display: flex;
-    gap: 3px;
-    margin-top: 2px;
+    align-items: center;
+    gap: 6px;
+    margin-top: 3px;
 }
-
-.opp-entry .opp-stats-row .stat-pill {
-    font-size: 8px;
-    padding: 1px 5px;
+.opp-entry .opp-gold-row img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+}
+.opp-entry .opp-gold-row b {
+    font-family: 'Cinzel', serif;
+    font-size: 18px;
+    font-weight: 900;
+    color: var(--gold-light);
+    line-height: 1;
+    text-shadow: 0 0 8px rgba(255,215,0,0.25);
 }
 
 .opp-entry .mini-stack {
     display: flex;
-    gap: 2px;
-    margin-top: 4px;
+    margin-top: 6px;
 }
 
 .opp-entry .mini-card {
-    width: 22px;
-    height: 31px;
-    border-radius: 2px;
+    width: 32px;
+    height: 48px;
+    border-radius: 3px;
     object-fit: cover;
-    opacity: 0.45;
-    transition: opacity 0.2s;
+    border: 1px solid rgba(201, 168, 76, 0.25);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    opacity: 0.6;
+    transition: opacity 0.2s, transform 0.2s;
 }
+.opp-entry .mini-card + .mini-card { margin-left: -9px; }
 
 .opp-entry:hover .mini-card {
-    opacity: 0.7;
+    opacity: 0.9;
 }
 
 .opp-entry.active-turn {
@@ -1383,20 +1401,36 @@ html, body {
     margin-top: 6px;
 }
 
-/* Wrapper + ring + stacks exist for the phone layout; on desktop the
-   wrapper dissolves (display:contents) and the extras stay hidden, so
-   the desktop overlay renders exactly as before. */
-.opp-ov-boardwrap { display: contents; }
-.opp-ov-ring { display: none; }
+/* Board + ring on BOTH layouts: with the ring-dots gone from the rail,
+   the overlay board is where a rival's position lives. The wrapper is
+   position:relative so the %-based ring rides the art (phone media block
+   re-tunes sizes for its side-by-side layout). Stacks stay phone-only —
+   desktop keeps the big inline cards panel. */
+.opp-ov-boardwrap {
+    display: block;
+    position: relative;
+    line-height: 0;
+    margin-bottom: 20px;
+    animation: ovZoom 0.45s cubic-bezier(0.16,1,0.3,1);
+}
+.opp-ov-ring {
+    display: block;
+    position: absolute;
+    width: 11%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+}
 .opp-ov-stacks { display: none; }
 
 .opp-ov-board {
+    display: block;
     max-width: 70vw;
-    max-height: 28vh;
+    max-height: 42vh;   /* the board IS their sheet — let it breathe */
     border-radius: 10px;
-    margin-bottom: 20px;
     box-shadow: 0 8px 40px rgba(0,0,0,0.5);
-    animation: ovZoom 0.45s cubic-bezier(0.16,1,0.3,1);
+    animation: none;    /* the wrapper animates so the ring rides along */
 }
 
 .opp-ov-section-label {
@@ -1438,8 +1472,8 @@ html, body {
 .opp-ov-card-wrap:hover { transform: translateY(-8px); }
 
 .opp-ov-card-wrap img {
-    width: 130px;
-    height: 182px;
+    width: 150px;
+    height: 225px;      /* true 2:3 card ratio — no cropped art */
     border-radius: 6px;
     box-shadow: 0 6px 24px rgba(0,0,0,0.6);
     object-fit: cover;
@@ -2879,9 +2913,13 @@ html, body {
     .chip-crown {
         position: absolute;
         top: -8px; right: -6px;
-        font-size: 11px;
-        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.8));
         pointer-events: none;
+    }
+    .chip-crown .emblem-badge {
+        width: 15px;
+        height: 15px;
+        vertical-align: 0;
+        border-color: var(--gold);
     }
     .chip-you {
         position: absolute;

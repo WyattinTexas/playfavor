@@ -249,12 +249,7 @@ function buildSpotlightContent(playerIndex, card, action) {
     html += `<div class="opp-turn-ring">${buildMiniSlotTrack(playerIndex)}</div>`;
 
     // Stats
-    html += `<div class="opp-turn-stats">
-        <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${ps.gold}</span>
-        <span class="stat-pill prestige">\u2B50 ${ps.prestige}</span>
-        <span class="stat-pill favor">${ps.favor || 0} Favor</span>
-        <span class="stat-pill scorn">${ps.scorn} Scorn</span>
-    </div>`;
+    html += `<div class="opp-turn-stats">${statPillsHtml(ps)}</div>`;
 
     // Action label
     html += `<div class="spotlight-player">${actionLabel}</div>`;
@@ -1092,7 +1087,7 @@ function renderStatsPanel(state) {
     const panel = document.getElementById('statsPanel');
     const player = state.players[0];
     const gp = game.players[0];
-    const emblem = state.emblemHolder === 0 ? '<div class="emblem-tag">\uD83D\uDC51 Emblem Holder</div>' : '';
+    const emblem = state.emblemHolder === 0 ? `<div class="emblem-tag">${emblemBadge()} Emblem Holder</div>` : '';
 
     // Resource tokens row
     const resourcesHtml = `
@@ -1306,15 +1301,16 @@ function renderSidebar(state) {
     const sidebar = document.getElementById('gameSidebar');
     let html = '<div class="sidebar-header">Opponents</div>';
 
+    // Quiet entries: portrait, name, emblem, gold (real coin art) and the
+    // recent-cards fan. Ring position / favor / scorn / prestige live
+    // behind the click \u2014 the overlay shows their whole spread.
     state.players.forEach((p, i) => {
         if (i === 0) return;
 
         const isActive = state.activePlayerIndex === i;
-        const emblem = state.emblemHolder === i ? ' \uD83D\uDC51' : '';
+        const emblem = state.emblemHolder === i ? ' ' + emblemBadge() : '';
         const char = game.players[i].character;
         const avatarSrc = char ? `assets/characters/${char.filename}` : '';
-        const sliderPos = game.players[i].sliderPosition; // 0-4
-        const posLabels = ['1', '2', '3', '4', '5'];
 
         html += `
             <div class="opp-entry${isActive ? ' active-turn' : ''}"
@@ -1322,16 +1318,8 @@ function renderSidebar(state) {
                 <img class="opp-avatar" src="${avatarSrc}">
                 <div class="opp-details">
                     <span class="opp-name">${p.name}${emblem}</span>
-                    <div class="opp-ring-row">
-                        ${[0,1,2,3,4].map(pos => {
-                            const tip = char ? buildSlotLabel(char.slots[pos]).join(', ') : '';
-                            return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posLabels[pos]}</span>`;
-                        }).join('')}
-                    </div>
-                    <div class="opp-stats-row">
-                        <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${p.gold}</span>
-                        <span class="stat-pill favor">${p.favor || 0}</span>
-                        <span class="stat-pill scorn">${p.scorn}</span>
+                    <div class="opp-gold-row">
+                        <img src="${PURSE_ICONS.gold}" alt="Gold"><b>${p.gold}</b>
                     </div>
                     <div class="mini-stack">
                         ${p.playedCards.slice(-5).map(c =>
@@ -1435,6 +1423,22 @@ const PURSE_ICONS = {
     scorn: 'assets/icons/scorn.png',
 };
 
+// The physical game's Emblem marker — used wherever "emblem holder" shows.
+const EMBLEM_IMG = 'assets/tokens/Copy of Emblem.jpg';
+const emblemBadge = (title = 'Emblem Holder') =>
+    `<img class="emblem-badge" src="${EMBLEM_IMG}" alt="${title}" title="${title}">`;
+
+// Stat pills in the game's own visual language — real token art, never
+// emoji (a gray unicode coin reads as somebody else's game).
+function statPillsHtml(ps) {
+    return `
+        <span class="stat-pill gold"><img class="pill-icon" src="${PURSE_ICONS.gold}" alt="Gold"> ${ps.gold}</span>
+        <span class="stat-pill prestige"><img class="pill-icon" src="${TOKEN_IMG.prestige}" alt="Prestige"> ${ps.prestige}</span>
+        <span class="stat-pill favor"><img class="pill-icon" src="${PURSE_ICONS.favor}" alt="Favor"> ${ps.favor || 0} Favor</span>
+        <span class="stat-pill scorn"><img class="pill-icon" src="${PURSE_ICONS.scorn}" alt="Scorn"> ${ps.scorn} Scorn</span>
+    `;
+}
+
 function renderTvPurse(state) {
     const el = document.getElementById('tvPurse');
     if (!el) return;
@@ -1514,7 +1518,7 @@ function buildSeatChip(i, state) {
     const artSrc = char ? `assets/characters/${char.filename}` : '';
     const isActive = state.activePlayerIndex === i;
     const isYou = i === 0;
-    const crown = state.emblemHolder === i ? '<span class="chip-crown">👑</span>' : '';
+    const crown = state.emblemHolder === i ? `<span class="chip-crown">${emblemBadge()}</span>` : '';
     const youTag = isYou ? '<span class="chip-you">YOU</span>' : '';
     const cardCount = (p.playedCards || []).length;
     const open = isYou ? 'openBoardOverlay()' : `openOppOverlay(${i})`;
@@ -2030,8 +2034,9 @@ function openOppOverlay(playerIndex) {
     document.getElementById('oppOvName').textContent = p.name;
     document.getElementById('oppOvBoard').src = `assets/characters/${char.filename}`;
 
-    // Their ring on the board's track (phone shows it; desktop hides it) —
-    // same BOARD_OV_TRACK geometry as your board overlay and thumb.
+    // Their ring on the board's track (both layouts — with the rail's
+    // ring-dots gone, this is where a rival's position lives) — same
+    // BOARD_OV_TRACK geometry as your board overlay and thumb.
     const oppRing = document.getElementById('oppOvRing');
     if (oppRing) {
         const pos = game.players[playerIndex].sliderPosition;
@@ -2057,12 +2062,7 @@ function openOppOverlay(playerIndex) {
         oppStacks.style.setProperty('--tvStackCardH', fitH + 'px');
     }
 
-    document.getElementById('oppOvStats').innerHTML = `
-        <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${p.gold}</span>
-        <span class="stat-pill prestige">\u2B50 ${p.prestige}</span>
-        <span class="stat-pill favor">${p.favor || 0} Favor</span>
-        <span class="stat-pill scorn">${p.scorn} Scorn</span>
-    `;
+    document.getElementById('oppOvStats').innerHTML = statPillsHtml(p);
 
     const cardsEl = document.getElementById('oppOvCards');
     cardsEl.innerHTML = '';
