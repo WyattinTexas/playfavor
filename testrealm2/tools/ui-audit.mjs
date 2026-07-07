@@ -44,7 +44,14 @@ async function startGame(page) {
     b.click();
   });
   await page.waitForFunction(() => document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent, { timeout: 20000 });
-  await page.evaluate(() => document.querySelector('.character-card').click());
+  await page.evaluate(() => {
+    // Deterministic rigs: always play the roster's FIRST hero, exactly as
+    // when the select screen offered all ten — three random offerings
+    // would shuffle the slot-bonus math under the slide-picker flows.
+    selectedCharacter = FAVOR_DATA.characters[0].id;
+    document.querySelector('.character-card').classList.add('selected');
+    document.getElementById('confirmBtn').style.display = 'inline-block';
+  });
   await page.waitForFunction(() => document.getElementById('confirmBtn') && document.getElementById('confirmBtn').offsetParent, { timeout: 20000 });
   await page.evaluate(() => document.getElementById('confirmBtn').click());
   await page.waitForFunction(() => typeof game !== 'undefined' && game && game.players[0].character, { timeout: 20000 });
@@ -652,6 +659,65 @@ console.log('── Desktop: last two cards — player chooses BOTH fates');
     }));
     ok(acted && state.pendingCleared, `choice applied (${acted}), round continued`);
   }
+  await page.close();
+}
+
+// ═══ HERO SELECT: three choices, picking auto-scrolls to Begin ═══
+console.log('── Hero select: 3 random heroes, bots draw from the leftovers, scroll to Begin');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('hero-select: ' + m.text()); });
+  await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => {
+    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+      .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
+    return b && b.offsetParent;
+  }, { timeout: 20000 });
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+      .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
+    b.click();
+  });
+  await page.waitForFunction(() => document.querySelector('.character-card')?.offsetParent, { timeout: 20000 });
+  const sel = await page.evaluate(() => ({
+    cards: document.querySelectorAll('.character-card').length,
+    roster: window.FAVOR_DATA.characters.length,
+    btnHidden: document.getElementById('confirmBtn').style.display === 'none',
+  }));
+  ok(sel.cards === 3, `exactly three heroes offered (${sel.cards} of ${sel.roster})`);
+  ok(sel.btnHidden, 'Begin stays hidden until a hero is picked');
+
+  // Pick the LAST card and let the auto-scroll carry Begin into view.
+  await page.evaluate(() => {
+    const cards = document.querySelectorAll('.character-card');
+    cards[cards.length - 1].click();
+  });
+  await sleep(900);   // smooth scroll settles
+  const after = await page.evaluate(() => {
+    const b = document.getElementById('confirmBtn');
+    const r = b.getBoundingClientRect();
+    return { shown: b.style.display !== 'none',
+             inView: r.top >= 0 && r.bottom <= window.innerHeight + 1,
+             top: Math.round(r.top), bottom: Math.round(r.bottom), vh: window.innerHeight };
+  });
+  ok(after.shown, 'Begin Your Journey appears on pick');
+  ok(after.inView, `auto-scroll carries Begin into the viewport (${after.top}..${after.bottom} in ${after.vh})`);
+  await page.screenshot({ path: join(SHOTS, 'hero-select-3.png') });
+
+  // Begin works, and every bot drew from the seven NON-offered heroes.
+  const drew = await page.evaluate(() => {
+    const offered = [...document.querySelectorAll('.character-card')].map(c => c.dataset.id);
+    document.getElementById('confirmBtn').click();
+    return offered;
+  });
+  await page.waitForFunction(() => typeof game !== 'undefined' && game && game.players[0].character, { timeout: 20000 });
+  const bots = await page.evaluate(() =>
+    game.players.slice(1).map(p => p.character.id));
+  const youTook = drew[drew.length - 1];
+  ok(bots.every(id => !drew.includes(id)),
+    `bots drew from the leftovers (${bots.join(', ')} ∉ offered ${drew.join(', ')})`);
+  ok(!bots.includes(youTook), 'nobody doubles your hero');
   await page.close();
 }
 

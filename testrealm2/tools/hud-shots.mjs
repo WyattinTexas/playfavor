@@ -42,7 +42,14 @@ async function startGame(page) {
     b.click();
   });
   await page.waitForFunction(() => document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent, { timeout: 20000 });
-  await page.evaluate(() => document.querySelector('.character-card').click());
+  await page.evaluate(() => {
+    // Deterministic rigs: always play the roster's FIRST hero, exactly as
+    // when the select screen offered all ten — three random offerings
+    // would shuffle the slot-bonus math under the slide-picker flows.
+    selectedCharacter = FAVOR_DATA.characters[0].id;
+    document.querySelector('.character-card').classList.add('selected');
+    document.getElementById('confirmBtn').style.display = 'inline-block';
+  });
   await page.waitForFunction(() => document.getElementById('confirmBtn') && document.getElementById('confirmBtn').offsetParent, { timeout: 20000 });
   await page.evaluate(() => document.getElementById('confirmBtn').click());
   await page.waitForFunction(() => typeof game !== 'undefined' && game && game.players[0].character, { timeout: 20000 });

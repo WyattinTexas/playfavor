@@ -860,6 +860,11 @@ function coachApplyPromptTest() {
 
 // ─── CHARACTER SELECT ──────────────────────────────────────
 
+// The three heroes offered THIS game — the other seven are "already
+// taken" by the other players in your queue, and the bots genuinely
+// draw from those leftovers in confirmCharacter.
+let _offeredHeroes = [];
+
 function showCharacterSelect() {
     const screen = document.getElementById('character-select');
     screen.classList.add('active');
@@ -872,7 +877,8 @@ function showCharacterSelect() {
         return;
     }
 
-    window.FAVOR_DATA.characters.forEach(char => {
+    _offeredHeroes = shuffleArray(window.FAVOR_DATA.characters).slice(0, 3);
+    _offeredHeroes.forEach(char => {
         const card = document.createElement('div');
         card.className = 'character-card fade-in';
         card.dataset.id = char.id;
@@ -897,7 +903,13 @@ function selectCharacter(id, cardEl) {
     document.querySelectorAll('.character-card').forEach(c => c.classList.remove('selected'));
     cardEl.classList.add('selected');
     selectedCharacter = id;
-    document.getElementById('confirmBtn').style.display = 'inline-block';
+    const btn = document.getElementById('confirmBtn');
+    btn.style.display = 'inline-block';
+    // Begin Your Journey sits below the fold on phones — picking a hero
+    // carries you straight down to it (#character-select is the scroller;
+    // rAF lets the reveal land in layout first).
+    requestAnimationFrame(() =>
+        btn.scrollIntoView({ behavior: 'smooth', block: 'end' }));
 }
 
 function confirmCharacter() {
@@ -908,8 +920,16 @@ function confirmCharacter() {
     game = new FavorGame(playerCount);
     game.loadDecks();
 
+    // Bots draw from the heroes that were NOT offered to you — the other
+    // "players" in your queue already took theirs, so the three on your
+    // screen (minus your pick) stay off the table.
+    const offered = _offeredHeroes.map(c => c.id);
     const allChars = window.FAVOR_DATA.characters.map(c => c.id);
-    const available = allChars.filter(id => id !== selectedCharacter);
+    let available = allChars.filter(id => id !== selectedCharacter && !offered.includes(id));
+    // Safety: never run short of rivals (10 - 3 offered = 7 ≥ 4 bots today).
+    if (available.length < playerCount - 1) {
+        available = allChars.filter(id => id !== selectedCharacter);
+    }
 
     const choices = [{ characterId: selectedCharacter, playerName: 'You' }];
 
