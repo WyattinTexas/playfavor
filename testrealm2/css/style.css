@@ -434,7 +434,7 @@ html, body {
     display: flex;
     align-items: flex-start;
     padding: 50px 24px calc(var(--handCardH) + 40px);
-    padding-left: 220px;
+    padding-left: 282px;   /* clears the 250px stats panel + 16px inset */
     overflow-y: auto;
     overflow-x: hidden;
 }
@@ -516,6 +516,12 @@ html, body {
 
 /* ── Stats Panel — under board thumbnail ── */
 
+/* Juicy stats scale — tokens on a table, readable at arm's length.
+   Full size on tall windows; ~0.78 on short desktops (≤849px) so the
+   panel + mission strip still clear 1280×800 without colliding. */
+:root { --sx: 1; }
+@media (max-height: 849px) { :root { --sx: 0.78; } }
+
 .stats-panel {
     position: absolute;
     top: 185px;
@@ -533,13 +539,17 @@ html, body {
         inset 0 2px 8px rgba(0,0,0,0.6),
         inset 0 -1px 3px rgba(255,190,90,0.04),
         0 4px 16px rgba(0,0,0,0.5);
-    width: 195px;
+    width: 250px;
+    /* Safety net for rare tall states (flex + both specials): scroll
+       inside the panel rather than run under the hand zone. */
+    max-height: calc(100dvh - 285px);
+    overflow-y: auto;
 }
 
 .stats-panel .act-badge {
     text-align: center;
     font-family: 'Cinzel', serif;
-    font-size: 9px;
+    font-size: 11px;
     color: var(--gold-dark);
     letter-spacing: 2px;
     text-transform: uppercase;
@@ -559,9 +569,9 @@ html, body {
 
 .resource-tokens {
     display: flex;
-    justify-content: center;
-    gap: 6px;
-    padding: 6px 0;
+    flex-direction: column;
+    gap: calc(4px * var(--sx));
+    padding: 5px 0 7px;
     border-bottom: 1px solid rgba(201, 168, 76, 0.08);
     margin-bottom: 6px;
 }
@@ -569,16 +579,17 @@ html, body {
 .resource-token {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 6px;
-    border-radius: 12px;
+    justify-content: space-between;
+    gap: 10px;
+    padding: calc(1px * var(--sx)) 14px calc(1px * var(--sx)) 6px;
+    border-radius: 999px;
     background: rgba(0,0,0,0.2);
     border: 1px solid rgba(201, 168, 76, 0.1);
 }
 
 .token-img {
-    width: 20px;
-    height: 20px;
+    width: calc(38px * var(--sx));
+    height: calc(38px * var(--sx));
     border-radius: 50%;
     object-fit: cover;
     box-shadow: 0 1px 4px rgba(0,0,0,0.4);
@@ -586,7 +597,7 @@ html, body {
 
 .token-val {
     font-family: 'Cinzel', serif;
-    font-size: 13px;
+    font-size: calc(34px * var(--sx));
     font-weight: 900;
     line-height: 1;
 }
@@ -600,15 +611,15 @@ html, body {
 .skills-grid {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
     padding: 4px 0;
 }
 
 .skill-row {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 3px 4px;
+    gap: 8px;
+    padding: 1px 6px;
     border-radius: 6px;
     transition: background 0.2s ease;
 }
@@ -633,8 +644,8 @@ html, body {
 .skill-row.flex-skill .skill-label i { color: var(--gold); font-size: 0.85em; }
 
 .skill-icon {
-    width: 18px;
-    height: 18px;
+    width: calc(30px * var(--sx));
+    height: calc(30px * var(--sx));
     display: flex;
     align-items: center;
     justify-content: center;
@@ -642,15 +653,15 @@ html, body {
 }
 
 .skill-svg {
-    width: 22px;
-    height: 22px;
-    border-radius: 3px;
+    width: calc(30px * var(--sx));
+    height: calc(30px * var(--sx));
+    border-radius: 6px;
     object-fit: contain;
 }
 
 .skill-label {
     font-family: 'Cinzel', serif;
-    font-size: 9px;
+    font-size: 12px;
     color: var(--gold-dark);
     letter-spacing: 1px;
     text-transform: uppercase;
@@ -659,10 +670,10 @@ html, body {
 
 .skill-value {
     font-family: 'Cinzel', serif;
-    font-size: 14px;
+    font-size: calc(30px * var(--sx));
     font-weight: 900;
     color: rgba(201, 168, 76, 0.25);
-    min-width: 20px;
+    min-width: calc(44px * var(--sx));
     text-align: right;
 }
 
@@ -675,10 +686,10 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 6px;
     margin-top: 4px;
     font-family: 'Cinzel', serif;
-    font-size: 9px;
+    font-size: 12px;
     color: rgba(255,255,255,0.5);
 }
 
@@ -749,7 +760,7 @@ html, body {
     box-shadow:
         inset 0 2px 6px rgba(0,0,0,0.55),
         0 3px 12px rgba(0,0,0,0.45);
-    width: 195px;
+    width: 250px;   /* matches the stats panel above it */
 }
 
 .mission-section {
@@ -950,11 +961,11 @@ html, body {
     margin-top: 2px;
 }
 .ring-dot {
-    font-size: 7px;
+    font-size: calc(11px * var(--sx));
     font-family: 'Cinzel', serif;
     color: rgba(255,255,255,0.25);
-    width: 14px;
-    height: 14px;
+    width: calc(22px * var(--sx));
+    height: calc(22px * var(--sx));
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2773,29 +2784,30 @@ html, body {
         opacity: 0.7 !important;
     }
 
-    /* ── Z1 · Purse — your four currencies, top-left ── */
+    /* ── Z1 · Purse — your four currencies, top-left, 2×2 grid of big
+       table-token chips (juicy pass: icons 34px, numbers 26px). ── */
     .tv-purse {
         position: absolute;
         top: 6px;
         left: max(8px, env(safe-area-inset-left));
-        display: flex;
-        align-items: center;
-        gap: 6px;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 5px;
         z-index: 6;
     }
     .tv-purse-chip {
         display: inline-flex;
         align-items: center;
-        gap: 4px;
-        padding: 3px 8px 3px 4px;
-        border-radius: 13px;
+        gap: 6px;
+        padding: 4px 10px 4px 5px;
+        border-radius: 17px;
         background: rgba(10,6,3,0.68);
         border: 1px solid rgba(201,168,76,0.25);
         box-shadow: 0 1px 3px rgba(0,0,0,0.5);
         cursor: pointer;
     }
     .tv-purse-chip img {
-        width: 18px; height: 18px;
+        width: 34px; height: 34px;
         object-fit: contain;
         filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6));
     }
@@ -2803,7 +2815,7 @@ html, body {
     .tv-purse-chip b {
         font-family: 'Cinzel', serif;
         font-weight: 900;
-        font-size: 14px;
+        font-size: 26px;
         color: var(--gold-light);
         line-height: 1;
     }
@@ -2904,43 +2916,49 @@ html, body {
         pointer-events: none;
     }
 
-    /* ── Z2 · Skill rail — always-visible icon+number chips, left edge.
-       Sized off --railRows so all rows (skills + flex + specials) fit a
-       390px-tall screen and shrink gracefully as rows appear. ── */
+    /* ── Z2 · Skill rail — always-visible icon+number chips, left edge,
+       TWO columns under the purse (juicy pass). --railRows counts GRID
+       rows (set by renderTvSkills = ceil(chips/2)); --tvChipH derives
+       the chip height from the space between purse (104) and hand strip
+       (106), and icon/number sizes scale off it, so everything fits a
+       390px screen and degrades gracefully as flex/special chips appear. */
     .tv-skills {
         position: absolute;
-        top: 46px;
+        top: 104px;
         bottom: 106px;
         left: max(8px, env(safe-area-inset-left));
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        align-content: start;
         gap: 4px;
         z-index: 5;
-        --railRows: 6;
+        --railRows: 3;
+        --tvChipH: min(56px, calc((100dvh - 210px - (var(--railRows) - 1) * 4px) / var(--railRows)));
     }
     .tv-skill-chip {
         display: flex;
         align-items: center;
-        gap: 4px;
-        padding: 0 8px 0 4px;
-        border-radius: 12px;
+        gap: 5px;
+        padding: 0 8px 0 5px;
+        border-radius: 14px;
         background: rgba(10,6,3,0.68);
         border: 1px solid rgba(201,168,76,0.25);
         box-shadow: 0 1px 3px rgba(0,0,0,0.5);
-        height: min(42px, calc((100dvh - 158px - (var(--railRows) - 1) * 4px) / var(--railRows)));
+        height: var(--tvChipH);
         cursor: pointer;
     }
     .tv-skill-chip .skill-svg {
-        width: 22px; height: 22px;
-        min-width: 22px;
+        width: calc(var(--tvChipH) * 0.7);
+        height: calc(var(--tvChipH) * 0.7);
+        min-width: calc(var(--tvChipH) * 0.7);
         object-fit: contain;
     }
     .tv-skill-chip b {
         font-family: 'Cinzel', serif;
         font-weight: 900;
-        font-size: 14px;
+        font-size: calc(var(--tvChipH) * 0.52);
         color: var(--gold-light);
-        min-width: 12px;
+        min-width: calc(var(--tvChipH) * 0.4);
         text-align: center;
         line-height: 1;
     }
@@ -3044,7 +3062,7 @@ html, body {
        Every focus moment (overlays, action panel, FX) lands over this. ── */
     .tv-stage {
         position: absolute;
-        left: 80px;
+        left: 206px;   /* clears the two-column juicy skill rail */
         right: 138px;
         top: 62px;
         bottom: 100px;

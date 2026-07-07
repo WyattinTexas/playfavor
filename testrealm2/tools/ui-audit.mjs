@@ -496,6 +496,86 @@ for (const [w, h] of [[844, 390], [932, 430], [667, 375]]) {
   await page.close();
 }
 
+// ═══ JUICY STATS: phone 2-col rail + desktop token totem fit their screens ═══
+console.log('── Juicy stats: phone purse/rail two-column, desktop panel + strip fit');
+{
+  // Phone: purse 2×2, skill rail 2 columns, both clear of the stage.
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('juicy-phone: ' + m.text()); });
+  await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  await startGame(page);
+  await page.evaluate(() => {
+    const p = game.players[0];
+    p.gold = 12; p.favor = 4; p.scorn = 2; p.prestige = 4;
+    p.skills = { survival: 2, charisma: 1, alchemy: 0, prospecting: 3, knowledge: 1, power: 2 };
+    p.flexSkills = [['charisma', 'prospecting']];
+    p.philosopherStone = 1;
+    renderGameState();
+  });
+  await sleep(500);
+  const ph = await page.evaluate(() => {
+    const purse = [...document.querySelectorAll('.tv-purse-chip')].map(c => c.getBoundingClientRect());
+    const chips = [...document.querySelectorAll('.tv-skill-chip')].map(c => c.getBoundingClientRect());
+    const icon = document.querySelector('.tv-purse-chip img').getBoundingClientRect();
+    const numFs = parseFloat(getComputedStyle(document.querySelector('.tv-skill-chip b')).fontSize);
+    const stage = document.querySelector('.tv-stage').getBoundingClientRect();
+    const railRight = Math.max(...chips.map(r => r.right), ...purse.map(r => r.right));
+    return {
+      purse2col: purse.length === 4 && Math.abs(purse[0].top - purse[1].top) < 2 && purse[2].top > purse[0].bottom - 2,
+      rail2col: chips.length >= 6 && Math.abs(chips[0].top - chips[1].top) < 2 && chips[2].top > chips[0].bottom - 2,
+      iconW: icon.width, numFs,
+      chipCount: chips.length,
+      lastChipBottom: Math.max(...chips.map(r => r.bottom)), vh: window.innerHeight,
+      railClearsStage: railRight <= stage.left + 1,
+    };
+  });
+  ok(ph.purse2col, 'phone purse is a 2×2 grid of big chips');
+  ok(ph.rail2col, `phone skill rail flows two columns (${ph.chipCount} chips)`);
+  ok(ph.iconW >= 30, `purse icons are juicy (${Math.round(ph.iconW)}px ≥ 30)`);
+  ok(ph.numFs >= 18, `rail numbers are juicy (${ph.numFs}px ≥ 18)`);
+  ok(ph.lastChipBottom <= ph.vh - 100, `all ${ph.chipCount} chips clear the hand strip (${Math.round(ph.lastChipBottom)} ≤ ${ph.vh - 100})`);
+  ok(ph.railClearsStage, 'rail clears the stage cards');
+  await page.close();
+
+  // Desktop, both target sizes, WORST-CASE rows (flex + phil stone):
+  // panel must not scroll, strip must sit fully on-screen below it.
+  for (const [w, h, minVal] of [[1440, 900, 30], [1280, 800, 24]]) {
+    const page = await browser.newPage();
+    page.on('console', m => { if (m.type() === 'error') consoleErrors.push('juicy-desktop: ' + m.text()); });
+    await page.setViewport({ width: w, height: h });
+    await startGame(page);
+    await page.evaluate(() => {
+      const p = game.players[0];
+      p.gold = 12; p.favor = 4; p.scorn = 2; p.prestige = 4;
+      p.skills = { survival: 2, charisma: 1, alchemy: 0, prospecting: 3, knowledge: 1, power: 2 };
+      p.flexSkills = [['charisma', 'prospecting']];
+      p.philosopherStone = 1;
+      renderGameState();
+    });
+    await sleep(600);
+    const d = await page.evaluate(() => {
+      const panel = document.getElementById('statsPanel');
+      const strip = document.getElementById('missionStrip');
+      const stacks = document.getElementById('cardStacks').getBoundingClientRect();
+      const pr = panel.getBoundingClientRect(), sr = strip.getBoundingClientRect();
+      return {
+        noScroll: panel.scrollHeight <= panel.clientHeight + 1,
+        panelBottom: pr.bottom, stripTop: sr.top, stripBottom: sr.bottom,
+        vh: window.innerHeight,
+        tokenVal: parseFloat(getComputedStyle(document.querySelector('.token-val')).fontSize),
+        stacksClear: stacks.left >= pr.right - 1,
+      };
+    });
+    ok(d.noScroll, `${w}x${h}: stats panel shows everything, no inner scroll`);
+    ok(d.stripTop >= d.panelBottom, `${w}x${h}: mission strip sits below the panel`);
+    ok(d.stripBottom <= d.vh + 1, `${w}x${h}: mission strip fully on-screen (${Math.round(d.stripBottom)} ≤ ${d.vh})`);
+    ok(d.tokenVal >= minVal, `${w}x${h}: token numbers juicy (${d.tokenVal}px ≥ ${minVal})`);
+    ok(d.stacksClear, `${w}x${h}: card stacks clear the wider panel`);
+    await page.screenshot({ path: join(SHOTS, `juicy-stats-${w}x${h}.png`) });
+    await page.close();
+  }
+}
+
 // ═══ DESKTOP: final card keeps its choices ═══
 console.log('── Desktop: last two cards — player chooses BOTH fates');
 {

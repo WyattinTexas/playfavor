@@ -1093,8 +1093,6 @@ function renderStatsPanel(state) {
     const player = state.players[0];
     const gp = game.players[0];
     const emblem = state.emblemHolder === 0 ? '<div class="emblem-tag">\uD83D\uDC51 Emblem Holder</div>' : '';
-    const sliderPos = gp.sliderPosition;
-    const posNames = ['1', '2', '3', '4', '5'];
 
     // Resource tokens row
     const resourcesHtml = `
@@ -1178,17 +1176,11 @@ function renderStatsPanel(state) {
     }
     skillsHtml += '</div>';
 
+    // No act badge (the phase pill says it) and no ring-dot row (the board
+    // thumb above wears the ring ON the art) — the panel is tokens + skills.
     panel.innerHTML = `
-        <div class="act-badge">Act ${state.currentAct}</div>
         ${resourcesHtml}
         ${skillsHtml}
-        <div class="ring-indicator">
-            Ring: ${[0,1,2,3,4].map(pos => {
-                const charData = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
-                const tip = charData ? buildSlotLabel(charData.slots[pos]).join(', ') : '';
-                return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posNames[pos]}</span>`;
-            }).join('')}
-        </div>
         ${emblem}
     `;
 
@@ -1215,52 +1207,48 @@ function renderMissionStrip(state) {
     const completedMissions = game.players[0].completedMissions || [];
     const allAcquired = [...missions, ...completedMissions];
 
-    let html = '';
+    // ONE at-a-glance row: your missions first (gold ring / green when
+    // complete), then the realm's available ones (dim). The pip borders
+    // carry the grouping — separate labeled sections cost too much height
+    // next to the juicy stats panel on 800px-tall screens.
+    let pips = '';
+    allAcquired.forEach(m => {
+        const isComplete = completedMissions.includes(m);
+        pips += `<img class="mission-pip${isComplete ? ' completed' : ' active'}"
+                    src="assets/cards/missions/${m.filename}"
+                    alt="${m.name}"
+                    onclick="openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
+    });
+    (state.visibleMissions || []).forEach(m => {
+        pips += `<img class="mission-pip available"
+                    src="assets/cards/missions/${m.filename}"
+                    alt="${m.name}"
+                    onclick="openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
+    });
 
-    // Active/Acquired missions section
-    if (allAcquired.length > 0) {
-        html += '<div class="mission-section">';
-        html += '<span class="strip-label">Active Missions</span>';
-        html += '<div class="mission-pips">';
-        allAcquired.forEach(m => {
-            const isComplete = completedMissions.includes(m);
-            html += `<img class="mission-pip${isComplete ? ' completed' : ' active'}"
-                        src="assets/cards/missions/${m.filename}"
-                        alt="${m.name}"
-                        onclick="openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
-        });
-        html += '</div></div>';
-    }
-
-    // Available missions from pool
-    if (state.visibleMissions && state.visibleMissions.length > 0) {
-        html += '<div class="mission-section">';
-        html += '<span class="strip-label">Available Missions</span>';
-        html += '<div class="mission-pips">';
-        state.visibleMissions.forEach(m => {
-            html += `<img class="mission-pip available"
-                        src="assets/cards/missions/${m.filename}"
-                        alt="${m.name}"
-                        onclick="openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
-        });
-        html += '</div></div>';
-    }
-
-    if (!html) {
-        html = '<span class="strip-label">No Missions</span>';
-    }
-
-    strip.innerHTML = html;
+    strip.innerHTML = pips
+        ? `<div class="mission-section">
+               <span class="strip-label">Missions</span>
+               <div class="mission-pips">${pips}</div>
+           </div>`
+        : '<span class="strip-label">No Missions</span>';
 
     // Position below stats panel (desktop only — compact landscape uses flex flow)
     if (isCompactLandscape()) {
         strip.style.top = '';
+        strip.style.maxHeight = '';
+        strip.style.overflowY = '';
     } else {
         requestAnimationFrame(() => {
             if (isCompactLandscape()) { strip.style.top = ''; return; }
             const statsPanel = document.getElementById('statsPanel');
             if (statsPanel && statsPanel.offsetHeight > 10) {
-                strip.style.top = (statsPanel.offsetTop + statsPanel.offsetHeight + 6) + 'px';
+                const top = statsPanel.offsetTop + statsPanel.offsetHeight + 6;
+                strip.style.top = top + 'px';
+                // The juicy stats panel is tall now — never let the strip
+                // run off the bottom; it scrolls inside itself instead.
+                strip.style.maxHeight = Math.max(40, window.innerHeight - top - 12) + 'px';
+                strip.style.overflowY = 'auto';
             }
         });
     }
@@ -1510,7 +1498,9 @@ function renderTvSkills(state) {
         rows++;
     }
 
-    el.style.setProperty('--railRows', rows);
+    // Two-column grid: --railRows counts GRID ROWS (chips packed two per
+    // row) so the fit-to-height chip formula sees the real column length.
+    el.style.setProperty('--railRows', Math.max(3, Math.ceil(rows / 2)));
     el.innerHTML = h;
 }
 
