@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — Test Realm</title>
-    <link rel="stylesheet" href="css/style.css?v=20260706174540">
+    <link rel="stylesheet" href="css/style.css?v=20260707215717">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
 
     <!-- TEST REALM build marker -->
-    <div style="position:fixed;top:0;right:0;z-index:99999;background:#7a1f1f;color:#ffd97a;font:700 9px 'Cinzel',serif;letter-spacing:2px;padding:3px 10px;border-radius:0 0 0 8px;pointer-events:none;opacity:.85;text-align:center">TEST REALM<div id="buildVersion" style="font:600 8px monospace;letter-spacing:0;color:#e8caa0;margin-top:1px"></div></div>
+    <div id="testRealmBadge" style="position:fixed;top:0;right:0;z-index:99999;background:#7a1f1f;color:#ffd97a;font:700 9px 'Cinzel',serif;letter-spacing:2px;padding:3px 10px;border-radius:0 0 0 8px;pointer-events:none;opacity:.85;text-align:center">TEST REALM<div id="buildVersion" style="font:600 8px monospace;letter-spacing:0;color:#e8caa0;margin-top:1px"></div></div>
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         var ui = document.querySelector('script[src*="ui.js"]');
@@ -26,14 +26,32 @@
         <p class="rotate-text">FAVOR is played at the table &mdash; rotate to landscape to take your seat.</p>
     </div>
 
-    <!-- ═══ TITLE SCREEN ═══ -->
+    <!-- ═══ TITLE SCREEN — the royal menu (Nation flow, FAVOR art) ═══ -->
     <div id="title-screen">
+        <!-- Profile — top-right: royal anon name · rating · champion crowns -->
+        <button class="profile-chip" id="profileChip" onclick="FLB.openProfile()" title="Your profile"></button>
+
         <img src="assets/ui/cover.jpg" alt="FAVOR" class="title-cover" id="coverArt">
         <p class="title-subtitle">A Game of Royal Succession</p>
 
         <div class="title-buttons">
-            <button class="btn-royal primary" onclick="startGame()">
-                <span>Play</span>
+            <button class="btn-royal primary menu-play" onclick="startGame()">
+                <span>Play Now</span>
+            </button>
+            <!-- Queue picker: each count is its own queue you join -->
+            <label class="queue-pick" title="Choose your queue — each table size matches separately">
+                <span class="queue-label">Queue</span>
+                <select id="queueSelect">
+                    <option value="3">3 Players</option>
+                    <option value="4">4 Players</option>
+                    <option value="5">5 Players</option>
+                </select>
+            </label>
+            <button class="btn-royal" onclick="FLB.openLeaderboard()">
+                <span>Leaderboard</span>
+            </button>
+            <button class="btn-royal" onclick="FLB.openStore()">
+                <span>Store</span>
             </button>
             <button class="btn-royal" onclick="showRules()">
                 <span>How to Play</span>
@@ -46,6 +64,50 @@
         </label>
 
         <p class="title-footer">3–5 Players &bull; 45–90 Minutes &bull; 1st Edition</p>
+    </div>
+
+    <!-- ═══ LEADERBOARD (title-screen panel) ═══ -->
+    <div class="lb-panel" id="lbPanel" onclick="FLB.closeLeaderboard()">
+        <div class="lb-inner" onclick="event.stopPropagation()">
+            <div class="lb-title">Leaderboard</div>
+            <div class="lb-tabs">
+                <button class="lb-tab on" data-tab="alltime" onclick="FLB.openLeaderboard('alltime')">All-Time</button>
+                <button class="lb-tab" data-tab="daily" onclick="FLB.openLeaderboard('daily')">Daily</button>
+            </div>
+            <div class="lb-localnote" id="lbLocal" style="display:none">LOCAL STANDINGS — leaderboard offline</div>
+            <div class="lb-body" id="lbBody"></div>
+            <div class="lb-foot">Daily champions are crowned at 10 PM Eastern — 50 ★ / 25 ★ / 10 ★</div>
+        </div>
+        <div class="ov-close" onclick="FLB.closeLeaderboard()">ESC</div>
+    </div>
+
+    <!-- ═══ CHARACTER STORE (title-screen panel — buy heroes with ★) ═══ -->
+    <div class="lb-panel store-panel" id="storePanel" onclick="FLB.closeStore()">
+        <div class="lb-inner st-inner" onclick="event.stopPropagation()">
+            <div class="lb-title">Character Store <span class="st-stars" id="storeStars"></span></div>
+            <div class="st-grid" id="storeBody"></div>
+            <div class="lb-foot">Every game pays Stars — 10 / 6 / 4 by finish, 2 for playing. New heroes join your select pool.</div>
+        </div>
+        <div class="ov-close" onclick="FLB.closeStore()">ESC</div>
+    </div>
+
+    <!-- ═══ PROFILE (rename · Stars · champion breakdown) ═══ -->
+    <div class="profile-panel" id="profilePanel" onclick="FLB.closeProfile()">
+        <div class="pf-inner" onclick="event.stopPropagation()">
+            <div class="pf-title">Your Standing</div>
+            <div id="profileBody"></div>
+        </div>
+        <div class="ov-close" onclick="FLB.closeProfile()">ESC</div>
+    </div>
+
+    <!-- ═══ DAILY CHAMPION — congratulations on next visit ═══ -->
+    <div class="champ-overlay" id="champOverlay">
+        <div class="champ-card" onclick="event.stopPropagation()">
+            <div class="champ-rays"></div>
+            <div class="champ-title" id="champTitle"></div>
+            <div class="champ-sub" id="champSub"></div>
+            <button class="btn-royal primary" id="champBtn"><span>Splendid</span></button>
+        </div>
     </div>
 
     <!-- ═══ HOW TO PLAY — card deck tutorial (Prong 1) ═══ -->
@@ -76,13 +138,8 @@
     <div id="character-select">
         <h1 class="select-title">Choose Your Hero</h1>
         <div class="character-grid" id="characterGrid"></div>
+        <!-- Player count moved to the menu's queue picker (FLB.queueSize) -->
         <div style="margin-top: 30px; display: flex; gap: 16px; align-items: center;">
-            <label style="font-family: 'Cinzel', serif; color: var(--gold);">Players:</label>
-            <select id="playerCountSelect" style="font-family: 'Cinzel', serif; font-size: 16px; padding: 8px 16px; background: var(--royal-deep); color: var(--gold); border: 1px solid var(--gold); border-radius: 4px;">
-                <option value="3">3 Players</option>
-                <option value="4">4 Players</option>
-                <option value="5">5 Players</option>
-            </select>
             <button class="btn-royal primary" onclick="confirmCharacter()" id="confirmBtn" style="display:none;">
                 <span>Begin Your Journey</span>
             </button>
@@ -93,12 +150,15 @@
     <div id="game-screen">
 
         <!-- Board Expand Overlay — the art IS the sheet: the ring sits on
-             the track's slot circles; click a circle to pay & slide. -->
+             the track's slot circles; tap a circle or drag the ring, then
+             the confirm chip (inside the art, always on-screen) pays. -->
         <div class="board-overlay" id="boardOverlay" onclick="closeBoardOverlay()">
             <div class="board-ov-boardwrap" onclick="event.stopPropagation()">
                 <img class="board-ov-full" id="boardOvImg" src="">
+                <img class="board-ov-ghost" id="boardOvGhost" src="assets/ui/slider-ring.png" alt="">
                 <img class="board-ov-ring" id="boardOvRing" src="assets/ui/slider-ring.png" alt="">
                 <div id="boardOvSlots"></div>
+                <div id="boardOvConfirm"></div>
             </div>
             <div class="board-ov-name" id="boardOvName"></div>
             <div class="board-ov-sub">Character Board</div>
@@ -123,8 +183,14 @@
                         <div class="opp-ov-stats" id="oppOvStats"></div>
                     </div>
                 </div>
-                <img class="opp-ov-board" id="oppOvBoard" src="">
-                <!-- Toggle (landscape): reveals the played-cards panel -->
+                <!-- Board + ring (ring shows on phone; wrapper is display:contents on desktop) -->
+                <div class="opp-ov-boardwrap">
+                    <img class="opp-ov-board" id="oppOvBoard" src="">
+                    <img class="opp-ov-ring" id="oppOvRing" src="assets/ui/slider-ring.png" alt="">
+                </div>
+                <!-- Phone: their played cards as tucked stacks, right of the board -->
+                <div class="opp-ov-stacks" id="oppOvStacks"></div>
+                <!-- Toggle (desktop landscape fallback): reveals the played-cards panel -->
                 <button class="opp-ov-toggle" id="oppOvToggle" onclick="toggleOppCards(event)"></button>
                 <!-- Played-cards panel: inline on desktop, toggled overlay on landscape -->
                 <div class="opp-ov-cards-panel" id="oppOvCardsPanel" onclick="event.stopPropagation()">
@@ -136,12 +202,31 @@
             <div class="ov-close" onclick="closeOppOverlay()">ESC</div>
         </div>
 
-        <!-- Mission Lightbox -->
+        <!-- Mission Browser — the whole relevant set, clicked card focused;
+             swipe / arrows / click to browse (openMissionBrowser) -->
         <div class="mission-lb" id="missionLB" onclick="closeMissionLB()">
-            <img class="mission-lb-card" id="missionLBImg" src="" onclick="event.stopPropagation()">
+            <div class="mb-title" id="mbTitle"></div>
+            <div class="mb-track" id="mbTrack"
+                 onclick="if (event.target === this) closeMissionLB()"></div>
+            <div class="mb-nav prev" onclick="event.stopPropagation(); mbStep(-1)">&#8249;</div>
+            <div class="mb-nav next" onclick="event.stopPropagation(); mbStep(1)">&#8250;</div>
             <div class="ov-close" onclick="closeMissionLB()">ESC</div>
             <div class="mission-lb-label" id="missionLBLabel"></div>
             <div class="mission-lb-action" id="missionLBAction" onclick="event.stopPropagation()"></div>
+        </div>
+
+        <!-- Mission Journal — royal ledger: Current Missions + Completed;
+             tap a card to open it in the mission browser (openMissionJournal) -->
+        <div class="mission-journal" id="missionJournal" onclick="closeMissionJournal()">
+            <div class="mj-scroll" onclick="event.stopPropagation()">
+                <div class="mj-roller top"></div>
+                <div class="mj-head">
+                    <div class="mj-title">Mission Journal</div>
+                </div>
+                <div class="mj-body" id="mjBody"></div>
+                <div class="mj-roller bottom"></div>
+            </div>
+            <div class="ov-close" onclick="closeMissionJournal()">ESC</div>
         </div>
 
         <!-- Lend Toast -->
@@ -179,38 +264,40 @@
             <div class="hand-zone" id="handZone"></div>
         </div>
 
-        <!-- ═══ TABLE VIEW (phone landscape only) ═══ -->
+        <!-- ═══ TABLE VIEW (phone landscape only) — Wingspan-style HUD ═══
+             Every zone glanceable at once: purse (Z1), skill rail (Z2),
+             seat chips (Z3), mission rail (Z4), board thumb (Z5),
+             center stage (Z6), hand strip (Z7), phase pill (Z8, screen-level). -->
         <div id="table-view">
             <!-- The table itself — always visible -->
             <div class="tv-table">
-                <!-- Center — available missions -->
-                <div class="tv-center" id="tvCenter"></div>
+                <!-- Z6 · Center stage — YOUR played cards; every focus moment lands here -->
+                <div class="tv-stage" id="tvStage"></div>
 
-                <!-- Player mats — seated around the center by player count -->
+                <!-- Z3 · Seat chips — every player, YOU first (keeps .pmat/data-pi for FX) -->
                 <div class="tv-seats" id="tvSeats"></div>
             </div>
 
-            <!-- Left drawer — your skills / ring / act (arrow to open) -->
-            <div class="tv-left-drawer" id="tvLeftDrawer">
-                <div class="tv-left-content" id="tvLeftContent"></div>
-                <button class="tv-drawer-tab left" id="tvLeftTab"
-                        onclick="toggleLeftDrawer(event)" title="Your skills">▸</button>
-            </div>
+            <!-- Z1 · Purse + settings — top-left -->
+            <div class="tv-purse" id="tvPurse"></div>
 
-            <!-- Right drawer — your acquired missions (arrow to open) -->
-            <div class="tv-right-drawer" id="tvRightDrawer">
-                <div class="tv-right-content" id="tvRightContent"></div>
-                <button class="tv-drawer-tab right" id="tvRightTab"
-                        onclick="toggleRightDrawer(event)" title="Your missions">◂</button>
-            </div>
+            <!-- Z2 · Skill rail — left edge, always visible -->
+            <div class="tv-skills" id="tvSkills"></div>
+
+            <!-- Z4 · Missions of the Realm + My Missions — top-right -->
+            <div class="tv-mission-rail" id="tvMissionRail"></div>
+
+            <!-- Z5 · Your board + ring — right, under the missions -->
+            <div class="tv-board-thumb" id="tvBoardThumb"></div>
+
+            <!-- Popover host — gear menu / My Missions list -->
+            <div class="tv-popover-host" id="tvPopoverHost"></div>
 
             <!-- FX layer — token drops, card tucks, mission reveals (survives re-renders) -->
             <div id="tvFx"></div>
 
-            <!-- Hand drawer — auto-opens on your turn, arrow to open/close -->
-            <div class="tv-hand-drawer open" id="tvHandDrawer">
-                <button class="tv-drawer-tab hand" id="tvHandTab"
-                        onclick="toggleHandDrawer(event)" title="Your hand">▾</button>
+            <!-- Z7 · Hand strip — always visible, card bottoms crop past the screen edge -->
+            <div class="tv-hand-strip" id="tvHandStrip">
                 <div class="tv-hand" id="tvHand"></div>
             </div>
         </div>
@@ -254,12 +341,8 @@
     <!-- ═══ A PROMISE — sacrifice picker ═══ -->
     <div id="promisePicker"></div>
 
-    <!-- ═══ SLIDE CONFIRM — pay gold to move your ring ═══ -->
-    <div id="slideConfirm"></div>
-
     <!-- ═══ SCORING SCREEN ═══ -->
     <div id="scoring-screen">
-        <h1 class="select-title">The Queen Has Decided</h1>
         <div id="scoringContent"></div>
     </div>
 
@@ -273,10 +356,15 @@
     </audio>
 
     <!-- ═══ SCRIPTS ═══ -->
-    <script src="data/cards.js?v=20260706174540"></script>
-    <script src="data/missions.js?v=20260706174540"></script>
-    <script src="data/characters.js?v=20260706174540"></script>
-    <script src="engine/gameState.js?v=20260706174540"></script>
-    <script src="js/ui.js?v=20260706174540"></script>
+    <!-- Firebase compat (leaderboard/Daily Champions backend — meta.js
+         falls back to local standings if these can't reach the project) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="data/cards.js?v=20260707215717"></script>
+    <script src="data/missions.js?v=20260707215717"></script>
+    <script src="data/characters.js?v=20260707215717"></script>
+    <script src="engine/gameState.js?v=20260707215717"></script>
+    <script src="js/ui.js?v=20260707215717"></script>
+    <script src="js/meta.js?v=20260707215717"></script>
 </body>
 </html>

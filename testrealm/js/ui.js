@@ -249,12 +249,7 @@ function buildSpotlightContent(playerIndex, card, action) {
     html += `<div class="opp-turn-ring">${buildMiniSlotTrack(playerIndex)}</div>`;
 
     // Stats
-    html += `<div class="opp-turn-stats">
-        <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${ps.gold}</span>
-        <span class="stat-pill prestige">\u2B50 ${ps.prestige}</span>
-        <span class="stat-pill favor">${ps.favor || 0} Favor</span>
-        <span class="stat-pill scorn">${ps.scorn} Scorn</span>
-    </div>`;
+    html += `<div class="opp-turn-stats">${statPillsHtml(ps)}</div>`;
 
     // Action label
     html += `<div class="spotlight-player">${actionLabel}</div>`;
@@ -618,31 +613,28 @@ function coachMyTurn(s) {
 
 const COACH_STEPS = [
     { id: 'welcome',
-      text: `This is <b>your board</b>, seated at the bottom. Your rivals fill the table around you.`,
+      text: `You're seated at the table — this chip is <b>you</b>. Tap it (or your board, top right) to open your full board.`,
       anchor: () => document.querySelector('#tvSeats .pmat.you'),
-      place: 'top',
+      place: 'bottom',
       when: () => true },
     { id: 'missions',
-      text: `The cards in the center are <b>Missions</b> — complete them for <b>Favor</b>, the points that win the crown. Tap one to read it.`,
-      anchor: () => document.getElementById('tvCenter'),
+      text: `These are the <b>Missions of the Realm</b> — complete them for <b>Favor</b>, the points that win the crown. Tap one to read it.`,
+      anchor: () => document.getElementById('tvMissionRail'),
       place: 'bottom',
       when: (s) => (s.visibleMissions || []).length > 0 },
     { id: 'hand',
-      text: `Your turn! <b>Tap a card</b> in your hand to see what you can do with it — play it, or discard it for gold.`,
-      anchor: () => document.getElementById('tvHandDrawer'),
+      text: `Your turn! <b>Drag a card up</b> out of your hand and let go — then choose: play it, discard it for gold, or more.`,
+      anchor: () => document.getElementById('tvHandStrip'),
       place: 'top',
-      when: (s) => coachMyTurn(s),
-      // Reveal the hand drawer right as this tip appears (it was tucked for the
-      // earlier board/missions tips).
-      onActivate: () => { tvHandOpen = true; applyDrawerStates(); } },
+      when: (s) => coachMyTurn(s) },
     { id: 'rivals',
-      text: `Tap any <b>rival's board</b> to see their skills — and borrow one when you're short a skill to play a card.`,
+      text: `Tap a <b>rival's chip</b> to see their board and played cards — and borrow a skill when you're short.`,
       anchor: () => document.querySelector('#tvSeats .pmat.opp'),
-      place: 'auto',
+      place: 'bottom',
       when: (s) => s.players.some((p, i) => i !== 0 && coachSumSkills(p.skills) > 0) },
     { id: 'skills',
-      text: `Your <b>skills</b>, ring position and current Act live in this drawer. Tap the arrow to check them anytime.`,
-      anchor: () => document.getElementById('tvLeftTab'),
+      text: `Your <b>skills</b> live here, always in view — the cards you play grow them. Tap an icon for its name.`,
+      anchor: () => document.getElementById('tvSkills'),
       place: 'right',
       when: (s) => coachSumSkills(s.players[0].skills) > 0 },
 ];
@@ -668,24 +660,10 @@ window.resetCoach = resetCoach;
 // Never surface a tip while a full-screen modal / action panel is up.
 function coachOverlayOpen() {
     return ['howto-overlay', 'boardOverlay', 'handInspectOv', 'oppOverlay',
-            'missionLB', 'cardZoom', 'scoring-screen', 'missionSelect', 'actionPanel',
-            'cardPeek', 'meleeSplash', 'promisePicker', 'slideConfirm']
+            'missionLB', 'missionJournal', 'cardZoom', 'scoring-screen', 'missionSelect',
+            'actionPanel', 'cardPeek', 'meleeSplash', 'promisePicker',
+            'tvPopoverHost']
         .some(id => { const el = document.getElementById(id); return el && el.classList.contains('active'); });
-}
-
-function coachFirstUnseen() {
-    const s = COACH_STEPS.find(st => !_coachSeen.has(st.id));
-    return s ? s.id : null;
-}
-// True while a tip *earlier* than 'hand' (board, missions) is still pending —
-// used to keep the hand drawer tucked so those prompts aren't blocked by it.
-function coachTuckHand() {
-    if (!isCompactLandscape()) return false;
-    const first = coachFirstUnseen();
-    if (!first) return false;
-    const handIdx = COACH_STEPS.findIndex(s => s.id === 'hand');
-    const firstIdx = COACH_STEPS.findIndex(s => s.id === first);
-    return firstIdx > -1 && firstIdx < handIdx;
 }
 
 function coachVisibleEl(el) {
@@ -882,6 +860,11 @@ function coachApplyPromptTest() {
 
 // ─── CHARACTER SELECT ──────────────────────────────────────
 
+// The three heroes offered THIS game — the other seven are "already
+// taken" by the other players in your queue, and the bots genuinely
+// draw from those leftovers in confirmCharacter.
+let _offeredHeroes = [];
+
 function showCharacterSelect() {
     const screen = document.getElementById('character-select');
     screen.classList.add('active');
@@ -894,7 +877,15 @@ function showCharacterSelect() {
         return;
     }
 
-    window.FAVOR_DATA.characters.forEach(char => {
+    // The offer draws from the heroes YOU OWN (first five are everyone's;
+    // store purchases join the pool — FLB.ownedIds). Owned is always ≥5,
+    // so three offerings never starve. Bots still draw from all ten.
+    const ownedIds = (window.FLB && typeof FLB.ownedIds === 'function')
+        ? FLB.ownedIds()
+        : window.FAVOR_DATA.characters.slice(0, 5).map(c => c.id);
+    const ownedChars = window.FAVOR_DATA.characters.filter(c => ownedIds.includes(c.id));
+    _offeredHeroes = shuffleArray(ownedChars).slice(0, 3);
+    _offeredHeroes.forEach(char => {
         const card = document.createElement('div');
         card.className = 'character-card fade-in';
         card.dataset.id = char.id;
@@ -919,19 +910,35 @@ function selectCharacter(id, cardEl) {
     document.querySelectorAll('.character-card').forEach(c => c.classList.remove('selected'));
     cardEl.classList.add('selected');
     selectedCharacter = id;
-    document.getElementById('confirmBtn').style.display = 'inline-block';
+    const btn = document.getElementById('confirmBtn');
+    btn.style.display = 'inline-block';
+    // Begin Your Journey sits below the fold on phones — picking a hero
+    // carries you straight down to it (#character-select is the scroller;
+    // rAF lets the reveal land in layout first).
+    requestAnimationFrame(() =>
+        btn.scrollIntoView({ behavior: 'smooth', block: 'end' }));
 }
 
 function confirmCharacter() {
     if (!selectedCharacter) return;
 
-    const playerCount = parseInt(document.getElementById('playerCountSelect').value);
+    // Table size = the queue you joined on the menu (persisted; the old
+    // in-select dropdown moved there so Play Now can never skip past it).
+    const playerCount = (window.FLB && FLB.queueSize()) || 3;
 
     game = new FavorGame(playerCount);
     game.loadDecks();
 
+    // Bots draw from the heroes that were NOT offered to you — the other
+    // "players" in your queue already took theirs, so the three on your
+    // screen (minus your pick) stay off the table.
+    const offered = _offeredHeroes.map(c => c.id);
     const allChars = window.FAVOR_DATA.characters.map(c => c.id);
-    const available = allChars.filter(id => id !== selectedCharacter);
+    let available = allChars.filter(id => id !== selectedCharacter && !offered.includes(id));
+    // Safety: never run short of rivals (10 - 3 offered = 7 ≥ 4 bots today).
+    if (available.length < playerCount - 1) {
+        available = allChars.filter(id => id !== selectedCharacter);
+    }
 
     const choices = [{ characterId: selectedCharacter, playerName: 'You' }];
 
@@ -1011,6 +1018,13 @@ function renderGameState() {
     renderHand(state);
     renderBottomStats(state);
     renderTableView(state);
+
+    // The journal reads live sections — keep it honest if it's up while
+    // state moves (e.g. a Turn In from the browser layered above it).
+    if (missionJournalOpen()) renderMissionJournal();
+
+    // Neighbor-read marks survive the innerHTML rebuilds above.
+    applyTargetHighlights();
 }
 
 function formatPhase(phase) {
@@ -1046,16 +1060,23 @@ function renderPhaseBar(state) {
     const bar = document.getElementById('phaseBar');
     const acts = ['I', 'II', 'III'];
     const compact = isCompactLandscape();
+    // #table-view is a stacking context (z:1), so a screen-level sibling pill
+    // can only sit entirely above or below the WHOLE table — it could never
+    // interleave (above the board, below a bloomed hand card). While compact,
+    // the pill lives INSIDE the table view and joins its ladder at z:6:
+    // above stage/board/rails, below hand strip (45) / bloom (60) / drag (70).
+    // position:fixed keeps it viewport-placed; overflow:hidden can't clip it.
+    const home = compact
+        ? document.getElementById('table-view')
+        : document.getElementById('game-screen');
+    if (bar.parentElement !== home) {
+        if (compact) home.appendChild(bar);
+        else home.insertBefore(bar, home.querySelector('.game-layout'));
+    }
     const phaseText = compact ? formatPhaseShort(state.phase) : formatPhase(state.phase);
-    // On the table view the pill also carries your purse — gold must be
-    // readable at all times, not buried on the dimmed board.
-    const purse = compact
-        ? `<span class="purse"><img src="${TOKEN_IMG.gold}" alt="Gold"><b>${state.players[0].gold}</b></span>`
-        : '';
     bar.innerHTML = `
         <span class="act-tag">Act ${acts[state.currentAct - 1] || state.currentAct}</span>
         <span class="phase-text">${phaseText}</span>
-        ${purse}
     `;
 }
 
@@ -1103,9 +1124,7 @@ function renderStatsPanel(state) {
     const panel = document.getElementById('statsPanel');
     const player = state.players[0];
     const gp = game.players[0];
-    const emblem = state.emblemHolder === 0 ? '<div class="emblem-tag">\uD83D\uDC51 Emblem Holder</div>' : '';
-    const sliderPos = gp.sliderPosition;
-    const posNames = ['1', '2', '3', '4', '5'];
+    const emblem = state.emblemHolder === 0 ? `<div class="emblem-tag">${emblemBadge()} Emblem Holder</div>` : '';
 
     // Resource tokens row
     const resourcesHtml = `
@@ -1159,17 +1178,16 @@ function renderStatsPanel(state) {
         const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
         skillsHtml += `
             <div class="skill-row flex-skill" title="Counts as ${cap(a)} OR ${cap(b)} — your choice each time, never both">
-                <span class="skill-icon">${SKILL_ICONS[a]}</span>
+                <span class="skill-icon flex-pair">${SKILL_ICONS[a]}${SKILL_ICONS[b]}</span>
                 <span class="skill-label">${cap(a)} <i>or</i> ${cap(b)}</span>
                 <span class="skill-value has-skill">${n > 1 ? '×' + n : '✦'}</span>
             </div>`;
     });
 
-    // Special abilities: Philosopher's Stone & Mind's Eye
+    // Special abilities: Philosopher's Stone & Mind's Eye \u2014 the engine
+    // count (cards + slot + mission rewards), shown as the digit it is.
     const hasPhilosopher = gp.philosopherStone && gp.philosopherStone > 0;
-    const hasMindsEye = (gp.playedCards || []).some(c =>
-        c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_x2_philosopher_stone_x5'
-    );
+    const mindsEyeCount = game.getMindsEyeCount(0);
 
     if (hasPhilosopher) {
         skillsHtml += `
@@ -1179,27 +1197,21 @@ function renderStatsPanel(state) {
                 <span class="skill-value has-skill">${gp.philosopherStone}:1</span>
             </div>`;
     }
-    if (hasMindsEye) {
+    if (mindsEyeCount > 0) {
         skillsHtml += `
-            <div class="skill-row special-ability">
+            <div class="skill-row special-ability" title="Mind's Eye \u2014 already counted in Knowledge">
                 <span class="skill-icon">${SKILL_ICONS.minds_eye}</span>
                 <span class="skill-label">Mind's Eye</span>
-                <span class="skill-value has-skill">\u2713</span>
+                <span class="skill-value has-skill">${mindsEyeCount}</span>
             </div>`;
     }
     skillsHtml += '</div>';
 
+    // No act badge (the phase pill says it) and no ring-dot row (the board
+    // thumb above wears the ring ON the art) — the panel is tokens + skills.
     panel.innerHTML = `
-        <div class="act-badge">Act ${state.currentAct}</div>
         ${resourcesHtml}
         ${skillsHtml}
-        <div class="ring-indicator">
-            Ring: ${[0,1,2,3,4].map(pos => {
-                const charData = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
-                const tip = charData ? buildSlotLabel(charData.slots[pos]).join(', ') : '';
-                return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posNames[pos]}</span>`;
-            }).join('')}
-        </div>
         ${emblem}
     `;
 
@@ -1226,52 +1238,54 @@ function renderMissionStrip(state) {
     const completedMissions = game.players[0].completedMissions || [];
     const allAcquired = [...missions, ...completedMissions];
 
-    let html = '';
+    // ONE at-a-glance row: your missions first (gold ring / green when
+    // complete), then the realm's available ones (dim). The pip borders
+    // carry the grouping — separate labeled sections cost too much height
+    // next to the juicy stats panel on 800px-tall screens.
+    let pips = '';
+    allAcquired.forEach(m => {
+        const isComplete = completedMissions.includes(m);
+        pips += `<img class="mission-pip${isComplete ? ' completed' : ' active'}"
+                    src="assets/cards/missions/${m.filename}"
+                    alt="${m.name}"
+                    onclick="openMissionBrowser('mine', '${m.name.replace(/'/g, "\\'")}')">`;
+    });
+    (state.visibleMissions || []).forEach(m => {
+        pips += `<img class="mission-pip available"
+                    src="assets/cards/missions/${m.filename}"
+                    alt="${m.name}"
+                    onclick="openMissionBrowser('realm', '${m.name.replace(/'/g, "\\'")}')">`;
+    });
 
-    // Active/Acquired missions section
-    if (allAcquired.length > 0) {
-        html += '<div class="mission-section">';
-        html += '<span class="strip-label">Active Missions</span>';
-        html += '<div class="mission-pips">';
-        allAcquired.forEach(m => {
-            const isComplete = completedMissions.includes(m);
-            html += `<img class="mission-pip${isComplete ? ' completed' : ' active'}"
-                        src="assets/cards/missions/${m.filename}"
-                        alt="${m.name}"
-                        onclick="openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
-        });
-        html += '</div></div>';
-    }
-
-    // Available missions from pool
-    if (state.visibleMissions && state.visibleMissions.length > 0) {
-        html += '<div class="mission-section">';
-        html += '<span class="strip-label">Available Missions</span>';
-        html += '<div class="mission-pips">';
-        state.visibleMissions.forEach(m => {
-            html += `<img class="mission-pip available"
-                        src="assets/cards/missions/${m.filename}"
-                        alt="${m.name}"
-                        onclick="openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
-        });
-        html += '</div></div>';
-    }
-
-    if (!html) {
-        html = '<span class="strip-label">No Missions</span>';
-    }
-
-    strip.innerHTML = html;
+    const head = `
+        <div class="mission-strip-head">
+            <span class="strip-label">Missions</span>
+            <button class="mj-open" onclick="event.stopPropagation(); openMissionJournal()">Journal</button>
+        </div>`;
+    strip.innerHTML = pips
+        ? `<div class="mission-section">
+               ${head}
+               <div class="mission-pips">${pips}</div>
+           </div>`
+        : `<div class="mission-section">${head}
+           <span class="strip-label" style="opacity:0.5">None yet</span></div>`;
 
     // Position below stats panel (desktop only — compact landscape uses flex flow)
     if (isCompactLandscape()) {
         strip.style.top = '';
+        strip.style.maxHeight = '';
+        strip.style.overflowY = '';
     } else {
         requestAnimationFrame(() => {
             if (isCompactLandscape()) { strip.style.top = ''; return; }
             const statsPanel = document.getElementById('statsPanel');
             if (statsPanel && statsPanel.offsetHeight > 10) {
-                strip.style.top = (statsPanel.offsetTop + statsPanel.offsetHeight + 6) + 'px';
+                const top = statsPanel.offsetTop + statsPanel.offsetHeight + 6;
+                strip.style.top = top + 'px';
+                // The juicy stats panel is tall now — never let the strip
+                // run off the bottom; it scrolls inside itself instead.
+                strip.style.maxHeight = Math.max(40, window.innerHeight - top - 12) + 'px';
+                strip.style.overflowY = 'auto';
             }
         });
     }
@@ -1329,32 +1343,25 @@ function renderSidebar(state) {
     const sidebar = document.getElementById('gameSidebar');
     let html = '<div class="sidebar-header">Opponents</div>';
 
+    // Quiet entries: portrait, name, emblem, gold (real coin art) and the
+    // recent-cards fan. Ring position / favor / scorn / prestige live
+    // behind the click \u2014 the overlay shows their whole spread.
     state.players.forEach((p, i) => {
         if (i === 0) return;
 
         const isActive = state.activePlayerIndex === i;
-        const emblem = state.emblemHolder === i ? ' \uD83D\uDC51' : '';
+        const emblem = state.emblemHolder === i ? ' ' + emblemBadge() : '';
         const char = game.players[i].character;
         const avatarSrc = char ? `assets/characters/${char.filename}` : '';
-        const sliderPos = game.players[i].sliderPosition; // 0-4
-        const posLabels = ['1', '2', '3', '4', '5'];
 
         html += `
-            <div class="opp-entry${isActive ? ' active-turn' : ''}"
+            <div class="opp-entry${isActive ? ' active-turn' : ''}" data-pi="${i}"
                  onclick="openOppOverlay(${i})">
                 <img class="opp-avatar" src="${avatarSrc}">
                 <div class="opp-details">
                     <span class="opp-name">${p.name}${emblem}</span>
-                    <div class="opp-ring-row">
-                        ${[0,1,2,3,4].map(pos => {
-                            const tip = char ? buildSlotLabel(char.slots[pos]).join(', ') : '';
-                            return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posLabels[pos]}</span>`;
-                        }).join('')}
-                    </div>
-                    <div class="opp-stats-row">
-                        <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${p.gold}</span>
-                        <span class="stat-pill favor">${p.favor || 0}</span>
-                        <span class="stat-pill scorn">${p.scorn}</span>
+                    <div class="opp-gold-row">
+                        <img src="${PURSE_ICONS.gold}" alt="Gold"><b>${p.gold}</b>
                     </div>
                     <div class="mini-stack">
                         ${p.playedCards.slice(-5).map(c =>
@@ -1429,114 +1436,325 @@ function renderBottomStats(state) {
 // board + played cards tucked underneath), arranged around a center
 // missions area. Desktop is untouched (#table-view is display:none there).
 
-// One token "chip" resting on the mat: real token art (or a favor star) + count.
-function tvTokenChip(kind, amount) {
-    const face = TOKEN_IMG[kind]
-        ? `<img src="${TOKEN_IMG[kind]}" alt="">`
-        : `<span class="pmat-tok-favor">★</span>`;
-    return `<span class="pmat-tok ${kind}">${face}<b>${amount}</b></span>`;
+// ═══ WINGSPAN HUD ZONES (phone landscape) ═══════════════════
+// Every zone glanceable at once — no drawers. All CSS lives inside the
+// compact-landscape media query; desktop .game-layout is untouched.
+
+// Tap a HUD chip → a transient name label (phones have no hover).
+function tvChipTip(e, label) {
+    if (e) e.stopPropagation();
+    const old = document.getElementById('tvChipTip');
+    if (old) old.remove();
+    const target = e && (e.currentTarget || e.target);
+    if (!target || !target.getBoundingClientRect) return;
+    const r = target.getBoundingClientRect();
+    const tip = document.createElement('div');
+    tip.id = 'tvChipTip';
+    tip.textContent = label;
+    document.body.appendChild(tip);
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.max(6, Math.min(r.right + 8, window.innerWidth - w - 6)) + 'px';
+    tip.style.top = Math.max(6, Math.min(r.top + r.height / 2 - h / 2, window.innerHeight - h - 6)) + 'px';
+    setTimeout(() => { tip.classList.add('out'); setTimeout(() => tip.remove(), 260); }, 1300);
 }
 
-function buildPlayerMat(i, state, isYou, seat) {
-    const p = state.players[i];
-    const char = game.players[i] ? game.players[i].character : null;
-    const boardSrc = char ? `assets/characters/${char.filename}` : '';
-    const isActive = state.activePlayerIndex === i;
-    const crown = state.emblemHolder === i ? ' 👑' : '';
+// ── Z1 · Purse — your four currencies, top-left ──
+const PURSE_ICONS = {
+    gold:  'assets/icons/gold.png',
+    favor: 'assets/icons/favor.png',
+    scorn: 'assets/icons/scorn.png',
+};
 
-    // Ring indicator on the board's slider track (5 slots, evenly spaced).
-    const sliderPos = game.players[i] ? game.players[i].sliderPosition : 2;
-    const slotLeft = [16, 33, 50, 67, 84][sliderPos] != null ? [16, 33, 50, 67, 84][sliderPos] : 50;
+// The physical game's Emblem marker — used wherever "emblem holder" shows.
+const EMBLEM_IMG = 'assets/tokens/Copy of Emblem.jpg';
+const emblemBadge = (title = 'Emblem Holder') =>
+    `<img class="emblem-badge" src="${EMBLEM_IMG}" alt="${title}" title="${title}">`;
 
-    // Tokens laid out on the board (corner cluster). Gold always; others if > 0.
-    let tokens = tvTokenChip('gold', p.gold);
-    if (p.prestige) tokens += tvTokenChip('prestige', p.prestige);
-    if (p.scorn)    tokens += tvTokenChip('scorn', p.scorn);
-    if (p.favor)    tokens += tvTokenChip('favor', p.favor);
-
-    // Played cards tucked under the mat (peeking, overlapped). Click mat to expand.
-    const cards = p.playedCards || [];
-    let tucked = cards.map(c =>
-        `<img class="pmat-card" src="assets/cards/regular/${c.filename}" alt="${c.name}"
-              data-peek="assets/cards/regular/${c.filename}">`
-    ).join('');
-    if (!tucked) tucked = '<span class="pmat-empty">No cards played</span>';
-
+// Stat pills in the game's own visual language — real token art, never
+// emoji (a gray unicode coin reads as somebody else's game).
+function statPillsHtml(ps) {
     return `
-        <div class="pmat ${isYou ? 'you' : 'opp'} seat-${seat}${isActive ? ' active' : ''}"
-             data-pi="${i}"
-             onclick="openOppOverlay(${i})">
-            <div class="pmat-boardwrap">
-                <img class="pmat-board" src="${boardSrc}" alt="${p.name}">
-                <img class="pmat-ring" src="assets/ui/slider-ring.png" style="left:${slotLeft}%" alt="">
-                <span class="pmat-name">${p.name}${crown}</span>
-                <div class="pmat-tokens">${tokens}</div>
-            </div>
-            <div class="pmat-cards">${tucked}</div>
-        </div>`;
+        <span class="stat-pill gold"><img class="pill-icon" src="${PURSE_ICONS.gold}" alt="Gold"> ${ps.gold}</span>
+        <span class="stat-pill prestige"><img class="pill-icon" src="${TOKEN_IMG.prestige}" alt="Prestige"> ${ps.prestige}</span>
+        <span class="stat-pill favor"><img class="pill-icon" src="${PURSE_ICONS.favor}" alt="Favor"> ${ps.favor || 0} Favor</span>
+        <span class="stat-pill scorn"><img class="pill-icon" src="${PURSE_ICONS.scorn}" alt="Scorn"> ${ps.scorn} Scorn</span>
+    `;
 }
 
-// ── Rival plaque (Battlegrounds-style top rail) ──
-// Rivals compress into upright portrait plaques along the top edge instead of
-// rotated full boards: portrait + name + the same public info the old mats
-// showed (gold / prestige / scorn / favor tokens, played-card count, ring
-// slot). Keeps .pmat/.opp classes + data-pi so coach-marks, tap-to-inspect
-// and the FX delta system all keep working unchanged.
-function buildRivalPlaque(i, state) {
+function renderTvPurse(state) {
+    const el = document.getElementById('tvPurse');
+    if (!el) return;
+    const p = state.players[0];
+    const chip = (k, img, val, label) =>
+        `<span class="tv-purse-chip ${k}" onclick="tvChipTip(event, '${label}')">
+            <img src="${img}" alt="${label}"><b>${val}</b></span>`;
+    // 2×2 reading order (Wyatt's 7/7 call): gold · prestige on top,
+    // favor · scorn beneath.
+    el.innerHTML =
+        chip('gold', PURSE_ICONS.gold, p.gold, 'Gold')
+      + chip('prestige', TOKEN_IMG.prestige, p.prestige, 'Prestige')
+      + chip('favor', PURSE_ICONS.favor, p.favor || 0, 'Favor')
+      + chip('scorn', PURSE_ICONS.scorn, p.scorn, 'Scorn');
+}
+
+// ── Z2 · Skill rail — always-visible icon+number chips, left edge.
+// Same data logic as the old skills drawer: six fixed skills (dim at 0),
+// flex-skill pairs as dashed ✦ chips, then Mind's Eye / Philosopher's
+// Stone only when owned. Icon + number only; tap a chip for its name.
+function renderTvSkills(state) {
+    const el = document.getElementById('tvSkills');
+    if (!el) return;
+    const player = state.players[0];
+    const gp = game.players[0];
+    const skills = player.skills || {};
+    const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+    let h = '', rows = 0;
+
+    ['survival', 'charisma', 'alchemy', 'prospecting', 'knowledge', 'power'].forEach(k => {
+        const val = skills[k] || 0;
+        h += `<span class="tv-skill-chip${val > 0 ? '' : ' zero'}"
+                    onclick="tvChipTip(event, '${cap(k)}')">${SKILL_ICONS[k]}<b>${val}</b></span>`;
+        rows++;
+    });
+
+    const flexPairs = {};
+    (player.flexSkills || []).forEach(pair => {
+        const key = pair.join('|');
+        flexPairs[key] = (flexPairs[key] || 0) + 1;
+    });
+    Object.entries(flexPairs).forEach(([key, n]) => {
+        const [a, b] = key.split('|');
+        // BOTH faces of the either/or pair — a lone icon read as a
+        // duplicate of the fixed-skill chip above it (Wyatt, 7/7).
+        h += `<span class="tv-skill-chip flex"
+                    onclick="tvChipTip(event, '${cap(a)} or ${cap(b)} — one per use, never both')">
+                    <span class="flex-pair">${SKILL_ICONS[a]}${SKILL_ICONS[b]}</span><b>${n > 1 ? '×' + n : '✦'}</b></span>`;
+        rows++;
+    });
+
+    const hasPhil = gp.philosopherStone && gp.philosopherStone > 0;
+    // Engine count (cards + slot + mission rewards) — the digit Wyatt
+    // asked for; the old ✓ also missed slot-granted Mind's Eyes entirely.
+    const mindsEye = game.getMindsEyeCount(0);
+    if (hasPhil) {
+        h += `<span class="tv-skill-chip special"
+                    onclick="tvChipTip(event, 'Philosopher\\'s Stone — ${gp.philosopherStone}:1')">
+                    ${SKILL_ICONS.philosopher}<b>${gp.philosopherStone}</b></span>`;
+        rows++;
+    }
+    if (mindsEye > 0) {
+        h += `<span class="tv-skill-chip special"
+                    onclick="tvChipTip(event, 'Mind\\'s Eye — already counted in Knowledge')">
+                    ${SKILL_ICONS.minds_eye}<b>${mindsEye}</b></span>`;
+        rows++;
+    }
+
+    // Two-column grid: --railRows counts GRID ROWS (chips packed two per
+    // row) so the fit-to-height chip formula sees the real column length.
+    el.style.setProperty('--railRows', Math.max(3, Math.ceil(rows / 2)));
+    el.innerHTML = h;
+}
+
+// ── Z3 · Seat chips — one compact portrait per player, YOU first.
+// CRITICAL: every chip keeps .pmat + data-pi — tvAnimateDeltas /
+// tvDropToken / tvAnimateNewCard and the coach-marks all target
+// #table-view .pmat[data-pi] (tvMatEl).
+function buildSeatChip(i, state) {
     const p = state.players[i];
     const char = game.players[i] ? game.players[i].character : null;
-    const boardSrc = char ? `assets/characters/${char.filename}` : '';
+    const artSrc = char ? `assets/characters/${char.filename}` : '';
     const isActive = state.activePlayerIndex === i;
-    const crown = state.emblemHolder === i ? ' 👑' : '';
-    const ringPos = game.players[i] ? game.players[i].sliderPosition : 2;
+    const isYou = i === 0;
+    const crown = state.emblemHolder === i ? `<span class="chip-crown">${emblemBadge()}</span>` : '';
+    const youTag = isYou ? '<span class="chip-you">YOU</span>' : '';
     const cardCount = (p.playedCards || []).length;
-
-    let chips = tvTokenChip('gold', p.gold);
-    if (p.prestige) chips += tvTokenChip('prestige', p.prestige);
-    if (p.scorn)    chips += tvTokenChip('scorn', p.scorn);
-    if (p.favor)    chips += tvTokenChip('favor', p.favor);
-
-    const ringDots = [0,1,2,3,4].map(s =>
-        `<i class="rplq-ringdot${s === ringPos ? ' on' : ''}"></i>`).join('');
-
+    const open = isYou ? 'openBoardOverlay()' : `openOppOverlay(${i})`;
     return `
-        <div class="pmat opp rplq${isActive ? ' active' : ''}" data-pi="${i}"
-             onclick="openOppOverlay(${i})">
-            <div class="rplq-portrait"><img src="${boardSrc}" alt="${p.name}"></div>
-            <div class="rplq-info">
-                <span class="rplq-name">${p.name}${crown}</span>
-                <div class="pmat-tokens rplq-chips">${chips}</div>
-                <div class="rplq-foot">
-                    <span class="rplq-ring">${ringDots}</span>
-                    <span class="rplq-cards">🂠 ${cardCount}</span>
-                </div>
-            </div>
+        <div class="pmat ${isYou ? 'you' : 'opp'} seat-chip${isActive ? ' active' : ''}" data-pi="${i}"
+             onclick="event.stopPropagation(); ${open}" title="${p.name}">
+            <img class="chip-art" src="${artSrc}" alt="${p.name}">
+            ${crown}${youTag}
+            <span class="chip-count" title="Cards played">${cardCount}</span>
         </div>`;
 }
 
-function renderTvCenter(state) {
-    const c = document.getElementById('tvCenter');
-    if (!c) return;
+// ── Z4 · Mission rail — Missions of the Realm + the My Missions chip ──
+function renderTvMissionRail(state) {
+    const el = document.getElementById('tvMissionRail');
+    if (!el) return;
     const ms = state.visibleMissions || [];
-    // Missions are the stage: big readable cards, with ghosted placeholder
-    // slots (Wingspan-style) so the pool always reads as 3 seats.
-    let h = '<span class="tv-center-label">Missions of the Realm</span><div class="tv-missions">';
+    let h = '';
     ms.forEach(m => {
         h += `<img class="tv-mission" src="assets/cards/missions/${m.filename}"
                    alt="${m.name}" data-peek="assets/cards/missions/${m.filename}"
-                   onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
+                   onclick="event.stopPropagation(); openMissionBrowser('realm', '${m.name.replace(/'/g, "\\'")}')">`;
     });
-    for (let g = ms.length; g < 3; g++) {
-        h += '<span class="tv-mission ghost"></span>';
+    for (let g = ms.length; g < 3; g++) h += '<span class="tv-mission ghost"></span>';
+
+    // Journal button — replaces the old ● ✓ ✕ tally chip. Count = current
+    // missions only; the ledger inside holds the rest.
+    const cur = (game.players[0].missions || []).length;
+    h += `<button class="tv-mym" title="Mission Journal"
+                  onclick="event.stopPropagation(); openMissionJournal()">
+            <img class="mym-icon" src="assets/icons/mission.png" alt="">
+            <span class="mym-label">Missions</span>
+            <b class="mym-count">${cur}</b>
+          </button>`;
+    el.innerHTML = h;
+}
+
+// ── Z5 · Your board, small — the ring rides BOARD_OV_TRACK exactly like
+// the big overlay, so the mini board always shows where you stand. ──
+function renderTvBoardThumb(state) {
+    const el = document.getElementById('tvBoardThumb');
+    if (!el) return;
+    const char = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
+    if (!char) return;
+    const cur = (game && game.players[0]) ? game.players[0].sliderPosition : 2;
+    el.innerHTML = `
+        <img class="tv-thumb-board" src="assets/characters/${char.filename}" alt="${char.name}">
+        <img class="thumb-ring" src="assets/ui/slider-ring.png" alt=""
+             style="left:${BOARD_OV_TRACK.lefts[cur]}%; top:${BOARD_OV_TRACK.top}%">`;
+    el.onclick = () => openBoardOverlay();
+}
+
+// Tucked skill-group stacks — shared by the center stage (your cards)
+// and the rival overlay (their cards read exactly like yours).
+function buildSkillStacks(cards) {
+    const groups = {};
+    cards.forEach(c => {
+        const g = getCardSkillGroup(c);
+        (groups[g] = groups[g] || []).push(c);
+    });
+    const keys = Object.keys(groups).sort((x, y) =>
+        (SKILL_GROUPS[x] ? SKILL_GROUPS[x].order : 99) - (SKILL_GROUPS[y] ? SKILL_GROUPS[y].order : 99));
+    let h = '';
+    keys.forEach(k => {
+        const list = groups[k];
+        // Tall stacks tighten their tuck so the zone never overflows.
+        const peek = list.length > 5 ? Math.max(11, Math.floor(100 / (list.length - 1))) : 20;
+        h += `<div class="tv-stack" style="--tvPeek:${peek}px">`;
+        list.forEach(c => {
+            h += `<img class="tv-stack-card${c._favorDoubled ? ' doubled' : ''}"
+                       src="assets/cards/regular/${c.filename}" alt="${c.name}"
+                       data-peek="assets/cards/regular/${c.filename}">`;
+        });
+        h += `<span class="tv-stack-label">${SKILL_GROUPS[k] ? SKILL_GROUPS[k].label : 'Other'}</span></div>`;
+    });
+    return h;
+}
+
+// ── Z6 · Center stage — YOUR played cards as tucked skill stacks.
+// The stage is also where every focus moment lands (action panel,
+// overlays, melee splash, #tvFx deltas) — those live above it.
+function renderTvStage(state) {
+    const el = document.getElementById('tvStage');
+    if (!el) return;
+    const cards = state.players[0].playedCards || [];
+    el.innerHTML = cards.length
+        ? buildSkillStacks(cards)
+        : '<div class="tv-stage-empty">Cards you play gather here</div>';
+}
+
+// ── Popovers (gear menu / My Missions) — the action panel steps aside
+// while one is up (#actionPanel is a ROOT child at z 9999 and would
+// otherwise paint over it), then comes back on close. ──
+let _tvPopover = null;
+let _tvPanelAside = false;
+
+function _tvPanelStepAside() {
+    const panel = document.getElementById('actionPanel');
+    if (panel && panel.classList.contains('active')) {
+        panel.classList.remove('active');   // direct toggle — survives the _finalChoicePending guard
+        _tvPanelAside = true;
     }
-    h += '</div>';
-    c.innerHTML = h;
+}
+function _tvPanelRestore() {
+    if (!_tvPanelAside) return;
+    _tvPanelAside = false;
+    const panel = document.getElementById('actionPanel');
+    if (panel) panel.classList.add('active');
+}
+
+function closeTvPopover(restorePanel = true) {
+    if (!_tvPopover) return;
+    _tvPopover = null;
+    const host = document.getElementById('tvPopoverHost');
+    if (host) { host.classList.remove('active'); host.innerHTML = ''; }
+    if (restorePanel) _tvPanelRestore();
+    if (typeof coachTick === 'function') coachTick();
+}
+
+// ── Mission Journal — a royal ledger of where you stand: Current
+// Missions (with their due act) and Completed. Failed missions are
+// discarded in the fiction and do NOT appear (gp.failedMissions data
+// stays intact for scoring/log). Cards are BIG scans; tapping one opens
+// the mission browser focused on it (Turn In lives there).
+function openMissionJournal() {
+    if (!game) return;
+    if (typeof coachMarkSeen === 'function') coachMarkSeen('missions');
+    _tvPanelStepAside();   // root-level action panel would paint over the journal
+    renderMissionJournal();
+    document.getElementById('missionJournal').classList.add('active');
+}
+
+function renderMissionJournal() {
+    const body = document.getElementById('mjBody');
+    if (!body || !game) return;
+    const gp = game.players[0];
+    const esc = (s) => s.replace(/'/g, "\\'");
+    const entry = (m, done) => `
+        <div class="mj-card${done ? ' done' : ''}"
+             onclick="event.stopPropagation(); openMissionBrowser('mine', '${esc(m.name)}')">
+            <img src="assets/cards/missions/${m.filename}" alt="${m.name}"
+                 data-peek="assets/cards/missions/${m.filename}" draggable="false">
+            ${done ? '<div class="mj-ribbon">✓ Completed</div>'
+                   : `<div class="mj-due">${mjDueNote(m)}</div>`}
+        </div>`;
+    const cur = (gp.missions || []).map(m => entry(m, false)).join('');
+    const done = (gp.completedMissions || []).map(m => entry(m, true)).join('');
+    body.innerHTML = `
+        <div class="mj-section">
+            <div class="mj-section-title">Current Missions</div>
+            ${cur ? `<div class="mj-grid">${cur}</div>`
+                  : '<div class="mj-empty">None yet — play a mission card to take one.</div>'}
+        </div>
+        <div class="mj-section">
+            <div class="mj-section-title">Completed</div>
+            ${done ? `<div class="mj-grid">${done}</div>`
+                   : '<div class="mj-empty">The ledger awaits your first success.</div>'}
+        </div>`;
+}
+
+function mjDueNote(m) {
+    const due = game.missionDueAct(m);
+    return due > game.currentAct ? `Due end of Act ${due}` : 'Due THIS act';
+}
+
+function closeMissionJournal() {
+    const el = document.getElementById('missionJournal');
+    if (el) el.classList.remove('active');
+    setTimeout(_tvPanelRestore, 0);   // after this click's outside-click handler
+}
+
+function missionJournalOpen() {
+    const el = document.getElementById('missionJournal');
+    return !!el && el.classList.contains('active');
 }
 
 function renderTvHand(state) {
     const zone = document.getElementById('tvHand');
     if (!zone) return;
     const hand = state.players[0].hand;
+
+    // Playable glow (Battlegrounds-style): on your turn, cards you can
+    // actually play get a soft green edge so options read at a glance.
+    const myTurn = state.activePlayerIndex === 0 && state.phase === 'gameplay';
+
+    // "Your turn" pulse on the always-visible strip (replaces the old
+    // auto-opening drawer as the turn signal).
+    const strip = document.getElementById('tvHandStrip');
+    if (strip) strip.classList.toggle('your-turn', myTurn && !!(hand && hand.length));
 
     if (!hand || hand.length === 0) {
         zone.innerHTML = game.phase === 'gameplay'
@@ -1548,10 +1766,6 @@ function renderTvHand(state) {
     const maxAngle = Math.min(count * 3, 12);
     const step = count > 1 ? (maxAngle * 2) / (count - 1) : 0;
     const startAngle = -maxAngle;
-
-    // Playable glow (Battlegrounds-style): on your turn, cards you can
-    // actually play get a soft green edge so options read at a glance.
-    const myTurn = state.activePlayerIndex === 0 && state.phase === 'gameplay';
 
     let html = '<div class="hand-arc">';
     hand.forEach((card, i) => {
@@ -1566,11 +1780,11 @@ function renderTvHand(state) {
                 try { playable = game.checkRequirements(0, card).canPlay; } catch (e) { playable = false; }
             }
         }
+        // No tap-to-select here: committing a card is the DRAG-UP gesture
+        // (touch = bloom to read, drag up + release = action sheet).
         html += `<div class="hand-card${isSelected ? ' selected' : ''}${playable ? ' playable' : ''}"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
-                    data-hand-i="${i}"
-                    onclick="event.stopPropagation(); selectHandCard(${i})"
-                    ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
+                    data-hand-i="${i}">
                     <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
                 </div>`;
     });
@@ -1579,125 +1793,8 @@ function renderTvHand(state) {
     requestAnimationFrame(_tvBloomLayout);
 }
 
-// ── Left drawer: your skills / ring / act ──
-function renderTvLeft(state) {
-    const el = document.getElementById('tvLeftContent');
-    if (!el) return;
-    const player = state.players[0];
-    const gp = game.players[0];
-    const skills = player.skills || {};
-    const skillEntries = [
-        { key: 'survival',    label: 'Survival',    icon: SKILL_ICONS.survival },
-        { key: 'charisma',    label: 'Charisma',    icon: SKILL_ICONS.charisma },
-        { key: 'alchemy',     label: 'Alchemy',     icon: SKILL_ICONS.alchemy },
-        { key: 'prospecting', label: 'Prospecting', icon: SKILL_ICONS.prospecting },
-        { key: 'knowledge',   label: 'Knowledge',   icon: SKILL_ICONS.knowledge },
-        { key: 'power',       label: 'Power',       icon: SKILL_ICONS.power },
-    ];
-    let skillsHtml = '<div class="skills-grid">';
-    skillEntries.forEach(s => {
-        const val = skills[s.key] || 0;
-        skillsHtml += `<div class="skill-row">
-            <span class="skill-icon">${s.icon}</span>
-            <span class="skill-label">${s.label}</span>
-            <span class="skill-value${val > 0 ? ' has-skill' : ''}">${val}</span>
-        </div>`;
-    });
-    const flexPairs = {};
-    (player.flexSkills || []).forEach(pair => {
-        const key = pair.join('|');
-        flexPairs[key] = (flexPairs[key] || 0) + 1;
-    });
-    Object.entries(flexPairs).forEach(([key, n]) => {
-        const [a, b] = key.split('|');
-        const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
-        skillsHtml += `<div class="skill-row flex-skill" title="Counts as ${cap(a)} OR ${cap(b)} — one or the other, never both">
-            <span class="skill-icon">${SKILL_ICONS[a]}</span>
-            <span class="skill-label">${cap(a)}/${cap(b)}</span>
-            <span class="skill-value has-skill">${n > 1 ? '×' + n : '✦'}</span>
-        </div>`;
-    });
-    const hasPhil = gp.philosopherStone && gp.philosopherStone > 0;
-    const hasMindsEye = (gp.playedCards || []).some(c =>
-        c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_x2_philosopher_stone_x5');
-    if (hasPhil) skillsHtml += `<div class="skill-row special-ability">
-        <span class="skill-icon">${SKILL_ICONS.philosopher}</span>
-        <span class="skill-label">Phil. Stone</span>
-        <span class="skill-value has-skill">${gp.philosopherStone}:1</span></div>`;
-    if (hasMindsEye) skillsHtml += `<div class="skill-row special-ability">
-        <span class="skill-icon">${SKILL_ICONS.minds_eye}</span>
-        <span class="skill-label">Mind's Eye</span>
-        <span class="skill-value has-skill">✓</span></div>`;
-    skillsHtml += '</div>';
-
-    const sliderPos = gp.sliderPosition;
-    const posNames = ['1', '2', '3', '4', '5'];
-    const ringHtml = `<div class="ring-indicator">Ring: ${[0,1,2,3,4].map(pos => {
-        const charData = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
-        const tip = charData ? buildSlotLabel(charData.slots[pos]).join(', ') : '';
-        return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posNames[pos]}</span>`;
-    }).join('')}</div>`;
-
-    el.innerHTML = `<div class="tv-left-title">Your Skills</div><div class="act-badge">Act ${state.currentAct}</div>${skillsHtml}${ringHtml}`;
-}
-
-// ── Right drawer: your acquired missions + status ──
+// Mission requirement abbreviations for the My Missions popover rows.
 const SKILL_ABBR = { survival:'SUR', charisma:'CHA', alchemy:'ALC', prospecting:'PRO', knowledge:'KNO', power:'POW' };
-
-function renderTvRight(state) {
-    const el = document.getElementById('tvRightContent');
-    if (!el) return;
-    const gp = game.players[0];
-    const active = gp.missions || [];
-    const done = gp.completedMissions || [];
-    const failed = gp.failedMissions || [];
-
-    let rows = '';
-    const entry = (m, cls, tag) => {
-        const reqs = (m.requirements || []).map(r => SKILL_ABBR[r] || r.slice(0,3).toUpperCase()).join(' + ') || '—';
-        return `<div class="tv-mission-row ${cls}"
-                     onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">
-            <img class="tv-mission-thumb" src="assets/cards/missions/${m.filename}" alt="${m.name}"
-                 data-peek="assets/cards/missions/${m.filename}">
-            <div class="tv-mission-info">
-                <span class="tv-mission-name">${m.name}</span>
-                <span class="tv-mission-meta">${m.favorValue || 0} Favor · ${reqs}</span>
-            </div>
-            <span class="tv-mission-tag">${tag}</span>
-        </div>`;
-    };
-    active.forEach(m => rows += entry(m, 'active', '●'));
-    done.forEach(m => rows += entry(m, 'done', '✓'));
-    failed.forEach(m => rows += entry(m, 'failed', '✕'));
-    if (!rows) rows = '<div class="tv-right-empty">No missions taken yet.<br>Play a mission card to acquire one.</div>';
-
-    el.innerHTML = `<div class="tv-right-title">Your Missions</div>${rows}`;
-}
-
-// ── Drawer state (hand auto-opens on your turn; all have manual arrows) ──
-let tvHandOpen = true;
-let tvLeftOpen = false;
-let tvRightOpen = false;
-let _tvTurnSig = null;
-
-function applyDrawerStates() {
-    const hd = document.getElementById('tvHandDrawer');
-    const ld = document.getElementById('tvLeftDrawer');
-    const rd = document.getElementById('tvRightDrawer');
-    const ht = document.getElementById('tvHandTab');
-    const lt = document.getElementById('tvLeftTab');
-    const rt = document.getElementById('tvRightTab');
-    if (hd) hd.classList.toggle('open', tvHandOpen);
-    if (ld) ld.classList.toggle('open', tvLeftOpen);
-    if (rd) rd.classList.toggle('open', tvRightOpen);
-    if (ht) ht.textContent = tvHandOpen ? '▾' : '▴';
-    if (lt) lt.textContent = tvLeftOpen ? '◂' : '▸';
-    if (rt) rt.textContent = tvRightOpen ? '▸' : '◂';
-    if (typeof coachTick === 'function') coachTick();
-}
-function toggleHandDrawer(e) { if (e) e.stopPropagation(); tvHandOpen = !tvHandOpen; applyDrawerStates(); }
-function toggleLeftDrawer(e) { if (e) e.stopPropagation(); tvLeftOpen = !tvLeftOpen; if (tvLeftOpen && typeof coachMarkSeen === 'function') coachMarkSeen('skills'); applyDrawerStates(); }
-function toggleRightDrawer(e) { if (e) e.stopPropagation(); tvRightOpen = !tvRightOpen; applyDrawerStates(); }
 
 // ═══ PHASE C — tabletop motion via per-player state diffing ═══
 // No engine edits: each render we compare each player's tokens / played-card
@@ -1721,14 +1818,17 @@ function tvDropToken(matEl, key, amount) {
     if (!fx || !matEl) return;
     const tokRow = matEl.querySelector('.pmat-tokens') || matEl;
     const r = tokRow.getBoundingClientRect();
+    // Seat chips hug the top edge — the classic upward drop would start
+    // off-screen, so top-edge targets get the mirrored downward drop.
+    const below = r.top < 64;
     const el = document.createElement('div');
-    el.className = `tv-token-drop ${key}`;
+    el.className = `tv-token-drop ${key}${below ? ' below' : ''}`;
     const face = TOKEN_IMG[key]
         ? `<img src="${TOKEN_IMG[key]}" alt="">`
         : `<span class="tv-token-favor">★</span>`;
     el.innerHTML = `${face}<span class="tv-token-amt">+${amount}</span>`;
     el.style.left = `${r.left + r.width / 2}px`;
-    el.style.top = `${r.top}px`;
+    el.style.top = below ? `${r.bottom}px` : `${r.top}px`;
     fx.appendChild(el);
     setTimeout(() => el.remove(), 1100 * window.CINEMATIC_SPEED);
 }
@@ -1738,11 +1838,12 @@ function tvAnimateNewCard(matEl, card) {
     if (!fx || !matEl || !card) return;
     const cardsEl = matEl.querySelector('.pmat-cards') || matEl;
     const r = cardsEl.getBoundingClientRect();
+    const below = r.top < 64;   // chip rail: the card tucks in from below
     const img = document.createElement('img');
-    img.className = 'tv-card-drop';
+    img.className = `tv-card-drop${below ? ' below' : ''}`;
     img.src = `assets/cards/regular/${card.filename}`;
     img.style.left = `${r.left + r.width / 2}px`;
-    img.style.top = `${r.top}px`;
+    img.style.top = below ? `${r.bottom}px` : `${r.top}px`;
     fx.appendChild(img);
     setTimeout(() => img.remove(), 850 * window.CINEMATIC_SPEED);
 }
@@ -1800,37 +1901,18 @@ function renderTableView(state) {
     const seatsEl = document.getElementById('tvSeats');
     if (!seatsEl) return;
 
-    // You: full mat, bottom-left anchor. Rivals: compact plaque rail, top.
-    let html = buildPlayerMat(0, state, true, 'bottom');
-    html += '<div class="tv-rivals">';
-    state.players.forEach((p, i) => { if (i !== 0) html += buildRivalPlaque(i, state); });
-    html += '</div>';
-    seatsEl.innerHTML = html;
+    // Z3 — one seat chip per player, YOU first (seat order = index order).
+    seatsEl.innerHTML = state.players.map((p, i) => buildSeatChip(i, state)).join('');
 
-    renderTvCenter(state);
+    renderTvPurse(state);
+    renderTvSkills(state);
+    renderTvMissionRail(state);
+    renderTvBoardThumb(state);
+    renderTvStage(state);
     renderTvHand(state);
-    renderTvLeft(state);
-    renderTvRight(state);
 
     // Tabletop motion: animate any per-player deltas since the last render.
     tvAnimateDeltas(state);
-
-    // Auto-open the hand when the turn context changes to the human's turn to
-    // act; tuck it otherwise. Manual arrow toggles persist within a turn.
-    const sig = state.phase + ':' + state.activePlayerIndex;
-    if (sig !== _tvTurnSig) {
-        _tvTurnSig = sig;
-        const hand = state.players[0].hand;
-        const myTurn = state.activePlayerIndex === 0
-            && hand && hand.length > 0
-            && state.phase !== 'scoring' && state.phase !== 'game_over';
-        tvHandOpen = myTurn;
-    }
-    // Tutorial: while the early tips (board, missions) are still up, keep the
-    // hand tucked so the "this is your board" prompt isn't blocked. The 'hand'
-    // tip itself opens the drawer when it's reached.
-    if (typeof coachTuckHand === 'function' && coachTuckHand()) tvHandOpen = false;
-    applyDrawerStates();
 
     // Prong 2: re-evaluate contextual coach-marks after each table render.
     coachTick();
@@ -1843,16 +1925,26 @@ function renderTableView(state) {
 function openBoardOverlay() {
     const char = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
     if (!char) return;
+    if (typeof coachMarkSeen === 'function') coachMarkSeen('welcome');
+
+    // Root-level #actionPanel (z 9999) would paint over the board —
+    // it steps aside while the overlay has the stage (slide-pick mode
+    // manages the panel itself, so only the plain open does this).
+    if (!_slidePick) _tvPanelStepAside();
 
     document.getElementById('boardOvImg').src = `assets/characters/${char.filename}`;
     document.getElementById('boardOvName').textContent = char.name;
 
+    _ovSlideTarget = null;   // fresh open, no slide pending
+    _ovRingDragInit();
     renderBoardOvSlots();
 
     document.getElementById('boardOverlay').classList.add('active');
 }
 
 function closeBoardOverlay() {
+    _ovSlideTarget = null;
+    _ovDragging = false;
     document.getElementById('boardOverlay').classList.remove('active');
     // Escape / backdrop while picking a slide slot: cancel back to where
     // the player came from. The hand panel is re-opened a tick later so
@@ -1866,6 +1958,10 @@ function closeBoardOverlay() {
         } else {
             document.getElementById('actionPanel').classList.add('active');
         }
+    } else {
+        // Same-tick dodge: restoring in this click's own bubble would let
+        // the document-level outside-click handler immediately re-hide it.
+        setTimeout(_tvPanelRestore, 0);
     }
 }
 
@@ -1894,52 +1990,112 @@ function openSlidePickerFinal(onPick) {
 }
 
 // The board art already explains every slot \u2014 no widget re-explains it.
-// Invisible hotspots sit on the art's five track circles: hover for the
-// landing halo + cost, click to pay & slide. The ring token overlaps the
-// current circle, exactly like the physical board.
+// Invisible hotspots sit on the art's five track circles. Paid slides are
+// tap-or-drag: tap a reachable circle (or drag the ring itself) and the
+// ring rides out and waits there pulsing while a confirm chip floats just
+// above the slot \u2014 Pay & Slide locks it, \u2715 glides it home. Repeatable
+// while gold lasts; the engine holds the one-direction-per-turn rule.
+// (The old confirm was a fixed-position bubble hung above the board RECT \u2014
+// on phones the board starts at the screen's top edge, so it rendered
+// off-screen and the tap looked dead. Everything now lives IN the art.)
 // Calibrated against the board scans (pixel-measured): the five circles
-// sit at these % of the board image. (The table mats' RING_SLOT_LEFTS are
-// rounded for their tiny size \u2014 at overlay size the drift shows.)
+// sit at these % of the board image. The board thumb (Z5) rides the same
+// track, so geometry transfers 1:1 between thumb and overlay.
 const BOARD_OV_TRACK = { lefts: [17, 33.4, 50, 66.3, 82.9], top: 84.7 };
+let _ovSlideTarget = null;   // slot index awaiting Pay & Slide, or null
+
+// Slots a paid slide can reach RIGHT NOW: affordable at 5g a space, and
+// matching the direction already taken this turn (engine truth).
+function _ovPaidReach() {
+    const ok = new Set();
+    if (!game || game.phase !== 'gameplay' || _slidePick) return ok;
+    const p = game.players[0];
+    const afford = Math.floor(p.gold / 5);
+    const lock = p._paidSlideDir || 0;
+    BOARD_OV_TRACK.lefts.forEach((L, i) => {
+        const steps = i - p.sliderPosition;
+        if (steps === 0 || Math.abs(steps) > afford) return;
+        if (lock && Math.sign(steps) !== lock) return;
+        ok.add(i);
+    });
+    return ok;
+}
+
+function _ovWhyBlocked(i) {
+    if (!game || game.phase !== 'gameplay') return 'The ring slides during gameplay rounds';
+    const p = game.players[0];
+    const steps = i - p.sliderPosition;
+    if (p._paidSlideDir && Math.sign(steps) !== p._paidSlideDir)
+        return `One direction per turn \u2014 you already slid ${p._paidSlideDir < 0 ? 'left' : 'right'}`;
+    if (Math.abs(steps) * 5 > p.gold) return `Need ${Math.abs(steps) * 5} Gold (5 per space)`;
+    return '';
+}
 
 function renderBoardOvSlots() {
     const player = game.players[0];
     const cur = player.sliderPosition;
+    const picking = !!_slidePick;
+    const target = (!picking && _ovSlideTarget !== null) ? _ovSlideTarget : null;
+    const reach = _ovPaidReach();
+
+    // The ring sits on its committed slot \u2014 unless a slide awaits its
+    // confirm: then it waits ON the target while the ghost marks home.
     const ring = document.getElementById('boardOvRing');
-    if (ring) {
-        ring.style.left = BOARD_OV_TRACK.lefts[cur] + '%';
+    if (ring && !_ovDragging) {
+        const at = target !== null ? target : cur;
+        ring.style.left = BOARD_OV_TRACK.lefts[at] + '%';
         ring.style.top = BOARD_OV_TRACK.top + '%';
+        ring.classList.toggle('pending', target !== null);
+        ring.classList.toggle('grab', !picking && reach.size > 0);
+    }
+    const ghost = document.getElementById('boardOvGhost');
+    if (ghost) {
+        ghost.style.left = BOARD_OV_TRACK.lefts[cur] + '%';
+        ghost.style.top = BOARD_OV_TRACK.top + '%';
+        ghost.classList.toggle('show', target !== null);
     }
 
     const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
     const holder = document.getElementById('boardOvSlots');
     if (!holder) return;
-    const picking = !!_slidePick;
     holder.innerHTML = BOARD_OV_TRACK.lefts.map((L, i) => {
         const steps = Math.abs(i - cur);
         const pickable = picking && steps === 1;
+        const reachable = reach.has(i);
         const tip = i === cur
             ? 'Your ring is here'
             : picking
                 ? (pickable ? `Slide to ${posNames[i]} \u2014 the discard pays` : 'One space per discard')
-                : `Slide to ${posNames[i]} \u2014 ${steps * 5} Gold`;
+                : (reachable ? `Slide to ${posNames[i]} \u2014 ${steps * 5} Gold` : _ovWhyBlocked(i));
         const cls = 'board-ov-slot'
             + (i === cur ? ' current' : '')
             + (pickable ? ' pickable' : '')
+            + (reachable ? ' reach' : '')
+            + (!picking && !reachable && i !== cur ? ' blocked' : '')
             + (picking && !pickable && i !== cur ? ' dimmed' : '');
         return `<div class="${cls}"
                      style="left:${L}%; top:${BOARD_OV_TRACK.top}%"
                      title="${tip}"
                      onclick="event.stopPropagation(); boardOvSlotClick(${i})"></div>`;
     }).join('');
+
+    renderBoardOvConfirm();
+
     const hint = document.getElementById('boardOvHint');
     if (hint) hint.textContent = picking
         ? 'Pick a glowing circle \u2014 the discarded card pays the toll'
-        : '';
+        : (target !== null
+            ? ''
+            : (reach.size
+                ? `Tap a circle or drag your ring \u2014 5 Gold a space${player._paidSlideDir ? ` \u00b7 ${player._paidSlideDir < 0 ? 'leftward' : 'rightward'} only this turn` : ''}`
+                : ''));
 }
 
 function boardOvSlotClick(i) {
     const player = game.players[0];
+
+    // A drag that ends over a circle also fires its click \u2014 one beat, not two.
+    if (_ovDragJustEnded && Date.now() - _ovDragJustEnded < 300) return;
 
     // Pick-a-slot mode: the discard pays the toll, one space only.
     if (_slidePick) {
@@ -1953,14 +2109,146 @@ function boardOvSlotClick(i) {
         return;
     }
 
-    if (i === player.sliderPosition) return;
+    if (i === player.sliderPosition) {
+        if (_ovSlideTarget !== null) _ovSlideCancel();   // tapping home = never mind
+        return;
+    }
     if (!game || game.phase !== 'gameplay') {
         showNotification('The ring slides during gameplay rounds', 'error');
         return;
     }
-    const wrap = document.querySelector('.board-ov-boardwrap');
-    if (!wrap) return;
-    showSlideConfirm(i, wrap.getBoundingClientRect());
+    if (!_ovPaidReach().has(i)) {
+        const why = _ovWhyBlocked(i);
+        if (why) showNotification(why, 'error');
+        return;
+    }
+    _ovSlideTarget = i;
+    renderBoardOvSlots();
+}
+
+// The confirm chip floats just above the target circle, INSIDE the board
+// art \u2014 always on-screen wherever the board sits in the viewport.
+function renderBoardOvConfirm() {
+    const holder = document.getElementById('boardOvConfirm');
+    if (!holder) return;
+    if (_ovSlideTarget === null || _slidePick) {
+        holder.classList.remove('active');
+        holder.innerHTML = '';
+        return;
+    }
+    const player = game.players[0];
+    const steps = Math.abs(_ovSlideTarget - player.sliderPosition);
+    const cost = steps * 5;
+    const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
+    holder.style.left = Math.min(78, Math.max(22, BOARD_OV_TRACK.lefts[_ovSlideTarget])) + '%';
+    holder.style.top = (BOARD_OV_TRACK.top - 8) + '%';
+    holder.innerHTML = `
+        <div class="sc-bubble">
+            <div class="sc-text">Slide to <b>${posNames[_ovSlideTarget]}</b>?</div>
+            <div class="sc-cost">${steps} space${steps > 1 ? 's' : ''} \u00b7 <b>\u2212${cost} Gold</b></div>
+            <div class="sc-actions">
+                <button class="btn-royal" onclick="event.stopPropagation(); _ovSlideCancel()"><span>\u2715</span></button>
+                <button class="btn-royal primary" onclick="event.stopPropagation(); _ovSlideConfirm()"><span>Pay &amp; Slide</span></button>
+            </div>
+        </div>`;
+    holder.classList.add('active');
+}
+
+function _ovSlideCancel() {
+    _ovSlideTarget = null;
+    renderBoardOvSlots();   // the ring glides home, the ghost fades
+}
+
+async function _ovSlideConfirm() {
+    const target = _ovSlideTarget;
+    if (target === null) return;
+    _ovSlideTarget = null;
+    const player = game.players[0];
+    const dir = target > player.sliderPosition ? 1 : -1;
+    const steps = Math.abs(target - player.sliderPosition);
+    for (let s = 0; s < steps; s++) {
+        await payToSlide(dir);   // 5g a step; slot landing events fire per step
+    }
+    renderGameState();
+    renderBoardOvSlots();   // stay open \u2014 slide again while gold and direction allow
+}
+
+// \u2500\u2500 Ring drag \u2014 grab the ring, ride the track, drop it on a circle \u2500\u2500
+// Maps finger X to the nearest REACHABLE slot (never past gold or the
+// direction lock); release off home shows the same confirm chip as a tap.
+let _ovDragging = false;
+let _ovDragJustEnded = 0;
+
+function _ovRingDragInit() {
+    const ring = document.getElementById('boardOvRing');
+    if (!ring || ring._dragWired) return;
+    ring._dragWired = true;
+
+    let startX = 0, engaged = false, rect = null;
+
+    const slotAtX = (clientX) => {
+        const pct = ((clientX - rect.left) / rect.width) * 100;
+        const reach = _ovPaidReach();
+        const cur = game.players[0].sliderPosition;
+        let best = cur, bestD = Infinity;
+        BOARD_OV_TRACK.lefts.forEach((L, i) => {
+            if (i !== cur && !reach.has(i)) return;
+            const d = Math.abs(L - pct);
+            if (d < bestD) { bestD = d; best = i; }
+        });
+        return best;
+    };
+
+    ring.addEventListener('pointerdown', (e) => {
+        if (_slidePick || !game || game.phase !== 'gameplay') return;
+        if (_ovPaidReach().size === 0) return;
+        const wrap = document.querySelector('.board-ov-boardwrap');
+        if (!wrap) return;
+        rect = wrap.getBoundingClientRect();
+        startX = e.clientX;
+        engaged = false;
+        _ovDragging = true;
+        ring.setPointerCapture(e.pointerId);
+        e.preventDefault();
+    });
+
+    ring.addEventListener('pointermove', (e) => {
+        if (!_ovDragging) return;
+        if (!engaged && Math.abs(e.clientX - startX) < 6) return;   // tap tolerance
+        engaged = true;
+        ring.classList.add('dragging');
+        const ghost = document.getElementById('boardOvGhost');
+        if (ghost) ghost.classList.add('show');   // home stays marked under the drag
+        // Follow the finger along the track, clamped to the reachable span.
+        const reach = _ovPaidReach();
+        const cur = game.players[0].sliderPosition;
+        const idxs = [cur, ...reach];
+        const minL = Math.min(...idxs.map(i => BOARD_OV_TRACK.lefts[i]));
+        const maxL = Math.max(...idxs.map(i => BOARD_OV_TRACK.lefts[i]));
+        const pct = Math.min(maxL, Math.max(minL, ((e.clientX - rect.left) / rect.width) * 100));
+        ring.style.left = pct + '%';
+        // Live halo on the circle it would snap to.
+        const snap = slotAtX(e.clientX);
+        document.querySelectorAll('#boardOvSlots .board-ov-slot').forEach((el, i) =>
+            el.classList.toggle('snap', i === snap && i !== cur));
+    });
+
+    const release = (e) => {
+        if (!_ovDragging) return;
+        _ovDragging = false;
+        const wasEngaged = engaged;
+        engaged = false;
+        ring.classList.remove('dragging');
+        document.querySelectorAll('#boardOvSlots .board-ov-slot.snap')
+            .forEach(el => el.classList.remove('snap'));
+        if (!wasEngaged) { renderBoardOvSlots(); return; }   // a tap, not a drag
+        _ovDragJustEnded = Date.now();
+        const snap = slotAtX(e.clientX);
+        _ovSlideTarget = (snap === game.players[0].sliderPosition) ? null : snap;
+        renderBoardOvSlots();   // ring settles on the target (or glides home)
+    };
+    ring.addEventListener('pointerup', release);
+    ring.addEventListener('pointercancel', release);
 }
 
 // ── Hand Inspect Overlay ──
@@ -1992,17 +2280,41 @@ function openOppOverlay(playerIndex) {
     const char = game.players[playerIndex].character;
     if (!char) return;
     if (typeof coachMarkSeen === 'function') coachMarkSeen(playerIndex === 0 ? 'welcome' : 'rivals');
+    _tvPanelStepAside();   // the root-level action panel would paint over the overlay
 
     document.getElementById('oppOvAvatar').src = `assets/characters/${char.filename}`;
     document.getElementById('oppOvName').textContent = p.name;
     document.getElementById('oppOvBoard').src = `assets/characters/${char.filename}`;
 
-    document.getElementById('oppOvStats').innerHTML = `
-        <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${p.gold}</span>
-        <span class="stat-pill prestige">\u2B50 ${p.prestige}</span>
-        <span class="stat-pill favor">${p.favor || 0} Favor</span>
-        <span class="stat-pill scorn">${p.scorn} Scorn</span>
-    `;
+    // Their ring on the board's track (both layouts — with the rail's
+    // ring-dots gone, this is where a rival's position lives) — same
+    // BOARD_OV_TRACK geometry as your board overlay and thumb.
+    const oppRing = document.getElementById('oppOvRing');
+    if (oppRing) {
+        const pos = game.players[playerIndex].sliderPosition;
+        oppRing.style.left = BOARD_OV_TRACK.lefts[pos] + '%';
+        oppRing.style.top = BOARD_OV_TRACK.top + '%';
+    }
+
+    // Phone: their played cards sit beside the board as tucked skill
+    // stacks — read exactly like your own on the stage. (Hidden on desktop,
+    // which keeps its inline cards panel.)
+    const oppStacks = document.getElementById('oppOvStacks');
+    if (oppStacks) {
+        const played = p.playedCards || [];
+        oppStacks.innerHTML = played.length
+            ? buildSkillStacks(played)
+            : '<div class="tv-stage-empty">No cards played yet</div>';
+        // Fit-to-width: size the stacks so every skill group is visible at
+        // once (floor 64px card height — past that the row scrolls).
+        const groups = Math.max(1, new Set(played.map(getCardSkillGroup)).size);
+        const avail = window.innerWidth * 0.40 - 4;          // tracks the CSS max-width: 40vw
+        const per = (avail - (groups - 1) * 10) / groups;    // 10px stack gap
+        const fitH = Math.max(64, Math.min(Math.round(per / 0.666), Math.round(window.innerHeight * 0.28)));
+        oppStacks.style.setProperty('--tvStackCardH', fitH + 'px');
+    }
+
+    document.getElementById('oppOvStats').innerHTML = statPillsHtml(p);
 
     const cardsEl = document.getElementById('oppOvCards');
     cardsEl.innerHTML = '';
@@ -2037,6 +2349,7 @@ function toggleOppCards(e) {
 function closeOppOverlay() {
     const ov = document.getElementById('oppOverlay');
     ov.classList.remove('active', 'cards-open');
+    setTimeout(_tvPanelRestore, 0);   // after this click's outside-click handler
 }
 
 function requestLend(oppIndex, cardName) {
@@ -2049,12 +2362,90 @@ function requestLend(oppIndex, cardName) {
 
 // ── Mission Lightbox ──
 
-function openMissionLB(src, name) {
+// ── Mission Browser — picking up one mission picks up the whole row.
+// kind 'realm' = the table's available missions; 'mine' = your current +
+// completed set. The clicked card opens centered; swipe / arrows / click
+// browse the rest, every card readable-big.
+let _mbList = [], _mbKind = null, _mbIndex = 0, _mbScrollT = null;
+
+function openMissionBrowser(kind, focusName) {
+    if (!game) return;
     if (typeof coachMarkSeen === 'function') coachMarkSeen('missions');
-    document.getElementById('missionLBImg').src = src;
-    document.getElementById('missionLBLabel').textContent = name;
-    renderMissionLBTurnIn(name);
-    document.getElementById('missionLB').classList.add('active');
+    _tvPanelStepAside();   // the root-level action panel would paint over the browser
+
+    const p = game.players[0];
+    _mbKind = kind;
+    _mbList = kind === 'mine'
+        ? [...(p.missions || []).map(m => ({ m, held: true })),
+           ...(p.completedMissions || []).map(m => ({ m, done: true }))]
+        : (game.getState(0).visibleMissions || []).map(m => ({ m }));
+    if (!_mbList.length) return;
+
+    document.getElementById('mbTitle').textContent =
+        kind === 'mine' ? 'Your Missions' : 'Missions of the Realm';
+
+    const track = document.getElementById('mbTrack');
+    track.innerHTML = _mbList.map((e, i) => `
+        <div class="mb-card${e.done ? ' done' : ''}" data-i="${i}"
+             onclick="event.stopPropagation(); mbFocus(${i}, true)">
+            <img src="assets/cards/missions/${e.m.filename}" alt="${e.m.name}"
+                 draggable="false">
+            ${e.done ? '<div class="mb-done-ribbon">✓ Completed</div>' : ''}
+        </div>`).join('');
+
+    // Swipe/scroll settles on the nearest card: while moving, focus tracks
+    // the center; on idle, snap it exactly (rAF + short debounce).
+    track.onscroll = () => {
+        requestAnimationFrame(_mbTrackFocus);
+        clearTimeout(_mbScrollT);
+        _mbScrollT = setTimeout(() => mbFocus(_mbIndex, true), 130);
+    };
+
+    const nav = _mbList.length > 1 ? '' : ' mb-solo';
+    document.getElementById('missionLB').className = 'mission-lb active' + nav;
+
+    const idx = Math.max(0, _mbList.findIndex(e => e.m.name === focusName));
+    requestAnimationFrame(() => mbFocus(idx, false));
+}
+
+// Which card sits nearest the track's center right now?
+function _mbTrackFocus() {
+    const track = document.getElementById('mbTrack');
+    const mid = track.scrollLeft + track.clientWidth / 2;
+    let best = 0, bestD = Infinity;
+    track.querySelectorAll('.mb-card').forEach((c, i) => {
+        const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid);
+        if (d < bestD) { bestD = d; best = i; }
+    });
+    if (best !== _mbIndex) { _mbIndex = best; _mbApplyFocus(); }
+}
+
+function mbFocus(i, smooth) {
+    _mbIndex = Math.max(0, Math.min(_mbList.length - 1, i));
+    const track = document.getElementById('mbTrack');
+    const el = track.querySelector(`.mb-card[data-i="${_mbIndex}"]`);
+    if (!el) return;
+    clearTimeout(_mbScrollT);   // this IS the snap — don't re-snap after it
+    const left = Math.round(el.offsetLeft - (track.clientWidth - el.offsetWidth) / 2);
+    if (Math.abs(track.scrollLeft - left) > 1) {
+        track.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
+    }
+    _mbApplyFocus();
+}
+
+function mbStep(d) { mbFocus(_mbIndex + d, true); }
+
+function _mbApplyFocus() {
+    const track = document.getElementById('mbTrack');
+    track.querySelectorAll('.mb-card').forEach((c, i) =>
+        c.classList.toggle('focus', i === _mbIndex));
+    const e = _mbList[_mbIndex];
+    if (!e) return;
+    document.getElementById('missionLBLabel').textContent =
+        e.m.name + (e.done ? ' — completed' : '');
+    // Turn In / Borrow attach to the focused card, held missions only
+    // (renderMissionLBTurnIn no-ops for realm/completed entries).
+    renderMissionLBTurnIn(e.m.name);
 }
 
 // "Turn In Now" — a held mission may be cashed in during ANY act of its
@@ -2071,7 +2462,10 @@ function renderMissionLBTurnIn(name) {
 
     const mission = p.missions[mi];
     const due = game.missionDueAct(mission);
-    const { success } = game.checkMissionRequirements(0, mission);
+    // PURE probe — the old checkMissionRequirements call CONSUMED a held
+    // Life Essence just to label this button; browsing N missions would
+    // have burned it N times over. Only the real turn-in may consume.
+    const { success } = game.probeMissionRequirements(0, mission);
     const dueNote = due > game.currentAct
         ? `<div class="mission-lb-due">Due at the end of Act ${due} — turn in any time before</div>` : '';
     // Short only on borrowable skills? Turning in now can borrow them too —
@@ -2129,6 +2523,10 @@ function renderMissionLBTurnIn(name) {
 
 function closeMissionLB() {
     document.getElementById('missionLB').classList.remove('active');
+    // If the journal is still holding the stage beneath the browser, the
+    // action panel must NOT come back yet — it would paint over the
+    // journal (root-level z 9999). The journal's own close restores it.
+    if (!missionJournalOpen()) setTimeout(_tvPanelRestore, 0);
 }
 
 // ── ESC closes all overlays ──
@@ -2138,6 +2536,13 @@ function closeAllOverlays() {
     closeHandInspect();
     closeOppOverlay();
     closeMissionLB();
+    closeMissionJournal();
+    if (typeof closeTvPopover === 'function') closeTvPopover();
+    if (window.FLB) {
+        FLB.closeLeaderboard();
+        FLB.closeProfile();
+        if (typeof FLB.closeStore === 'function') FLB.closeStore();
+    }
 }
 
 function selectHandCard(index) {
@@ -2147,6 +2552,69 @@ function selectHandCard(index) {
     selectedHandCard = index;
     renderHand(game.getState(0));
     showActionPanel(index);
+}
+
+// ─── NEIGHBOR-TARGET HIGHLIGHT ─────────────────────────────
+// Cards that read other players ("1 Favor for each Power your left &
+// right neighbor have") light up exactly WHO they read while selected:
+// pulsing gold ring + floating tag on the rival-rail portraits (desktop
+// sidebar AND phone seat chips); self-including cards also mark your own
+// stats/purse. Data-driven — future cards join by adding a row here.
+const TARGET_READ_SPECIALS = {
+    gold_2_per_power_neighbors:  { neighbors: true },              // Melee Spectacular
+    gold_2_per_alchemy_triangle: { neighbors: true, self: true },  // Marketplace Sales
+    favor_per_neighbor_power:    { neighbors: true },              // Royal Hilt
+};
+
+// Engine truth (getBorrowableSkills): left = (pi−1+n)%n, right = (pi+1)%n.
+// The human is player 0, so left = LAST player, right = players[1].
+let _targetHighlights = null;
+
+function setTargetHighlights(card) {
+    clearTargetHighlights();
+    const spec = card && card.special && TARGET_READ_SPECIALS[card.special];
+    if (!spec || !game) return;
+    const n = game.playerCount;
+    _targetHighlights = { left: (n - 1) % n, right: 1 % n, self: !!spec.self };
+    applyTargetHighlights();
+}
+
+function clearTargetHighlights() {
+    _targetHighlights = null;
+    document.querySelectorAll('.nt-read').forEach(el => {
+        el.classList.remove('nt-read', 'nt-left', 'nt-right', 'nt-self');
+    });
+    document.querySelectorAll('.nt-tag').forEach(t => t.remove());
+}
+
+function _ntMark(el, side, tagText) {
+    if (!el) return;
+    el.classList.add('nt-read', 'nt-' + side);
+    if (tagText && !el.querySelector(':scope > .nt-tag')) {
+        const tag = document.createElement('span');
+        tag.className = 'nt-tag';
+        tag.textContent = tagText;
+        el.appendChild(tag);
+    }
+}
+
+// Re-applied at the end of every renderGameState — the sidebar and seat
+// chips are rebuilt via innerHTML, which wipes marks mid-selection.
+function applyTargetHighlights() {
+    if (!_targetHighlights || !game) return;
+    const { left, right, self } = _targetHighlights;
+    const mark = (pi, side, text) => {
+        _ntMark(document.querySelector(`#gameSidebar .opp-entry[data-pi="${pi}"]`), side, text);
+        _ntMark(document.querySelector(`#tvSeats .pmat[data-pi="${pi}"]`), side, text);
+    };
+    mark(left, 'left', '◀ Left Neighbor');
+    mark(right, 'right', 'Right Neighbor ▶');
+    if (self) {
+        // Desktop: your stats/purse panel. Phone: your own seat chip
+        // (its built-in YOU badge is the label; the ring says "read").
+        _ntMark(document.getElementById('statsPanel'), 'self', 'You');
+        _ntMark(document.querySelector('#tvSeats .pmat[data-pi="0"]'), 'self', null);
+    }
 }
 
 // ─── ACTION PANEL ──────────────────────────────────────────
@@ -2223,6 +2691,7 @@ function showActionPanel(cardIndex) {
 
     panel.innerHTML = html;
     panel.classList.add('active');
+    setTargetHighlights(card);
     if (typeof coachTick === 'function') coachTick();
 }
 
@@ -2233,6 +2702,7 @@ function hideActionPanel() {
     if (window._finalChoicePending) return;
     document.getElementById('actionPanel').classList.remove('active');
     selectedHandCard = null;
+    clearTargetHighlights();
     if (typeof coachTick === 'function') coachTick();
 }
 
@@ -2287,6 +2757,7 @@ function showFinalCardChoice(card) {
 
         panel.innerHTML = html;
         panel.classList.add('active');
+        setTargetHighlights(card);
         if (typeof coachTick === 'function') coachTick();
 
         panel.querySelectorAll('[data-act]').forEach(b => {
@@ -2298,12 +2769,28 @@ function showFinalCardChoice(card) {
                     openSlidePickerFinal((direction) => {
                         window._finalChoicePending = false;
                         panel.classList.remove('active');
+                        clearTargetHighlights();
                         resolve(direction < 0 ? 'discard_slide_left' : 'discard_slide_right');
+                    });
+                    return;
+                }
+                // Borrow is two beats here too: pick the lender first. The
+                // panel steps aside directly (the pending guard stays armed
+                // against stray clicks); cancel re-surfaces it.
+                if (b.dataset.act === 'borrow_play') {
+                    panel.classList.remove('active');
+                    showBorrowChooser(card).then(chosen => {
+                        if (!chosen) { panel.classList.add('active'); return; }
+                        window._finalBorrowChoice = chosen;
+                        window._finalChoicePending = false;
+                        clearTargetHighlights();
+                        resolve('borrow_play');
                     });
                     return;
                 }
                 window._finalChoicePending = false;
                 panel.classList.remove('active');
+                clearTargetHighlights();
                 resolve(b.dataset.act);
             };
         });
@@ -2319,11 +2806,18 @@ async function resolveFinalCardChoice(card) {
         game.activateCard(0, card.id, 'play');
         addLogEntry(`You also play ${card.name}`);
     } else if (act === 'borrow_play') {
-        const { missingSkills } = game.checkRequirements(0, card);
-        const borrowable = game.getBorrowableSkills(0);
-        const borrowFrom = missingSkills.map(s => ({ skill: s, neighborIndex: borrowable[s][0] }));
-        game.activateCard(0, card.id, 'play', borrowFrom);
-        addLogEntry(`You borrow skills and play ${card.name}`);
+        const chosen = window._finalBorrowChoice;
+        window._finalBorrowChoice = null;
+        const { borrowFrom, uncovered } = resolveBorrowPlan(card, chosen);
+        if (uncovered) {
+            game.activateCard(0, card.id, 'discard');
+            showNotification(`No one can lend for ${card.name} anymore — discarded (+3g)`, 'error');
+            addLogEntry(`No neighbor could lend for ${card.name} — discarded (+3 Gold)`);
+        } else {
+            const lenders = [...new Set(borrowFrom.map(b => game.players[b.neighborIndex].name))].join(' & ');
+            game.activateCard(0, card.id, 'play', borrowFrom);
+            addLogEntry(`You borrow from ${lenders} and play ${card.name}`);
+        }
     } else if (act === 'mission_letter') {
         const result = game.activateCard(0, card.id, 'mission_letter');
         if (result && result.chooseMission) {
@@ -2415,6 +2909,10 @@ async function playMissionLetter(cardIndex) {
     processRound('mission_letter_done');
 }
 
+// Borrow & Play is TWO beats: the button first, THEN "from whom?" \u2014 the
+// chooser shows both neighbors (one may have nothing to lend; it sits
+// grayed with the reason). The 2g-per-skill fee goes TO the lender, so
+// who gets paid is the player's call \u2014 never auto-picked.
 function playWithBorrow(cardIndex) {
     if (!game || game.phase !== 'gameplay') return;
 
@@ -2428,17 +2926,26 @@ function playWithBorrow(cardIndex) {
         return;
     }
 
-    game.pickCard(0, cardIndex);
-    hideActionPanel();
+    showBorrowChooser(card).then(chosen => {
+        if (!chosen) {
+            // Cancelled \u2014 land back on the card. Re-selected a tick later
+            // so this click's own outside-click handler can't eat the panel.
+            setTimeout(() => selectHandCard(cardIndex), 0);
+            return;
+        }
 
-    game.players[0]._borrowNext = true;
+        game.pickCard(0, cardIndex);
+        hideActionPanel();
 
-    const { missingSkills } = game.checkRequirements(0, card);
-    const borrowCost = missingSkills.length * 2;
-    showNotification(`Borrowed skills & played: ${card.name} (\u2212${borrowCost}g)`, 'play');
-    addLogEntry(`You borrow skills and play ${card.name}`);
+        game.players[0]._borrowNext = chosen;   // [{skill, neighborIndex}] \u2014 consumed at activation
 
-    processRound('borrow_play');
+        const lenders = [...new Set(chosen.map(b => game.players[b.neighborIndex].name))].join(' & ');
+        const borrowCost = chosen.length * 2;
+        showNotification(`Borrowing from ${lenders} \u2014 playing ${card.name} (\u2212${borrowCost}g)`, 'play');
+        addLogEntry(`You borrow from ${lenders} and play ${card.name}`);
+
+        processRound('borrow_play');
+    });
 }
 
 function discardToSlide(cardIndex, direction) {
@@ -2567,13 +3074,16 @@ async function activateAllCards(humanAction) {
                 } else if (humanAction === 'borrow_play' && cardIdx === 0 && game.players[0]._borrowNext) {
                     await showMiniSpotlight(card, 'play');
 
-                    const { missingSkills } = game.checkRequirements(0, card);
-                    const borrowable = game.getBorrowableSkills(0);
-                    const borrowFrom = missingSkills.map(s => ({
-                        skill: s,
-                        neighborIndex: borrowable[s][0]
-                    }));
-                    game.activateCard(0, card.id, 'play', borrowFrom);
+                    // The lender was CHOSEN in the borrow chooser at pick time;
+                    // resolveBorrowPlan re-validates it against the table now.
+                    const { borrowFrom, uncovered } = resolveBorrowPlan(card, game.players[0]._borrowNext);
+                    if (uncovered) {
+                        game.activateCard(0, card.id, 'discard');
+                        showNotification(`No one can lend for ${card.name} anymore — discarded (+3g)`, 'error');
+                        addLogEntry(`No neighbor could lend for ${card.name} — discarded (+3 Gold)`);
+                    } else {
+                        game.activateCard(0, card.id, 'play', borrowFrom);
+                    }
                     game.players[0]._borrowNext = false;
                 } else if (cardIdx > 0 || humanAction === 'mission_letter_done') {
                     // The auto-activated FINAL card: the player still chooses
@@ -2862,6 +3372,129 @@ function endActPhases() {
     afterBorrows().then(afterPenalty).then(afterPromise).then(startMelee);
 }
 
+// ═══ BORROW & PLAY — "from whom?" ═══════════════════════════════════
+// Tapping Borrow & Play asks WHICH neighbor lends before anything moves:
+// both neighbors always take the stage (the 2g-per-skill fee goes TO the
+// lender, so the pick matters) and a neighbor with nothing to lend sits
+// grayed with the reason. On the Merchant's borrow-any slot the whole
+// table appears. Resolves [{skill, neighborIndex}] — or null on cancel.
+function showBorrowChooser(card) {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        const { missingSkills } = game.checkRequirements(0, card);
+        const borrowable = game.getBorrowableSkills(0);
+        if (!ov || missingSkills.length === 0) { resolve(null); return; }
+
+        const n = game.playerCount;
+        const p0 = game.players[0];
+        const curSlot = p0.character && p0.character.slots ? p0.character.slots[p0.sliderPosition] : null;
+        const anyLender = curSlot && curSlot.special === 'borrow_any_player';
+        const leftPi = (n - 1) % n, rightPi = 1 % n;
+        const seats = anyLender
+            ? [...Array(n).keys()].filter(i => i !== 0)
+            : [...new Set([leftPi, rightPi])];
+
+        // Units of the same skill share one lender (the table habit);
+        // distinct skills each pick their own.
+        const counts = {};
+        missingSkills.forEach(s => { counts[s] = (counts[s] || 0) + 1; });
+        const sections = Object.entries(counts);   // [skill, units]
+        const single = sections.length === 1;
+        const choice = {};                          // skill -> lender pi
+        const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+        const totalCost = missingSkills.length * 2;
+
+        const seatTag = pi => {
+            if (anyLender) return '';
+            if (pi === leftPi) return '<span class="bw-tag">◀ Left Neighbor</span>';
+            if (pi === rightPi) return '<span class="bw-tag">Right Neighbor ▶</span>';
+            return '';
+        };
+
+        const finish = (result) => {
+            ov.classList.remove('active');
+            resolve(result);
+        };
+
+        const render = () => {
+            const sectionHtml = sections.map(([skill, units]) => {
+                const fee = units * 2;
+                const head = single
+                    ? ''
+                    : `<div class="bw-skill-head">${cap(skill)}${units > 1 ? ' ×' + units : ''} — ${fee}g to its lender</div>`;
+                const seatCards = seats.map(pi => {
+                    const pl = game.players[pi];
+                    const has = !!(borrowable[skill] && borrowable[skill].includes(pi));
+                    const on = choice[skill] === pi;
+                    const art = pl.character ? `assets/characters/${pl.character.filename}` : 'assets/ui/cover.jpg';
+                    const note = has ? `+${fee}g to their purse` : `No ${cap(skill)} to lend`;
+                    return `<div class="bw-row${has ? '' : ' off'}${on ? ' on' : ''}" data-skill="${skill}" data-pi="${pi}">
+                                <img class="bw-art" src="${art}" alt="${pl.name}">
+                                ${seatTag(pi)}
+                                <span class="bw-name">${pl.name}</span>
+                                <span class="bw-note">${note}</span>
+                            </div>`;
+                }).join('');
+                return `${head}<div class="bw-rows">${seatCards}</div>`;
+            }).join('');
+
+            const needTxt = sections.map(([s, u]) => `${cap(s)}${u > 1 ? ' ×' + u : ''}`).join(', ');
+            const ready = sections.every(([s]) => choice[s] !== undefined);
+
+            ov.innerHTML = `
+                <div class="pp-inner">
+                    <div class="pp-title">Borrow &amp; Play</div>
+                    <div class="pp-sub"><b>${card.name}</b> needs <b>${needTxt}</b> —
+                        ${single ? 'tap the neighbor who lends it' : 'pick a lender for each skill'}.
+                        The fee is paid <b>to them</b>${anyLender ? ' · your Merchant slot lets anyone lend' : ''}.</div>
+                    ${sectionHtml}
+                    <div class="pp-actions">
+                        ${single ? '' : `<button class="btn-royal primary" id="bwConfirm" ${ready ? '' : 'disabled style="opacity:.35"'}><span>Borrow &amp; Play (−${totalCost}g)</span></button>`}
+                        <button class="btn-royal" id="bwCancel"><span>Cancel</span></button>
+                    </div>
+                </div>`;
+
+            ov.querySelectorAll('.bw-row:not(.off)').forEach(el => {
+                el.onclick = () => {
+                    const skill = el.dataset.skill;
+                    const pi = parseInt(el.dataset.pi, 10);
+                    // One missing skill = tap-to-commit (the Borrow & Play tap
+                    // already said "yes"); several = assemble, then confirm.
+                    if (single) { finish(missingSkills.map(s => ({ skill: s, neighborIndex: pi }))); return; }
+                    choice[skill] = pi;
+                    render();
+                };
+            });
+            const confirmBtn = ov.querySelector('#bwConfirm');
+            if (confirmBtn) confirmBtn.onclick = () => {
+                if (!sections.every(([s]) => choice[s] !== undefined)) return;
+                finish(missingSkills.map(s => ({ skill: s, neighborIndex: choice[s] })));
+            };
+            ov.querySelector('#bwCancel').onclick = () => finish(null);
+        };
+
+        render();
+        ov.classList.add('active');
+    });
+}
+
+// Chosen lenders are validated at ACTIVATION time — between the click and
+// the activation a lender can slide off the very slot that granted the
+// skill. Stale picks fall back to any current lender; a skill nobody can
+// lend anymore leaves the plan uncovered (the caller discards honestly).
+function resolveBorrowPlan(card, chosen) {
+    const { missingSkills } = game.checkRequirements(0, card);
+    const borrowable = game.getBorrowableSkills(0);
+    const pool = Array.isArray(chosen) ? chosen.slice() : [];
+    const borrowFrom = missingSkills.map(s => {
+        const ci = pool.findIndex(b => b.skill === s);
+        const pick = ci >= 0 ? pool.splice(ci, 1)[0] : null;
+        if (pick && borrowable[s] && borrowable[s].includes(pick.neighborIndex)) return pick;
+        return { skill: s, neighborIndex: borrowable[s] ? borrowable[s][0] : undefined };
+    });
+    return { borrowFrom, uncovered: borrowFrom.some(b => b.neighborIndex === undefined) };
+}
+
 // ═══ MISSION BORROW — a due mission, short only on borrowable skills ════
 // The physical-table move: a neighbor lends the skill for 2g a unit.
 // Entirely OPTIONAL — failing on purpose is a real strategy, so the
@@ -3087,20 +3720,99 @@ function showChemYPicker() {
     });
 }
 
-// ─── SCORING ───────────────────────────────────────────────
+// ─── SCORING — the victory ceremony ─────────────────────────
+
+// Placement colors: 1st gold, 2nd silver, 3rd bronze, the rest muted.
+// Indexed by finish order so every table size (3/4/5) reads the same.
+const VS_PLACES = [
+    { cls: 'p1', color: '#e8c34b' },
+    { cls: 'p2', color: '#c6ccd6' },
+    { cls: 'p3', color: '#cd8a4b' },
+];
+const VS_ORDINAL = ['1st', '2nd', '3rd', '4th', '5th'];
+
+// Inline trophy cup — ours, never an emoji (same doctrine as .crown-ico).
+function vsTrophy(color) {
+    return `<svg class="vs-trophy" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 3h10v6a5 5 0 0 1-10 0Z" fill="${color}" stroke="rgba(0,0,0,0.35)" stroke-width="0.8"/>
+        <path d="M7 4.2H4.1a3.5 3.5 0 0 0 3.4 4.4M17 4.2h2.9a3.5 3.5 0 0 1-3.4 4.4" fill="none" stroke="${color}" stroke-width="1.7"/>
+        <path d="M10.7 13.4h2.6v3.2h-2.6z" fill="${color}"/>
+        <rect x="7.6" y="16.9" width="8.8" height="2.7" rx="0.7" fill="${color}" stroke="rgba(0,0,0,0.35)" stroke-width="0.8"/>
+    </svg>`;
+}
 
 function showScoring() {
     const scores = game.getWinner();
 
+    // Snapshot BEFORE posting — the deltas below say what THIS game did,
+    // measured against where you stood when it began.
+    const before = (window.FLB && typeof FLB.snapshot === 'function')
+        ? FLB.snapshot() : { rating: 0, stars: 0 };
+
+    // Post YOUR result to the leaderboard the moment scoring resolves —
+    // rating points vs the table + best-Favor for today's daily board.
+    // Rivals present as people but never post (real players only).
+    if (window.FLB) FLB.postGameResult(scores);
+
     document.getElementById('game-screen').classList.remove('active');
     document.getElementById('scoring-screen').classList.add('active');
 
+    // Late toasts (melee results, mission payouts) float above this screen
+    // — the ceremony opens on a clean stage.
+    const toasts = document.getElementById('notifications');
+    if (toasts) toasts.innerHTML = '';
+
     const content = document.getElementById('scoringContent');
     const winner = scores[0];
+    const place = scores.findIndex(s => s.playerIndex === 0);
+    const youWon = place === 0;
+
+    const headline = youWon ? 'You Are Victorious!' : `${winner.name} Claims the Throne`;
+    const personal = youWon
+        ? 'The realm bows before its new sovereign.'
+        : `You finished ${VS_ORDINAL[place] || (place + 1) + 'th'}.`;
+
+    // Rating + Stars deltas, shown BIG. Rating persists via postGameResult
+    // (works offline too — the local adapter keeps the same ledgers);
+    // per-game Stars appear once the store economy exposes FLB.gameStars.
+    const fmtDelta = (n) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '±0');
+    let deltas = '';
+    if (window.FLB && place >= 0) {
+        const rDelta = FLB.ratingDelta(place, scores.length);
+        const newRating = Math.max(0, (before.rating || 0) + rDelta);
+        deltas += `<div class="vs-delta rating">
+            <span class="vs-d-what">✦ Rating</span><b>${fmtDelta(rDelta)}</b>
+            <span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${newRating}">0</b>
+        </div>`;
+        if (typeof FLB.gameStars === 'function') {
+            const sDelta = FLB.gameStars(place, scores.length);
+            const newStars = (before.stars || 0) + sDelta;
+            deltas += `<div class="vs-delta stars">
+                <span class="vs-d-what">★ Stars</span><b>+${sDelta}</b>
+                <span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${newStars}">0</b>
+            </div>`;
+        }
+    }
+
+    // Placement ladder — color-coded, trophies for the podium, totals roll.
+    const rows = scores.map((s, i) => {
+        const p = VS_PLACES[i];
+        return `<div class="vs-place ${p ? p.cls : 'pn'}${s.playerIndex === 0 ? ' me' : ''}">
+            <span class="vs-ord">${VS_ORDINAL[i] || (i + 1) + 'th'}</span>
+            ${p ? vsTrophy(p.color) : '<span class="vs-trophy none"></span>'}
+            <span class="vs-name">${s.name}</span>
+            <b class="vs-total" data-total="${s.finalScore}">0</b>
+        </div>`;
+    }).join('');
 
     content.innerHTML = `
-        <h2 class="scoring-title">${winner.name} Claims the Throne!</h2>
-        <p class="scoring-sub">Final Score: ${winner.finalScore} points</p>
+        <div class="vs-head${youWon ? ' win' : ''}">
+            ${youWon ? '<div class="champ-rays"></div>' : ''}
+            <div class="vs-headline">${headline}</div>
+            <div class="vs-personal">${personal}</div>
+        </div>
+        ${deltas ? `<div class="vs-deltas">${deltas}</div>` : ''}
+        <div class="vs-places">${rows}</div>
         <div class="scoring-scroll">
             <table class="scoring-table">
                 <tr>
@@ -3114,7 +3826,7 @@ function showScoring() {
                     <th>Gold (Tiebreaker)</th>
                 </tr>
                 ${scores.map((s, i) => `
-                    <tr class="${i === 0 ? 'winner' : ''}">
+                    <tr class="vs-${VS_PLACES[i] ? VS_PLACES[i].cls : 'pn'}${i === 0 ? ' winner' : ''}">
                         <td>${s.name}</td>
                         <td>${s.missionFavor}</td>
                         <td>${s.cardFavor}</td>
@@ -3133,6 +3845,20 @@ function showScoring() {
             </button>
         </div>
     `;
+
+    // Roll every total up from 0 (the Melee splash count-up, ease-out).
+    content.querySelectorAll('[data-total]').forEach(b => {
+        const target = parseInt(b.dataset.total, 10) || 0;
+        const dur = 900;
+        let t0 = null;
+        const tick = (t) => {
+            if (t0 === null) t0 = t;
+            const k = Math.min(1, (t - t0) / dur);
+            b.textContent = Math.round(target * (1 - Math.pow(1 - k, 3)));
+            if (k < 1) requestAnimationFrame(tick);
+        };
+        setTimeout(() => requestAnimationFrame(tick), 350);
+    });
 }
 
 // ─── PLAYER STATS (renderStats alias for backward compat) ──
@@ -3326,10 +4052,12 @@ document.addEventListener('pointerdown', (e) => {
 }, true);
 document.addEventListener('scroll', _hoverPeekHide, true);
 
-// ── Hand bloom (Battlegrounds tray feel) ──
-// Touching a hand card blooms it to near screen height IN PLACE (CSS .bloom /
-// :hover). Slide your finger across the fan and each card blooms in turn;
-// release to open that card's action sheet. Mouse gets the same via :hover.
+// ── Hand gestures (Hearthstone/Battlegrounds) ──
+// Touch a hand card and it BLOOMS to near screen height in place — that's
+// the read. Slide along the fan and each card blooms in turn (browse).
+// DRAG UP past the lift line and the card detaches and follows your
+// finger; release up top → its action sheet (play / discard / …).
+// Release back down low, or a plain tap, commits nothing.
 let _bloomEl = null;
 let _bloomStartEl = null;
 
@@ -3382,18 +4110,73 @@ function _bloomSet(el) {
     if (el) el.classList.add('bloom');
 }
 
+// Drag-up state: how far the finger must climb before the bloom hands
+// the card to the drag (and the same line the release must clear to
+// commit — letting go below it just tucks the card home).
+const HAND_DRAG_LIFT = 60;
+// Rise past this and the card in your hand LOCKS: an ascending pull that
+// drifts sideways must not glide onto a neighbor mid-play. Browsing stays
+// live while the finger rides level along the fan; dip back under the
+// band and the glide resumes (the check is per-move, not a latch).
+const HAND_GLIDE_BAND = 24;
+let _handDrag = null;
+
 document.addEventListener('pointerdown', (e) => {
     const card = e.target.closest && e.target.closest('.tv-hand .hand-card');
     if (!card) return;
-    // Touching your peeking hand raises the drawer — otherwise the bloom
-    // grows from a card whose bottom is still below the screen edge.
-    if (typeof tvHandOpen !== 'undefined' && !tvHandOpen) {
-        tvHandOpen = true;
-        applyDrawerStates();
-    }
     _bloomStartEl = card;
+    _handDrag = { startX: e.clientX, startY: e.clientY, active: false, card: null, baseTransform: '' };
     _bloomSet(card);
 }, { passive: true });
+
+// The card detaches from the fan and rides the finger (straightened,
+// shrunk so the table stays readable — the Battlegrounds pull).
+function _handDragStart(ev) {
+    const card = _bloomEl || _bloomStartEl;
+    if (!card || !_handDrag) return;
+    _handDrag.active = true;
+    _handDrag.card = card;
+    _handDrag.baseTransform = card.style.transform;
+    card.classList.remove('bloom');
+    _bloomEl = null;                     // the drag owns the card now
+    card.classList.add('dragging');
+    const strip = document.getElementById('tvHandStrip');
+    if (strip) strip.classList.add('drag-from');
+    _handDragFollow(ev);
+}
+
+function _handDragFollow(ev) {
+    const d = _handDrag;
+    if (!d || !d.card) return;
+    const dx = ev.clientX - d.startX;
+    const dy = ev.clientY - d.startY;
+    // Inline !important: the hover-bloom rule is !important too, and a
+    // mouse-driven drag must not fight it mid-gesture.
+    d.card.style.setProperty('transform',
+        `translate(${Math.round(dx)}px, ${Math.round(dy - 24)}px) scale(1.45)`, 'important');
+}
+
+// Release: above the lift line → this card's action sheet is the next
+// beat; below it (or a cancelled pointer) → the card tucks back home.
+function _handDragEnd(e, allowCommit) {
+    const d = _handDrag;
+    _handDrag = null;
+    if (!d || !d.active || !d.card) return;
+    const card = d.card;
+    card.classList.remove('dragging');        // transition comes back on
+    card.style.removeProperty('transform');   // drop the !important drag transform
+    card.style.transform = d.baseTransform;   // snap home
+    const strip = document.getElementById('tvHandStrip');
+    if (strip) strip.classList.remove('drag-from');
+    if (allowCommit && (d.startY - e.clientY) > HAND_DRAG_LIFT) {
+        // Swallow this release's synthetic click so the outside-click
+        // handler can't instantly hide the sheet we're about to open.
+        _peekSwallowClick = true;
+        setTimeout(() => { _peekSwallowClick = false; }, 400);
+        const i = parseInt(card.getAttribute('data-hand-i'), 10);
+        if (!isNaN(i)) setTimeout(() => selectHandCard(i), 0);
+    }
+}
 
 // Glide: map finger X to the card whose RESTING slot is nearest — never
 // hit-test the screen, because the bloomed card itself sits on top and
@@ -3421,119 +4204,26 @@ document.addEventListener('pointermove', (e) => {
         const ev = _bloomMoveEv;
         _bloomMoveEv = null;
         if (!_bloomStartEl || !ev) return;
+        if (_handDrag && _handDrag.active) { _handDragFollow(ev); return; }
+        const rise = _handDrag ? (_handDrag.startY - ev.clientY) : 0;
+        if (_handDrag && rise > HAND_DRAG_LIFT) {
+            _handDragStart(ev);
+            return;
+        }
+        // Ascending past the band: the card is spoken for — no glide swap.
+        if (rise > HAND_GLIDE_BAND) return;
         const card = _bloomNearest(ev.clientX);
         if (card) _bloomSet(card);
     });
 }, { passive: true });
 
-function _bloomRelease() {
-    // Slid to a different card than the touch started on: the native click
-    // lands nowhere, so select the card that's blooming now.
-    if (_bloomEl && _bloomStartEl && _bloomEl !== _bloomStartEl && !_peekShowing) {
-        const i = parseInt(_bloomEl.getAttribute('data-hand-i'), 10);
-        if (!isNaN(i)) setTimeout(() => selectHandCard(i), 0);
-    }
+function _bloomRelease(e) {
+    _handDragEnd(e, e.type !== 'pointercancel');
     _bloomSet(null);
     _bloomStartEl = null;
 }
 document.addEventListener('pointerup', _bloomRelease, { passive: true });
 document.addEventListener('pointercancel', _bloomRelease, { passive: true });
-
-// ═══ RING DRAG — slide your ring on the board, pay 5 Gold per slot ═══
-// Grab anywhere along your board's slider track and drag the ring to a
-// slot. Release → confirm "Pay N Gold to slide here?". Uses the same
-// payToSlide engine path as the board overlay (one step at a time, so
-// slot events fire per space, exactly like the physical game).
-const RING_SLOT_LEFTS = [16, 33, 50, 67, 84];
-let _ringDrag = null;
-
-function _ringSlotFromX(clientX, rect) {
-    const pct = ((clientX - rect.left) / rect.width) * 100;
-    let best = 0, bestD = Infinity;
-    RING_SLOT_LEFTS.forEach((L, i) => {
-        const d = Math.abs(pct - L);
-        if (d < bestD) { bestD = d; best = i; }
-    });
-    return best;
-}
-
-document.addEventListener('pointerdown', (e) => {
-    if (!game || game.phase !== 'gameplay') return;
-    const wrap = e.target.closest && e.target.closest('.pmat.you .pmat-boardwrap');
-    if (!wrap) return;
-    const rect = wrap.getBoundingClientRect();
-    // Only the slider track zone (bottom quarter of the board) starts a drag.
-    if (e.clientY < rect.top + rect.height * 0.72) return;
-    const ring = wrap.querySelector('.pmat-ring');
-    if (!ring) return;
-    _ringDrag = { wrap, rect, ring, moved: false, slot: game.players[0].sliderPosition };
-    ring.classList.add('dragging');
-}, true);
-
-document.addEventListener('pointermove', (e) => {
-    if (!_ringDrag) return;
-    _ringDrag.moved = true;
-    const slot = _ringSlotFromX(e.clientX, _ringDrag.rect);
-    _ringDrag.slot = slot;
-    _ringDrag.ring.style.left = RING_SLOT_LEFTS[slot] + '%';
-}, { passive: true });
-
-function _ringDragEnd(e) {
-    if (!_ringDrag) return;
-    const { ring, slot, moved, rect } = _ringDrag;
-    ring.classList.remove('dragging');
-    _ringDrag = null;
-    const current = game.players[0].sliderPosition;
-    if (!moved || slot === current) { renderGameState(); return; }
-    // Block the mat's tap-to-inspect for this gesture.
-    if (e) { e.stopPropagation(); }
-    _peekSwallowClick = true;
-    setTimeout(() => { _peekSwallowClick = false; }, 400);
-    showSlideConfirm(slot, rect);
-}
-document.addEventListener('pointerup', _ringDragEnd, true);
-document.addEventListener('pointercancel', _ringDragEnd, true);
-
-function showSlideConfirm(targetSlot, boardRect) {
-    const ov = document.getElementById('slideConfirm');
-    if (!ov) { renderGameState(); return; }
-    const current = game.players[0].sliderPosition;
-    const steps = Math.abs(targetSlot - current);
-    const cost = steps * 5;
-    const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
-    const canAfford = game.players[0].gold >= cost;
-    ov.innerHTML = `
-        <div class="sc-bubble">
-            <div class="sc-text">Slide your ring to <b>${posNames[targetSlot]}</b>?</div>
-            <div class="sc-cost">${steps} slot${steps > 1 ? 's' : ''} · <b>−${cost} Gold</b>${canAfford ? '' : ' — not enough gold'}</div>
-            <div class="sc-actions">
-                <button class="btn-royal" id="scCancel"><span>Cancel</span></button>
-                <button class="btn-royal primary" id="scPay" ${canAfford ? '' : 'disabled style="opacity:.35"'}><span>Pay &amp; Slide</span></button>
-            </div>
-        </div>`;
-    // Sit just above the player's board.
-    ov.style.left = Math.round(boardRect.left + boardRect.width / 2) + 'px';
-    ov.style.top = Math.round(boardRect.top - 8) + 'px';
-    ov.classList.add('active');
-
-    // Keep the board overlay's ring/hotspots honest if it's open.
-    const refreshBoardOv = () => {
-        const bo = document.getElementById('boardOverlay');
-        if (bo && bo.classList.contains('active')) renderBoardOvSlots();
-    };
-    const close = () => { ov.classList.remove('active'); renderGameState(); refreshBoardOv(); };
-    ov.querySelector('#scCancel').onclick = close;
-    const payBtn = ov.querySelector('#scPay');
-    if (canAfford) payBtn.onclick = async () => {
-        ov.classList.remove('active');
-        const dir = targetSlot > current ? 1 : -1;
-        for (let i = 0; i < steps; i++) {
-            await payToSlide(dir);   // charges 5g/step, fires slot events
-        }
-        renderGameState();
-        refreshBoardOv();
-    };
-}
 
 // ═══ MELEE SPLASH — end-of-act tournament flair ═══════════════════════
 // A quick full-screen moment (Battlegrounds combat splash energy): banner,
@@ -3607,19 +4297,29 @@ function closeZoom() {
     document.getElementById('cardZoom').classList.remove('active');
 }
 
-// Close action panel on outside click
+// Close action panel on outside click.
+// Player chips, sidebar rows and their ◀▶ neighbor tags are NOT "outside":
+// they open overlays that step the panel aside and restore it on close —
+// dismissing here would eat the selection under that dance (tapping a
+// neighbor arrow used to silently kill the panel; that was the whole bug).
 document.addEventListener('click', (e) => {
-    if (!e.target.closest('.hand-card') && !e.target.closest('.action-panel')) {
+    if (!e.target.closest('.hand-card') && !e.target.closest('.action-panel')
+        && !e.target.closest('.pmat') && !e.target.closest('.opp-entry')
+        && !e.target.closest('.nt-tag') && !e.target.closest('#tvBoardThumb')) {
         hideActionPanel();
     }
 });
 
-// ESC closes all game overlays
+// ESC closes all game overlays; arrows browse the mission browser
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
         closeAllOverlays();
         closeZoom();
         closeCardPeek();
+    }
+    if (document.getElementById('missionLB')?.classList.contains('active')) {
+        if (e.key === 'ArrowLeft') { e.preventDefault(); mbStep(-1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); mbStep(1); }
     }
 });
 

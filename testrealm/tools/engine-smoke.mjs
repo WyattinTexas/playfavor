@@ -520,5 +520,124 @@ console.log('── Mission borrowing: optional rescue at mission time, 2g/skill
   ok(ai7.failedMissions.length === 1 && ai7.gold === 10, 'AI refuses when 3 favor < 2× the fee');
 }
 
+// ═══ probeMissionRequirements: PURE — browsing must never mutate state ═══
+{
+  // A held Life Essence answers "success" to the probe WITHOUT being
+  // consumed (the old label path burned it just for opening the lightbox).
+  const g = newGame();
+  const p = g.players[0];
+  p.missions = [{ ...missionByName('A Day With the Birds') }]; // needs 3 Knowledge
+  p.skills.knowledge = 0;                                      // unmet on merits
+  p.removeMissionRequirements = true;                          // Life Essence held
+  const snap = () => JSON.stringify({ ...p, character: undefined });
+  const before = snap();
+  const r1 = g.probeMissionRequirements(0, p.missions[0]);
+  const r2 = g.probeMissionRequirements(0, p.missions[0]);
+  ok(r1.success === true && r2.success === true, 'probe: Life Essence answers success every time');
+  ok(p.removeMissionRequirements === true, 'probe does NOT consume the Life Essence');
+  ok(snap() === before, 'probe leaves the player byte-identical (essence held)');
+
+  // Without essence: probe agrees with the real check, still byte-pure.
+  p.removeMissionRequirements = false;
+  const before2 = snap();
+  const rMiss = g.probeMissionRequirements(0, p.missions[0]);
+  ok(rMiss.success === false && rMiss.details.missing.length > 0, 'probe reports unmet requirements');
+  ok(snap() === before2, 'probe leaves the player byte-identical (no essence)');
+  p.skills.knowledge = 3;
+  ok(g.probeMissionRequirements(0, p.missions[0]).success === true, 'probe: met requirements read as success');
+
+  // The real check still consumes — turn-in behavior unchanged.
+  p.skills.knowledge = 0;
+  p.removeMissionRequirements = true;
+  const rReal = g.checkMissionRequirements(0, p.missions[0]);
+  ok(rReal.success === true && p.removeMissionRequirements === false,
+    'checkMissionRequirements still consumes the essence on the real path');
+}
+
+console.log('── Paid slide: one direction per turn (5g a space, repeatable)');
+{
+  const g = newGame();
+  const p = g.players[0];
+  p.gold = 50;
+  const startPos = p.sliderPosition; // explorer starts center (2)
+
+  const r1 = g.moveSlider(0, 1);
+  ok(r1.success === true && p.sliderPosition === startPos + 1, 'first paid slide right works');
+  const r2 = g.moveSlider(0, 1);
+  ok(r2.success === true && p.sliderPosition === startPos + 2, 'second slide SAME direction works (repeatable)');
+  const r3 = g.moveSlider(0, -1);
+  ok(r3.success === false && /direction per turn/i.test(r3.error || ''),
+    'reversing within the turn is refused', JSON.stringify(r3));
+  ok(p.sliderPosition === startPos + 2, 'refused slide does not move the ring');
+
+  // Hands passing = a new turn — the lock releases.
+  g.players.forEach(pl => { pl.hand = [{ ...cardByName('First Aid') }]; });
+  g.passHands();
+  const r4 = g.moveSlider(0, -1);
+  ok(r4.success === true && p.sliderPosition === startPos + 1, 'after passHands the other direction works');
+
+  // A new act deals fresh hands — lock releases there too.
+  p._paidSlideDir = 1;
+  g.startAct(2);
+  ok(p._paidSlideDir === null, 'startAct clears the direction lock');
+
+  // Guards unchanged: gold and board edges still refuse.
+  g.phase = 'gameplay';
+  p.gold = 3;
+  const rPoor = g.moveSlider(0, 1);
+  ok(rPoor.success === false && /5 gold/i.test(rPoor.error || ''), 'under 5 gold still refuses');
+  p.gold = 50;
+  p.sliderPosition = 4;
+  p._paidSlideDir = null;
+  const rEdge = g.moveSlider(0, 1);
+  ok(rEdge.success === false, 'board edge still refuses');
+
+  // Discard-to-slide is a DIFFERENT mechanic — the paid lock never binds it.
+  const g2 = newGame();
+  const p2 = g2.players[0];
+  p2.gold = 50;
+  g2.moveSlider(0, 1);                    // paid right; lock = +1
+  const posAfterPay = p2.sliderPosition;
+  const card = { ...cardByName('First Aid') };
+  p2.hand = [card];
+  g2.pendingActivations[0] = null;
+  g2.pickCard(0, 0);
+  g2.activateCard(0, card.id, 'discard_slide', -1);
+  ok(p2.sliderPosition === posAfterPay - 1, 'discard-slide may still go the other way');
+}
+
+console.log('── Borrow & Play: the CHOSEN lender is the one who gets paid');
+{
+  const g = newGame();
+  const p0 = g.players[0];
+  // A card missing exactly one borrowable skill, with no cost/gold/special
+  // (so the purse math below is pure borrow fee).
+  const reqCard = window.FAVOR_DATA.cards.find(c => {
+    if (c.cost || (c.rewards && c.rewards.gold) || c.special) return false;
+    const probe = g.checkRequirements(0, { ...c });
+    return !probe.canPlay && probe.missingSkills.length === 1 && (probe.missingSpecial || []).length === 0;
+  });
+  ok(!!reqCard, 'found a one-skill-short rig card', 'no candidate in data');
+  const skill = g.checkRequirements(0, { ...reqCard }).missingSkills[0];
+  const lenderCard = window.FAVOR_DATA.cards.find(c => (c.skills || []).includes(skill));
+  // BOTH neighbors can lend — the choice is real. Left neighbor = players[2].
+  g.players[1].playedCards.push({ ...lenderCard });
+  g.players[2].playedCards.push({ ...lenderCard });
+  const borrowable = g.getBorrowableSkills(0);
+  ok(borrowable[skill] && borrowable[skill].includes(1) && borrowable[skill].includes(2),
+    `both neighbors offer ${skill}`);
+
+  const before = [p0.gold, g.players[1].gold, g.players[2].gold];
+  const card = { ...reqCard };
+  p0.hand = [card];
+  g.pendingActivations[0] = null;
+  g.pickCard(0, 0);
+  const res = g.activateCard(0, card.id, 'play', [{ skill, neighborIndex: 2 }]);
+  ok(res.success === true, `borrow-play succeeds (${reqCard.name} via ${skill})`, JSON.stringify(res));
+  ok(p0.gold === before[0] - 2, `borrower pays 2g (${before[0]} → ${p0.gold})`);
+  ok(g.players[2].gold === before[2] + 2, 'the CHOSEN left neighbor receives the fee');
+  ok(g.players[1].gold === before[1], 'the other neighbor gets nothing');
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);
