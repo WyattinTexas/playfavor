@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — Test Realm</title>
-    <link rel="stylesheet" href="css/style.css?v=20260707183543">
+    <link rel="stylesheet" href="css/style.css?v=20260707202856">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
@@ -150,12 +150,15 @@
     <div id="game-screen">
 
         <!-- Board Expand Overlay — the art IS the sheet: the ring sits on
-             the track's slot circles; click a circle to pay & slide. -->
+             the track's slot circles; tap a circle or drag the ring, then
+             the confirm chip (inside the art, always on-screen) pays. -->
         <div class="board-overlay" id="boardOverlay" onclick="closeBoardOverlay()">
             <div class="board-ov-boardwrap" onclick="event.stopPropagation()">
                 <img class="board-ov-full" id="boardOvImg" src="">
+                <img class="board-ov-ghost" id="boardOvGhost" src="assets/ui/slider-ring.png" alt="">
                 <img class="board-ov-ring" id="boardOvRing" src="assets/ui/slider-ring.png" alt="">
                 <div id="boardOvSlots"></div>
+                <div id="boardOvConfirm"></div>
             </div>
             <div class="board-ov-name" id="boardOvName"></div>
             <div class="board-ov-sub">Character Board</div>
@@ -338,9 +341,6 @@
     <!-- ═══ A PROMISE — sacrifice picker ═══ -->
     <div id="promisePicker"></div>
 
-    <!-- ═══ SLIDE CONFIRM — pay gold to move your ring ═══ -->
-    <div id="slideConfirm"></div>
-
     <!-- ═══ SCORING SCREEN ═══ -->
     <div id="scoring-screen">
         <div id="scoringContent"></div>
@@ -360,11 +360,11 @@
          falls back to local standings if these can't reach the project) -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="data/cards.js?v=20260707183543"></script>
-    <script src="data/missions.js?v=20260707183543"></script>
-    <script src="data/characters.js?v=20260707183543"></script>
-    <script src="engine/gameState.js?v=20260707183543"></script>
-    <script src="js/ui.js?v=20260707183543"></script>
-    <script src="js/meta.js?v=20260707183543"></script>
+    <script src="data/cards.js?v=20260707202856"></script>
+    <script src="data/missions.js?v=20260707202856"></script>
+    <script src="data/characters.js?v=20260707202856"></script>
+    <script src="engine/gameState.js?v=20260707202856"></script>
+    <script src="js/ui.js?v=20260707202856"></script>
+    <script src="js/meta.js?v=20260707202856"></script>
 </body>
 </html>

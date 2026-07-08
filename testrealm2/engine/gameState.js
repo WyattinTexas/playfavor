@@ -128,9 +128,11 @@ class FavorGame {
             this.hands.push(hand);
         }
 
-        // Assign initial hands
+        // Assign initial hands — a fresh act is a fresh turn for the
+        // paid-slide direction lock too.
         this.players.forEach((p, i) => {
             p.hand = this.hands[i];
+            p._paidSlideDir = null;
         });
 
         this.phase = PHASES.GAMEPLAY;
@@ -177,6 +179,9 @@ class FavorGame {
             this.players[i].hand = this.players[i + 1].hand;
         }
         this.players[this.playerCount - 1].hand = temp;
+
+        // New turn — the paid-slide direction lock releases.
+        this.players.forEach(p => { p._paidSlideDir = null; });
 
         this.phase = PHASES.ACTIVATE;
         this.activePlayerIndex = this.emblemHolder;
@@ -523,8 +528,17 @@ class FavorGame {
             return { success: false, error: 'Need 5 gold to move slider' };
         }
 
+        // One direction per turn: the first paid slide of the turn locks the
+        // direction until hands next pass (or a new act deals). Discard-slides
+        // are a different mechanic and stay free of this lock.
+        if (player._paidSlideDir && direction !== player._paidSlideDir) {
+            const dirName = player._paidSlideDir < 0 ? 'left' : 'right';
+            return { success: false, error: `One direction per turn — you already slid ${dirName} this turn` };
+        }
+
         player.gold -= SLIDER_MOVE_COST;
         player.sliderPosition = newPos;
+        player._paidSlideDir = direction;
 
         // Apply new position's one-time bonuses and recalc skills
         this.applySliderAbilities(player);

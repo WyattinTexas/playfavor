@@ -879,6 +879,15 @@ console.log('── Mission browser: full set, focus browsing, Life Essence stay
     p.missions = [{ ...FAVOR_DATA.missions.find(m => m.name === 'A Day With the Birds') }];
     p.completedMissions = [{ ...FAVOR_DATA.missions.find(m => m.name !== 'A Day With the Birds') }];
     p.skills.knowledge = 3;   // meets A Day With the Birds on merits
+    // The realm deal is random and taking a mission REMOVES it from the
+    // row (engine: chooseMission splices + replaces) — if the deal put
+    // the rigged held mission on the realm row too, swap it for one that
+    // isn't in play, or "no Turn In on realm missions" flakes by name.
+    const inPlay = new Set([...p.missions, ...p.completedMissions, ...game.visibleMissions].map(m => m.name));
+    game.visibleMissions = game.visibleMissions.map(m =>
+      m.name === 'A Day With the Birds'
+        ? { ...FAVOR_DATA.missions.find(x => !inPlay.has(x.name)) }
+        : m);
     renderGameState();
   });
   await sleep(500);
@@ -1809,6 +1818,290 @@ for (const mode of ['desktop', 'phone']) {
     tags: document.querySelectorAll('.nt-tag').length,
   }));
   ok(after.reads === 0 && after.tags === 0, 'panel close clears every ring and tag');
+  await page.close();
+}
+
+// ═══ BORROW & PLAY CHOOSER: button first, THEN "from whom?" ═══
+// Wyatt's 7/7 report: the ◀▶ arrows looked like lender pickers and tapping
+// one silently killed the panel. Now the arrows/chips open the rival peek
+// (panel steps aside + returns) and Borrow & Play opens a real chooser —
+// both neighbors shown, the one with nothing to lend grayed with why.
+for (const mode of ['desktop', 'phone']) {
+  console.log(`── ${mode}: Borrow & Play — lender chooser + tap-a-neighbor no longer eats the panel`);
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push(`borrow-${mode}: ` + m.text()); });
+  page.on('pageerror', e => consoleErrors.push(`borrow-${mode} pageerror: ` + e.message));
+  if (mode === 'phone') await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  else await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+  await sleep(400);
+
+  // Rig: find a card short exactly ONE skill that NO seat lends naturally
+  // (so we fully control the lender), then hand the RIGHT neighbor (p1)
+  // the only lending card. Left neighbor (last player) has nothing.
+  const rig = await page.evaluate(() => {
+    const cand = FAVOR_DATA.cards.filter(c => {
+      if (c.cost || (c.rewards && c.rewards.gold) || c.special) return false;
+      const probe = game.checkRequirements(0, { ...c });
+      return !probe.canPlay && probe.missingSkills.length === 1 && (probe.missingSpecial || []).length === 0;
+    });
+    const natural = game.getBorrowableSkills(0);
+    const reqCard = cand.find(c => !natural[game.checkRequirements(0, { ...c }).missingSkills[0]]);
+    if (!reqCard) return null;
+    const skill = game.checkRequirements(0, { ...reqCard }).missingSkills[0];
+    const lender = FAVOR_DATA.cards.find(c => (c.skills || []).includes(skill) && c.name !== reqCard.name);
+    const byName = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    const p0 = game.players[0];
+    p0.hand = [{ ...reqCard }, byName('Marketplace Sales'), byName('First Aid')];
+    p0.gold = 12;
+    for (let i = 1; i < game.playerCount; i++) {
+      game.players[i].hand = [byName('First Aid'), byName('First Aid'), byName('First Aid')];
+    }
+    game.players[1].playedCards.push({ ...lender });
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    renderGameState();
+    document.querySelectorAll('.game-toast').forEach(t => t.remove());
+    return { cardName: reqCard.name, skill, lenderGold: game.players[1].gold,
+             otherGold: game.players[game.playerCount - 1].gold, n: game.playerCount };
+  });
+  ok(!!rig, 'rig found a controllable one-skill-short card', 'no candidate — data drifted?');
+
+  // A · Tap-a-neighbor regression: select the reader card (index 1) so the
+  // ◀▶ tags appear, then tap the RIGHT chip/tag — the rival peek must open
+  // and the panel must come back with the selection intact.
+  await page.evaluate(() => selectHandCard(1));
+  await sleep(350);
+  await page.evaluate((m) => {
+    if (m === 'phone') {
+      const tag = document.querySelector('#tvSeats .pmat.nt-right .nt-tag');
+      (tag || document.querySelector('#tvSeats .pmat[data-pi="1"]')).click();
+    } else {
+      document.querySelector('#gameSidebar .opp-entry[data-pi="1"]').click();
+    }
+  }, mode);
+  await sleep(450);
+  const peek = await page.evaluate(() => ({
+    opp: document.getElementById('oppOverlay').classList.contains('active'),
+    panelAside: !document.querySelector('.action-panel.active'),
+    sel: selectedHandCard,
+  }));
+  ok(peek.opp, 'tapping the neighbor arrow/chip opens the rival peek');
+  ok(peek.panelAside, 'panel steps aside under the peek');
+  ok(peek.sel === 1, `selection survives (${peek.sel})`);
+  await page.evaluate(() => closeOppOverlay());
+  await sleep(450);
+  const back = await page.evaluate(() => ({
+    panel: document.querySelector('.action-panel').classList.contains('active'),
+    sel: selectedHandCard,
+  }));
+  ok(back.panel && back.sel === 1, 'closing the peek restores the panel — nothing disappears');
+
+  // B · The chooser: Borrow & Play first, THEN whom.
+  await page.evaluate(() => selectHandCard(0));
+  await sleep(350);
+  const hasBtn = await page.evaluate(() =>
+    [...document.querySelectorAll('.action-panel .action-btn')].some(b => /Borrow & Play/i.test(b.textContent)));
+  ok(hasBtn, 'Borrow & Play offered (right neighbor can lend)');
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.action-panel .action-btn')].find(b => /Borrow & Play/i.test(b.textContent)).click();
+  });
+  await sleep(400);
+  const chooser = await page.evaluate(() => {
+    const ov = document.getElementById('promisePicker');
+    const rows = [...ov.querySelectorAll('.bw-row')];
+    const row = (pi) => rows.find(r => r.dataset.pi === String(pi));
+    const lender = row(1), other = row(game.playerCount - 1);
+    return {
+      active: ov.classList.contains('active'),
+      title: (ov.querySelector('.pp-title') || {}).textContent || '',
+      rows: rows.length,
+      lenderOn: lender && !lender.classList.contains('off'),
+      lenderTag: lender ? (lender.querySelector('.bw-tag') || {}).textContent || '' : '',
+      otherOff: other && other.classList.contains('off'),
+      otherNote: other ? (other.querySelector('.bw-note') || {}).textContent || '' : '',
+    };
+  });
+  ok(chooser.active && /Borrow/i.test(chooser.title), 'chooser overlay opens on Borrow & Play');
+  ok(chooser.rows === 2, `both neighbors on stage (${chooser.rows} rows)`);
+  ok(chooser.lenderOn && /Right Neighbor/.test(chooser.lenderTag), 'the lender row is live and tagged ▶');
+  ok(chooser.otherOff && /^No /.test(chooser.otherNote), `the empty-handed neighbor sits grayed with why ("${chooser.otherNote}")`);
+  await page.screenshot({ path: join(SHOTS, `borrow-chooser-${mode}.png`) });
+
+  // Cancel lands back on the card.
+  await page.evaluate(() => document.getElementById('bwCancel').click());
+  await sleep(450);
+  const cancel = await page.evaluate(() => ({
+    ovGone: !document.getElementById('promisePicker').classList.contains('active'),
+    panel: document.querySelector('.action-panel').classList.contains('active'),
+    sel: selectedHandCard,
+    hand: game.players[0].hand.length,
+  }));
+  ok(cancel.ovGone && cancel.panel && cancel.sel === 0 && cancel.hand === 3,
+    'Cancel returns to the action panel, card untouched', JSON.stringify(cancel));
+
+  // Tap the lender = commit (single missing skill needs no second confirm).
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.action-panel .action-btn')].find(b => /Borrow & Play/i.test(b.textContent)).click();
+  });
+  await sleep(400);
+  await page.evaluate(() => {
+    [...document.querySelectorAll('#promisePicker .bw-row')].find(r => !r.classList.contains('off')).click();
+  });
+  await page.waitForFunction((name) =>
+    game.players[0].playedCards.some(c => c.name === name) &&
+    game.pendingActivations.every(a => !a),
+    { timeout: 30000 }, rig.cardName);
+  const ledger = await page.evaluate(() => ({
+    p0: game.players[0].gold,
+    lender: game.players[1].gold,
+    other: game.players[game.playerCount - 1].gold,
+  }));
+  ok(ledger.p0 === 10, `borrower paid 2g (12 → ${ledger.p0})`);
+  ok(ledger.lender === rig.lenderGold + 2, `the CHOSEN lender received the fee (${rig.lenderGold} → ${ledger.lender})`);
+  ok(ledger.other === rig.otherGold, 'the other neighbor got nothing');
+  await page.close();
+}
+
+// ═══ RING SLIDE: tap-or-drag, confirm chip INSIDE the art, one direction ═══
+// Wyatt's 7/7 report: halo appeared but nothing confirmable — the old
+// bubble hung above the board RECT, off-screen on phones. The chip now
+// lives in the art; this asserts it lands INSIDE the viewport.
+for (const mode of ['desktop', 'phone']) {
+  console.log(`── ${mode}: paid ring slide — reachable circles, on-screen confirm, direction lock`);
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push(`ring-${mode}: ` + m.text()); });
+  page.on('pageerror', e => consoleErrors.push(`ring-${mode} pageerror: ` + e.message));
+  if (mode === 'phone') await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  else await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+  await sleep(300);
+
+  await page.evaluate(() => {
+    const p = game.players[0];
+    p.gold = 70;                                // Wyatt's scenario: plenty of gold
+    p.sliderPosition = 2;
+    p.claimedSlots = new Set([0, 1, 2, 3, 4]);  // pre-claimed: fee math stays pure
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    renderGameState();
+    document.querySelectorAll('.game-toast').forEach(t => t.remove());
+    openBoardOverlay();
+  });
+  await sleep(400);
+  const st1 = await page.evaluate(() => ({
+    ov: document.getElementById('boardOverlay').classList.contains('active'),
+    reach: document.querySelectorAll('.board-ov-slot.reach').length,
+    grab: document.getElementById('boardOvRing').classList.contains('grab'),
+    hint: document.getElementById('boardOvHint').textContent,
+  }));
+  ok(st1.ov, 'board overlay opens');
+  ok(st1.reach === 4, `all four other circles reachable at 70g (${st1.reach})`);
+  ok(st1.grab, 'ring is grabbable');
+  ok(/drag your ring/i.test(st1.hint), 'hint teaches tap-or-drag');
+
+  // Tap one right → ring rides out, confirm chip appears ON SCREEN.
+  await page.evaluate(() => { document.querySelectorAll('.board-ov-slot')[3].click(); });
+  await sleep(500);
+  const st2 = await page.evaluate(() => {
+    const c = document.getElementById('boardOvConfirm');
+    const r = c.getBoundingClientRect();
+    const ring = document.getElementById('boardOvRing');
+    return {
+      active: c.classList.contains('active'),
+      inView: r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth && r.height > 20,
+      text: c.textContent,
+      ringLeft: ring.style.left,
+      pending: ring.classList.contains('pending'),
+      ghost: document.getElementById('boardOvGhost').classList.contains('show'),
+    };
+  });
+  ok(st2.active, 'confirm chip appears on tap');
+  ok(st2.inView, 'confirm chip lands fully ON SCREEN (the dead-tap bug)', st2.inView ? '' : JSON.stringify(st2));
+  ok(/1 space/.test(st2.text) && /−5 Gold/.test(st2.text), 'chip prices one space at 5 Gold');
+  ok(st2.ringLeft === '66.3%' && st2.pending, `ring waits on the target pulsing (${st2.ringLeft})`);
+  ok(st2.ghost, 'ghost ring marks home');
+  await page.screenshot({ path: join(SHOTS, `ring-confirm-${mode}.png`) });
+
+  // ✕ → ring glides home, nothing charged.
+  await page.evaluate(() => {
+    [...document.querySelectorAll('#boardOvConfirm .btn-royal')].find(b => !b.classList.contains('primary')).click();
+  });
+  await sleep(500);
+  const st3 = await page.evaluate(() => ({
+    gone: !document.getElementById('boardOvConfirm').classList.contains('active'),
+    ringLeft: document.getElementById('boardOvRing').style.left,
+    gold: game.players[0].gold,
+    pos: game.players[0].sliderPosition,
+  }));
+  ok(st3.gone && st3.ringLeft === '50%' && st3.gold === 70 && st3.pos === 2,
+    '✕ cancels — ring glides home, purse untouched', JSON.stringify(st3));
+
+  // Two spaces → −10, board STAYS OPEN (repeatable), direction remembered.
+  await page.evaluate(() => { document.querySelectorAll('.board-ov-slot')[4].click(); });
+  await sleep(350);
+  const price2 = await page.evaluate(() => document.getElementById('boardOvConfirm').textContent);
+  ok(/2 spaces/.test(price2) && /−10 Gold/.test(price2), 'two-space chip prices −10 Gold');
+  await page.evaluate(() => { document.querySelector('#boardOvConfirm .btn-royal.primary').click(); });
+  await sleep(1400);
+  const st4 = await page.evaluate(() => ({
+    pos: game.players[0].sliderPosition,
+    gold: game.players[0].gold,
+    ovOpen: document.getElementById('boardOverlay').classList.contains('active'),
+    dir: game.players[0]._paidSlideDir,
+  }));
+  ok(st4.pos === 4 && st4.gold === 60, `paid 10g for two spaces (slot ${st4.pos + 1}, ${st4.gold}g)`);
+  ok(st4.ovOpen, 'board stays open — sliding is repeatable');
+  ok(st4.dir === 1, 'engine holds the turn direction');
+
+  // Reverse tap in the SAME turn → blocked, every leftward circle reads why.
+  await page.evaluate(() => { document.querySelectorAll('.board-ov-slot')[2].click(); });
+  await sleep(400);
+  const st5 = await page.evaluate(() => ({
+    confirm: document.getElementById('boardOvConfirm').classList.contains('active'),
+    pos: game.players[0].sliderPosition,
+    blocked: document.querySelectorAll('.board-ov-slot.blocked').length,
+    tip: document.querySelectorAll('.board-ov-slot')[2].title,
+  }));
+  ok(!st5.confirm && st5.pos === 4, 'reverse tap this turn: no confirm, no move');
+  ok(st5.blocked === 4, `all leftward circles blocked (${st5.blocked})`);
+  ok(/direction per turn/i.test(st5.tip), `tooltip says why ("${st5.tip}")`);
+
+  // DRAG (mouse pointer path — phones reuse the same pointer handlers).
+  if (mode === 'desktop') {
+    await page.evaluate(() => {
+      const p = game.players[0];
+      p._paidSlideDir = null;
+      p.sliderPosition = 2;
+      p.gold = 20;
+      renderBoardOvSlots();
+    });
+    await sleep(350);
+    const geo = await page.evaluate(() => {
+      const w = document.querySelector('.board-ov-boardwrap').getBoundingClientRect();
+      const r = document.getElementById('boardOvRing').getBoundingClientRect();
+      return { wl: w.left, ww: w.width, rx: r.left + r.width / 2, ry: r.top + r.height / 2 };
+    });
+    const targetX = geo.wl + geo.ww * 0.334;   // slot-1 circle center
+    await page.mouse.move(geo.rx, geo.ry);
+    await page.mouse.down();
+    for (let i = 1; i <= 8; i++) {
+      await page.mouse.move(geo.rx + (targetX - geo.rx) * (i / 8), geo.ry);
+      await sleep(20);
+    }
+    await page.mouse.up();
+    await sleep(500);
+    const drag = await page.evaluate(() => ({
+      confirm: document.getElementById('boardOvConfirm').classList.contains('active'),
+      text: document.getElementById('boardOvConfirm').textContent,
+      ringLeft: document.getElementById('boardOvRing').style.left,
+    }));
+    ok(drag.confirm && /−5 Gold/.test(drag.text), 'DRAG: releasing near a circle shows its confirm');
+    ok(drag.ringLeft === '33.4%', `DRAG: ring locks over the drop circle (${drag.ringLeft})`);
+    await page.screenshot({ path: join(SHOTS, 'ring-drag.png') });
+    await page.evaluate(() => { document.querySelector('#boardOvConfirm .btn-royal.primary').click(); });
+    await sleep(900);
+    const after = await page.evaluate(() => ({ pos: game.players[0].sliderPosition, gold: game.players[0].gold }));
+    ok(after.pos === 1 && after.gold === 15, `DRAG: pay & slide lands (slot ${after.pos + 1}, ${after.gold}g)`);
+  }
   await page.close();
 }
 

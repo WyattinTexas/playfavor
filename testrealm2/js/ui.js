@@ -661,7 +661,7 @@ window.resetCoach = resetCoach;
 function coachOverlayOpen() {
     return ['howto-overlay', 'boardOverlay', 'handInspectOv', 'oppOverlay',
             'missionLB', 'missionJournal', 'cardZoom', 'scoring-screen', 'missionSelect',
-            'actionPanel', 'cardPeek', 'meleeSplash', 'promisePicker', 'slideConfirm',
+            'actionPanel', 'cardPeek', 'meleeSplash', 'promisePicker',
             'tvPopoverHost']
         .some(id => { const el = document.getElementById(id); return el && el.classList.contains('active'); });
 }
@@ -1931,12 +1931,16 @@ function openBoardOverlay() {
     document.getElementById('boardOvImg').src = `assets/characters/${char.filename}`;
     document.getElementById('boardOvName').textContent = char.name;
 
+    _ovSlideTarget = null;   // fresh open, no slide pending
+    _ovRingDragInit();
     renderBoardOvSlots();
 
     document.getElementById('boardOverlay').classList.add('active');
 }
 
 function closeBoardOverlay() {
+    _ovSlideTarget = null;
+    _ovDragging = false;
     document.getElementById('boardOverlay').classList.remove('active');
     // Escape / backdrop while picking a slide slot: cancel back to where
     // the player came from. The hand panel is re-opened a tick later so
@@ -1982,52 +1986,112 @@ function openSlidePickerFinal(onPick) {
 }
 
 // The board art already explains every slot \u2014 no widget re-explains it.
-// Invisible hotspots sit on the art's five track circles: hover for the
-// landing halo + cost, click to pay & slide. The ring token overlaps the
-// current circle, exactly like the physical board.
+// Invisible hotspots sit on the art's five track circles. Paid slides are
+// tap-or-drag: tap a reachable circle (or drag the ring itself) and the
+// ring rides out and waits there pulsing while a confirm chip floats just
+// above the slot \u2014 Pay & Slide locks it, \u2715 glides it home. Repeatable
+// while gold lasts; the engine holds the one-direction-per-turn rule.
+// (The old confirm was a fixed-position bubble hung above the board RECT \u2014
+// on phones the board starts at the screen's top edge, so it rendered
+// off-screen and the tap looked dead. Everything now lives IN the art.)
 // Calibrated against the board scans (pixel-measured): the five circles
 // sit at these % of the board image. The board thumb (Z5) rides the same
 // track, so geometry transfers 1:1 between thumb and overlay.
 const BOARD_OV_TRACK = { lefts: [17, 33.4, 50, 66.3, 82.9], top: 84.7 };
+let _ovSlideTarget = null;   // slot index awaiting Pay & Slide, or null
+
+// Slots a paid slide can reach RIGHT NOW: affordable at 5g a space, and
+// matching the direction already taken this turn (engine truth).
+function _ovPaidReach() {
+    const ok = new Set();
+    if (!game || game.phase !== 'gameplay' || _slidePick) return ok;
+    const p = game.players[0];
+    const afford = Math.floor(p.gold / 5);
+    const lock = p._paidSlideDir || 0;
+    BOARD_OV_TRACK.lefts.forEach((L, i) => {
+        const steps = i - p.sliderPosition;
+        if (steps === 0 || Math.abs(steps) > afford) return;
+        if (lock && Math.sign(steps) !== lock) return;
+        ok.add(i);
+    });
+    return ok;
+}
+
+function _ovWhyBlocked(i) {
+    if (!game || game.phase !== 'gameplay') return 'The ring slides during gameplay rounds';
+    const p = game.players[0];
+    const steps = i - p.sliderPosition;
+    if (p._paidSlideDir && Math.sign(steps) !== p._paidSlideDir)
+        return `One direction per turn \u2014 you already slid ${p._paidSlideDir < 0 ? 'left' : 'right'}`;
+    if (Math.abs(steps) * 5 > p.gold) return `Need ${Math.abs(steps) * 5} Gold (5 per space)`;
+    return '';
+}
 
 function renderBoardOvSlots() {
     const player = game.players[0];
     const cur = player.sliderPosition;
+    const picking = !!_slidePick;
+    const target = (!picking && _ovSlideTarget !== null) ? _ovSlideTarget : null;
+    const reach = _ovPaidReach();
+
+    // The ring sits on its committed slot \u2014 unless a slide awaits its
+    // confirm: then it waits ON the target while the ghost marks home.
     const ring = document.getElementById('boardOvRing');
-    if (ring) {
-        ring.style.left = BOARD_OV_TRACK.lefts[cur] + '%';
+    if (ring && !_ovDragging) {
+        const at = target !== null ? target : cur;
+        ring.style.left = BOARD_OV_TRACK.lefts[at] + '%';
         ring.style.top = BOARD_OV_TRACK.top + '%';
+        ring.classList.toggle('pending', target !== null);
+        ring.classList.toggle('grab', !picking && reach.size > 0);
+    }
+    const ghost = document.getElementById('boardOvGhost');
+    if (ghost) {
+        ghost.style.left = BOARD_OV_TRACK.lefts[cur] + '%';
+        ghost.style.top = BOARD_OV_TRACK.top + '%';
+        ghost.classList.toggle('show', target !== null);
     }
 
     const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
     const holder = document.getElementById('boardOvSlots');
     if (!holder) return;
-    const picking = !!_slidePick;
     holder.innerHTML = BOARD_OV_TRACK.lefts.map((L, i) => {
         const steps = Math.abs(i - cur);
         const pickable = picking && steps === 1;
+        const reachable = reach.has(i);
         const tip = i === cur
             ? 'Your ring is here'
             : picking
                 ? (pickable ? `Slide to ${posNames[i]} \u2014 the discard pays` : 'One space per discard')
-                : `Slide to ${posNames[i]} \u2014 ${steps * 5} Gold`;
+                : (reachable ? `Slide to ${posNames[i]} \u2014 ${steps * 5} Gold` : _ovWhyBlocked(i));
         const cls = 'board-ov-slot'
             + (i === cur ? ' current' : '')
             + (pickable ? ' pickable' : '')
+            + (reachable ? ' reach' : '')
+            + (!picking && !reachable && i !== cur ? ' blocked' : '')
             + (picking && !pickable && i !== cur ? ' dimmed' : '');
         return `<div class="${cls}"
                      style="left:${L}%; top:${BOARD_OV_TRACK.top}%"
                      title="${tip}"
                      onclick="event.stopPropagation(); boardOvSlotClick(${i})"></div>`;
     }).join('');
+
+    renderBoardOvConfirm();
+
     const hint = document.getElementById('boardOvHint');
     if (hint) hint.textContent = picking
         ? 'Pick a glowing circle \u2014 the discarded card pays the toll'
-        : '';
+        : (target !== null
+            ? ''
+            : (reach.size
+                ? `Tap a circle or drag your ring \u2014 5 Gold a space${player._paidSlideDir ? ` \u00b7 ${player._paidSlideDir < 0 ? 'leftward' : 'rightward'} only this turn` : ''}`
+                : ''));
 }
 
 function boardOvSlotClick(i) {
     const player = game.players[0];
+
+    // A drag that ends over a circle also fires its click \u2014 one beat, not two.
+    if (_ovDragJustEnded && Date.now() - _ovDragJustEnded < 300) return;
 
     // Pick-a-slot mode: the discard pays the toll, one space only.
     if (_slidePick) {
@@ -2041,14 +2105,146 @@ function boardOvSlotClick(i) {
         return;
     }
 
-    if (i === player.sliderPosition) return;
+    if (i === player.sliderPosition) {
+        if (_ovSlideTarget !== null) _ovSlideCancel();   // tapping home = never mind
+        return;
+    }
     if (!game || game.phase !== 'gameplay') {
         showNotification('The ring slides during gameplay rounds', 'error');
         return;
     }
-    const wrap = document.querySelector('.board-ov-boardwrap');
-    if (!wrap) return;
-    showSlideConfirm(i, wrap.getBoundingClientRect());
+    if (!_ovPaidReach().has(i)) {
+        const why = _ovWhyBlocked(i);
+        if (why) showNotification(why, 'error');
+        return;
+    }
+    _ovSlideTarget = i;
+    renderBoardOvSlots();
+}
+
+// The confirm chip floats just above the target circle, INSIDE the board
+// art \u2014 always on-screen wherever the board sits in the viewport.
+function renderBoardOvConfirm() {
+    const holder = document.getElementById('boardOvConfirm');
+    if (!holder) return;
+    if (_ovSlideTarget === null || _slidePick) {
+        holder.classList.remove('active');
+        holder.innerHTML = '';
+        return;
+    }
+    const player = game.players[0];
+    const steps = Math.abs(_ovSlideTarget - player.sliderPosition);
+    const cost = steps * 5;
+    const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
+    holder.style.left = Math.min(78, Math.max(22, BOARD_OV_TRACK.lefts[_ovSlideTarget])) + '%';
+    holder.style.top = (BOARD_OV_TRACK.top - 8) + '%';
+    holder.innerHTML = `
+        <div class="sc-bubble">
+            <div class="sc-text">Slide to <b>${posNames[_ovSlideTarget]}</b>?</div>
+            <div class="sc-cost">${steps} space${steps > 1 ? 's' : ''} \u00b7 <b>\u2212${cost} Gold</b></div>
+            <div class="sc-actions">
+                <button class="btn-royal" onclick="event.stopPropagation(); _ovSlideCancel()"><span>\u2715</span></button>
+                <button class="btn-royal primary" onclick="event.stopPropagation(); _ovSlideConfirm()"><span>Pay &amp; Slide</span></button>
+            </div>
+        </div>`;
+    holder.classList.add('active');
+}
+
+function _ovSlideCancel() {
+    _ovSlideTarget = null;
+    renderBoardOvSlots();   // the ring glides home, the ghost fades
+}
+
+async function _ovSlideConfirm() {
+    const target = _ovSlideTarget;
+    if (target === null) return;
+    _ovSlideTarget = null;
+    const player = game.players[0];
+    const dir = target > player.sliderPosition ? 1 : -1;
+    const steps = Math.abs(target - player.sliderPosition);
+    for (let s = 0; s < steps; s++) {
+        await payToSlide(dir);   // 5g a step; slot landing events fire per step
+    }
+    renderGameState();
+    renderBoardOvSlots();   // stay open \u2014 slide again while gold and direction allow
+}
+
+// \u2500\u2500 Ring drag \u2014 grab the ring, ride the track, drop it on a circle \u2500\u2500
+// Maps finger X to the nearest REACHABLE slot (never past gold or the
+// direction lock); release off home shows the same confirm chip as a tap.
+let _ovDragging = false;
+let _ovDragJustEnded = 0;
+
+function _ovRingDragInit() {
+    const ring = document.getElementById('boardOvRing');
+    if (!ring || ring._dragWired) return;
+    ring._dragWired = true;
+
+    let startX = 0, engaged = false, rect = null;
+
+    const slotAtX = (clientX) => {
+        const pct = ((clientX - rect.left) / rect.width) * 100;
+        const reach = _ovPaidReach();
+        const cur = game.players[0].sliderPosition;
+        let best = cur, bestD = Infinity;
+        BOARD_OV_TRACK.lefts.forEach((L, i) => {
+            if (i !== cur && !reach.has(i)) return;
+            const d = Math.abs(L - pct);
+            if (d < bestD) { bestD = d; best = i; }
+        });
+        return best;
+    };
+
+    ring.addEventListener('pointerdown', (e) => {
+        if (_slidePick || !game || game.phase !== 'gameplay') return;
+        if (_ovPaidReach().size === 0) return;
+        const wrap = document.querySelector('.board-ov-boardwrap');
+        if (!wrap) return;
+        rect = wrap.getBoundingClientRect();
+        startX = e.clientX;
+        engaged = false;
+        _ovDragging = true;
+        ring.setPointerCapture(e.pointerId);
+        e.preventDefault();
+    });
+
+    ring.addEventListener('pointermove', (e) => {
+        if (!_ovDragging) return;
+        if (!engaged && Math.abs(e.clientX - startX) < 6) return;   // tap tolerance
+        engaged = true;
+        ring.classList.add('dragging');
+        const ghost = document.getElementById('boardOvGhost');
+        if (ghost) ghost.classList.add('show');   // home stays marked under the drag
+        // Follow the finger along the track, clamped to the reachable span.
+        const reach = _ovPaidReach();
+        const cur = game.players[0].sliderPosition;
+        const idxs = [cur, ...reach];
+        const minL = Math.min(...idxs.map(i => BOARD_OV_TRACK.lefts[i]));
+        const maxL = Math.max(...idxs.map(i => BOARD_OV_TRACK.lefts[i]));
+        const pct = Math.min(maxL, Math.max(minL, ((e.clientX - rect.left) / rect.width) * 100));
+        ring.style.left = pct + '%';
+        // Live halo on the circle it would snap to.
+        const snap = slotAtX(e.clientX);
+        document.querySelectorAll('#boardOvSlots .board-ov-slot').forEach((el, i) =>
+            el.classList.toggle('snap', i === snap && i !== cur));
+    });
+
+    const release = (e) => {
+        if (!_ovDragging) return;
+        _ovDragging = false;
+        const wasEngaged = engaged;
+        engaged = false;
+        ring.classList.remove('dragging');
+        document.querySelectorAll('#boardOvSlots .board-ov-slot.snap')
+            .forEach(el => el.classList.remove('snap'));
+        if (!wasEngaged) { renderBoardOvSlots(); return; }   // a tap, not a drag
+        _ovDragJustEnded = Date.now();
+        const snap = slotAtX(e.clientX);
+        _ovSlideTarget = (snap === game.players[0].sliderPosition) ? null : snap;
+        renderBoardOvSlots();   // ring settles on the target (or glides home)
+    };
+    ring.addEventListener('pointerup', release);
+    ring.addEventListener('pointercancel', release);
 }
 
 // ── Hand Inspect Overlay ──
@@ -2574,6 +2770,20 @@ function showFinalCardChoice(card) {
                     });
                     return;
                 }
+                // Borrow is two beats here too: pick the lender first. The
+                // panel steps aside directly (the pending guard stays armed
+                // against stray clicks); cancel re-surfaces it.
+                if (b.dataset.act === 'borrow_play') {
+                    panel.classList.remove('active');
+                    showBorrowChooser(card).then(chosen => {
+                        if (!chosen) { panel.classList.add('active'); return; }
+                        window._finalBorrowChoice = chosen;
+                        window._finalChoicePending = false;
+                        clearTargetHighlights();
+                        resolve('borrow_play');
+                    });
+                    return;
+                }
                 window._finalChoicePending = false;
                 panel.classList.remove('active');
                 clearTargetHighlights();
@@ -2592,11 +2802,18 @@ async function resolveFinalCardChoice(card) {
         game.activateCard(0, card.id, 'play');
         addLogEntry(`You also play ${card.name}`);
     } else if (act === 'borrow_play') {
-        const { missingSkills } = game.checkRequirements(0, card);
-        const borrowable = game.getBorrowableSkills(0);
-        const borrowFrom = missingSkills.map(s => ({ skill: s, neighborIndex: borrowable[s][0] }));
-        game.activateCard(0, card.id, 'play', borrowFrom);
-        addLogEntry(`You borrow skills and play ${card.name}`);
+        const chosen = window._finalBorrowChoice;
+        window._finalBorrowChoice = null;
+        const { borrowFrom, uncovered } = resolveBorrowPlan(card, chosen);
+        if (uncovered) {
+            game.activateCard(0, card.id, 'discard');
+            showNotification(`No one can lend for ${card.name} anymore — discarded (+3g)`, 'error');
+            addLogEntry(`No neighbor could lend for ${card.name} — discarded (+3 Gold)`);
+        } else {
+            const lenders = [...new Set(borrowFrom.map(b => game.players[b.neighborIndex].name))].join(' & ');
+            game.activateCard(0, card.id, 'play', borrowFrom);
+            addLogEntry(`You borrow from ${lenders} and play ${card.name}`);
+        }
     } else if (act === 'mission_letter') {
         const result = game.activateCard(0, card.id, 'mission_letter');
         if (result && result.chooseMission) {
@@ -2688,6 +2905,10 @@ async function playMissionLetter(cardIndex) {
     processRound('mission_letter_done');
 }
 
+// Borrow & Play is TWO beats: the button first, THEN "from whom?" \u2014 the
+// chooser shows both neighbors (one may have nothing to lend; it sits
+// grayed with the reason). The 2g-per-skill fee goes TO the lender, so
+// who gets paid is the player's call \u2014 never auto-picked.
 function playWithBorrow(cardIndex) {
     if (!game || game.phase !== 'gameplay') return;
 
@@ -2701,17 +2922,26 @@ function playWithBorrow(cardIndex) {
         return;
     }
 
-    game.pickCard(0, cardIndex);
-    hideActionPanel();
+    showBorrowChooser(card).then(chosen => {
+        if (!chosen) {
+            // Cancelled \u2014 land back on the card. Re-selected a tick later
+            // so this click's own outside-click handler can't eat the panel.
+            setTimeout(() => selectHandCard(cardIndex), 0);
+            return;
+        }
 
-    game.players[0]._borrowNext = true;
+        game.pickCard(0, cardIndex);
+        hideActionPanel();
 
-    const { missingSkills } = game.checkRequirements(0, card);
-    const borrowCost = missingSkills.length * 2;
-    showNotification(`Borrowed skills & played: ${card.name} (\u2212${borrowCost}g)`, 'play');
-    addLogEntry(`You borrow skills and play ${card.name}`);
+        game.players[0]._borrowNext = chosen;   // [{skill, neighborIndex}] \u2014 consumed at activation
 
-    processRound('borrow_play');
+        const lenders = [...new Set(chosen.map(b => game.players[b.neighborIndex].name))].join(' & ');
+        const borrowCost = chosen.length * 2;
+        showNotification(`Borrowing from ${lenders} \u2014 playing ${card.name} (\u2212${borrowCost}g)`, 'play');
+        addLogEntry(`You borrow from ${lenders} and play ${card.name}`);
+
+        processRound('borrow_play');
+    });
 }
 
 function discardToSlide(cardIndex, direction) {
@@ -2840,13 +3070,16 @@ async function activateAllCards(humanAction) {
                 } else if (humanAction === 'borrow_play' && cardIdx === 0 && game.players[0]._borrowNext) {
                     await showMiniSpotlight(card, 'play');
 
-                    const { missingSkills } = game.checkRequirements(0, card);
-                    const borrowable = game.getBorrowableSkills(0);
-                    const borrowFrom = missingSkills.map(s => ({
-                        skill: s,
-                        neighborIndex: borrowable[s][0]
-                    }));
-                    game.activateCard(0, card.id, 'play', borrowFrom);
+                    // The lender was CHOSEN in the borrow chooser at pick time;
+                    // resolveBorrowPlan re-validates it against the table now.
+                    const { borrowFrom, uncovered } = resolveBorrowPlan(card, game.players[0]._borrowNext);
+                    if (uncovered) {
+                        game.activateCard(0, card.id, 'discard');
+                        showNotification(`No one can lend for ${card.name} anymore — discarded (+3g)`, 'error');
+                        addLogEntry(`No neighbor could lend for ${card.name} — discarded (+3 Gold)`);
+                    } else {
+                        game.activateCard(0, card.id, 'play', borrowFrom);
+                    }
                     game.players[0]._borrowNext = false;
                 } else if (cardIdx > 0 || humanAction === 'mission_letter_done') {
                     // The auto-activated FINAL card: the player still chooses
@@ -3133,6 +3366,129 @@ function endActPhases() {
         ? () => showPromiseDiscardPicker()
         : () => Promise.resolve();
     afterBorrows().then(afterPenalty).then(afterPromise).then(startMelee);
+}
+
+// ═══ BORROW & PLAY — "from whom?" ═══════════════════════════════════
+// Tapping Borrow & Play asks WHICH neighbor lends before anything moves:
+// both neighbors always take the stage (the 2g-per-skill fee goes TO the
+// lender, so the pick matters) and a neighbor with nothing to lend sits
+// grayed with the reason. On the Merchant's borrow-any slot the whole
+// table appears. Resolves [{skill, neighborIndex}] — or null on cancel.
+function showBorrowChooser(card) {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        const { missingSkills } = game.checkRequirements(0, card);
+        const borrowable = game.getBorrowableSkills(0);
+        if (!ov || missingSkills.length === 0) { resolve(null); return; }
+
+        const n = game.playerCount;
+        const p0 = game.players[0];
+        const curSlot = p0.character && p0.character.slots ? p0.character.slots[p0.sliderPosition] : null;
+        const anyLender = curSlot && curSlot.special === 'borrow_any_player';
+        const leftPi = (n - 1) % n, rightPi = 1 % n;
+        const seats = anyLender
+            ? [...Array(n).keys()].filter(i => i !== 0)
+            : [...new Set([leftPi, rightPi])];
+
+        // Units of the same skill share one lender (the table habit);
+        // distinct skills each pick their own.
+        const counts = {};
+        missingSkills.forEach(s => { counts[s] = (counts[s] || 0) + 1; });
+        const sections = Object.entries(counts);   // [skill, units]
+        const single = sections.length === 1;
+        const choice = {};                          // skill -> lender pi
+        const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+        const totalCost = missingSkills.length * 2;
+
+        const seatTag = pi => {
+            if (anyLender) return '';
+            if (pi === leftPi) return '<span class="bw-tag">◀ Left Neighbor</span>';
+            if (pi === rightPi) return '<span class="bw-tag">Right Neighbor ▶</span>';
+            return '';
+        };
+
+        const finish = (result) => {
+            ov.classList.remove('active');
+            resolve(result);
+        };
+
+        const render = () => {
+            const sectionHtml = sections.map(([skill, units]) => {
+                const fee = units * 2;
+                const head = single
+                    ? ''
+                    : `<div class="bw-skill-head">${cap(skill)}${units > 1 ? ' ×' + units : ''} — ${fee}g to its lender</div>`;
+                const seatCards = seats.map(pi => {
+                    const pl = game.players[pi];
+                    const has = !!(borrowable[skill] && borrowable[skill].includes(pi));
+                    const on = choice[skill] === pi;
+                    const art = pl.character ? `assets/characters/${pl.character.filename}` : 'assets/ui/cover.jpg';
+                    const note = has ? `+${fee}g to their purse` : `No ${cap(skill)} to lend`;
+                    return `<div class="bw-row${has ? '' : ' off'}${on ? ' on' : ''}" data-skill="${skill}" data-pi="${pi}">
+                                <img class="bw-art" src="${art}" alt="${pl.name}">
+                                ${seatTag(pi)}
+                                <span class="bw-name">${pl.name}</span>
+                                <span class="bw-note">${note}</span>
+                            </div>`;
+                }).join('');
+                return `${head}<div class="bw-rows">${seatCards}</div>`;
+            }).join('');
+
+            const needTxt = sections.map(([s, u]) => `${cap(s)}${u > 1 ? ' ×' + u : ''}`).join(', ');
+            const ready = sections.every(([s]) => choice[s] !== undefined);
+
+            ov.innerHTML = `
+                <div class="pp-inner">
+                    <div class="pp-title">Borrow &amp; Play</div>
+                    <div class="pp-sub"><b>${card.name}</b> needs <b>${needTxt}</b> —
+                        ${single ? 'tap the neighbor who lends it' : 'pick a lender for each skill'}.
+                        The fee is paid <b>to them</b>${anyLender ? ' · your Merchant slot lets anyone lend' : ''}.</div>
+                    ${sectionHtml}
+                    <div class="pp-actions">
+                        ${single ? '' : `<button class="btn-royal primary" id="bwConfirm" ${ready ? '' : 'disabled style="opacity:.35"'}><span>Borrow &amp; Play (−${totalCost}g)</span></button>`}
+                        <button class="btn-royal" id="bwCancel"><span>Cancel</span></button>
+                    </div>
+                </div>`;
+
+            ov.querySelectorAll('.bw-row:not(.off)').forEach(el => {
+                el.onclick = () => {
+                    const skill = el.dataset.skill;
+                    const pi = parseInt(el.dataset.pi, 10);
+                    // One missing skill = tap-to-commit (the Borrow & Play tap
+                    // already said "yes"); several = assemble, then confirm.
+                    if (single) { finish(missingSkills.map(s => ({ skill: s, neighborIndex: pi }))); return; }
+                    choice[skill] = pi;
+                    render();
+                };
+            });
+            const confirmBtn = ov.querySelector('#bwConfirm');
+            if (confirmBtn) confirmBtn.onclick = () => {
+                if (!sections.every(([s]) => choice[s] !== undefined)) return;
+                finish(missingSkills.map(s => ({ skill: s, neighborIndex: choice[s] })));
+            };
+            ov.querySelector('#bwCancel').onclick = () => finish(null);
+        };
+
+        render();
+        ov.classList.add('active');
+    });
+}
+
+// Chosen lenders are validated at ACTIVATION time — between the click and
+// the activation a lender can slide off the very slot that granted the
+// skill. Stale picks fall back to any current lender; a skill nobody can
+// lend anymore leaves the plan uncovered (the caller discards honestly).
+function resolveBorrowPlan(card, chosen) {
+    const { missingSkills } = game.checkRequirements(0, card);
+    const borrowable = game.getBorrowableSkills(0);
+    const pool = Array.isArray(chosen) ? chosen.slice() : [];
+    const borrowFrom = missingSkills.map(s => {
+        const ci = pool.findIndex(b => b.skill === s);
+        const pick = ci >= 0 ? pool.splice(ci, 1)[0] : null;
+        if (pick && borrowable[s] && borrowable[s].includes(pick.neighborIndex)) return pick;
+        return { skill: s, neighborIndex: borrowable[s] ? borrowable[s][0] : undefined };
+    });
+    return { borrowFrom, uncovered: borrowFrom.some(b => b.neighborIndex === undefined) };
 }
 
 // ═══ MISSION BORROW — a due mission, short only on borrowable skills ════
@@ -3865,50 +4221,6 @@ function _bloomRelease(e) {
 document.addEventListener('pointerup', _bloomRelease, { passive: true });
 document.addEventListener('pointercancel', _bloomRelease, { passive: true });
 
-// ═══ SLIDE CONFIRM — "Pay N Gold to slide here?" ═══════════════════════
-// Fired by the board overlay's track hotspots (the ring-drag gesture died
-// with the bottom-anchored you-mat; the overlay is the one slide surface).
-function showSlideConfirm(targetSlot, boardRect) {
-    const ov = document.getElementById('slideConfirm');
-    if (!ov) { renderGameState(); return; }
-    const current = game.players[0].sliderPosition;
-    const steps = Math.abs(targetSlot - current);
-    const cost = steps * 5;
-    const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
-    const canAfford = game.players[0].gold >= cost;
-    ov.innerHTML = `
-        <div class="sc-bubble">
-            <div class="sc-text">Slide your ring to <b>${posNames[targetSlot]}</b>?</div>
-            <div class="sc-cost">${steps} slot${steps > 1 ? 's' : ''} · <b>−${cost} Gold</b>${canAfford ? '' : ' — not enough gold'}</div>
-            <div class="sc-actions">
-                <button class="btn-royal" id="scCancel"><span>Cancel</span></button>
-                <button class="btn-royal primary" id="scPay" ${canAfford ? '' : 'disabled style="opacity:.35"'}><span>Pay &amp; Slide</span></button>
-            </div>
-        </div>`;
-    // Sit just above the player's board.
-    ov.style.left = Math.round(boardRect.left + boardRect.width / 2) + 'px';
-    ov.style.top = Math.round(boardRect.top - 8) + 'px';
-    ov.classList.add('active');
-
-    // Keep the board overlay's ring/hotspots honest if it's open.
-    const refreshBoardOv = () => {
-        const bo = document.getElementById('boardOverlay');
-        if (bo && bo.classList.contains('active')) renderBoardOvSlots();
-    };
-    const close = () => { ov.classList.remove('active'); renderGameState(); refreshBoardOv(); };
-    ov.querySelector('#scCancel').onclick = close;
-    const payBtn = ov.querySelector('#scPay');
-    if (canAfford) payBtn.onclick = async () => {
-        ov.classList.remove('active');
-        const dir = targetSlot > current ? 1 : -1;
-        for (let i = 0; i < steps; i++) {
-            await payToSlide(dir);   // charges 5g/step, fires slot events
-        }
-        renderGameState();
-        refreshBoardOv();
-    };
-}
-
 // ═══ MELEE SPLASH — end-of-act tournament flair ═══════════════════════
 // A quick full-screen moment (Battlegrounds combat splash energy): banner,
 // every heir's Power counts up, the strongest flares gold and takes
@@ -3981,9 +4293,15 @@ function closeZoom() {
     document.getElementById('cardZoom').classList.remove('active');
 }
 
-// Close action panel on outside click
+// Close action panel on outside click.
+// Player chips, sidebar rows and their ◀▶ neighbor tags are NOT "outside":
+// they open overlays that step the panel aside and restore it on close —
+// dismissing here would eat the selection under that dance (tapping a
+// neighbor arrow used to silently kill the panel; that was the whole bug).
 document.addEventListener('click', (e) => {
-    if (!e.target.closest('.hand-card') && !e.target.closest('.action-panel')) {
+    if (!e.target.closest('.hand-card') && !e.target.closest('.action-panel')
+        && !e.target.closest('.pmat') && !e.target.closest('.opp-entry')
+        && !e.target.closest('.nt-tag') && !e.target.closest('#tvBoardThumb')) {
         hideActionPanel();
     }
 });
