@@ -2105,6 +2105,70 @@ for (const mode of ['desktop', 'phone']) {
   await page.close();
 }
 
+// ═══ STATS CHIPS: purse order, Mind's Eye digit, flex pair both faces ═══
+// Wyatt 7/7: Mind's Eye showed ✓ instead of its count, the flex chip's
+// lone icon read as a duplicate skill, and the purse should read
+// gold·prestige / favor·scorn.
+for (const mode of ['desktop', 'phone']) {
+  console.log(`── ${mode}: stat chips — purse order, Mind's Eye count, flex pair`);
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push(`chips-${mode}: ` + m.text()); });
+  page.on('pageerror', e => consoleErrors.push(`chips-${mode} pageerror: ` + e.message));
+  if (mode === 'phone') await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  else await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+  await sleep(300);
+
+  const rig = await page.evaluate(() => {
+    const p = game.players[0];
+    const eye = FAVOR_DATA.cards.find(c => c.special === 'minds_eye');
+    const flex = FAVOR_DATA.cards.find(c => c.special === 'alchemy_or_prospecting');
+    if (!eye || !flex) return null;
+    p.playedCards.push({ ...eye }, { ...flex });
+    game.applySlotSkills(p);          // rebuilds skills + flexSkills from the table
+    renderGameState();
+    document.querySelectorAll('.game-toast').forEach(t => t.remove());
+    return { eyeCount: game.getMindsEyeCount(0), flexPairs: p.flexSkills.length };
+  });
+  ok(!!rig && rig.eyeCount >= 1 && rig.flexPairs >= 1, 'rig: a Mind\'s Eye and a flex card on the table',
+    JSON.stringify(rig));
+
+  if (mode === 'phone') {
+    const rail = await page.evaluate(() => {
+      const purse = [...document.querySelectorAll('#tvPurse .tv-purse-chip')]
+        .map(c => ['gold', 'prestige', 'favor', 'scorn'].find(k => c.classList.contains(k)));
+      const eyeChip = [...document.querySelectorAll('#tvSkills .tv-skill-chip.special')]
+        .find(c => c.querySelector('img[alt="Mind\'s Eye"]'));
+      const flexChip = document.querySelector('#tvSkills .tv-skill-chip.flex');
+      return {
+        purse,
+        eyeVal: eyeChip ? eyeChip.querySelector('b').textContent : null,
+        flexIcons: flexChip ? flexChip.querySelectorAll('.flex-pair .skill-svg').length : 0,
+        flexStar: flexChip ? flexChip.querySelector('b').textContent : null,
+      };
+    });
+    ok(rail.purse.join(',') === 'gold,prestige,favor,scorn',
+      `purse 2×2 reads gold·prestige / favor·scorn (${rail.purse.join(',')})`);
+    ok(rail.eyeVal === String(rig.eyeCount), `Mind's Eye chip shows its COUNT (${rail.eyeVal})`);
+    ok(rail.flexIcons === 2, `flex chip wears BOTH faces of the pair (${rail.flexIcons} icons)`);
+    ok(rail.flexStar === '✦', `single flex unit still stars (${rail.flexStar})`);
+  } else {
+    const panel = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('#statsPanel .skill-row.special-ability')];
+      const eyeRow = rows.find(r => /Mind/.test(r.textContent));
+      const flexRow = document.querySelector('#statsPanel .skill-row.flex-skill');
+      return {
+        eyeVal: eyeRow ? eyeRow.querySelector('.skill-value').textContent : null,
+        flexIcons: flexRow ? flexRow.querySelectorAll('.skill-icon.flex-pair .skill-svg').length : 0,
+      };
+    });
+    ok(panel.eyeVal === String(rig.eyeCount), `desktop Mind's Eye row shows its COUNT (${panel.eyeVal})`);
+    ok(panel.flexIcons === 2, `desktop flex row wears both faces (${panel.flexIcons} icons)`);
+  }
+  await page.screenshot({ path: join(SHOTS, `stat-chips-${mode}.png`) });
+  await page.close();
+}
+
 // ═══ VICTORY SCREEN: dynamic headline, placement colors, deltas, count-up ═══
 console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit');
 {

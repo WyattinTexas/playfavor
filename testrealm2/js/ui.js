@@ -1178,17 +1178,16 @@ function renderStatsPanel(state) {
         const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
         skillsHtml += `
             <div class="skill-row flex-skill" title="Counts as ${cap(a)} OR ${cap(b)} — your choice each time, never both">
-                <span class="skill-icon">${SKILL_ICONS[a]}</span>
+                <span class="skill-icon flex-pair">${SKILL_ICONS[a]}${SKILL_ICONS[b]}</span>
                 <span class="skill-label">${cap(a)} <i>or</i> ${cap(b)}</span>
                 <span class="skill-value has-skill">${n > 1 ? '×' + n : '✦'}</span>
             </div>`;
     });
 
-    // Special abilities: Philosopher's Stone & Mind's Eye
+    // Special abilities: Philosopher's Stone & Mind's Eye \u2014 the engine
+    // count (cards + slot + mission rewards), shown as the digit it is.
     const hasPhilosopher = gp.philosopherStone && gp.philosopherStone > 0;
-    const hasMindsEye = (gp.playedCards || []).some(c =>
-        c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_x2_philosopher_stone_x5'
-    );
+    const mindsEyeCount = game.getMindsEyeCount(0);
 
     if (hasPhilosopher) {
         skillsHtml += `
@@ -1198,12 +1197,12 @@ function renderStatsPanel(state) {
                 <span class="skill-value has-skill">${gp.philosopherStone}:1</span>
             </div>`;
     }
-    if (hasMindsEye) {
+    if (mindsEyeCount > 0) {
         skillsHtml += `
-            <div class="skill-row special-ability">
+            <div class="skill-row special-ability" title="Mind's Eye \u2014 already counted in Knowledge">
                 <span class="skill-icon">${SKILL_ICONS.minds_eye}</span>
                 <span class="skill-label">Mind's Eye</span>
-                <span class="skill-value has-skill">\u2713</span>
+                <span class="skill-value has-skill">${mindsEyeCount}</span>
             </div>`;
     }
     skillsHtml += '</div>';
@@ -1489,11 +1488,13 @@ function renderTvPurse(state) {
     const chip = (k, img, val, label) =>
         `<span class="tv-purse-chip ${k}" onclick="tvChipTip(event, '${label}')">
             <img src="${img}" alt="${label}"><b>${val}</b></span>`;
+    // 2×2 reading order (Wyatt's 7/7 call): gold · prestige on top,
+    // favor · scorn beneath.
     el.innerHTML =
         chip('gold', PURSE_ICONS.gold, p.gold, 'Gold')
+      + chip('prestige', TOKEN_IMG.prestige, p.prestige, 'Prestige')
       + chip('favor', PURSE_ICONS.favor, p.favor || 0, 'Favor')
-      + chip('scorn', PURSE_ICONS.scorn, p.scorn, 'Scorn')
-      + chip('prestige', TOKEN_IMG.prestige, p.prestige, 'Prestige');
+      + chip('scorn', PURSE_ICONS.scorn, p.scorn, 'Scorn');
 }
 
 // ── Z2 · Skill rail — always-visible icon+number chips, left edge.
@@ -1523,25 +1524,28 @@ function renderTvSkills(state) {
     });
     Object.entries(flexPairs).forEach(([key, n]) => {
         const [a, b] = key.split('|');
+        // BOTH faces of the either/or pair — a lone icon read as a
+        // duplicate of the fixed-skill chip above it (Wyatt, 7/7).
         h += `<span class="tv-skill-chip flex"
                     onclick="tvChipTip(event, '${cap(a)} or ${cap(b)} — one per use, never both')">
-                    ${SKILL_ICONS[a]}<b>${n > 1 ? '×' + n : '✦'}</b></span>`;
+                    <span class="flex-pair">${SKILL_ICONS[a]}${SKILL_ICONS[b]}</span><b>${n > 1 ? '×' + n : '✦'}</b></span>`;
         rows++;
     });
 
     const hasPhil = gp.philosopherStone && gp.philosopherStone > 0;
-    const hasMindsEye = (gp.playedCards || []).some(c =>
-        c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_x2_philosopher_stone_x5');
+    // Engine count (cards + slot + mission rewards) — the digit Wyatt
+    // asked for; the old ✓ also missed slot-granted Mind's Eyes entirely.
+    const mindsEye = game.getMindsEyeCount(0);
     if (hasPhil) {
         h += `<span class="tv-skill-chip special"
                     onclick="tvChipTip(event, 'Philosopher\\'s Stone — ${gp.philosopherStone}:1')">
                     ${SKILL_ICONS.philosopher}<b>${gp.philosopherStone}</b></span>`;
         rows++;
     }
-    if (hasMindsEye) {
+    if (mindsEye > 0) {
         h += `<span class="tv-skill-chip special"
-                    onclick="tvChipTip(event, 'Mind\\'s Eye')">
-                    ${SKILL_ICONS.minds_eye}<b>✓</b></span>`;
+                    onclick="tvChipTip(event, 'Mind\\'s Eye — already counted in Knowledge')">
+                    ${SKILL_ICONS.minds_eye}<b>${mindsEye}</b></span>`;
         rows++;
     }
 

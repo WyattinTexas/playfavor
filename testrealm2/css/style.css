@@ -982,6 +982,14 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
 }
 .skill-row.flex-skill .skill-label { font-style: normal; }
 .skill-row.flex-skill .skill-label i { color: var(--gold); font-size: 0.85em; }
+/* Both faces of the either/or pair share the icon cell — a lone icon
+   read as a duplicate of the fixed skill row above it. */
+.skill-icon.flex-pair { width: auto; }
+.skill-icon.flex-pair .skill-svg {
+    width: calc(22px * var(--sx));
+    height: calc(22px * var(--sx));
+}
+.skill-icon.flex-pair .skill-svg + .skill-svg { margin-left: -5px; }
 
 .skill-icon {
     width: calc(30px * var(--sx));
@@ -3816,6 +3824,15 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
         border-style: dashed;
         border-color: rgba(201,168,76,0.5);
     }
+    /* The flex chip wears BOTH faces of its either/or pair, slightly
+       overlapped — one icon read as a duplicate of the fixed chip. */
+    .tv-skill-chip.flex .flex-pair { display: inline-flex; align-items: center; }
+    .tv-skill-chip.flex .flex-pair .skill-svg {
+        width: calc(var(--tvChipH) * 0.58);
+        height: calc(var(--tvChipH) * 0.58);
+        min-width: calc(var(--tvChipH) * 0.58);
+    }
+    .tv-skill-chip.flex .flex-pair .skill-svg + .skill-svg { margin-left: -4px; }
     .tv-skill-chip.special { border-color: rgba(176,138,255,0.45); }
 
     /* ── Z4 · Mission rail — Missions of the Realm + My Missions, top-right ── */
