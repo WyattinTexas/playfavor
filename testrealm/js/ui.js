@@ -850,11 +850,23 @@ function coachPromptTestOn() {
 function coachApplyPromptTest() {
     if (coachPromptTestOn()) { _coachSeen = new Set(); coachSaveSeen(); _coachActive = null; coachStartHeartbeat(); }
 }
-// Restore the checkbox to its saved state on load (scripts run after the DOM).
+// BATTLE TEST — when on, a new game jumps straight to the brink of the Act 1
+// Melee: every player begins with a full, legally-played board and exactly one
+// card left in hand. Play it (bots follow) and the Melee resolves at once —
+// a fast path for iterating on the battle screen without playing a whole act.
+function toggleBattleTest(on) {
+    try { localStorage.setItem('favor_battle_test', on ? '1' : '0'); } catch (e) {}
+}
+function battleTestOn() {
+    try { return localStorage.getItem('favor_battle_test') === '1'; } catch (e) { return false; }
+}
+// Restore both checkboxes to their saved state on load (scripts run after DOM).
 (function () {
     try {
         const cb = document.getElementById('promptTestToggle');
         if (cb) cb.checked = coachPromptTestOn();
+        const bt = document.getElementById('battleTestToggle');
+        if (bt) bt.checked = battleTestOn();
     } catch (e) {}
 })();
 
@@ -954,12 +966,96 @@ function confirmCharacter() {
 
     game.startAct(1);
     addLogEntry('\u2550\u2550\u2550 Act 1 begins \u2550\u2550\u2550');
-    showNotification('Act 1 Begins \u2014 Choose wisely.', 'act');
+
+    // BATTLE TEST \u2014 fast-forward the whole act to its final card, so the
+    // Melee is one play away. Everyone keeps a full, rule-legal board.
+    if (battleTestOn()) {
+        setupBattleTest();
+        showNotification('Battle Test \u2014 play your last card for the Melee!', 'act');
+    } else {
+        showNotification('Act 1 Begins \u2014 Choose wisely.', 'act');
+    }
 
     // If Prompt Test is checked, replay the tutorial prompts this game.
     if (typeof coachApplyPromptTest === 'function') coachApplyPromptTest();
 
     showGameScreen();
+}
+
+// ─── BATTLE TEST SETUP ─────────────────────────────────────
+// Advance a fresh Act 1 to its very last card for every player. We PLAY the
+// pre-board through the real engine (activateCard) so skills, gold and Power
+// all accumulate exactly as they would in a real act — the Melee totals are
+// genuine, not faked. Each card is only ever played when the engine says its
+// requirements are currently met, so no rule is ever broken. Every player is
+// left holding exactly one still-playable card; playing it ends the act.
+function setupBattleTest() {
+    const PRE_PLAYED_TARGET = 5;   // aim for ~4–5 played cards per player
+    // Unique-id source for the cloned cards, well clear of the real deck's ids.
+    let cloneId = 900000;
+
+    // A shuffled pool of fresh Act 1 card clones for one player. Clones so the
+    // same card can seed several boards, and so playing one never mutates the
+    // shared data or another player's copy.
+    const freshPool = () => shuffleArray(
+        window.FAVOR_DATA.cards
+            .filter(c => c.act === 1 && c.type !== 'mission_letter')
+            .map(c => Object.assign(JSON.parse(JSON.stringify(c)), { id: ++cloneId }))
+    );
+
+    // Play one currently-legal card from the pool into the player's board.
+    // Returns the played card, or null if nothing in the pool is playable now.
+    const playOneLegal = (pi, pool) => {
+        const idx = pool.findIndex(card => {
+            const { canPlay } = game.checkRequirements(pi, card);
+            const affordable = !card.cost || game.players[pi].gold >= card.cost;
+            return canPlay && affordable;
+        });
+        if (idx === -1) return null;
+        const [card] = pool.splice(idx, 1);
+        // activateCard reads the card from pendingActivations, so stage it there.
+        game.pendingActivations[pi] = card;
+        const res = game.activateCard(pi, card.id, 'play');
+        game.pendingActivations[pi] = null;
+        return (res && res.success) ? card : null;
+    };
+
+    for (let pi = 0; pi < game.playerCount; pi++) {
+        const pool = freshPool();
+
+        // Build the board: keep playing legal cards until the target is met or
+        // the pool runs dry of anything currently playable.
+        let played = 0;
+        while (played < PRE_PLAYED_TARGET) {
+            if (!playOneLegal(pi, pool)) break;
+            played++;
+        }
+
+        // Leave exactly one still-playable card in hand — the act's final play.
+        // (Search from the now-current board state so it's guaranteed legal.)
+        const lastIdx = pool.findIndex(card => {
+            const { canPlay } = game.checkRequirements(pi, card);
+            const affordable = !card.cost || game.players[pi].gold >= card.cost;
+            return canPlay && affordable;
+        });
+        game.players[pi].hand = lastIdx === -1 ? [] : [pool[lastIdx]];
+    }
+
+    // Fresh gameplay turn: nothing pending, human to act, board reflects the
+    // pre-played cards. Playing the final card cascades to the Melee.
+    game.phase = 'gameplay';
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    game.activePlayerIndex = 0;
+
+    // Defensive: no current Act 1 card raises a human choice on play, but if one
+    // ever does, its pre-played one-time choice is "already decided" here — clear
+    // any stray pending-UI flags so no overlay dangles over the fast-forward.
+    const you = game.players[0];
+    you._pendingChemYPick = false;
+    you._pendingPromiseDiscard = false;
+    you._pendingSlotMission = false;
+
+    addLogEntry('⚔ Battle Test — boards pre-played, one card each remains');
 }
 
 // ─── GAME SCREEN ───────────────────────────────────────────

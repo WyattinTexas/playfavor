@@ -482,11 +482,17 @@ html, body {
 }
 
 /* Prompt Test — dev toggle to replay the in-game tutorial prompts */
+.test-toggles {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+}
 .prompt-test-toggle {
     display: inline-flex;
     align-items: center;
     gap: 9px;
-    margin-top: 16px;
     padding: 8px 16px;
     border: 1px solid rgba(201, 168, 76, 0.28);
     border-radius: 22px;
@@ -3575,7 +3581,8 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     .lb-title, .pf-title { font-size: 14px; letter-spacing: 3px; }
     .lb-tabs { margin: 8px 0 6px; }
     .champ-card { padding: 26px 30px 24px; }
-    .prompt-test-toggle { margin-top: 10px; padding: 6px 14px; font-size: 11px; }
+    .test-toggles { margin-top: 10px; gap: 8px; }
+    .prompt-test-toggle { padding: 6px 14px; font-size: 11px; }
     .title-footer { position: static; margin-top: 8px; bottom: auto; }
 
     /* ── Character select: compact + scrollable ── */

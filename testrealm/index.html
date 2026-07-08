@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — Test Realm</title>
-    <link rel="stylesheet" href="css/style.css?v=20260707215717">
+    <link rel="stylesheet" href="css/style.css?v=20260708160053">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
@@ -58,10 +58,16 @@
             </button>
         </div>
 
-        <label class="prompt-test-toggle" title="Replay the in-game tutorial prompts on your next game">
-            <input type="checkbox" id="promptTestToggle" onchange="togglePromptTest(this.checked)">
-            <span>Prompt Test</span>
-        </label>
+        <div class="test-toggles">
+            <label class="prompt-test-toggle" title="Replay the in-game tutorial prompts on your next game">
+                <input type="checkbox" id="promptTestToggle" onchange="togglePromptTest(this.checked)">
+                <span>Prompt Test</span>
+            </label>
+            <label class="prompt-test-toggle" title="Skip straight to the Act 1 Melee — everyone starts with a full board and one card left to play">
+                <input type="checkbox" id="battleTestToggle" onchange="toggleBattleTest(this.checked)">
+                <span>Battle Test</span>
+            </label>
+        </div>
 
         <p class="title-footer">3–5 Players &bull; 45–90 Minutes &bull; 1st Edition</p>
     </div>
@@ -360,11 +366,11 @@
          falls back to local standings if these can't reach the project) -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="data/cards.js?v=20260707215717"></script>
-    <script src="data/missions.js?v=20260707215717"></script>
-    <script src="data/characters.js?v=20260707215717"></script>
-    <script src="engine/gameState.js?v=20260707215717"></script>
-    <script src="js/ui.js?v=20260707215717"></script>
-    <script src="js/meta.js?v=20260707215717"></script>
+    <script src="data/cards.js?v=20260708160053"></script>
+    <script src="data/missions.js?v=20260708160053"></script>
+    <script src="data/characters.js?v=20260708160053"></script>
+    <script src="engine/gameState.js?v=20260708160053"></script>
+    <script src="js/ui.js?v=20260708160053"></script>
+    <script src="js/meta.js?v=20260708160053"></script>
 </body>
 </html>
