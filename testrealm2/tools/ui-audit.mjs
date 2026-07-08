@@ -1962,6 +1962,131 @@ for (const mode of ['desktop', 'phone']) {
   await page.close();
 }
 
+// ═══ BORROW & PLAY MULTI-SKILL: scrolls, auto-advances, buttons in reach ═══
+// Wyatt 7/8: with two skills to borrow the second section and the
+// Confirm/Cancel row sat below the fold with NO scroll. The section list
+// now scrolls (title + actions pinned) and each pick carries you to the
+// next open decision. Also: the resting board thumb is 2× (236px).
+{
+  console.log('── Phone: multi-skill borrow scrolls + auto-advances; board thumb 2×');
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('borrow-multi: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('borrow-multi pageerror: ' + e.message));
+  await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  await startGame(page);
+  await sleep(400);
+
+  // 2× thumb: sized up, and the stage floor still clears it.
+  const thumb = await page.evaluate(() => {
+    const t = document.getElementById('tvBoardThumb').getBoundingClientRect();
+    const s = document.getElementById('tvStage').getBoundingClientRect();
+    return { w: t.width, left: t.left, bottom: t.bottom, stageRight: s.right, vh: innerHeight };
+  });
+  ok(thumb.w >= 230 && thumb.w <= 242, `board thumb is 2× (${Math.round(thumb.w)}px wide)`);
+  ok(thumb.bottom <= thumb.vh, 'bigger thumb stays fully on-screen');
+  ok(thumb.stageRight <= thumb.left + 2, 'stage floor still clears the bigger thumb');
+
+  // Rig: a card short TWO distinct skills nobody lends naturally; the
+  // RIGHT neighbor (p1) holds both lender cards, the left none.
+  const rig = await page.evaluate(() => {
+    const natural = game.getBorrowableSkills(0);
+    const cand = FAVOR_DATA.cards.filter(c => {
+      if (c.cost || (c.rewards && c.rewards.gold) || c.special) return false;
+      const probe = game.checkRequirements(0, { ...c });
+      const uniq = [...new Set(probe.missingSkills)];
+      return !probe.canPlay && uniq.length >= 2 && (probe.missingSpecial || []).length === 0
+        && uniq.every(s => !natural[s]);
+    });
+    const reqCard = cand[0];
+    if (!reqCard) return null;
+    const missing = game.checkRequirements(0, { ...reqCard }).missingSkills;
+    const uniq = [...new Set(missing)];
+    const byName = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    uniq.forEach(s => {
+      const lender = FAVOR_DATA.cards.find(c => (c.skills || []).includes(s) && c.name !== reqCard.name);
+      game.players[1].playedCards.push({ ...lender });
+    });
+    const p0 = game.players[0];
+    p0.hand = [{ ...reqCard }, byName('First Aid'), byName('First Aid')];
+    p0.gold = 30;
+    for (let i = 1; i < game.playerCount; i++) {
+      game.players[i].hand = [byName('First Aid'), byName('First Aid'), byName('First Aid')];
+    }
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    renderGameState();
+    document.querySelectorAll('.game-toast').forEach(t => t.remove());
+    return { cardName: reqCard.name, sections: uniq.length, fee: missing.length * 2,
+             lenderGold: game.players[1].gold };
+  });
+  ok(!!rig && rig.sections >= 2, `rig: two-skill borrow card on hand (${rig && rig.cardName})`);
+
+  await page.evaluate(() => selectHandCard(0));
+  await sleep(350);
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.action-panel .action-btn')].find(b => /Borrow & Play/i.test(b.textContent)).click();
+  });
+  await sleep(450);
+
+  const open = await page.evaluate(() => {
+    const ov = document.getElementById('promisePicker');
+    const sc = ov.querySelector('.bw-scroll');
+    const cancel = ov.querySelector('#bwCancel').getBoundingClientRect();
+    const confirm = ov.querySelector('#bwConfirm');
+    return {
+      bw: !!ov.querySelector('.pp-inner.bw'),
+      sections: ov.querySelectorAll('.bw-section').length,
+      undecided: ov.querySelectorAll('.bw-section.undecided').length,
+      scrolls: sc.scrollHeight > sc.clientHeight + 1,
+      cancelInView: cancel.bottom <= innerHeight + 1 && cancel.top >= 0,
+      confirmDisabled: confirm && confirm.disabled,
+    };
+  });
+  ok(open.sections === rig.sections, `one section per missing skill (${open.sections})`);
+  ok(open.scrolls, 'section list is scrollable (content taller than the screen)');
+  ok(open.cancelInView, 'Confirm/Cancel row pinned ON SCREEN below the scroller');
+  ok(open.confirmDisabled === true, 'confirm waits until every skill has a lender');
+  await page.screenshot({ path: join(SHOTS, 'borrow-multi-phone.png') });
+
+  // Pick the first section's lender → the list auto-advances to the next.
+  await page.evaluate(() => {
+    document.querySelector('#promisePicker .bw-section.undecided .bw-row:not(.off)').click();
+  });
+  await sleep(700);   // smooth-scroll settles
+  const advanced = await page.evaluate(() => {
+    const sc = document.querySelector('#promisePicker .bw-scroll');
+    const next = document.querySelector('#promisePicker .bw-section.undecided');
+    const r = next && next.getBoundingClientRect();
+    return {
+      undecided: document.querySelectorAll('#promisePicker .bw-section.undecided').length,
+      scrolled: sc.scrollTop > 4,
+      nextVisible: r ? (r.top < innerHeight * 0.9 && r.bottom > 0) : false,
+    };
+  });
+  ok(advanced.undecided === rig.sections - 1, 'pick marks its section decided');
+  ok(advanced.scrolled && advanced.nextVisible, 'auto-advance scrolls the next decision into view',
+    JSON.stringify(advanced));
+  await page.screenshot({ path: join(SHOTS, 'borrow-multi-advanced.png') });
+
+  // Finish: pick the rest, confirm, and the CHOSEN lender collects every fee.
+  await page.evaluate(() => {
+    [...document.querySelectorAll('#promisePicker .bw-section.undecided')].forEach(sec =>
+      sec.querySelector('.bw-row:not(.off)').click());
+  });
+  await sleep(400);
+  await page.evaluate(() => document.getElementById('bwConfirm').click());
+  await page.waitForFunction((name) =>
+    game.players[0].playedCards.some(c => c.name === name) &&
+    game.pendingActivations.every(a => !a),
+    { timeout: 30000 }, rig.cardName);
+  const ledger = await page.evaluate(() => ({
+    p0: game.players[0].gold,
+    lender: game.players[1].gold,
+  }));
+  ok(ledger.p0 === 30 - rig.fee, `borrower paid every fee (30 → ${ledger.p0})`);
+  ok(ledger.lender === rig.lenderGold + rig.fee, `lender collected all of it (${rig.lenderGold} → ${ledger.lender})`);
+  await page.close();
+}
+
 // ═══ RING SLIDE: tap-or-drag, confirm chip INSIDE the art, one direction ═══
 // Wyatt's 7/7 report: halo appeared but nothing confirmable — the old
 // bubble hung above the board RECT, off-screen on phones. The chip now
@@ -2274,17 +2399,24 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
       if (d.exists()) break;
       await new Promise(r => setTimeout(r, 250));
     }
-    await firebase.database().ref(`favor/players/${u}`).remove();
-    // Sweep EVERY daily key — a run straddling the 22:00 ET boundary
-    // posts on one key while a KEY recomputed later points at another,
-    // and residue on yesterday's board would get CROWNED at settlement.
-    const days = (await firebase.database().ref('favor/daily').get()).val() || {};
-    for (const k of Object.keys(days)) {
-      await firebase.database().ref(`favor/daily/${k}/scores/${u}`).remove();
+    // The rating/stars/daily txns fire un-awaited from showScoring — a
+    // straggler can resurrect the row AFTER a single remove (flaked one
+    // run in three). Remove, settle, verify; repeat until the read stays
+    // empty. Sweeping EVERY daily key matters: residue on yesterday's
+    // board would get CROWNED at settlement.
+    let verdict = 'RESIDUE';
+    for (let attempt = 0; attempt < 6 && verdict === 'RESIDUE'; attempt++) {
+      await firebase.database().ref(`favor/players/${u}`).remove();
+      const days = (await firebase.database().ref('favor/daily').get()).val() || {};
+      for (const k of Object.keys(days)) {
+        await firebase.database().ref(`favor/daily/${k}/scores/${u}`).remove();
+      }
+      await new Promise(r => setTimeout(r, 500));
+      const p = await firebase.database().ref(`favor/players/${u}`).get();
+      const d = await firebase.database().ref(`favor/daily/${KEY}/scores/${u}`).get();
+      verdict = (!p.exists() && !d.exists()) ? 'clean' : 'RESIDUE';
     }
-    const p = await firebase.database().ref(`favor/players/${u}`).get();
-    const d = await firebase.database().ref(`favor/daily/${KEY}/scores/${u}`).get();
-    return (!p.exists() && !d.exists()) ? 'clean' : 'RESIDUE';
+    return verdict;
   }, AUDIT_UID);
   ok(cleaned !== 'RESIDUE', `audit player scrubbed from favor/* (${cleaned})`);
   await page.close();
@@ -2495,13 +2627,20 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
       if (d.exists()) break;
       await new Promise(r => setTimeout(r, 250));
     }
-    await firebase.database().ref(`favor/players/${FLB.uid()}`).remove();
-    const days = (await firebase.database().ref('favor/daily').get()).val() || {};
-    for (const k of Object.keys(days)) {   // all keys — see boundary note above
-      await firebase.database().ref(`favor/daily/${k}/scores/${FLB.uid()}`).remove();
+    // Remove-verify-retry — un-awaited txn stragglers resurrect a single
+    // remove (see the victory flow's note).
+    let verdict = 'RESIDUE';
+    for (let attempt = 0; attempt < 6 && verdict === 'RESIDUE'; attempt++) {
+      await firebase.database().ref(`favor/players/${FLB.uid()}`).remove();
+      const days = (await firebase.database().ref('favor/daily').get()).val() || {};
+      for (const k of Object.keys(days)) {   // all keys — see boundary note above
+        await firebase.database().ref(`favor/daily/${k}/scores/${FLB.uid()}`).remove();
+      }
+      await new Promise(r => setTimeout(r, 500));
+      const p = await firebase.database().ref(`favor/players/${FLB.uid()}`).get();
+      verdict = p.exists() ? 'RESIDUE' : 'clean';
     }
-    const p = await firebase.database().ref(`favor/players/${FLB.uid()}`).get();
-    return p.exists() ? 'RESIDUE' : 'clean';
+    return verdict;
   });
   ok(scrub !== 'RESIDUE', `audit player scrubbed from favor/* (${scrub})`);
   await page.close();

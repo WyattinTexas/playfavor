@@ -3899,7 +3899,10 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
         position: absolute;
         top: 64px;
         right: max(8px, env(safe-area-inset-right));
-        width: 118px;
+        /* 2× the original 118px on standard phones (Wyatt 7/8); eases
+           down on narrow viewports so the stage keeps its floor. The
+           stage's right edge tracks this same clamp — change together. */
+        width: clamp(150px, 28vw, 236px);
         border: 2px solid var(--gold-dark);
         border-radius: 6px;
         overflow: hidden;
@@ -3929,7 +3932,7 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     .tv-stage {
         position: absolute;
         left: 206px;   /* clears the two-column juicy skill rail */
-        right: 138px;
+        right: calc(clamp(150px, 28vw, 236px) + 20px);   /* clears the 2× board thumb */
         top: 62px;
         bottom: 100px;
         display: flex;
@@ -4929,6 +4932,22 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
 /* ═══ BORROW & PLAY — pick your lender ═══════════════════════════════
    Rides the #promisePicker overlay: one card per possible lender, the
    neighbor with nothing to lend sits grayed with the reason. */
+/* Multi-skill borrows can outgrow the screen: the section list scrolls
+   on its own while the title and Confirm/Cancel stay pinned in reach. */
+.pp-inner.bw { flex-wrap: nowrap; }
+.pp-inner.bw .bw-scroll {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    overflow-y: auto;
+    min-height: 0;
+    max-width: 94vw;
+    padding: 8px 16px;   /* room for the selection glow */
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+.bw-section { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .bw-skill-head {
     font-family: 'Cinzel', serif; font-size: 12px; font-weight: 700;
     letter-spacing: 2px; color: var(--gold-light); text-transform: uppercase;

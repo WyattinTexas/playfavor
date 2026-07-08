@@ -3435,19 +3435,26 @@ function showBorrowChooser(card) {
                                 <span class="bw-note">${note}</span>
                             </div>`;
                 }).join('');
-                return `${head}<div class="bw-rows">${seatCards}</div>`;
+                const undecided = !single && choice[skill] === undefined;
+                return `<div class="bw-section${undecided ? ' undecided' : ''}" data-skill="${skill}">
+                            ${head}<div class="bw-rows">${seatCards}</div>
+                        </div>`;
             }).join('');
 
             const needTxt = sections.map(([s, u]) => `${cap(s)}${u > 1 ? ' ×' + u : ''}`).join(', ');
             const ready = sections.every(([s]) => choice[s] !== undefined);
 
+            // Sections live in their own scroller; the title and the
+            // Confirm/Cancel row stay pinned — a multi-skill borrow can
+            // outgrow a phone screen (Wyatt 7/8: the second lender and
+            // the buttons sat unreachable below the fold).
             ov.innerHTML = `
-                <div class="pp-inner">
+                <div class="pp-inner bw">
                     <div class="pp-title">Borrow &amp; Play</div>
                     <div class="pp-sub"><b>${card.name}</b> needs <b>${needTxt}</b> —
                         ${single ? 'tap the neighbor who lends it' : 'pick a lender for each skill'}.
                         The fee is paid <b>to them</b>${anyLender ? ' · your Merchant slot lets anyone lend' : ''}.</div>
-                    ${sectionHtml}
+                    <div class="bw-scroll">${sectionHtml}</div>
                     <div class="pp-actions">
                         ${single ? '' : `<button class="btn-royal primary" id="bwConfirm" ${ready ? '' : 'disabled style="opacity:.35"'}><span>Borrow &amp; Play (−${totalCost}g)</span></button>`}
                         <button class="btn-royal" id="bwCancel"><span>Cancel</span></button>
@@ -3463,6 +3470,11 @@ function showBorrowChooser(card) {
                     if (single) { finish(missingSkills.map(s => ({ skill: s, neighborIndex: pi }))); return; }
                     choice[skill] = pi;
                     render();
+                    // Carry the player to the next open decision.
+                    requestAnimationFrame(() => {
+                        const next = ov.querySelector('.bw-section.undecided');
+                        if (next) next.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    });
                 };
             });
             const confirmBtn = ov.querySelector('#bwConfirm');
