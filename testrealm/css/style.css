@@ -5042,9 +5042,14 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     display: flex; flex-direction: column; align-items: center; gap: 5px;
     width: clamp(72px, 13vw, 116px);
     opacity: 0; transform: translateY(22px) scale(0.9);
-    transition: transform 0.5s cubic-bezier(0.16,1.05,0.3,1), opacity 0.4s ease;
+    transition: transform 0.5s cubic-bezier(0.16,1.05,0.3,1), opacity 0.4s ease, filter 0.4s ease;
 }
 .ms-combatant.in { opacity: 1; transform: none; }
+/* One fighter forges at a time — the stage lights them, rests the others.
+   Locked fighters keep a readable afterglow so their totals stay legible. */
+.ms-arena.spot .ms-combatant.in { opacity: 0.4; filter: saturate(0.55) brightness(0.7); }
+.ms-arena.spot .ms-combatant.in.locked { opacity: 0.8; filter: saturate(0.85) brightness(0.95); }
+.ms-arena.spot .ms-combatant.in.active { opacity: 1; filter: none; transform: scale(1.07); z-index: 3; }
 .ms-combatant.hit { animation: msCbHit 0.3s ease; }
 .ms-combatant.charge {
     transform: translateX(var(--chx, 0)) scale(1.14); opacity: 0;

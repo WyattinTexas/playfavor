@@ -395,7 +395,7 @@
         let running = baseStart;
 
         after(t, () => {
-          el.classList.add('forging');
+          el.classList.add('forging', 'active');   // the stage lights this fighter
           setFill(baseStart);
           tickNumber(b, baseStart, 500);
         });
@@ -450,13 +450,14 @@
           t += sapping ? 1050 : 700;
         });
 
-        // Lock to the authoritative total.
+        // Lock to the authoritative total, hand the stage to the next fighter.
         after(t, () => {
           setFill(c.power || 0);
           if (b) b.textContent = c.power || 0;
-          el.classList.add('locked'); el.classList.remove('forging');
+          el.classList.add('locked'); el.classList.remove('forging', 'active');
+          heraldSay(`${c.name}: ${c.power || 0} Power!`);
         });
-        return t + 200;
+        return t + 350;
       };
 
       // ── CLASH: everyone converges on the center ─────────────────────
@@ -548,16 +549,18 @@
       combatantEls.forEach((el, i) => after(rollStart + i * 260, () => el.classList.add('in')));
       after(rollStart + 120, () => heraldSay(`${combatants.length} heirs enter the arena — let the Melee begin!`));
 
-      // Forge — wide stagger so the eye can follow one fighter at a time.
-      // With the card parade on, each fighter needs a bigger window so two
-      // full-size cards are never up on adjacent columns at the same moment.
-      const forgeStagger = cardsFx ? 2100 : 900;
+      // Forge — strictly ONE fighter at a time: each starts only after the
+      // previous locks, so a single card parade is ever on stage and the
+      // addition can actually be followed. The arena spotlights the active
+      // fighter (.spot dims the rest).
       const forgeStart = rollStart + combatants.length * 260 + 550;
-      let forgeEnd = forgeStart;
+      after(forgeStart - 50, () => arenaEl.classList.add('spot'));
+      let cursor = forgeStart;
       combatantEls.forEach((el, i) => {
-        const c = combatants[i];
-        forgeEnd = Math.max(forgeEnd, scheduleForge(el, c, forgeStart + i * forgeStagger));
+        cursor = scheduleForge(el, combatants[i], cursor) + 150;
       });
+      const forgeEnd = cursor;
+      after(forgeEnd, () => arenaEl.classList.remove('spot'));
 
       // Clash → resolve (a breath of stillness first — everyone armed)
       const clashAt = forgeEnd + 650;

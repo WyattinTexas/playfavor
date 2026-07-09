@@ -59,8 +59,24 @@
     ];
     // Act 1 melee prestige by placement (matches MELEE_REWARDS act 1).
     const PRESTIGE = { 1: 5, 2: 3, 3: 1 };
-    // Real power-card art (in assets/cards/regular/) for the fly-in demo.
-    const POWER_CARDS = ['Beat Stick Card.jpg', 'Elder Wand Card.jpg', 'Griffin Talons Card.jpg', 'Nimbus 2000 Card.jpg'];
+    // VERIFIED power contributors — name/filename/pips checked against
+    // data/cards.js (filenames often don't match card names; an earlier demo
+    // pick by filename landed on Philosopher's Stone art, which grants none).
+    const POWER_ONES = [
+      { name: 'Tombstone',   filename: 'Beat Stick Card.jpg',  pips: 1 },
+      { name: "Ol' Bessy",   filename: 'Ol_ Bessy Card.jpg',   pips: 1 },
+      { name: 'Training Friend', filename: 'Training Friend.jpg', pips: 1 },
+    ];
+    const POWER_TWOS = [
+      { name: 'Shark Tooth',       filename: 'Dusty Card.jpg',              pips: 2 },
+      { name: 'Reckless Training', filename: 'Reckless Training Card.jpg',  pips: 2 },
+      { name: 'Blackbird',         filename: 'Teather Bark Card.jpg',       pips: 2 },
+      { name: "Heaven's Blade",    filename: 'Griffin Talons Card.jpg',     pips: 2 },
+      { name: 'Wild Steel',        filename: 'Seeker Goggles Card.jpg',     pips: 2 },
+      { name: 'Guardian',          filename: 'Guardian Card.jpg',           pips: 2 },
+    ];
+    // A real mission whose success reward grants power (missions art folder).
+    const POWER_MISSION = { name: 'Mounted Champion', filename: 'Act 2_To Believe in Someone Card.jpg', pips: 3 };
 
     let count = 3, speed = 1, tie = false, sapFx = true, cardsFx = true;
 
@@ -106,24 +122,28 @@
         } else if (rank === 3) {                                // a LOST coin (Tails)
           steps.push({ kind: 'coinflip', label: 'Liquid Courage', amount: 4, won: false });
         }
-        // Split the base into board slot + power cards that SUM to it.
+        // Split the base into board slot + REAL power cards whose printed pips
+        // sum to it exactly (2nd-ranked fighter also shows a mission reward).
         const baseCards = [];
         let remaining = Math.max(0, preBase);
-        const baseOther = remaining > 3 ? 1 : 0;                // board-slot share
+        let baseOther = remaining > 3 ? 1 : 0;                  // board-slot share
         remaining -= baseOther;
-        let ci = 0;
-        while (remaining > 0 && ci < 4) {
-          const amt = Math.min(remaining, ci === 0 ? 2 : 1 + ((r.playerIndex + ci) % 2));
-          if (rank === 1 && ci === 1) {
-            // one MISSION contributor, to demo the missions art path
-            baseCards.push({ name: 'Protecting Family', filename: 'Act 1_Protecting Family Card.jpg', amount: amt, mission: true });
-          } else {
-            const f = POWER_CARDS[ci % POWER_CARDS.length];
-            baseCards.push({ name: f, filename: f, amount: amt, mission: false });
-          }
-          remaining -= amt; ci++;
+        if (rank === 1 && remaining >= POWER_MISSION.pips) {
+          baseCards.push({ name: POWER_MISSION.name, filename: POWER_MISSION.filename, amount: POWER_MISSION.pips, mission: true });
+          remaining -= POWER_MISSION.pips;
         }
-        if (remaining > 0 && baseCards.length) baseCards[baseCards.length - 1].amount += remaining;
+        let ti = r.playerIndex, oi = r.playerIndex;             // vary art per fighter
+        while (remaining >= 2 && baseCards.length < 3) {
+          const c = POWER_TWOS[ti++ % POWER_TWOS.length];
+          baseCards.push({ name: c.name, filename: c.filename, amount: c.pips, mission: false });
+          remaining -= c.pips;
+        }
+        if (remaining >= 1 && baseCards.length < 3) {
+          const c = POWER_ONES[oi % POWER_ONES.length];
+          baseCards.push({ name: c.name, filename: c.filename, amount: c.pips, mission: false });
+          remaining -= c.pips;
+        }
+        baseOther += remaining;                                 // overflow → board share
         map[r.playerIndex] = { base: Math.max(0, preBase), baseOther, baseCards, steps };
       });
       return map;
