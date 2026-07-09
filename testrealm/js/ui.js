@@ -4340,7 +4340,9 @@ function showMeleeSplash(results, actNum) {
             const p = (pi != null && game.players[pi]) ? game.players[pi] : null;
             return p && p.character ? `assets/characters/${p.character.filename}` : 'assets/ui/cover.jpg';
         },
-        breakdownFor: (pi) => (typeof game.powerBreakdown === 'function' ? game.powerBreakdown(pi) : null)
+        breakdownFor: (pi) => (typeof game.powerBreakdown === 'function' ? game.powerBreakdown(pi) : null),
+        cardImgFor: (filename) => (filename ? `assets/cards/regular/${filename}` : null)
+        // sapFx / cardsFx / herald default on; autoClose uses the built-in fallback
     });
 }
 

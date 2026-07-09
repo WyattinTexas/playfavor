@@ -36,8 +36,10 @@
     <button class="pv-btn" id="pvTie">Tie for 1st</button>
     <button class="pv-btn" id="pvReplay">▶ Replay</button>
     <span class="pv-note">|</span>
-    <button class="pv-btn" data-speed="1">1×</button>
-    <button class="pv-btn on" data-speed="1" id="pvSpeed1">Normal</button>
+    <button class="pv-btn on" id="pvSap">Sap FX</button>
+    <button class="pv-btn on" id="pvCards">Cards→Meter</button>
+    <span class="pv-note">|</span>
+    <button class="pv-btn on" data-speed="1">Normal</button>
     <button class="pv-btn" data-speed="1.8">Slow</button>
     <button class="pv-btn" data-speed="0.6">Fast</button>
   </div>
@@ -57,8 +59,10 @@
     ];
     // Act 1 melee prestige by placement (matches MELEE_REWARDS act 1).
     const PRESTIGE = { 1: 5, 2: 3, 3: 1 };
+    // Real power-card art (in assets/cards/regular/) for the fly-in demo.
+    const POWER_CARDS = ['Beat Stick Card.jpg', 'Elder Wand Card.jpg', 'Griffin Talons Card.jpg', 'Nimbus 2000 Card.jpg'];
 
-    let count = 3, speed = 1, tie = false;
+    let count = 3, speed = 1, tie = false, sapFx = true, cardsFx = true;
 
     function portraitFor(pi) { return '../assets/characters/' + CHARS[pi].file; }
 
@@ -84,22 +88,28 @@
       return results;
     }
 
-    // Demo Power breakdowns so the Forge shows off its combat callouts.
-    // (In the real game these come from game.powerBreakdown(); meters always
-    //  lock to the true total, so the base+steps need only be plausible.)
+    // Demo Power breakdowns so the Forge shows off every effect: a doubling,
+    // a live coin flip (win AND lose), a cross-fighter sap, and cards flying
+    // into the meter. In the real game these come from game.powerBreakdown();
+    // meters always lock to the true total, so base+steps need only be plausible.
     function buildBreakdowns(results) {
       const map = {};
+      const someCards = (n) => POWER_CARDS.slice(0, n).map(f => ({ name: f, filename: f }));
       results.forEach((r, rank) => {
         const p = r.power, steps = [];
         let base = p;
-        if (rank === 0 && p >= 4 && p % 2 === 0) {            // champion: doubled
+        // A couple of power-cards to fly in for everyone.
+        const baseCards = someCards(1 + (r.playerIndex % 3));
+        if (rank === 0 && p >= 4 && p % 2 === 0) {              // champion: doubled
           base = p / 2; steps.push({ kind: 'mult', label: 'Melee Spectacular', amount: 2 });
-        } else if (p >= 5 && Math.random() < 0.5) {           // a lucky coin
-          base = p - 4; steps.push({ kind: 'coin', label: 'Liquid Courage', amount: 4 });
-        } else if (Math.random() < 0.5) {                      // sapped by a rival
-          base = p + 3; steps.push({ kind: 'debuff', label: 'Fuzzy Head', amount: -3 });
+        } else if (rank === 1 && p >= 4) {                      // a WON coin (+4)
+          base = p - 4; steps.push({ kind: 'coinflip', label: 'Liquid Courage', amount: 4, won: true });
+        } else if (rank === 2) {                                // sapped by the leader (from pi 0)
+          base = p + 3; steps.push({ kind: 'debuff', label: 'Fuzzy Head', amount: -3, from: 0 });
+        } else if (rank === 3) {                                // a LOST coin (Tails)
+          steps.push({ kind: 'coinflip', label: 'Liquid Courage', amount: 4, won: false });
         }
-        map[r.playerIndex] = { base: Math.max(0, base), baseCards: [], steps };
+        map[r.playerIndex] = { base: Math.max(0, base), baseCards, steps };
       });
       return map;
     }
@@ -110,8 +120,13 @@
       const bd = buildBreakdowns(results);
       // playMeleeCinematic cancels any prior run on this host and re-renders,
       // so a speed change can't leave old timers wiping the new cards.
-      playMeleeCinematic(host, results, 1, { speed, portraitFor,
-        powerIcon: '../assets/icons/power.png', breakdownFor: (pi) => bd[pi] });
+      // autoCloseMs:0 → it waits for a click instead of vanishing on its own.
+      playMeleeCinematic(host, results, 1, {
+        speed, portraitFor, sapFx, cardsFx, autoCloseMs: 0,
+        powerIcon: '../assets/icons/power.png',
+        breakdownFor: (pi) => bd[pi],
+        cardImgFor: (filename) => (filename ? '../assets/cards/regular/' + filename : null)
+      });
     }
 
     // Controls
@@ -120,10 +135,12 @@
       b.classList.add('on'); count = +b.dataset.count; play();
     });
     document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => {
-      if (b.id === 'pvSpeed1') return;
-      speed = +b.dataset.speed; play();
+      document.querySelectorAll('[data-speed]').forEach(x => x.classList.remove('on'));
+      b.classList.add('on'); speed = +b.dataset.speed; play();
     });
     document.getElementById('pvTie').onclick = (e) => { tie = !tie; e.target.classList.toggle('on', tie); play(); };
+    document.getElementById('pvSap').onclick = (e) => { sapFx = !sapFx; e.target.classList.toggle('on', sapFx); play(); };
+    document.getElementById('pvCards').onclick = (e) => { cardsFx = !cardsFx; e.target.classList.toggle('on', cardsFx); play(); };
     document.getElementById('pvReplay').onclick = play;
 
     play();

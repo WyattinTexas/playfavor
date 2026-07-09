@@ -966,23 +966,29 @@ class FavorGame {
                 break;
 
             case 'minus_3_power_all_others':
-                // Fuzzy Head: each OTHER player loses 3 power for melee
+                // Fuzzy Head: each OTHER player loses 3 power for melee.
+                // `from` records the caster so the Melee can draw the sap FX.
                 for (let i = 0; i < this.playerCount; i++) {
                     if (i !== playerIndex) {
                         if (!this.players[i].powerDebuffs) this.players[i].powerDebuffs = [];
-                        this.players[i].powerDebuffs.push({ amount: -3, act: this.currentAct, source: card.name });
+                        this.players[i].powerDebuffs.push({ amount: -3, act: this.currentAct, source: card.name, from: playerIndex });
                         this.addLog(`${this.players[i].name} receives -3 power from ${player.name}'s Fuzzy Head`);
                     }
                 }
                 break;
 
             case 'coin_flip_4_power':
-                // Liquid Courage: 50% chance to gain 4 power for melee
+                // Liquid Courage: 50% chance to gain 4 power for melee. The
+                // outcome is decided here but recorded on coinFlips (win OR
+                // lose) so the Melee can reveal it as a live coin toss. `coin`
+                // tags the won bonus so powerBreakdown shows ONE coin step.
                 {
                     const won = Math.random() < 0.5;
+                    if (!player.coinFlips) player.coinFlips = [];
+                    player.coinFlips.push({ source: card.name, act: this.currentAct, won: won, amount: 4 });
                     if (won) {
                         if (!player.powerBonuses) player.powerBonuses = [];
-                        player.powerBonuses.push({ amount: 4, act: this.currentAct, source: card.name });
+                        player.powerBonuses.push({ amount: 4, act: this.currentAct, source: card.name, coin: true });
                         this.addLog(`${player.name}'s Liquid Courage: HEADS! +4 Power for melee`);
                     } else {
                         this.addLog(`${player.name}'s Liquid Courage: TAILS! No bonus`);
@@ -1999,9 +2005,11 @@ class FavorGame {
         const steps = [];
         let power = player.skills.power || 0;
         const base = power;
+        // Power-granting played cards, with their art filename so the Melee can
+        // fly card thumbnails into the meter.
         const baseCards = player.playedCards
             .filter(c => (c.skills || []).includes('power'))
-            .map(c => c.name);
+            .map(c => ({ name: c.name, filename: c.filename || null }));
 
         // Blind Faith pairings (+6 each for Heaven's Blade / Archeus)
         if (player.playedCards.some(c => c.name === 'Blind Faith')) {
@@ -2013,7 +2021,8 @@ class FavorGame {
             });
         }
 
-        // Power bonuses (Liquid Courage coin, Dawnharbinger / King of the Sky)
+        // Power bonuses (Dawnharbinger / King of the Sky). Coin-flip bonuses
+        // are tagged `coin` — counted here but shown as a live coin toss below.
         if (player.powerBonuses) {
             player.powerBonuses.forEach(bonus => {
                 if (bonus.act !== this.currentAct) return;
@@ -2029,18 +2038,26 @@ class FavorGame {
                     }
                 } else {
                     power += bonus.amount;
-                    const coin = /courage/i.test(bonus.source || '');
-                    steps.push({ kind: coin ? 'coin' : 'bonus', label: bonus.source || 'Bonus', amount: bonus.amount });
+                    if (!bonus.coin) steps.push({ kind: 'bonus', label: bonus.source || 'Bonus', amount: bonus.amount });
                 }
             });
         }
 
-        // Power debuffs (Fuzzy Head −3, etc.)
+        // Coin flips (Liquid Courage) — a live toss that lands on its real
+        // result. Won flips already added their +4 to `power` via powerBonuses.
+        if (player.coinFlips) {
+            player.coinFlips.forEach(flip => {
+                if (flip.act !== this.currentAct) return;
+                steps.push({ kind: 'coinflip', label: flip.source || 'Liquid Courage', amount: flip.amount || 4, won: !!flip.won });
+            });
+        }
+
+        // Power debuffs (Fuzzy Head −3, etc.) — `from` is the caster, for the sap FX.
         if (player.powerDebuffs) {
             player.powerDebuffs.forEach(debuff => {
                 if (debuff.act !== this.currentAct) return;
                 power += debuff.amount;
-                steps.push({ kind: 'debuff', label: debuff.source || 'Debuff', amount: debuff.amount });
+                steps.push({ kind: 'debuff', label: debuff.source || 'Debuff', amount: debuff.amount, from: debuff.from });
             });
         }
 

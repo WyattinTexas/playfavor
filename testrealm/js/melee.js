@@ -118,8 +118,15 @@
       const portraitFor = opts.portraitFor || (() => 'assets/ui/cover.jpg');
       const powerIcon = opts.powerIcon || 'assets/icons/power.png';
       const breakdownFor = opts.breakdownFor || null;
+      const cardImgFor = opts.cardImgFor || (() => null);
       const fallback = 'assets/ui/cover.jpg';
       const soundOn = opts.sound !== false;
+      const sapFx = opts.sapFx !== false;        // cross-fighter sap streak
+      const cardsFx = opts.cardsFx !== false;    // cards fly into the meter
+      const heraldOn = opts.herald !== false;    // announcer line
+      // ms to linger after the reveal before auto-continuing; 0/false = wait
+      // for a tap (used by the preview so it never vanishes on its own).
+      const autoCloseMs = (opts.autoCloseMs == null) ? 9000 : opts.autoCloseMs;
       const maxPower = Math.max(1, ...results.map(r => r.power || 0));
 
       // ── Podium grouping (ties share a tier) ─────────────────────────
@@ -208,6 +215,7 @@
           <div class="ms-arena">${combatants.map(combatantHTML).join('')}</div>
           <div class="ms-podium">${visual.join('')}</div>
           ${alsoHTML}
+          <div class="ms-herald"></div>
           <div class="ms-flash"></div>
           <div class="ms-hint">Tap to continue</div>
         </div>`;
@@ -219,6 +227,7 @@
       const alsoEl = host.querySelector('.ms-alsoran');
       const flashEl = host.querySelector('.ms-flash');
       const hintEl = host.querySelector('.ms-hint');
+      const heraldEl = host.querySelector('.ms-herald');
       const combatantEls = Array.from(host.querySelectorAll('.ms-combatant'));
       const domTiers = Array.from(host.querySelectorAll('.ms-tier'));
       const tierEls = [];
@@ -272,11 +281,26 @@
         }
       };
 
-      // ── FORGE: assemble one fighter's Power, return its end time ─────
-      const showCallout = (hostEl, step) => {
+      // ── Herald / announcer line ─────────────────────────────────────
+      const heraldSay = (text) => {
+        if (!heraldOn || !heraldEl) return;
+        heraldEl.classList.remove('show');
+        void heraldEl.offsetWidth;
+        heraldEl.textContent = text;
+        heraldEl.classList.add('show');
+      };
+      const championLine = () => {
+        const cn = (podium[0] && podium[0].members[0] && podium[0].members[0].name) || 'The champion';
+        const verb = /^you$/i.test(cn) ? 'are' : 'is';   // "You are", not "You is"
+        return `${cn} ${verb} crowned champion of Act ${ACTS[actNum - 1] || actNum}!`;
+      };
+
+      // ── FORGE helpers ───────────────────────────────────────────────
+      const showCallout = (hostEl, step, textOverride) => {
         const badge = document.createElement('div');
         badge.className = 'ms-callout ' + step.kind;
-        const big = step.kind === 'mult' ? '×' + step.amount
+        const big = textOverride != null ? textOverride
+                  : step.kind === 'mult' ? '×' + step.amount
                   : (step.amount > 0 ? '+' + step.amount : '' + step.amount);
         badge.innerHTML = `<b>${big}</b><span>${step.label || ''}</span>`;
         hostEl.appendChild(badge);
@@ -285,6 +309,59 @@
         setTimeout(() => badge.remove(), 1150 * speed);
       };
 
+      const bump = (el) => { el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); };
+
+      // A coin that spins and lands on its real face (heads = won).
+      const flipCoin = (hostEl, won) => {
+        const coin = document.createElement('div');
+        coin.className = 'ms-coin';
+        coin.innerHTML = '<div class="ms-coin-face heads">★</div><div class="ms-coin-face tails">✕</div>';
+        hostEl.appendChild(coin);
+        void coin.offsetWidth;
+        coin.classList.add(won ? 'flip-heads' : 'flip-tails');
+        setTimeout(() => coin.remove(), 1150 * speed);
+      };
+
+      // A sap projectile streaking from caster → victim.
+      const sapStreak = (fromPi, toEl) => {
+        const fromEl = combatantEls.find(e => +e.dataset.pi === fromPi);
+        if (!fromEl || fromEl === toEl) return;
+        const h = stage.getBoundingClientRect();
+        const a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
+        const x1 = a.left - h.left + a.width / 2, y1 = a.top - h.top + a.height * 0.4;
+        const x2 = b.left - h.left + b.width / 2, y2 = b.top - h.top + b.height * 0.4;
+        const dx = x2 - x1, dy = y2 - y1;
+        const streak = document.createElement('div');
+        streak.className = 'ms-sap';
+        streak.style.left = x1 + 'px'; streak.style.top = y1 + 'px';
+        streak.style.width = Math.hypot(dx, dy) + 'px';
+        streak.style.transform = 'rotate(' + (Math.atan2(dy, dx) * 180 / Math.PI) + 'deg)';
+        stage.appendChild(streak);
+        void streak.offsetWidth;
+        streak.classList.add('go');
+        setTimeout(() => streak.remove(), 640 * speed);
+      };
+
+      // One card thumbnail flying from the fighter into their meter.
+      const spawnFlyCard = (el, url) => {
+        const meter = el.querySelector('.ms-cb-meter');
+        if (!meter) return;
+        const h = stage.getBoundingClientRect();
+        const m = meter.getBoundingClientRect();
+        const s = el.getBoundingClientRect();
+        const sx = s.left - h.left + s.width / 2, sy = s.top - h.top + 8;
+        const mx = m.left - h.left + m.width / 2, my = m.top - h.top + m.height / 2;
+        const fc = document.createElement('img');
+        fc.className = 'ms-flycard'; fc.src = url; fc.onerror = () => fc.remove();
+        fc.style.left = sx + 'px'; fc.style.top = sy + 'px';
+        fc.style.setProperty('--dx', (mx - sx) + 'px');
+        fc.style.setProperty('--dy', (my - sy) + 'px');
+        stage.appendChild(fc);
+        void fc.offsetWidth; fc.classList.add('go');
+        setTimeout(() => { fc.remove(); if (!run.killed) bump(el); }, 560 * speed);
+      };
+
+      // ── FORGE: assemble one fighter's Power, return its end time ─────
       const scheduleForge = (el, c, start) => {
         const fill = el.querySelector('.ms-cb-fill');
         const b = el.querySelector('.ms-cb-power b');
@@ -294,21 +371,50 @@
         let running = bd.base || 0;
         let t = start;
 
-        after(t, () => { el.classList.add('forging'); setFill(bd.base || 0); tickNumber(b, bd.base || 0, 360); });
-        t += 470;
+        after(t, () => {
+          el.classList.add('forging');
+          setFill(bd.base || 0);
+          tickNumber(b, bd.base || 0, 480);
+        });
+        // Cards fly into the meter during the base fill (tracked timers, not a
+        // nested setTimeout — that failed to schedule under virtual time).
+        if (cardsFx && bd.baseCards && bd.baseCards.length) {
+          bd.baseCards.slice(0, 4).forEach((cd, i) => {
+            const url = cardImgFor(cd && cd.filename);
+            if (url) after(t + 90 + i * 130, () => spawnFlyCard(el, url));
+          });
+        }
+        t += 640;
 
         (bd.steps || []).forEach(step => {
-          after(t, () => {
+          const at = t;
+          if (step.kind === 'coinflip') {
+            after(at, () => { flipCoin(calloutHost, step.won); if (soundOn) playHit('coin'); });
+            after(at + 640, () => {
+              if (step.won) {
+                running = Math.max(0, running + step.amount);
+                setFill(running); tickNumber(b, running, 300);
+                showCallout(calloutHost, { kind: 'coin', label: step.label, amount: step.amount });
+                bump(el);
+              } else {
+                showCallout(calloutHost, { kind: 'miss', label: step.label }, 'Tails');
+              }
+            });
+            t += 1060;
+            return;
+          }
+          const sapping = step.kind === 'debuff' && sapFx && step.from != null;
+          if (sapping) after(at, () => sapStreak(step.from, el));
+          after(at + (sapping ? 320 : 0), () => {
             showCallout(calloutHost, step);
             if (soundOn) playHit(step.kind);
             running = step.kind === 'mult' ? running * step.amount : running + step.amount;
             running = Math.max(0, running);
-            setFill(running);
-            tickNumber(b, running, 300);
-            el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit');
+            setFill(running); tickNumber(b, running, 300);
+            bump(el);
             if (step.kind === 'mult') sparkBurst(el, 8, 0.3);
           });
-          t += 400;
+          t += sapping ? 720 : 400;
         });
 
         // Lock to the authoritative total.
@@ -356,6 +462,7 @@
           stage.classList.add('shake');
           setTimeout(() => stage.classList.remove('shake'), 450 * speed);
           if (soundOn) playFanfare();
+          heraldSay(championLine());
         }
         fillTier(el, false);
         sparkBurst(el, champ ? 22 : 6);
@@ -383,6 +490,7 @@
           if (idx === 0) el.classList.add('lit');
           fillTier(el, true);
         });
+        heraldSay(championLine());
         hintEl.classList.add('show');
         state = 'revealed';
       };
@@ -405,6 +513,7 @@
       // Arena roll-call
       const rollStart = 1080;
       combatantEls.forEach((el, i) => after(rollStart + i * 140, () => el.classList.add('in')));
+      after(rollStart + 120, () => heraldSay(`${combatants.length} heirs enter the arena — let the Melee begin!`));
 
       // Forge (staggered per fighter)
       const forgeStart = rollStart + combatants.length * 140 + 320;
@@ -416,6 +525,7 @@
 
       // Clash → resolve
       const clashAt = forgeEnd + 240;
+      after(clashAt - 300, () => heraldSay('They clash for the crown!'));
       after(clashAt, doClash);
 
       // Podium coronation (rises out of the settling dust)
@@ -425,7 +535,8 @@
       after(podiumStart + 1060, () => revealTier(1, false));
       after(podiumStart + 1880, () => revealTier(0, true));
       after(podiumStart + 2780, markRevealed);
-      after(podiumStart + 2780 + 3200, () => { if (state !== 'closed') close(); });
+      // Auto-continue only if enabled (preview disables it so it waits for a tap).
+      if (autoCloseMs) after(podiumStart + 2780 + autoCloseMs, () => { if (state !== 'closed') close(); });
     });
   }
 
