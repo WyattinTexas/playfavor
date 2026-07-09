@@ -351,8 +351,12 @@
         if (!meter) return;
         const h = stage.getBoundingClientRect();
         const m = meter.getBoundingClientRect();
-        const s = el.getBoundingClientRect();
-        const sx = s.left - h.left + s.width / 2, sy = s.top - h.top - 8;
+        // Anchor at the PORTRAIT's center — the card holds right over the
+        // fighter (it IS the focus during the read). Holding it above the
+        // fighter clipped the top of short landscape-phone screens.
+        const pw = el.querySelector('.ms-cb-portrait-wrap') || el;
+        const p = pw.getBoundingClientRect();
+        const sx = p.left - h.left + p.width / 2, sy = p.top - h.top + p.height / 2;
         const mx = m.left - h.left + m.width / 2, my = m.top - h.top + m.height / 2;
         const fc = document.createElement('img');
         fc.className = 'ms-flycard'; fc.src = url; fc.onerror = () => fc.remove();
@@ -361,8 +365,8 @@
         fc.style.setProperty('--dy', (my - sy) + 'px');
         stage.appendChild(fc);
         void fc.offsetWidth; fc.classList.add('go');
-        setTimeout(() => { if (!run.killed) bump(el); }, 1250 * speed);  // lands
-        setTimeout(() => fc.remove(), 1450 * speed);
+        setTimeout(() => { if (!run.killed) bump(el); }, 2250 * speed);  // lands
+        setTimeout(() => fc.remove(), 2500 * speed);
       };
 
       // ── FORGE: assemble one fighter's Power, return its end time ─────
@@ -380,14 +384,15 @@
           setFill(bd.base || 0);
           tickNumber(b, bd.base || 0, 700);
         });
-        // Cards rise into view one at a time during the base fill — spaced so
-        // each is readable before the next appears. (Tracked timers, not a
+        // Cards rise into view one at a time during the base fill — dealt like
+        // a hand: each holds ~1.4s for the read, and the next rises as it
+        // dives, so two full-size cards never stack. (Tracked timers, not a
         // nested setTimeout — that failed to schedule under virtual time.)
         const shown = cardsFx ? (bd.baseCards || []).slice(0, 4)
           .map(cd => cardImgFor(cd && cd.filename)).filter(Boolean) : [];
-        shown.forEach((url, i) => after(t + 150 + i * 480, () => spawnFlyCard(el, url)));
-        // Base dwell stretches to cover the card parade.
-        t += shown.length ? (150 + shown.length * 480 + 1050) : 820;
+        shown.forEach((url, i) => after(t + 150 + i * 1700, () => spawnFlyCard(el, url)));
+        // Base dwell covers the whole card parade (last card + its full 2.3s).
+        t += shown.length ? (shown.length * 1700 + 950) : 820;
 
         (bd.steps || []).forEach(step => {
           const at = t;
@@ -522,11 +527,14 @@
       after(rollStart + 120, () => heraldSay(`${combatants.length} heirs enter the arena — let the Melee begin!`));
 
       // Forge — wide stagger so the eye can follow one fighter at a time.
+      // With the card parade on, each fighter needs a bigger window so two
+      // full-size cards are never up on adjacent columns at the same moment.
+      const forgeStagger = cardsFx ? 2100 : 900;
       const forgeStart = rollStart + combatants.length * 260 + 550;
       let forgeEnd = forgeStart;
       combatantEls.forEach((el, i) => {
         const c = combatants[i];
-        forgeEnd = Math.max(forgeEnd, scheduleForge(el, c, forgeStart + i * 900));
+        forgeEnd = Math.max(forgeEnd, scheduleForge(el, c, forgeStart + i * forgeStagger));
       });
 
       // Clash → resolve (a breath of stillness first — everyone armed)

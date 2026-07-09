@@ -5164,24 +5164,27 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
 }
 
 /* Power cards presented into the meter during the base forge — each rises
-   BIG above its fighter, holds so the table can read the art, then dives
-   into the Power bar. */
+   BIG above its fighter, holds long enough to actually read, then dives
+   into the Power bar. Sized off viewport WIDTH, not dvh — 10dvh collapsed
+   to ~39px on landscape phones, which is why the cards read as thumbnails. */
 .ms-flycard {
     position: absolute; z-index: 11;
-    width: clamp(52px, 10dvh, 76px); aspect-ratio: 5 / 7; height: auto;
-    border-radius: 5px; object-fit: cover;
-    border: 1px solid rgba(232,212,139,0.75);
-    box-shadow: 0 8px 22px rgba(0,0,0,0.7), 0 0 18px rgba(201,168,76,0.35);
-    opacity: 0; transform: translate(-50%, -100%) translateY(6px) scale(0.5) rotate(-5deg);
+    width: clamp(88px, 13vw, 170px); aspect-ratio: 5 / 7; height: auto;
+    border-radius: 7px; object-fit: cover;
+    border: 2px solid rgba(232,212,139,0.8);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.75), 0 0 24px rgba(201,168,76,0.4);
+    opacity: 0; transform: translate(-50%, -50%) translateY(18px) scale(0.55) rotate(-4deg);
     pointer-events: none;
 }
-.ms-flycard.go { animation: msFlyCard 1.35s cubic-bezier(0.4,0,0.6,1) forwards; }
+/* 2.3s per card: quick rise, a LONG readable hold (~1.4s), then the dive.
+   Anchored on the portrait center so it fits short landscape-phone screens. */
+.ms-flycard.go { animation: msFlyCard 2.3s cubic-bezier(0.4,0,0.6,1) forwards; }
 @keyframes msFlyCard {
-    0%   { opacity: 0; transform: translate(-50%, -100%) translateY(10px)  scale(0.5)  rotate(-5deg); }
-    12%  { opacity: 1; transform: translate(-50%, -100%) translateY(-12px) scale(1)    rotate(-2deg); }
-    58%  { opacity: 1; transform: translate(-50%, -100%) translateY(-16px) scale(1)    rotate(1deg); }   /* the read */
-    92%  { opacity: 0.9; }
-    100% { opacity: 0; transform: translate(calc(-50% + var(--dx,0)), calc(-100% + var(--dy,0))) scale(0.12) rotate(8deg); }
+    0%   { opacity: 0; transform: translate(-50%, -50%) translateY(18px) scale(0.55) rotate(-4deg); }
+    10%  { opacity: 1; transform: translate(-50%, -50%) translateY(-4px) scale(1)    rotate(-1deg); }
+    70%  { opacity: 1; transform: translate(-50%, -50%) translateY(-7px) scale(1)    rotate(1deg); }   /* the read */
+    94%  { opacity: 0.85; }
+    100% { opacity: 0; transform: translate(calc(-50% + var(--dx,0)), calc(-50% + var(--dy,0))) scale(0.1) rotate(8deg); }
 }
 
 /* Herald / announcer line */
