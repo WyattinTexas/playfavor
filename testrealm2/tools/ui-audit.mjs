@@ -2669,6 +2669,110 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
   await phone.close();
 }
 
+// ═══ MISSION CEREMONY: player-by-player beats, honest payout chips ═══
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('ceremony: ' + m.text()); });
+  await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+
+  // Rig: AI p1 completes King of the Sky holding 2 stones (per-asset favor
+  // must show the REAL payout), AI p2 fails Defending the Kingdom (+10
+  // Scorn penalty chip). Human holds nothing — emblemHolder 0 makes the
+  // beat order deterministic: p1 first, p2 second. dueAct pinned to 1 so
+  // both resolve in the rigged act.
+  await page.evaluate(() => {
+    const ai1 = game.players[1], ai2 = game.players[2];
+    game.players[0].missions = [];
+    ai1.philosopherStone = 2;
+    ai1.skills.survival = 4; ai1.skills.power = 12;
+    ai1.missions = [{ ...window.FAVOR_DATA.missions.find(m => m.name === 'King of the Sky'), activationRound: 1, dueAct: 1 }];
+    ai2.missions = [{ ...window.FAVOR_DATA.missions.find(m => m.name === 'Defending the Kingdom'), activationRound: 1, dueAct: 1 }];
+    endActPhases();
+  });
+  await page.waitForFunction(() => document.getElementById('missionCeremony').classList.contains('active'), { timeout: 8000 });
+  await sleep(350);   // beat 1 on stage, verdict still sealed
+
+  const beat1 = await page.evaluate(() => ({
+    name: document.querySelector('.mc-pname').textContent,
+    card: document.querySelector('.mc-card').alt,
+    stamped: document.querySelector('.mc-stage').classList.contains('stamped'),
+  }));
+  ok(beat1.card === 'King of the Sky' && !beat1.stamped,
+    `beat 1: ${beat1.name} attempts King of the Sky, verdict unrevealed`);
+
+  await page.evaluate(() => document.getElementById('missionCeremony').click());   // reveal
+  await sleep(500);
+  const verdict1 = await page.evaluate(() => ({
+    stamp: document.querySelector('.mc-stamp').textContent,
+    fail: document.querySelector('.mc-stage').classList.contains('fail'),
+    chips: [...document.querySelectorAll('.mc-chip')].map(c => c.textContent.trim()),
+  }));
+  ok(verdict1.stamp === 'Complete' && !verdict1.fail, `tap reveals the verdict (${verdict1.stamp})`);
+  ok(verdict1.chips.some(t => /\+20 Favor/.test(t)),
+    `payout chip shows the real per-stone favor (${verdict1.chips.join(' · ')})`);
+  await page.screenshot({ path: join(SHOTS, 'mission-ceremony-complete.png') });
+
+  await page.evaluate(() => document.getElementById('missionCeremony').click());   // next beat
+  await sleep(500);
+  const beat2 = await page.evaluate(() => ({
+    card: document.querySelector('.mc-card').alt,
+    stamped: document.querySelector('.mc-stage').classList.contains('stamped'),
+  }));
+  ok(beat2.card === 'Defending the Kingdom' && !beat2.stamped,
+    'second tap advances to the next player\'s mission');
+
+  await page.evaluate(() => document.getElementById('missionCeremony').click());   // reveal the failure
+  await sleep(500);
+  const verdict2 = await page.evaluate(() => ({
+    stamp: document.querySelector('.mc-stamp').textContent,
+    fail: document.querySelector('.mc-stage').classList.contains('fail'),
+    chips: [...document.querySelectorAll('.mc-chip')].map(c => c.textContent.trim()),
+  }));
+  ok(verdict2.stamp === 'Failed' && verdict2.fail, `failure beat stamps FAILED (${verdict2.stamp})`);
+  ok(verdict2.chips.some(t => /\+10 Scorn/.test(t)),
+    `penalty chip shows +10 Scorn (${verdict2.chips.join(' · ')})`);
+  await page.screenshot({ path: join(SHOTS, 'mission-ceremony-failed.png') });
+
+  await page.evaluate(() => document.getElementById('missionCeremony').click());   // past the last beat
+  await page.waitForFunction(() => !document.getElementById('missionCeremony').classList.contains('active'), { timeout: 6000 });
+  await page.waitForFunction(() => document.getElementById('meleeSplash').classList.contains('active'), { timeout: 20000 });
+  ok(true, 'ceremony closes and the act flows on into the Melee');
+  await page.evaluate(() => document.getElementById('meleeSplash').click());
+  await page.close();
+
+  // Phone: one stamped beat fits 844×390 with chips readable.
+  const phone = await browser.newPage();
+  phone.on('console', m => { if (m.type() === 'error') consoleErrors.push('ceremony-phone: ' + m.text()); });
+  await phone.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  await startGame(phone);
+  await phone.evaluate(() => {
+    const ai1 = game.players[1];
+    game.players[0].missions = [];
+    ai1.philosopherStone = 2;
+    ai1.skills.survival = 4; ai1.skills.power = 12;
+    ai1.missions = [{ ...window.FAVOR_DATA.missions.find(m => m.name === 'King of the Sky'), activationRound: 1, dueAct: 1 }];
+    game.players[2].missions = [];
+    endActPhases();
+  });
+  await phone.waitForFunction(() => document.getElementById('missionCeremony').classList.contains('active'), { timeout: 8000 });
+  await phone.evaluate(() => document.getElementById('missionCeremony').click());
+  await sleep(500);
+  const pfitc = await phone.evaluate(() => {
+    const card = document.querySelector('.mc-card').getBoundingClientRect();
+    const chips = [...document.querySelectorAll('.mc-chip')].map(c => c.getBoundingClientRect());
+    return {
+      cardIn: card.top >= 0 && card.bottom <= window.innerHeight + 1,
+      chipsIn: chips.length > 0 && chips.every(r => r.right <= window.innerWidth + 1 && r.bottom <= window.innerHeight + 1),
+      hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
+    };
+  });
+  ok(pfitc.cardIn && pfitc.chipsIn && !pfitc.hscroll,
+    `phone ceremony fits 844×390 (card ${pfitc.cardIn}, chips ${pfitc.chipsIn}, hscroll ${pfitc.hscroll})`);
+  await phone.screenshot({ path: join(SHOTS, 'mission-ceremony-phone.png') });
+  await phone.close();
+}
+
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));
 
 await browser.close();

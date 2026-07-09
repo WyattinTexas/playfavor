@@ -4660,6 +4660,20 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     .st-owned { width: 38px; height: 38px; font-size: 6.5px; }
     .st-counter { display: none; }
 
+    /* Mission ceremony on a short screen: tighter stage, smaller chips. */
+    .mc-inner { gap: 2vh; padding: 2vh 3vw; }
+    .mc-stage { gap: clamp(14px, 3.5vw, 34px); }
+    .mc-portrait { width: 62px; height: 62px; }
+    .mc-pname { font-size: 13px; }
+    .mc-pcount { font-size: 10.5px; }
+    .mc-player { min-width: 96px; gap: 5px; }
+    .mc-card { height: clamp(170px, 58vh, 300px); }
+    .mc-stamp { font-size: clamp(15px, 5.4vh, 22px); letter-spacing: 3px; padding: 4px 14px 5px; border-width: 3px; }
+    .mc-rewards { min-width: 138px; gap: 6px; max-height: 68vh; }
+    .mc-chip { font-size: 11px; padding: 3px 10px 3px 6px; gap: 6px; }
+    .mc-chip img { width: 20px; height: 20px; }
+    .mc-banner-icon { width: 22px; height: 22px; vertical-align: -5px; margin-right: 7px; }
+
     /* Victory ceremony tightens to the same short-screen budget. */
     .vs-head { padding: 10px 20px 6px; }
     .vs-headline { font-size: clamp(19px, 4.6vh, 24px); }
@@ -4988,6 +5002,153 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
 @keyframes msRow { to { opacity: 1; transform: none; } }
 @keyframes msBanner { from { opacity: 0; transform: scale(1.35); } }
 @keyframes msFade { from { opacity: 0; } }
+
+/* ═══ MISSION CEREMONY — the missions phase, player by player ═══════ */
+
+#missionCeremony {
+    position: fixed;
+    inset: 0;
+    z-index: 9500;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(90% 90% at 50% 42%, rgba(26, 13, 4, 0.88), rgba(10, 5, 2, 0.97));
+    backdrop-filter: blur(6px);
+    cursor: pointer;
+}
+#missionCeremony.active { display: flex; animation: msFade 0.3s ease; }
+.mc-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3.4vh;
+    width: 100%;
+    max-height: 100dvh;
+    padding: 3vh 4vw;
+}
+.mc-inner .ms-banner { animation: msBanner 0.45s cubic-bezier(0.16, 1, 0.3, 1); }
+.mc-banner-icon {
+    width: 30px; height: 30px;
+    object-fit: contain;
+    margin-right: 10px;
+    vertical-align: -7px;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+}
+.mc-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(20px, 4.5vw, 64px);
+    width: 100%;
+}
+.mc-player {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-width: 140px;
+    animation: mcSlideL 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mc-portrait {
+    width: 96px; height: 96px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 2px solid rgba(201, 168, 76, 0.55);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.6);
+}
+.mc-pname {
+    font-family: 'Cinzel', serif;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--gold-light);
+    text-shadow: 0 0 16px rgba(201, 168, 76, 0.3);
+}
+.mc-pcount {
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: 12px;
+    color: rgba(240, 230, 211, 0.6);
+}
+.mc-cardwrap {
+    position: relative;
+    animation: mcCardIn 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mc-card {
+    display: block;
+    height: clamp(220px, 56vh, 460px);
+    border-radius: 10px;
+    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.7);
+    transition: filter 0.35s;
+}
+.mc-stage.stamped.fail .mc-card { filter: saturate(0.45) brightness(0.78); }
+/* the wax verdict — slams down when the beat reveals */
+.mc-stamp {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: fit-content;
+    height: fit-content;
+    padding: 7px 24px 8px;
+    transform: rotate(-14deg) scale(3);
+    opacity: 0;
+    font-family: 'Cinzel', serif;
+    font-weight: 900;
+    font-size: clamp(22px, 4.6vh, 36px);
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: #ffe9ad;
+    background: rgba(58, 36, 8, 0.4);
+    border: 4px solid #e8c34b;
+    border-radius: 10px;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+    box-shadow: 0 0 34px rgba(232, 195, 75, 0.4), inset 0 0 24px rgba(232, 195, 75, 0.25);
+    backdrop-filter: blur(1.5px);
+    pointer-events: none;
+}
+.mc-stage.stamped .mc-stamp { animation: mcStamp 0.4s cubic-bezier(0.22, 1.5, 0.36, 1) forwards; }
+.mc-stage.stamped.fail .mc-stamp {
+    color: #ffc9bd;
+    border-color: #c0392b;
+    background: rgba(58, 12, 7, 0.45);
+    box-shadow: 0 0 34px rgba(192, 57, 43, 0.45), inset 0 0 24px rgba(192, 57, 43, 0.3);
+}
+.mc-rewards {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 9px;
+    min-width: 180px;
+    max-height: 60vh;
+}
+.mc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-family: 'Cinzel', serif;
+    font-weight: 700;
+    font-size: 14.5px;
+    letter-spacing: 0.5px;
+    color: #f4e6c4;
+    padding: 5px 14px 5px 9px;
+    background: linear-gradient(180deg, rgba(58, 36, 14, 0.92), rgba(30, 17, 6, 0.94));
+    border: 1px solid rgba(201, 168, 76, 0.45);
+    border-radius: 999px;
+    box-shadow: 0 3px 9px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    animation: mcChip 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.mc-chip img { width: 27px; height: 27px; object-fit: contain; }
+.mc-chip.good { color: #ffe9ad; border-color: rgba(232, 195, 75, 0.7); }
+.mc-chip.bad { color: #ffb9a8; border-color: rgba(192, 57, 43, 0.6); }
+@keyframes mcStamp {
+    from { transform: rotate(-14deg) scale(3); opacity: 0; }
+    62%  { transform: rotate(-14deg) scale(0.92); opacity: 1; }
+    to   { transform: rotate(-14deg) scale(1); opacity: 1; }
+}
+@keyframes mcChip { from { opacity: 0; transform: translateX(16px) scale(0.85); } to { opacity: 1; } }
+@keyframes mcSlideL { from { opacity: 0; transform: translateX(-20px); } }
+@keyframes mcCardIn { from { opacity: 0; transform: translateY(16px) scale(0.94); } }
 
 /* ═══ ACTION PANEL — shared body wrapper + table-scene breathing ═════ */
 

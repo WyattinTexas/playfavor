@@ -1493,6 +1493,26 @@ class FavorGame {
     resolveMissions() {
         const results = [];
 
+        // What each resolution actually PAID or COST — the mission ceremony
+        // shows these honest deltas. Per-asset favor depends on the player's
+        // state at this exact moment, so recomputing later would lie.
+        const measure = (idx, fn) => {
+            const p = this.players[idx];
+            const before = {
+                favor: p.favor, gold: p.gold, prestige: p.prestige, scorn: p.scorn,
+                stones: p.philosopherStone || 0, mindsEye: this.getMindsEyeCount(idx),
+            };
+            fn();
+            return {
+                favor: p.favor - before.favor,
+                gold: p.gold - before.gold,
+                prestige: p.prestige - before.prestige,
+                scorn: p.scorn - before.scorn,
+                stones: (p.philosopherStone || 0) - before.stones,
+                mindsEye: this.getMindsEyeCount(idx) - before.mindsEye,
+            };
+        };
+
         // Start with emblem holder, go clockwise
         let pi = this.emblemHolder;
         for (let i = 0; i < this.playerCount; i++) {
@@ -1516,10 +1536,10 @@ class FavorGame {
                     if (pi !== 0) {
                         const { success, details } = this.checkMissionRequirements(pi, mission);
                         if (success) {
-                            this.applyMissionRewards(pi, mission);
+                            const deltas = measure(pi, () => this.applyMissionRewards(pi, mission));
                             player.completedMissions.push(mission);
                             resolved.add(mission);
-                            playerResults.push({ mission, success: true, details });
+                            playerResults.push({ mission, success: true, details, deltas });
                         }
                     }
                     return;
@@ -1528,9 +1548,9 @@ class FavorGame {
                 const { success, details } = this.checkMissionRequirements(pi, mission);
                 if (success) {
                     resolved.add(mission);
-                    this.applyMissionRewards(pi, mission);
+                    const deltas = measure(pi, () => this.applyMissionRewards(pi, mission));
                     player.completedMissions.push(mission);
-                    playerResults.push({ mission, success: true, details });
+                    playerResults.push({ mission, success: true, details, deltas });
                 } else {
                     // Unmet at its due date — can borrowed skills save it?
                     // Borrowing is a CHOICE, never automatic: the human gets
@@ -1544,15 +1564,17 @@ class FavorGame {
                         return; // stays in player.missions; the chooser resolves it
                     }
                     if (plan && pi !== 0 && this.missionFavorEstimate(pi, mission) >= plan.cost * 2) {
-                        player.gold -= plan.cost;
-                        plan.borrowFrom.forEach(b => {
-                            this.players[b.neighborIndex].gold += BORROW_SKILL_COST;
+                        const deltas = measure(pi, () => {
+                            player.gold -= plan.cost;
+                            plan.borrowFrom.forEach(b => {
+                                this.players[b.neighborIndex].gold += BORROW_SKILL_COST;
+                            });
+                            this.applyMissionRewards(pi, mission);
                         });
                         resolved.add(mission);
-                        this.applyMissionRewards(pi, mission);
                         player.completedMissions.push(mission);
                         this.addLog(`${player.name} borrows ${plan.borrowFrom.map(b => b.skill).join(', ')} (−${plan.cost}g) to complete ${mission.name}`);
-                        playerResults.push({ mission, success: true, details, borrowed: plan.cost });
+                        playerResults.push({ mission, success: true, details, borrowed: plan.cost, deltas });
                         return;
                     }
                     resolved.add(mission);
@@ -1561,7 +1583,11 @@ class FavorGame {
                     playerResults.push({ mission, success: false, details });
                 }
             });
-            failed.forEach(mission => this.applyMissionFailure(pi, mission));
+            failed.forEach(mission => {
+                const deltas = measure(pi, () => this.applyMissionFailure(pi, mission));
+                const entry = playerResults.find(r => r.mission === mission && !r.success);
+                if (entry) entry.deltas = deltas;
+            });
 
             // Remove only what actually resolved — missions still inside
             // their window carry over to the next act.

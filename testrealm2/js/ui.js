@@ -3282,26 +3282,18 @@ function aiPickCard(playerIndex) {
 function endActPhases() {
     const actNum = game.currentAct;
 
-    // MISSIONS PHASE
+    // MISSIONS PHASE — resolve everything, then let the ceremony tell it
+    // player by player (toast spam used to blow past in a blur).
     game.phase = 'missions';
     renderGameState();
     const missionResults = game.resolveMissions();
 
-    let missionDelay = 500;
     let hasMissionResults = false;
-
     missionResults.forEach(pr => {
         pr.results.forEach(r => {
             hasMissionResults = true;
             const playerName = pr.playerIndex === 0 ? 'You' : game.players[pr.playerIndex].name;
-            if (r.success) {
-                setTimeout(() => showNotification(`${playerName} completed: ${r.mission.name}!`, 'mission'), missionDelay);
-                addLogEntry(`${playerName} completed mission: ${r.mission.name}`);
-            } else {
-                setTimeout(() => showNotification(`${playerName} failed: ${r.mission.name}`, 'error'), missionDelay);
-                addLogEntry(`${playerName} failed mission: ${r.mission.name}`);
-            }
-            missionDelay += 600;
+            addLogEntry(`${playerName} ${r.success ? 'completed' : 'failed'} mission: ${r.mission.name}`);
         });
     });
 
@@ -3322,7 +3314,7 @@ function endActPhases() {
     game.players[0]._pendingMissionBorrows = [];
 
     // MELEE PHASE
-    const meleeStart = hasMissionResults ? missionDelay + 400 : 800;
+    const meleeStart = 600;
 
     const startMelee = () => setTimeout(() => {
         game.phase = 'melee';
@@ -3369,7 +3361,11 @@ function endActPhases() {
     const afterPromise = promisePending
         ? () => showPromiseDiscardPicker()
         : () => Promise.resolve();
-    afterBorrows().then(afterPenalty).then(afterPromise).then(startMelee);
+    // The ceremony narrates every resolution first; the stats it changed
+    // repaint before the player is asked to make any follow-up choice.
+    showMissionCeremony(missionResults, actNum)
+        .then(() => renderGameState())
+        .then(afterBorrows).then(afterPenalty).then(afterPromise).then(startMelee);
 }
 
 // ═══ BORROW & PLAY — "from whom?" ═══════════════════════════════════
@@ -4241,6 +4237,124 @@ document.addEventListener('pointercancel', _bloomRelease, { passive: true });
 // A quick full-screen moment (Battlegrounds combat splash energy): banner,
 // every heir's Power counts up, the strongest flares gold and takes
 // Prestige. Tap to skip; resolves a promise so the act flow waits for it.
+
+// ═══ MISSION CEREMONY — the missions phase, player by player ═══════════
+// One beat per resolved mission: the attempting player takes the stage,
+// their mission card lands, a wax verdict stamps it, and the ACTUAL payout
+// (engine deltas — per-asset favor included) pops in as chips. Tap once to
+// reveal the verdict early, tap again for the next beat. Borrow choices the
+// player still owes come AFTER the ceremony, exactly as before.
+function showMissionCeremony(missionResults, actNum) {
+    return new Promise((resolve) => {
+        const el = document.getElementById('missionCeremony');
+        const beats = [];
+        (missionResults || []).forEach(pr => pr.results.forEach(r => beats.push({ pi: pr.playerIndex, r })));
+        if (!el || !beats.length) { resolve(); return; }
+
+        const acts = ['I', 'II', 'III'];
+        const speed = () => (window.CINEMATIC_SPEED || 1);
+        const perPlayer = {};
+        beats.forEach(b => { (perPlayer[b.pi] = perPlayer[b.pi] || []).push(b); });
+
+        el.innerHTML = `
+            <div class="mc-inner">
+                <div class="ms-banner"><img class="mc-banner-icon" src="assets/icons/mission.png" alt="">Missions<span class="ms-act">Act ${acts[actNum - 1] || actNum}</span></div>
+                <div class="mc-stage"></div>
+                <div class="ms-hint">tap — reveal, then onward</div>
+            </div>`;
+        const stage = el.querySelector('.mc-stage');
+
+        let bi = 0, timer = null, closed = false;
+
+        const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+        const chip = (icon, label, cls) =>
+            `<span class="mc-chip ${cls}"><img src="assets/icons/${icon}.png" alt="">${label}</span>`;
+
+        // Honest payout chips from the engine's measured deltas — plus the
+        // printed skill grants and map, which deltas can't see.
+        const rewardChips = (b) => {
+            const m = b.r.mission;
+            const d = b.r.deltas || {};
+            const goldGain = (d.gold || 0) + (b.r.borrowed || 0); // reward gross of the borrow fee
+            const chips = [];
+            if (d.favor > 0) chips.push(chip('favor', `+${d.favor} Favor`, 'good'));
+            if (goldGain > 0) chips.push(chip('gold', `+${goldGain} Gold`, 'good'));
+            if (d.prestige > 0) chips.push(chip('prestige', `+${d.prestige} Prestige`, 'good'));
+            if (d.scorn < 0) chips.push(chip('scorn', `−${-d.scorn} Scorn`, 'good'));
+            if (d.stones > 0) chips.push(chip('philosopher', `+${d.stones} Philosopher's Stone`, 'good'));
+            if (d.mindsEye > 0) chips.push(chip('minds_eye', `+${d.mindsEye} Mind's Eye`, 'good'));
+            if (b.r.success && m.successRewards && m.successRewards.skills) {
+                Object.entries(m.successRewards.skills).forEach(([sk, n]) =>
+                    chips.push(chip(sk, `+${n} ${cap(sk)}`, 'good')));
+            }
+            if (b.r.success && m.grantsMap) chips.push(chip('maps', `${m.grantsMap} Map`, 'good'));
+            if (b.r.borrowed) chips.push(chip('gold', `Borrowed help −${b.r.borrowed}g`, 'bad'));
+            if (goldGain < 0) chips.push(chip('gold', `−${-goldGain} Gold`, 'bad'));
+            if (d.favor < 0) chips.push(chip('favor', `−${-d.favor} Favor`, 'bad'));
+            if (d.prestige < 0) chips.push(chip('prestige', `−${-d.prestige} Prestige`, 'bad'));
+            if (d.scorn > 0) chips.push(chip('scorn', `+${d.scorn} Scorn`, 'bad'));
+            return chips.join('');
+        };
+
+        const renderBeat = (b) => {
+            const p = game.players[b.pi];
+            const char = p.character;
+            const portrait = char ? `assets/characters/${char.filename}` : 'assets/ui/cover.jpg';
+            const mine = perPlayer[b.pi];
+            const nth = mine.indexOf(b) + 1;
+            stage.className = 'mc-stage';   // fresh beat: clears stamped/fail
+            stage.innerHTML = `
+                <div class="mc-player">
+                    <img class="mc-portrait" src="${portrait}" alt="">
+                    <div class="mc-pname">${b.pi === 0 ? 'You' : p.name}</div>
+                    <div class="mc-pcount">Mission ${nth} of ${mine.length}</div>
+                </div>
+                <div class="mc-cardwrap">
+                    <img class="mc-card" src="assets/cards/missions/${b.r.mission.filename}" alt="${b.r.mission.name}">
+                    <div class="mc-stamp">${b.r.success ? 'Complete' : 'Failed'}</div>
+                </div>
+                <div class="mc-rewards"></div>`;
+            timer = setTimeout(() => stamp(b), 1000 * speed());
+        };
+
+        const stamp = (b) => {
+            if (closed || stage.classList.contains('stamped')) return;
+            clearTimeout(timer);
+            stage.classList.add('stamped');
+            if (!b.r.success) stage.classList.add('fail');
+            const rw = stage.querySelector('.mc-rewards');
+            rw.innerHTML = rewardChips(b);
+            [...rw.children].forEach((c, i) => { c.style.animationDelay = `${0.12 + i * 0.13}s`; });
+            timer = setTimeout(next, (1700 + rw.children.length * 260) * speed());
+        };
+
+        const next = () => {
+            if (closed) return;
+            clearTimeout(timer);
+            bi++;
+            if (bi >= beats.length) { close(); return; }
+            renderBeat(beats[bi]);
+        };
+
+        const close = () => {
+            if (closed) return;
+            closed = true;
+            clearTimeout(timer);
+            el.classList.remove('active');
+            el.onclick = null;
+            setTimeout(resolve, 280);
+        };
+
+        // Tap once = reveal the verdict now; tap again = next mission.
+        el.onclick = () => {
+            if (!stage.classList.contains('stamped')) stamp(beats[bi]);
+            else next();
+        };
+
+        el.classList.add('active');
+        renderBeat(beats[0]);
+    });
+}
 
 function showMeleeSplash(results, actNum) {
     return new Promise((resolve) => {

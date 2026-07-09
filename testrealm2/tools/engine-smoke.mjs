@@ -163,6 +163,35 @@ console.log('── Mission map alternatives: holding the printed map completes 
   ok(g.missionBorrowPlan(0, kots) === null, 'map already completes it → no borrow offer');
 }
 
+console.log('── resolveMissions: ceremony deltas are the honest payout');
+{
+  // Success with per-asset favor: deltas must equal what was ACTUALLY paid.
+  const g = newGame();
+  const ai = g.players[1];
+  ai.philosopherStone = 2;
+  ai.skills.survival = 4; ai.skills.power = 12;
+  ai.missions = [{ ...missionByName('King of the Sky') }];
+  g.currentAct = 3;
+  const f0 = ai.favor;
+  const res = g.resolveMissions();
+  const r = res.find(pr => pr.playerIndex === 1).results.find(x => x.mission.name === 'King of the Sky');
+  ok(r && r.success === true, 'AI completes King of the Sky at its due act');
+  ok(r && r.deltas && r.deltas.favor === 20 && ai.favor === f0 + 20,
+     `deltas.favor ${r && r.deltas && r.deltas.favor} = actual payout (10 × 2 stones)`);
+
+  // Failure: the penalty lands in the SAME result entry's deltas.
+  const g2 = newGame();
+  const ai2 = g2.players[1];
+  ai2.missions = [{ ...missionByName('Defending the Kingdom') }]; // 5 Sur & 5 Pow — unmet, fail: 10 Scorn
+  g2.currentAct = 2;
+  const s0 = ai2.scorn;
+  const res2 = g2.resolveMissions();
+  const r2 = res2.find(pr => pr.playerIndex === 1).results.find(x => x.mission.name === 'Defending the Kingdom');
+  ok(r2 && r2.success === false, 'AI fails Defending the Kingdom');
+  ok(r2 && r2.deltas && r2.deltas.scorn === 10 && ai2.scorn === s0 + 10,
+     `failure deltas carry the penalty (+${r2 && r2.deltas && r2.deltas.scorn} Scorn)`);
+}
+
 console.log('── Mission failure specials: discard + payouts');
 {
   const g = newGame();
