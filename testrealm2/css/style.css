@@ -247,15 +247,84 @@ html, body {
 .lb-foot { margin-top: 10px; }
 .lb-loading { padding: 34px 0; }
 
-/* ── Character store — the art IS the shelf ── */
+/* ── Character store — a market stall under the royal awning ──
+   Wyatt's market scene (the Merchant board) is the backdrop; heroes are
+   framed paintings standing on planks, priced with hanging rope tags,
+   sealed in wax once owned. Art IS the UI. */
 
-.st-inner { width: min(920px, 94vw); }
+.st-inner {
+    width: min(940px, 94vw);
+    position: relative;
+    overflow: hidden;                 /* keeps the awning + backdrop inside the panel frame */
+    padding-top: 50px;                /* room for the canopy */
+    background:
+        linear-gradient(180deg, rgba(26,13,4,0.78) 0%, rgba(18,9,3,0.92) 58%, rgba(14,7,2,0.97) 100%),
+        url('../assets/ui/shop-backdrop.jpg') center 22% / cover no-repeat,
+        linear-gradient(175deg, #2e1c0e 0%, #1a0d05 100%);
+}
+/* Scalloped canopy — two alternating crimson stripes with hanging arcs */
+.st-awning {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 30px;
+    background: repeating-linear-gradient(90deg, #6d1a1f 0 44px, #99302a 44px 88px);
+    border-bottom: 2px solid rgba(201, 168, 76, 0.85);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+}
+.st-awning::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; top: 100%;
+    height: 13px;
+    background:
+        radial-gradient(circle at 22px -7px, #6d1a1f 20px, transparent 21px),
+        radial-gradient(circle at 66px -7px, #99302a 20px, transparent 21px);
+    background-size: 88px 13px;
+    filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4));
+}
+/* The shop sign hangs from the awning on two cords */
+.st-sign {
+    position: relative;
+    margin: 4px auto 0;
+    width: fit-content;
+    max-width: 92%;
+    padding: 8px 24px 9px;
+    font-size: 17px;
+    background: linear-gradient(180deg, #4a2c12, #2c180a 70%, #241203);
+    border: 2px solid var(--gold-dark);
+    border-radius: 10px;
+    box-shadow: inset 0 1px 0 rgba(232, 212, 139, 0.28), 0 8px 18px rgba(0, 0, 0, 0.55);
+    animation: signSettle 1.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform-origin: 50% -22px;
+}
+.st-sign::before, .st-sign::after {
+    content: '';
+    position: absolute;
+    top: -22px;
+    width: 2px;
+    height: 22px;
+    background: linear-gradient(180deg, #caa35a, #7a5a24);
+}
+.st-sign::before { left: 18%; }
+.st-sign::after  { right: 18%; }
+@keyframes signSettle {
+    0% { transform: rotate(-1.6deg); }
+    55% { transform: rotate(1.1deg); }
+    100% { transform: rotate(0deg); }
+}
+/* Your star purse, stitched leather */
 .st-stars {
-    margin-left: 14px;
+    margin-left: 16px;
+    padding: 3px 12px 4px;
     color: #ffd97a;
     letter-spacing: 1px;
-    font-size: 0.92em;
+    font-size: 0.78em;
     white-space: nowrap;
+    background: radial-gradient(130% 170% at 30% 18%, #6b4a22, #3c250e 72%);
+    border: 1.5px solid #b98d3e;
+    border-radius: 999px;
+    box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.55);
+    vertical-align: 2px;
 }
 .st-local {
     font-size: 9px;
@@ -266,81 +335,159 @@ html, body {
 .st-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
-    gap: 12px;
-    margin-top: 14px;
+    gap: 30px 16px;                   /* tall row gap: planks + tags live between rows */
+    margin-top: 16px;
     overflow-y: auto;
+    overflow-x: hidden;               /* plank/tag overhang must never grow a sideways scroll */
     min-height: 0;   /* flex child: without this the grid refuses to shrink-and-scroll */
-    padding: 2px 2px 6px;
+    padding: 14px 14px 18px;          /* side padding gives the overhang room INSIDE the box */
+}
+@keyframes shelfIn {
+    from { opacity: 0; transform: translateY(12px); }
 }
 .st-card {
-    position: relative;
+    position: relative;               /* tags, seals and planks anchor here */
     display: flex;
     flex-direction: column;
-    border: 1px solid rgba(201, 168, 76, 0.35);
-    border-radius: 12px;
-    overflow: hidden;
-    background: rgba(26, 15, 40, 0.45);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-    transition: border-color 0.25s, box-shadow 0.25s;
+    transition: transform 0.25s;
 }
-.st-card:hover { border-color: var(--gold); }
-.st-card.owned {
-    border-color: rgba(232, 195, 75, 0.75);
-    box-shadow: 0 0 18px rgba(232, 195, 75, 0.16), 0 4px 14px rgba(0, 0, 0, 0.4);
+.st-card:hover { transform: translateY(-3px); }
+/* every hero stands on a wooden plank */
+.st-card::after {
+    content: '';
+    position: absolute;
+    left: -6%; right: -6%; bottom: -12px;
+    height: 11px;
+    background: linear-gradient(180deg, #6b4423, #4a2c12 55%, #2c1706);
+    border-radius: 3px;
+    box-shadow: 0 5px 9px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(232, 212, 139, 0.2);
+}
+.st-frame {
+    position: relative;
+    padding: 3px;                     /* the gilded frame */
+    background: linear-gradient(160deg, #e8c34b, #8a6a1f 38%, #f0d278 66%, #6d4f16);
+    border-radius: 4px;
+    box-shadow: 0 7px 16px rgba(0, 0, 0, 0.6);
 }
 .st-card img {
     width: 100%;
     display: block;
     aspect-ratio: 3 / 2;
     object-fit: cover;
+    border-radius: 2px;
 }
-.st-card:not(.owned) img { filter: saturate(0.55) brightness(0.82); }
+.st-card:not(.owned) img { filter: saturate(0.5) brightness(0.78); }
+.st-card.owned .st-frame { box-shadow: 0 0 20px rgba(232, 195, 75, 0.22), 0 7px 16px rgba(0, 0, 0, 0.6); }
 .st-plate {
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 5px;
-    padding: 7px 8px 9px;
+    justify-content: center;
+    padding: 8px 4px 2px;
 }
+/* brass name plate under the painting */
 .st-name {
     font-family: 'Cinzel', serif;
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 700;
     letter-spacing: 1px;
     color: var(--gold);
+    padding: 2px 14px 3px;
+    background: linear-gradient(180deg, rgba(58, 36, 14, 0.92), rgba(30, 17, 6, 0.92));
+    border: 1px solid rgba(201, 168, 76, 0.45);
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 rgba(232, 212, 139, 0.22), 0 2px 5px rgba(0, 0, 0, 0.4);
 }
+/* wax seal — stamped once a hero is yours */
 .st-owned {
+    position: absolute;
+    top: -9px; right: -7px;
+    z-index: 2;
+    width: 46px; height: 46px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-family: 'Cinzel', serif;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 3px;
+    font-size: 7.5px;
+    font-weight: 900;
+    letter-spacing: 1.5px;
     text-transform: uppercase;
-    color: #f4dd8f;
-    border: 1px solid rgba(232, 195, 75, 0.55);
-    border-radius: 8px;
-    padding: 3px 12px;
-    background: linear-gradient(180deg, rgba(232, 195, 75, 0.16), rgba(232, 195, 75, 0.05));
+    color: #ffe9b8;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+    background: radial-gradient(circle at 34% 28%, #b8452f, #7a1f18 62%, #55110d);
+    border: 2px solid rgba(255, 220, 150, 0.35);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55), inset 0 -3px 6px rgba(0, 0, 0, 0.45), inset 0 2px 3px rgba(255, 255, 255, 0.16);
+    transform: rotate(8deg);
 }
+/* hanging price tag — rope, punched hole, parchment */
 .st-buy {
+    position: absolute;
+    top: -8px; right: -5px;
+    z-index: 2;
+    transform: rotate(6deg);
+    transform-origin: 12px -12px;
     font-family: 'Cinzel', serif;
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 1px;
     color: #2a1810;
-    background: linear-gradient(180deg, #f0d278, #c9a84c);
-    border: 1px solid #8a6a1f;
-    border-radius: 8px;
-    padding: 4px 14px;
+    background: linear-gradient(165deg, #f7ecd2, #e2cd9d);
+    border: 1px solid #a98d54;
+    border-radius: 4px 9px 9px 4px;
+    padding: 5px 12px 5px 17px;
     cursor: pointer;
-    transition: transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
+    transition: transform 0.18s, box-shadow 0.18s;
+    animation: tagSettle 0.9s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.st-buy:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(232, 195, 75, 0.35); }
+.st-buy::before {   /* punched hole with brass grommet */
+    content: '';
+    position: absolute;
+    left: 6px; top: 50%;
+    transform: translateY(-50%);
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: #241203;
+    box-shadow: 0 0 0 1.5px #c9b075;
+}
+.st-buy::after {    /* the string up to the frame */
+    content: '';
+    position: absolute;
+    left: 7px; top: -13px;
+    width: 1.5px; height: 14px;
+    background: #caa35a;
+    transform: rotate(22deg);
+}
+@keyframes tagSettle {
+    0% { transform: rotate(-9deg); }
+    55% { transform: rotate(11deg); }
+    100% { transform: rotate(6deg); }
+}
+.st-buy:hover { transform: rotate(1deg) translateY(-1px); box-shadow: 0 5px 12px rgba(232, 195, 75, 0.4); }
 .st-buy.confirm {
-    background: linear-gradient(180deg, #ffe9a8, #e8c34b);
-    box-shadow: 0 0 14px rgba(232, 195, 75, 0.5);
+    background: linear-gradient(165deg, #fff3c4, #ffd97a);
+    border-color: #8a6a1f;
+    box-shadow: 0 0 16px rgba(255, 217, 122, 0.55);
     animation: ntPulse 1.5s ease-in-out infinite;
 }
-.st-buy.poor { opacity: 0.55; }
+.st-buy.poor { opacity: 0.6; }
+/* the wares counter along the bottom — the realm's goods on display */
+.st-counter {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    margin-top: 12px;
+    padding: 7px 10px 9px;
+    background: linear-gradient(180deg, #5d3a1c, #3a2210 60%, #241203);
+    border-radius: 6px;
+    border-top: 2px solid rgba(232, 212, 139, 0.3);
+    box-shadow: inset 0 -8px 14px rgba(0, 0, 0, 0.45), 0 -3px 10px rgba(0, 0, 0, 0.3);
+}
+.st-counter img {
+    width: 30px; height: 30px;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.65));
+}
 
 .pf-row {
     display: flex;
@@ -4500,11 +4647,18 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     .scoring-actions { margin: 12px 0 6px; }
     .scoring-actions .btn-royal { padding: 8px 22px; font-size: 12px; }
 
-    /* Store shelf on a short screen: smaller cells, the grid scrolls. */
-    .st-grid { grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); gap: 8px; margin-top: 8px; }
-    .st-name { font-size: 10px; }
-    .st-buy { font-size: 10px; padding: 3px 10px; }
-    .st-owned { font-size: 8px; padding: 2px 8px; }
+    /* Store stall on a short screen: smaller cells, the grid scrolls,
+       the wares counter yields its space to the shelves. */
+    .st-inner { padding-top: 40px; }
+    .st-awning { height: 22px; }
+    .st-awning::after { height: 10px; background-size: 88px 10px; }
+    .st-sign { font-size: 13px; padding: 5px 14px 6px; margin-top: 2px; }
+    .st-sign::before, .st-sign::after { top: -14px; height: 14px; }
+    .st-grid { grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); gap: 24px 12px; margin-top: 10px; padding: 12px 12px 14px; }
+    .st-name { font-size: 10px; padding: 2px 10px; }
+    .st-buy { font-size: 10px; padding: 3px 9px 3px 14px; }
+    .st-owned { width: 38px; height: 38px; font-size: 6.5px; }
+    .st-counter { display: none; }
 
     /* Victory ceremony tightens to the same short-screen budget. */
     .vs-head { padding: 10px 20px 6px; }
