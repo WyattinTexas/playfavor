@@ -811,7 +811,7 @@ class FavorGame {
                         let bestIdx = 0;
                         let bestFavor = -1;
                         this.visibleMissions.forEach((m, i) => {
-                            const favor = m.favor || (m.successRewards ? m.successRewards.favor : 0) || 0;
+                            const favor = this.missionFavorEstimate(player.index, m);
                             if (favor > bestFavor) { bestFavor = favor; bestIdx = i; }
                         });
                         this.chooseMission(player.index, bestIdx);
@@ -1360,6 +1360,24 @@ class FavorGame {
     }
 
     /**
+     * What completing this mission is WORTH in favor right now — the printed
+     * favorValue plus whatever its per-asset success special would pay at
+     * this moment. Pure valuation for AI decisions (borrow fees, mission
+     * picks); pays nothing.
+     */
+    missionFavorEstimate(playerIndex, mission) {
+        const p = this.players[playerIndex];
+        let favor = mission.favorValue || 0;
+        switch (mission.successSpecial) {
+            case 'favor_per_charisma_x2':   favor += 2 * (p.skills.charisma || 0); break;
+            case 'favor_per_knowledge_x1':  favor += (p.skills.knowledge || 0); break;
+            case 'favor_per_minds_eye_x5':  favor += 5 * this.getMindsEyeCount(playerIndex); break;
+            case 'favor_per_philstone_x10': favor += 10 * (p.philosopherStone || 0); break;
+        }
+        return favor;
+    }
+
+    /**
      * Turn a held mission in EARLY, by choice — it resolves immediately,
      * success or failure, exactly as it would at its due date.
      */
@@ -1406,8 +1424,13 @@ class FavorGame {
             }
         }
         if (mission.reqFavor && player.favor < mission.reqFavor) return null;
-        if (mission.reqSpecial === 'favor_5_per_minds_eye' &&
-            player.favor < 5 * this.getMindsEyeCount(playerIndex)) return null;
+        if (mission.reqMaps && mission.reqMaps.length) {
+            const held = this.getPlayerMaps(playerIndex);
+            // A map ALTERNATIVE already completes it → nothing to borrow;
+            // a missing reqMapsAll map can never be borrowed.
+            if (!mission.reqMapsAll && mission.reqMaps.some(mp => held.includes(mp))) return null;
+            if (mission.reqMapsAll && !mission.reqMaps.every(mp => held.includes(mp))) return null;
+        }
 
         const gaps = this.unmetSkillReqs(playerIndex, skillReqs);
         const borrowable = this.getBorrowableSkills(playerIndex);
@@ -1520,7 +1543,7 @@ class FavorGame {
                         player._pendingMissionBorrows.push(mission);
                         return; // stays in player.missions; the chooser resolves it
                     }
-                    if (plan && pi !== 0 && (mission.favorValue || 0) >= plan.cost * 2) {
+                    if (plan && pi !== 0 && this.missionFavorEstimate(pi, mission) >= plan.cost * 2) {
                         player.gold -= plan.cost;
                         plan.borrowFrom.forEach(b => {
                             this.players[b.neighborIndex].gold += BORROW_SKILL_COST;
@@ -1622,10 +1645,22 @@ class FavorGame {
         if (mission.reqFavor && player.favor < mission.reqFavor) {
             missing.push(`${mission.reqFavor} Favor`); met = false;
         }
-        // The Shadow Guide: needs 5 Favor for each Mind's Eye you hold.
-        if (mission.reqSpecial === 'favor_5_per_minds_eye') {
-            const need = 5 * this.getMindsEyeCount(playerIndex);
-            if (player.favor < need) { missing.push(`${need} Favor (5 per Mind's Eye)`); met = false; }
+        // Mission maps come in two printed forms: an ALTERNATIVE ("7 Power &
+        // 7 Knowledge OR Guardian Map" — holding it completes the mission by
+        // itself) or, with reqMapsAll, one MORE requirement alongside the
+        // stats (The Shadow Guide's A Hidden Door).
+        if (mission.reqMaps && mission.reqMaps.length) {
+            const held = this.getPlayerMaps(playerIndex);
+            if (mission.reqMapsAll) {
+                mission.reqMaps.forEach(mp => {
+                    if (!held.includes(mp)) { missing.push(`${mp} Map`); met = false; }
+                });
+            } else if (mission.reqMaps.some(mp => held.includes(mp))) {
+                return {
+                    success: true,
+                    details: { missing: [], canBorrow: this.getBorrowableSkills(playerIndex), mapUsed: true }
+                };
+            }
         }
 
         return {
@@ -1645,6 +1680,9 @@ class FavorGame {
         if (s.favor) player.favor += s.favor;
         if (s.prestige) player.prestige += s.prestige;
         if (s.gold) player.gold += s.gold;
+        // Some successes sting: Usurper and Alchemic Seige print Scorn in the
+        // SUCCESS zone (red medallion) — a reward can hurt.
+        if (s.scorn) player.scorn += s.scorn;
         // Skill rewards persist in bonusSkills — applySlotSkills rebuilds
         // the tally from scratch, so a direct write here would vanish on
         // the next slider move.
@@ -1676,6 +1714,12 @@ class FavorGame {
                 const f = player.skills.knowledge || 0;
                 player.favor += f;
                 this.addLog(`${player.name}: +${f} Favor (1 per Knowledge)`);
+                break;
+            }
+            case 'favor_per_minds_eye_x5': {
+                const f = 5 * this.getMindsEyeCount(playerIndex);
+                player.favor += f;
+                this.addLog(`${player.name}: +${f} Favor (5 per Mind's Eye)`);
                 break;
             }
             case 'philosopher_stone_x2_grant':

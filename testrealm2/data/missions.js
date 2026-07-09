@@ -2,6 +2,9 @@
  * FAVOR — Mission Card Database
  * 36 total: 12 per Act
  * Each mission has requirements, activation round, success rewards, failure penalties
+ * favorValue = the printed blue Favor medallion, scored once at game end.
+ * 0 when the card grants none — per-asset favor ("10 Favor per Philosopher's
+ * Stone") lives in successSpecial and pays at turn-in instead.
  */
 
 window.FAVOR_DATA = window.FAVOR_DATA || {};
@@ -15,15 +18,17 @@ window.FAVOR_DATA.missions = [
     // ACT 1 MISSIONS (12 cards) — Activate Round 1 or 2
     // ═══════════════════════════════════════════════════════════
 
-    { id: mid(), name: "The Minister's Plan", reqGold: 15, grantsMap: "Facing the River Fiend", audit: "Success Req: 15 Gold & 1 Prospecting, Act 2 OR Act 1 Success Reward: 1 Prospecting, 1 Mind's Eye, Facing the River Fiend Map Failure Reward: 5 Gold & 20 Scorn", filename: "Act 1_The Minister_s Plan Card.jpg",
-      act: 1, activationRound: 2, favorValue: 15,
+    // Art-verified 7/9: reward shields are Philosopher's Stone + Mind's Eye
+    // (transcription said Prospecting + Mind's Eye).
+    { id: mid(), name: "The Minister's Plan", reqGold: 15, grantsMap: "Facing the River Fiend", audit: "Success Req: 15 Gold & 1 Prospecting, Act 2 OR Act 1 Success Reward: 1 Philosopher's Stone, 1 Mind's Eye, Facing the River Fiend Map Failure Reward: 5 Gold & 20 Scorn", filename: "Act 1_The Minister_s Plan Card.jpg",
+      act: 1, activationRound: 2, favorValue: 0,
       requirements: ["prospecting"],
-      successRewards: { mindsEye: 1, skills: { prospecting: 1 } },
+      successRewards: { mindsEye: 1, philosopherStone: 1 },
       failurePenalties: { scorn: 20, gold: 5 },
       flavorText: "Facing the River Fiend" },
 
     { id: mid(), name: "A Day With the Birds", grantsMap: "The Alchemist's Daughter", audit: "Success Req: 3 Knowledge, Act 1 Success Reward: 3 Charisma, The Alchemist's Daughter Map Failure Reward: 10 Scorn", filename: "Act 1_A Day With the Birds Card.jpg",
-      act: 1, activationRound: 1, favorValue: 10,
+      act: 1, activationRound: 1, favorValue: 0,
       requirements: ["knowledge", "knowledge", "knowledge"],
       successRewards: { skills: { charisma: 3 } },
       failurePenalties: { scorn: 10 } },
@@ -35,7 +40,7 @@ window.FAVOR_DATA.missions = [
       failurePenalties: { gold: 4 } },
 
     { id: mid(), name: "Helping the Merchant", failSpecial: "discard_1_played", grantsMap: "Great North Connection", audit: "Success Req: 3 Survival & 3 Power, Act 1 Success Reward: 1 Prospecting, 5 Gold, The Great North Connection Map Failure Reward: Discard One Played Card", filename: "Act 1_Helping the Merchant Card.jpg",
-      act: 1, activationRound: 1, favorValue: 10,
+      act: 1, activationRound: 1, favorValue: 0,
       requirements: ["survival", "survival", "survival", "power", "power", "power"],
       successRewards: { gold: 5, skills: { prospecting: 1 } },
       failurePenalties: {} },
@@ -46,8 +51,9 @@ window.FAVOR_DATA.missions = [
       successRewards: {},
       failurePenalties: {} },
 
-    { id: mid(), name: "Cameron's Expedition", failSpecial: "discard_wisdom_gain_8_gold", placeholderName: "Talking Thomas", grantsMap: "Lost South Map", audit: "Success Req: 4 Survival & 1 Charisma & 1 Prospecting, Act 1 Success Reward: 10 Favor, 1 Philosopher's Stone, Lost South Map Map Failure Reward: Discard all Wisdom Cards, Gain 8 Gold for Each Discarded Card", filename: "Act 1_Talking Thomas Card.jpg",
-      act: 1, activationRound: 1, favorValue: 10,
+    // Art-verified 7/9: the blue medallion reads 5 Favor (transcription said 10).
+    { id: mid(), name: "Cameron's Expedition", failSpecial: "discard_wisdom_gain_8_gold", placeholderName: "Talking Thomas", grantsMap: "Lost South Map", audit: "Success Req: 4 Survival & 1 Charisma & 1 Prospecting, Act 1 Success Reward: 5 Favor, 1 Philosopher's Stone, Lost South Map Map Failure Reward: Discard all Wisdom Cards, Gain 8 Gold for Each Discarded Card", filename: "Act 1_Talking Thomas Card.jpg",
+      act: 1, activationRound: 1, favorValue: 5,
       requirements: ["survival", "survival", "survival", "survival", "charisma", "prospecting"],
       successRewards: { philosopherStone: 1 },
       failurePenalties: {} },
@@ -65,27 +71,28 @@ window.FAVOR_DATA.missions = [
       failurePenalties: {} },
 
     { id: mid(), name: "Golden Fiddle", failSpecial: "others_gain_3_gold", successSpecial: "favor_per_charisma_x2", placeholderName: "The Door Knob", grantsMap: "Finding the Lost Corridor", audit: "Success Req: 3 Survival & 1 Knowledge, Act 1 Success Reward: 2 Favor for Each Charisma you have, Finding the Lost Corridor Map Failure Reward: All other players receive 3 Gold", filename: "Act 1_The Door Knob Card.jpg",
-      act: 1, activationRound: 1, favorValue: 8,
+      act: 1, activationRound: 1, favorValue: 0,
       requirements: ["survival", "survival", "survival", "knowledge"],
       successRewards: {},
       failurePenalties: {} },
 
-    { id: mid(), name: "The Midnight Crash", failSpecial: "all_draw_act3_mission", reqFavor: 4, audit: "Success Req: 4 Favor & 3 Alchemy, Act 1 Success Reward: 2 Favor, 3 Prospecting Failure Reward: All Players Draw One Act 3 Mission", filename: "Act 1_The Midnight Crash Card.jpg",
+    // Art-verified 7/9: the prospecting shield badge reads ×2 (transcription said 3).
+    { id: mid(), name: "The Midnight Crash", failSpecial: "all_draw_act3_mission", reqFavor: 4, audit: "Success Req: 4 Favor & 3 Alchemy, Act 1 Success Reward: 2 Favor, 2 Prospecting Failure Reward: All Players Draw One Act 3 Mission", filename: "Act 1_The Midnight Crash Card.jpg",
       act: 1, activationRound: 1, favorValue: 2,
       requirements: ["alchemy", "alchemy", "alchemy"],
-      successRewards: { skills: { prospecting: 3 } },
+      successRewards: { skills: { prospecting: 2 } },
       failurePenalties: {} },
 
     { id: mid(), name: "Trust of the Elders", failSpecial: "scorn_10_per_knowledge", successSpecial: "favor_per_knowledge_x1", reqFavor: 5, audit: "Success Req: 5 Favor & 2 Prospecting, Act 1 Success Reward: 1 Favor for Each Knowledge you have, 2 Knowledge Failure Reward: Gain 10 Scorn per Knowledge you have", filename: "Act 1_Trust of the Elders Card.jpg",
-      act: 1, activationRound: 1, favorValue: 10,
+      act: 1, activationRound: 1, favorValue: 0,
       requirements: ["prospecting", "prospecting"],
       successRewards: { skills: { knowledge: 2 } },
       failurePenalties: {} },
 
-    { id: mid(), name: "Tunnel of Trinkets", failSpecial: "all_gain_2_gold", reqFavor: 5, grantsMap: "Lost South Map", audit: "Success Req: 5 Favor & 1 Charisma & 1 Knowledge & 1 Survival, Act 1 Success Reward: 8 Gold, Lost South Map Map Failure Reward: All players receive 2 Gold", filename: "Act 1_Tunnel of Trinkets Card.jpg",
-      act: 1, activationRound: 1, favorValue: 10,
+    { id: mid(), name: "Tunnel of Trinkets", failSpecial: "all_gain_2_gold", reqFavor: 5, grantsMap: "Lost South Map", audit: "Success Req: 5 Favor & 1 Charisma & 1 Knowledge & 1 Survival, Act 1 Success Reward: 6 Gold, Lost South Map Map Failure Reward: All players receive 2 Gold", filename: "Act 1_Tunnel of Trinkets Card.jpg",
+      act: 1, activationRound: 1, favorValue: 0,
       requirements: ["charisma", "knowledge", "survival"],
-      successRewards: { gold: 8 },
+      successRewards: { gold: 6 }, // art-verified 7/9: coin reads 6 (transcription said 8)
       failurePenalties: {} },
 
     // ═══════════════════════════════════════════════════════════
@@ -104,22 +111,28 @@ window.FAVOR_DATA.missions = [
       successRewards: { skills: { charisma: 6, alchemy: 4 } },
       failurePenalties: {} },
 
-    { id: mid(), name: "The Falls' Dark Sussurus", failSpecial: "you_gain_1_gold", successSpecial: "philosopher_stone_x2_grant", placeholderName: "Facing the Hard Truth", audit: "Success Req: 9 Power, Act 2 Success Reward: 15 Favor & 2 Philosopher's Stones Failure Reward: You receive 1 Gold", filename: "Act 2_Facing the Hard Truth Card.jpg",
+    // Art-verified 7/9: ONE Philosopher's Stone shield, no ×2 badge
+    // (transcription said 2 — Water Temple is the one with the ×2).
+    { id: mid(), name: "The Falls' Dark Sussurus", failSpecial: "you_gain_1_gold", placeholderName: "Facing the Hard Truth", audit: "Success Req: 9 Power, Act 2 Success Reward: 15 Favor & 1 Philosopher's Stone Failure Reward: You receive 1 Gold", filename: "Act 2_Facing the Hard Truth Card.jpg",
       act: 2, activationRound: 2, favorValue: 15,
       requirements: ["power", "power", "power", "power", "power", "power", "power", "power", "power"],
-      successRewards: { philosopherStone: 2 },
+      successRewards: { philosopherStone: 1 },
       failurePenalties: {} },
 
-    { id: mid(), name: "The Shadow Guide", reqSpecial: "favor_5_per_minds_eye", placeholderName: "Ghosts in the Mirror", grantsMap: "Shattering the Mirror Prison", reqMaps: ["A Hidden Door"], audit: "Success Req: 5 Favor for each Mind's Eye you have & A Hidden Door Map, Act 2 Success Reward: Shattering the Mirror Prison Map Failure Reward: 10 Scorn", filename: "Act 2_Ghosts in the Mirror Card.jpg",
-      act: 2, activationRound: 2, favorValue: 18,
-      requirements: [],
+    // Art-verified 7/9 — the old transcription had the favor clause on the
+    // wrong side. Reqs = 4 Knowledge + 3 Prospecting + 1 Mind's Eye + A Hidden
+    // Door Map (reqMapsAll: the map is one MORE requirement, not an
+    // alternative); reward = 5 Favor per Mind's Eye + the map. No flat favor.
+    { id: mid(), name: "The Shadow Guide", successSpecial: "favor_per_minds_eye_x5", reqMapsAll: true, placeholderName: "Ghosts in the Mirror", grantsMap: "Shattering the Mirror Prison", reqMaps: ["A Hidden Door"], audit: "Success Req: 4 Knowledge & 3 Prospecting & 1 Mind's Eye & A Hidden Door Map, Act 2 Success Reward: 5 Favor for each Mind's Eye you have, Shattering the Mirror Prison Map Failure Reward: 10 Scorn", filename: "Act 2_Ghosts in the Mirror Card.jpg",
+      act: 2, activationRound: 2, favorValue: 0,
+      requirements: ["knowledge", "knowledge", "knowledge", "knowledge", "prospecting", "prospecting", "prospecting", "minds_eye"],
       successRewards: {},
       failurePenalties: { scorn: 10 } },
 
     { id: mid(), name: "Usurper", placeholderName: "Hogsmade Holdup", audit: "Success Req: 6 Power & 6 Knowledge, Act 2 Success Reward: 10 Scorn, 30 Gold Failure Reward: 30 Scorn", filename: "Act 2_Hogsmade Holdup Card.jpg",
-      act: 2, activationRound: 2, favorValue: 15,
+      act: 2, activationRound: 2, favorValue: 0,
       requirements: ["power", "power", "power", "power", "power", "power", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge"],
-      successRewards: { gold: 30 },
+      successRewards: { gold: 30, scorn: 10 }, // usurping pays — and the realm remembers
       failurePenalties: { scorn: 30 } },
 
     { id: mid(), name: "Great Scholar", failSpecial: "prestige_2_per_knowledge", placeholderName: "Hogwarts Valedictorian", audit: "Success Req: 8 Knowledge, Act 2 OR Act 3 Success Reward: 10 Favor, 8 Knowledge Failure Reward: Gain 2 Prestige Per Knowledge you have", filename: "Act 2_Hogwarts Valdictorian Card.jpg",
@@ -128,14 +141,14 @@ window.FAVOR_DATA.missions = [
       successRewards: { skills: { knowledge: 8 } },
       failurePenalties: {} },
 
-    { id: mid(), name: "Bodyguard", failSpecial: "discard_1_played", placeholderName: "Negotiations with Villains", audit: "Success Req: 5 Power & 3 Knowledge, Act 2 Success Reward: 1 Prospecting, 10 Gold Failure Reward: Discard 1 Card", filename: "Act 2_Negotiations with Villains Card.jpg",
-      act: 2, activationRound: 2, favorValue: 15,
+    { id: mid(), name: "Bodyguard", failSpecial: "discard_1_played", placeholderName: "Negotiations with Villains", audit: "Success Req: 5 Power & 3 Knowledge, Act 2 Success Reward: 1 Prospecting, 8 Gold Failure Reward: Discard 1 Card", filename: "Act 2_Negotiations with Villains Card.jpg",
+      act: 2, activationRound: 2, favorValue: 0,
       requirements: ["power", "power", "power", "power", "power", "knowledge", "knowledge", "knowledge"],
-      successRewards: { gold: 10, skills: { prospecting: 1 } },
+      successRewards: { gold: 8, skills: { prospecting: 1 } }, // art-verified 7/9: coin reads 8 (transcription said 10)
       failurePenalties: {} },
 
     { id: mid(), name: "Quest for the Stones", successSpecial: "scorn_to_prestige_all", placeholderName: "Protecting Family II", audit: "Success Req: 6 Power & 6 Knowledge, Act 2 OR Act 3 Success Reward: Turn all your Scorn into Prestige Failure Reward: 15 Scorn", filename: "Act 2_Protecting Family Card copy.jpg",
-      act: 2, activationRound: 2, favorValue: 18,
+      act: 2, activationRound: 2, favorValue: 0,
       requirements: ["power", "power", "power", "power", "power", "power", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge"],
       successRewards: {},
       failurePenalties: { scorn: 15 } },
@@ -153,13 +166,13 @@ window.FAVOR_DATA.missions = [
       failurePenalties: {} },
 
     { id: mid(), name: "Mounted Champion", placeholderName: "To Believe in Someone", audit: "Success Req: 7 Survival, Act 2 Success Reward: 3 Power Failure Reward: 5 Scorn", filename: "Act 2_To Believe in Someone Card.jpg",
-      act: 2, activationRound: 2, favorValue: 15,
+      act: 2, activationRound: 2, favorValue: 0,
       requirements: ["survival", "survival", "survival", "survival", "survival", "survival", "survival"],
       successRewards: { skills: { power: 3 } },
       failurePenalties: { scorn: 5 } },
 
     { id: mid(), name: "Secret Grotto", failSpecial: "discard_power_gain_15_prestige", placeholderName: "Facing the Hard Truth (copy)", audit: "Success Req: 6 Survival & 3 Knowledge, Act 2 Success Reward: 3 Prospecting, 1 Philosopher's Stone Failure Reward: Discard all Power Cards, Gain 15 Prestige for each discarded Card", filename: "Act 2_Facing the Hard Truth Card copy.jpg",
-      act: 2, activationRound: 2, favorValue: 15,
+      act: 2, activationRound: 2, favorValue: 0,
       requirements: ["survival", "survival", "survival", "survival", "survival", "survival", "knowledge", "knowledge", "knowledge"],
       successRewards: { philosopherStone: 1, skills: { prospecting: 3 } },
       failurePenalties: {} },
@@ -180,20 +193,21 @@ window.FAVOR_DATA.missions = [
       successRewards: { skills: { prospecting: 15 } },
       failurePenalties: { scorn: 10 } },
 
-    { id: mid(), name: "Alchemic Seige", failSpecial: "gain_20_prestige", placeholderName: "Fiery Pillaging", audit: "Success Req: 1 Alchemy & 1 Philosopher's Stone, Act 3 Success Reward: 20 Scorn Failure Reward: Gain 20 Prestige", filename: "Act 3_Fiery Pillaging Card.jpg",
-      act: 3, activationRound: 3, favorValue: 25,
+    // Art-verified 7/9: the success medallion reads 10 Scorn (old transcription said 20).
+    { id: mid(), name: "Alchemic Seige", failSpecial: "gain_20_prestige", placeholderName: "Fiery Pillaging", audit: "Success Req: 1 Alchemy & 1 Philosopher's Stone, Act 3 Success Reward: 10 Scorn Failure Reward: Gain 20 Prestige", filename: "Act 3_Fiery Pillaging Card.jpg",
+      act: 3, activationRound: 3, favorValue: 0,
       requirements: ["alchemy", "philosopher_stone"],
-      successRewards: {},
+      successRewards: { scorn: 10 },
       failurePenalties: {} },
 
     { id: mid(), name: "Mercy", failSpecial: "others_remove_15_scorn", successSpecial: "remove_20_scorn", placeholderName: "Honoring a Fallen Friend", audit: "Success Req: 7 Power, Act 3 Success Reward: Remove 20 Scorn Failure Reward: All other players remove 15 Scorn", filename: "Act 3_Honoring a Fallen Friend Card.jpg",
-      act: 3, activationRound: 3, favorValue: 25,
+      act: 3, activationRound: 3, favorValue: 0,
       requirements: ["power", "power", "power", "power", "power", "power", "power"],
       successRewards: {},
       failurePenalties: {} },
 
     { id: mid(), name: "Passing the Mirror Gate", failSpecial: "discard_1_artifact", successSpecial: "duplicate_artifact", placeholderName: "Passing the Mirror Gate", audit: "Success Req: 4 Alchemy & 6 Prospecting, Act 3 Success Reward: Chose on of your Artifacts & duplicate the chosen card. Failure Reward: Discard 1 Artifact", filename: "Act 3_Passing the Mirror Gate Card.jpg",
-      act: 3, activationRound: 3, favorValue: 28,
+      act: 3, activationRound: 3, favorValue: 0,
       requirements: ["alchemy", "alchemy", "alchemy", "alchemy", "prospecting", "prospecting", "prospecting", "prospecting", "prospecting", "prospecting"],
       successRewards: {},
       failurePenalties: {} },
@@ -223,13 +237,13 @@ window.FAVOR_DATA.missions = [
       failurePenalties: {} },
 
     { id: mid(), name: "Wild Experiments", successSpecial: "duplicate_potion", placeholderName: "Splitting Personalities", audit: "Success Req: 8 Alchemy & 4 Prospecting, Act 3 Success Reward: Chose on of your potions & duplicate the chosen card. Effects of the potion activate immediatley. Failure Reward: 15 Scorn", filename: "Act 3_Splitting Personalities Card.jpg",
-      act: 3, activationRound: 3, favorValue: 25,
+      act: 3, activationRound: 3, favorValue: 0,
       requirements: ["alchemy", "alchemy", "alchemy", "alchemy", "alchemy", "alchemy", "alchemy", "alchemy", "prospecting", "prospecting", "prospecting", "prospecting"],
       successRewards: {},
       failurePenalties: { scorn: 15 } },
 
     { id: mid(), name: "King of the Sky", successSpecial: "favor_per_philstone_x10", placeholderName: "Taking on Wizard Outlaws", reqMaps: ["Dawnharbinger"], audit: "Success Req: 4 Survival & 12 Power OR Dawn Harbinger Map, Act 3 Success Reward: 10 Favor for each Philosopher's Stone you have Failure Reward: 10 Scorn", filename: "Act 3_Taking on Wizard Outlaws Card.jpg",
-      act: 3, activationRound: 3, favorValue: 28,
+      act: 3, activationRound: 3, favorValue: 0,
       requirements: ["survival", "survival", "survival", "survival"],
       successRewards: {},
       failurePenalties: { scorn: 10 } },

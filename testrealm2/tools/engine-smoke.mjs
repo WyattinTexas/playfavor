@@ -106,6 +106,63 @@ console.log('── Mission success: skill rewards + favorValue not double-paid'
   ok(g.players[0].favor === favor, 'no favor paid at completion (favorValue scores at end)');
 }
 
+console.log('── Mission favor audit (7/9): phantom favorValues gone, per-asset favor pays at turn-in');
+{
+  const zeroed = ["The Minister's Plan", 'A Day With the Birds', 'Helping the Merchant',
+    'Golden Fiddle', 'Trust of the Elders', 'Tunnel of Trinkets', 'The Shadow Guide',
+    'Usurper', 'Bodyguard', 'Quest for the Stones', 'Mounted Champion', 'Secret Grotto',
+    'Alchemic Seige', 'Mercy', 'Passing the Mirror Gate', 'Wild Experiments', 'King of the Sky'];
+  ok(zeroed.every(n => (missionByName(n).favorValue || 0) === 0),
+     "all 17 phantom favorValues zeroed (Wyatt's 16 + Trust of the Elders)");
+
+  const g = newGame();
+  const p = g.players[0];
+  // King of the Sky: favor ONLY per Philosopher's Stone (blue ×10 crystal medallion)
+  p.philosopherStone = 2;
+  const f0 = p.favor;
+  g.applyMissionRewards(0, { ...missionByName('King of the Sky') });
+  ok(p.favor === f0 + 20, `King of the Sky pays 10 Favor per stone at turn-in (+${p.favor - f0} for 2 stones)`);
+
+  // Usurper: success = 30 Gold AND 10 Scorn (red medallion in the success zone)
+  const gold0 = p.gold, scorn0 = p.scorn;
+  g.applyMissionRewards(0, { ...missionByName('Usurper') });
+  ok(p.gold === gold0 + 30, `Usurper success pays 30 Gold (+${p.gold - gold0})`);
+  ok(p.scorn === scorn0 + 10, `Usurper success stings 10 Scorn (+${p.scorn - scorn0})`);
+
+  // Alchemic Seige: success = 10 Scorn (art medallion; transcription said 20)
+  const s1 = p.scorn;
+  g.applyMissionRewards(0, { ...missionByName('Alchemic Seige') });
+  ok(p.scorn === s1 + 10, `Alchemic Seige success stings 10 Scorn (+${p.scorn - s1})`);
+}
+
+console.log("── The Shadow Guide: art-true requirements + 5 Favor per Mind's Eye reward");
+{
+  const g = newGame();
+  const p = g.players[0];
+  const sg = { ...missionByName('The Shadow Guide') };
+  p.skills.knowledge = 4; p.skills.prospecting = 3; p.bonusMindsEye = 2;
+  ok(g.probeMissionRequirements(0, sg).success === false,
+     'stats alone are NOT enough — A Hidden Door Map is a hard requirement');
+  ok(g.missionBorrowPlan(0, sg) === null, 'the missing map cannot be borrowed');
+  p.playedCards.push({ ...cardByName('A Hidden Door') });
+  ok(g.probeMissionRequirements(0, sg).success === true, 'stats + A Hidden Door Map → success');
+  const me = g.getMindsEyeCount(0);
+  const f0 = p.favor;
+  g.applyMissionRewards(0, sg);
+  ok(me >= 2 && p.favor === f0 + 5 * me, `success pays 5 Favor per Mind's Eye (+${p.favor - f0} for ${me})`);
+}
+
+console.log('── Mission map alternatives: holding the printed map completes the mission');
+{
+  const g = newGame();
+  const p = g.players[0];
+  const kots = { ...missionByName('King of the Sky') }; // 4 Survival & 12 Power OR Dawnharbinger Map
+  ok(g.probeMissionRequirements(0, kots).success === false, 'no stats, no map → unmet');
+  p.playedCards.push({ ...cardByName('Dawnharbinger') });
+  ok(g.probeMissionRequirements(0, kots).success === true, 'Dawnharbinger Map alone completes King of the Sky');
+  ok(g.missionBorrowPlan(0, kots) === null, 'map already completes it → no borrow offer');
+}
+
 console.log('── Mission failure specials: discard + payouts');
 {
   const g = newGame();
@@ -499,7 +556,7 @@ console.log('── Mission borrowing: optional rescue at mission time, 2g/skill
   // AI: borrows when favorValue clearly beats the fee, refuses a bad deal.
   const g6 = newGame();
   const ai = g6.players[1];
-  ai.missions = [{ ...missionByName('A Day With the Birds') }]; // favorValue 10
+  ai.missions = [{ ...missionByName('A Day With the Birds'), favorValue: 10 }]; // rig pins worth ≥ 2× fee (real card pays no flat favor)
   ai.skills.knowledge = 2;
   ai.gold = 10;
   g6.players[0].playedCards.push({ ...kCard });
