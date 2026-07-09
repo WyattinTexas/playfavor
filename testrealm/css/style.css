@@ -4850,7 +4850,7 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
 
 .ms-portrait-wrap { position: relative; }
 .ms-portrait {
-    display: block;
+    display: block; position: relative; z-index: 1;
     width: clamp(44px, 8.5dvh, 78px); height: clamp(44px, 8.5dvh, 78px);
     border-radius: 10px; object-fit: cover;
     border: 2px solid rgba(201,168,76,0.5);
@@ -4872,6 +4872,37 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     pointer-events: none;
 }
 .ms-tier.champ.lit .ms-portrait-wrap::after { animation: msSweep 1s ease-out 0.15s; }
+/* Champion portrait pops as the crown lands */
+.ms-tier.champ.lit .ms-portrait { animation: msChampPunch 0.5s cubic-bezier(0.2,1.5,0.35,1) 0.1s; }
+@keyframes msChampPunch { 0% { transform: scale(0.82); } 60% { transform: scale(1.08); } 100% { transform: scale(1); } }
+
+/* Radiant light-rays fanning out behind the champion */
+.ms-rays {
+    position: absolute; left: 50%; top: 50%;
+    width: 260%; height: 260%; transform: translate(-50%, -50%);
+    z-index: 0; pointer-events: none; opacity: 0;
+    transition: opacity 0.6s ease;
+    background: repeating-conic-gradient(from 0deg,
+        rgba(255,233,173,0.55) 0deg 5deg, transparent 5deg 17deg);
+    -webkit-mask: radial-gradient(circle, #000 26%, rgba(0,0,0,0.35) 46%, transparent 64%);
+            mask: radial-gradient(circle, #000 26%, rgba(0,0,0,0.35) 46%, transparent 64%);
+    animation: msRaysSpin 18s linear infinite;
+}
+.ms-tier.champ.lit .ms-rays { opacity: 0.8; }
+@keyframes msRaysSpin { from { transform: translate(-50%,-50%) rotate(0); } to { transform: translate(-50%,-50%) rotate(360deg); } }
+
+/* "CHAMPION" tag under the champion's name */
+.ms-champ-label {
+    font-family: 'Cinzel', serif; font-weight: 900;
+    letter-spacing: 0.22em; text-indent: 0.22em;
+    font-size: clamp(9px, 1.5dvh, 12px); text-transform: uppercase;
+    background: linear-gradient(180deg, #fff4d2, #e8d48b 55%, #c9a84c);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    filter: drop-shadow(0 0 8px rgba(201,168,76,0.6));
+    opacity: 0; transform: translateY(-4px) scale(0.9); margin-top: -1px;
+}
+.ms-tier.champ.lit .ms-champ-label { animation: msFadeUp 0.5s ease 0.25s forwards; }
 
 /* Crown descends onto the champion */
 .ms-crown {

@@ -4331,8 +4331,10 @@ function showMeleeSplash(results, actNum) {
     if (!el || !results || !results.length || typeof playMeleeCinematic !== 'function') {
         return Promise.resolve();
     }
+    const musicBtn = document.getElementById('musicBtn');
     return playMeleeCinematic(el, results, actNum, {
         speed: window.CINEMATIC_SPEED || 1,
+        sound: !(musicBtn && musicBtn.classList.contains('muted')),
         powerIcon: 'assets/icons/power.png',
         portraitFor: (pi) => {
             const p = (pi != null && game.players[pi]) ? game.players[pi] : null;

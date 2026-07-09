@@ -21,6 +21,51 @@
   const ORD = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
   const POS = ['p-center', 'p-left', 'p-right'];
 
+  // ── Synthesised coronation fanfare (Web Audio — no asset, offline) ─────
+  // A trumpet pickup (C-E-G) into a swelling C-major chord with a low brass
+  // root. Built from oscillators so there's nothing to download and it can't
+  // fall out of sync with the reveal. Gated by opts.sound so mute is honoured.
+  let _actx = null;
+  function audioCtx() {
+    if (_actx) { if (_actx.state === 'suspended') _actx.resume().catch(() => {}); return _actx; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    try { _actx = new AC(); } catch (e) { return null; }
+    if (_actx.state === 'suspended') _actx.resume().catch(() => {});
+    return _actx;
+  }
+  function playFanfare() {
+    const ctx = audioCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime + 0.03;
+    // Compressor guards against the summed oscillators clipping.
+    const comp = ctx.createDynamicsCompressor();
+    const master = ctx.createGain();
+    master.gain.value = 0.9;
+    master.connect(comp); comp.connect(ctx.destination);
+
+    const note = (freq, start, dur, peak, detune) => {
+      const t = now + start;
+      const o1 = ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = freq;
+      const o2 = ctx.createOscillator(); o2.type = 'square'; o2.frequency.value = freq; o2.detune.value = detune || -7;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.min(7000, freq * 6);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak, t + 0.025);          // brass attack
+      g.gain.exponentialRampToValueAtTime(peak * 0.7, t + dur * 0.5); // slight decay/sustain
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);           // release
+      o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(master);
+      o1.start(t); o2.start(t); o1.stop(t + dur + 0.05); o2.stop(t + dur + 0.05);
+    };
+    const C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5;
+    const C4 = 261.63, E4 = 329.63, G4 = 392.00, C3 = 130.81;
+    note(C5, 0.00, 0.13, 0.42);            // pickup triplet
+    note(E5, 0.13, 0.13, 0.42);
+    note(G5, 0.26, 0.15, 0.46);
+    [C4, E4, G4, C5, E5, G5, C6].forEach(f => note(f, 0.42, 1.5, 0.12)); // triumphant chord
+    note(C3, 0.42, 1.6, 0.34);             // low brass root for weight
+  }
+
   // Heraldic crown that descends onto the champion.
   const CROWN_SVG = `
     <svg class="ms-crown" viewBox="0 0 120 92" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -55,6 +100,7 @@
       const portraitFor = opts.portraitFor || (() => 'assets/ui/cover.jpg');
       const powerIcon = opts.powerIcon || 'assets/icons/power.png';
       const fallback = 'assets/ui/cover.jpg';
+      const soundOn = opts.sound !== false;
       const maxPower = Math.max(1, ...results.map(r => r.power || 0));
 
       // ── Group by placement (ties share a tier) ──────────────────────
@@ -72,11 +118,12 @@
       const fighterHTML = (r, champ) => `
         <div class="ms-fighter" data-power="${r.power || 0}">
           <div class="ms-portrait-wrap">
-            ${champ ? CROWN_SVG + laurel('left') + laurel('right') : ''}
+            ${champ ? '<div class="ms-rays"></div>' + CROWN_SVG + laurel('left') + laurel('right') : ''}
             <img class="ms-portrait" src="${portraitFor(r.playerIndex)}" alt="${r.name}"
                  onerror="this.onerror=null;this.src='${fallback}'">
           </div>
           <div class="ms-name">${r.name}</div>
+          ${champ ? '<div class="ms-champ-label">✦ Champion ✦</div>' : ''}
           <div class="ms-power"><img src="${powerIcon}" alt="Power"><b>0</b></div>
           <div class="ms-bar"><div class="ms-bar-fill"></div></div>
         </div>`;
@@ -205,9 +252,10 @@
           flashEl.classList.add('go');
           stage.classList.add('shake');
           setTimeout(() => stage.classList.remove('shake'), 450 * speed);
+          if (soundOn) playFanfare();
         }
         fillTier(el, false);
-        sparkBurst(el, champ ? 14 : 6);
+        sparkBurst(el, champ ? 22 : 6);
       };
 
       const markRevealed = () => {
