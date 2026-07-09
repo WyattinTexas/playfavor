@@ -107,6 +107,11 @@
   }
 
   function playMeleeCinematic(host, results, actNum, opts) {
+    // Cancel any prior run still animating on this host — otherwise its timers
+    // (auto-close wiping the DOM, scheduled hit/fanfare sounds) keep firing and
+    // clobber the fresh run. This is what let a speed change blank the cards
+    // while the old run's noises played on.
+    if (host && host._meleeCancel) { try { host._meleeCancel(); } catch (e) {} }
     return new Promise((resolve) => {
       opts = opts || {};
       const speed = opts.speed || 1;
@@ -224,6 +229,14 @@
       const run = { killed: false };
       let state = 'playing';
       const after = (ms, fn) => timers.push(setTimeout(() => { if (!run.killed) fn(); }, ms * speed));
+
+      // Let a later run (e.g. a speed re-trigger) stop this one cleanly:
+      // kill its guard, clear its pending timers, and settle its promise.
+      host._meleeCancel = () => {
+        run.killed = true;
+        timers.forEach(clearTimeout); timers.length = 0;
+        resolve();
+      };
 
       const tickNumber = (b, target, dur) => {
         if (!b) return;
@@ -377,6 +390,7 @@
         if (state === 'closed') return;
         state = 'closed'; run.killed = true;
         timers.forEach(clearTimeout);
+        if (host._meleeCancel) host._meleeCancel = null;   // this run is done
         host.classList.remove('active'); host.onclick = null;
         setTimeout(() => { host.innerHTML = ''; resolve(); }, 320 * speed);
       };

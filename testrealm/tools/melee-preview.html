@@ -106,12 +106,12 @@
 
     function play() {
       const host = document.getElementById('meleeSplash');
-      host.onclick = null; host.classList.remove('active'); host.innerHTML = '';
       const results = buildResults();
       const bd = buildBreakdowns(results);
-      // Small delay so a re-trigger fully resets the overlay first.
-      setTimeout(() => playMeleeCinematic(host, results, 1, { speed, portraitFor,
-        powerIcon: '../assets/icons/power.png', breakdownFor: (pi) => bd[pi] }), 60);
+      // playMeleeCinematic cancels any prior run on this host and re-renders,
+      // so a speed change can't leave old timers wiping the new cards.
+      playMeleeCinematic(host, results, 1, { speed, portraitFor,
+        powerIcon: '../assets/icons/power.png', breakdownFor: (pi) => bd[pi] });
     }
 
     // Controls
