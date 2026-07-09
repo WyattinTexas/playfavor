@@ -365,8 +365,9 @@
         fc.style.setProperty('--dy', (my - sy) + 'px');
         stage.appendChild(fc);
         void fc.offsetWidth; fc.classList.add('go');
-        setTimeout(() => { if (!run.killed) bump(el); }, 2250 * speed);  // lands
         setTimeout(() => fc.remove(), 2500 * speed);
+        // The landing beat (meter step + bump) is scheduled by the caller,
+        // which knows this card's power amount.
       };
 
       // ── FORGE: assemble one fighter's Power, return its end time ─────
@@ -376,23 +377,44 @@
         const calloutHost = el.querySelector('.ms-cb-callout');
         const bd = (breakdownFor && breakdownFor(c.playerIndex)) || { base: c.power || 0, steps: [] };
         const setFill = (v) => { if (fill) fill.style.width = Math.round(Math.max(0, v) / maxPower * 100) + '%'; };
-        let running = bd.base || 0;
         let t = start;
+
+        // The cards ARE the arithmetic: only actual power contributors appear
+        // (played cards and missions, each carrying its amount), and the meter
+        // climbs by exactly that amount as each one lands. Contributors with
+        // no art fold into the opening fill so the number never lies. The
+        // opening fill itself is the character board's slot power (baseOther).
+        const visCards = [];
+        if (cardsFx) {
+          (bd.baseCards || []).slice(0, 4).forEach(cd => {
+            const url = (cd && cd.amount > 0) ? cardImgFor(cd.filename, cd.mission) : null;
+            if (url) visCards.push({ url, amount: cd.amount });
+          });
+        }
+        const baseStart = Math.max(0, (bd.base || 0) - visCards.reduce((a, c) => a + c.amount, 0));
+        let running = baseStart;
 
         after(t, () => {
           el.classList.add('forging');
-          setFill(bd.base || 0);
-          tickNumber(b, bd.base || 0, 700);
+          setFill(baseStart);
+          tickNumber(b, baseStart, 500);
         });
-        // Cards rise into view one at a time during the base fill — dealt like
-        // a hand: each holds ~1.4s for the read, and the next rises as it
-        // dives, so two full-size cards never stack. (Tracked timers, not a
-        // nested setTimeout — that failed to schedule under virtual time.)
-        const shown = cardsFx ? (bd.baseCards || []).slice(0, 4)
-          .map(cd => cardImgFor(cd && cd.filename)).filter(Boolean) : [];
-        shown.forEach((url, i) => after(t + 150 + i * 1700, () => spawnFlyCard(el, url)));
-        // Base dwell covers the whole card parade (last card + its full 2.3s).
-        t += shown.length ? (shown.length * 1700 + 950) : 820;
+        // Deal the contributors one at a time — each holds ~1.4s for the read,
+        // the next rises as it dives, and the meter steps up on every landing.
+        // (Tracked timers, not a nested setTimeout — that failed to schedule
+        // under virtual time.)
+        visCards.forEach((vc, i) => {
+          const spawnAt = t + 150 + i * 1700;
+          after(spawnAt, () => spawnFlyCard(el, vc.url));
+          after(spawnAt + 2250, () => {                    // the dive lands
+            running = Math.max(0, running + vc.amount);
+            setFill(running); tickNumber(b, running, 340);
+            bump(el);
+            if (soundOn) playHit('bonus');
+          });
+        });
+        // Base dwell covers the whole parade (last card's landing + a beat).
+        t += visCards.length ? (visCards.length * 1700 + 950) : 820;
 
         (bd.steps || []).forEach(step => {
           const at = t;

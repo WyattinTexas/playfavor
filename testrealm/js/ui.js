@@ -4341,7 +4341,8 @@ function showMeleeSplash(results, actNum) {
             return p && p.character ? `assets/characters/${p.character.filename}` : 'assets/ui/cover.jpg';
         },
         breakdownFor: (pi) => (typeof game.powerBreakdown === 'function' ? game.powerBreakdown(pi) : null),
-        cardImgFor: (filename) => (filename ? `assets/cards/regular/${filename}` : null)
+        // Mission cards live in their own art folder.
+        cardImgFor: (filename, mission) => (filename ? `assets/cards/${mission ? 'missions' : 'regular'}/${filename}` : null)
         // sapFx / cardsFx / herald default on; autoClose uses the built-in fallback
     });
 }

@@ -2005,11 +2005,21 @@ class FavorGame {
         const steps = [];
         let power = player.skills.power || 0;
         const base = power;
-        // Power-granting played cards, with their art filename so the Melee can
-        // fly card thumbnails into the meter.
-        const baseCards = player.playedCards
-            .filter(c => (c.skills || []).includes('power'))
-            .map(c => ({ name: c.name, filename: c.filename || null }));
+        // Attribute the base to its actual sources so the Melee forge can SHOW
+        // the arithmetic: every power-granting played card (amount = its power
+        // pips), every completed mission whose success reward granted power,
+        // and baseOther = whatever remains (the character-board slot). The sum
+        // baseOther + Σ amounts always equals base.
+        const baseCards = [];
+        player.playedCards.forEach(c => {
+            const n = (c.skills || []).filter(s => s === 'power').length;
+            if (n > 0) baseCards.push({ name: c.name, filename: c.filename || null, amount: n, mission: false });
+        });
+        (player.completedMissions || []).forEach(m => {
+            const n = (m.successRewards && m.successRewards.skills && m.successRewards.skills.power) || 0;
+            if (n > 0) baseCards.push({ name: m.name, filename: m.filename || null, amount: n, mission: true });
+        });
+        const baseOther = Math.max(0, base - baseCards.reduce((a, c) => a + c.amount, 0));
 
         // Blind Faith pairings (+6 each for Heaven's Blade / Archeus)
         if (player.playedCards.some(c => c.name === 'Blind Faith')) {
@@ -2067,7 +2077,7 @@ class FavorGame {
             steps.push({ kind: 'mult', label: 'Melee Spectacular', amount: 2 });
         }
 
-        return { base, baseCards, steps, computedTotal: Math.max(0, power) };
+        return { base, baseOther, baseCards, steps, computedTotal: Math.max(0, power) };
     }
 
     // ─── ACT TRANSITIONS ───────────────────────────────────────

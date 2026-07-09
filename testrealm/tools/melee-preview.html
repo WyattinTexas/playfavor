@@ -88,28 +88,43 @@
       return results;
     }
 
-    // Demo Power breakdowns so the Forge shows off every effect: a doubling,
-    // a live coin flip (win AND lose), a cross-fighter sap, and cards flying
-    // into the meter. In the real game these come from game.powerBreakdown();
-    // meters always lock to the true total, so base+steps need only be plausible.
+    // Demo Power breakdowns with COHERENT arithmetic — the shown cards' amounts
+    // plus the board share (baseOther) sum exactly to the base, and the steps
+    // (a doubling, a live coin win AND loss, a cross-fighter sap) carry it to
+    // the final power. Mirrors what game.powerBreakdown() produces for real.
     function buildBreakdowns(results) {
       const map = {};
-      const someCards = (n) => POWER_CARDS.slice(0, n).map(f => ({ name: f, filename: f }));
       results.forEach((r, rank) => {
         const p = r.power, steps = [];
-        let base = p;
-        // A couple of power-cards to fly in for everyone.
-        const baseCards = someCards(1 + (r.playerIndex % 3));
+        let preBase = p;
         if (rank === 0 && p >= 4 && p % 2 === 0) {              // champion: doubled
-          base = p / 2; steps.push({ kind: 'mult', label: 'Melee Spectacular', amount: 2 });
+          preBase = p / 2; steps.push({ kind: 'mult', label: 'Melee Spectacular', amount: 2 });
         } else if (rank === 1 && p >= 4) {                      // a WON coin (+4)
-          base = p - 4; steps.push({ kind: 'coinflip', label: 'Liquid Courage', amount: 4, won: true });
+          preBase = p - 4; steps.push({ kind: 'coinflip', label: 'Liquid Courage', amount: 4, won: true });
         } else if (rank === 2) {                                // sapped by the leader (from pi 0)
-          base = p + 3; steps.push({ kind: 'debuff', label: 'Fuzzy Head', amount: -3, from: 0 });
+          preBase = p + 3; steps.push({ kind: 'debuff', label: 'Fuzzy Head', amount: -3, from: 0 });
         } else if (rank === 3) {                                // a LOST coin (Tails)
           steps.push({ kind: 'coinflip', label: 'Liquid Courage', amount: 4, won: false });
         }
-        map[r.playerIndex] = { base: Math.max(0, base), baseCards, steps };
+        // Split the base into board slot + power cards that SUM to it.
+        const baseCards = [];
+        let remaining = Math.max(0, preBase);
+        const baseOther = remaining > 3 ? 1 : 0;                // board-slot share
+        remaining -= baseOther;
+        let ci = 0;
+        while (remaining > 0 && ci < 4) {
+          const amt = Math.min(remaining, ci === 0 ? 2 : 1 + ((r.playerIndex + ci) % 2));
+          if (rank === 1 && ci === 1) {
+            // one MISSION contributor, to demo the missions art path
+            baseCards.push({ name: 'Protecting Family', filename: 'Act 1_Protecting Family Card.jpg', amount: amt, mission: true });
+          } else {
+            const f = POWER_CARDS[ci % POWER_CARDS.length];
+            baseCards.push({ name: f, filename: f, amount: amt, mission: false });
+          }
+          remaining -= amt; ci++;
+        }
+        if (remaining > 0 && baseCards.length) baseCards[baseCards.length - 1].amount += remaining;
+        map[r.playerIndex] = { base: Math.max(0, preBase), baseOther, baseCards, steps };
       });
       return map;
     }
@@ -125,7 +140,7 @@
         speed, portraitFor, sapFx, cardsFx, autoCloseMs: 0,
         powerIcon: '../assets/icons/power.png',
         breakdownFor: (pi) => bd[pi],
-        cardImgFor: (filename) => (filename ? '../assets/cards/regular/' + filename : null)
+        cardImgFor: (filename, mission) => (filename ? '../assets/cards/' + (mission ? 'missions/' : 'regular/') + filename : null)
       });
     }
 
