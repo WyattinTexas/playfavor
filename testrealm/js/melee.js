@@ -312,6 +312,7 @@
       const bump = (el) => { el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); };
 
       // A coin that spins and lands on its real face (heads = won).
+      // The toss runs ~1.5s — long enough to hold your breath over.
       const flipCoin = (hostEl, won) => {
         const coin = document.createElement('div');
         coin.className = 'ms-coin';
@@ -319,7 +320,7 @@
         hostEl.appendChild(coin);
         void coin.offsetWidth;
         coin.classList.add(won ? 'flip-heads' : 'flip-tails');
-        setTimeout(() => coin.remove(), 1150 * speed);
+        setTimeout(() => coin.remove(), 2200 * speed);
       };
 
       // A sap projectile streaking from caster → victim.
@@ -342,14 +343,16 @@
         setTimeout(() => streak.remove(), 640 * speed);
       };
 
-      // One card thumbnail flying from the fighter into their meter.
+      // One card image rising above the fighter — held big and readable for a
+      // beat (players should SEE which power card this is) — then diving into
+      // the meter. The fighter bumps as it lands.
       const spawnFlyCard = (el, url) => {
         const meter = el.querySelector('.ms-cb-meter');
         if (!meter) return;
         const h = stage.getBoundingClientRect();
         const m = meter.getBoundingClientRect();
         const s = el.getBoundingClientRect();
-        const sx = s.left - h.left + s.width / 2, sy = s.top - h.top + 8;
+        const sx = s.left - h.left + s.width / 2, sy = s.top - h.top - 8;
         const mx = m.left - h.left + m.width / 2, my = m.top - h.top + m.height / 2;
         const fc = document.createElement('img');
         fc.className = 'ms-flycard'; fc.src = url; fc.onerror = () => fc.remove();
@@ -358,7 +361,8 @@
         fc.style.setProperty('--dy', (my - sy) + 'px');
         stage.appendChild(fc);
         void fc.offsetWidth; fc.classList.add('go');
-        setTimeout(() => { fc.remove(); if (!run.killed) bump(el); }, 560 * speed);
+        setTimeout(() => { if (!run.killed) bump(el); }, 1250 * speed);  // lands
+        setTimeout(() => fc.remove(), 1450 * speed);
       };
 
       // ── FORGE: assemble one fighter's Power, return its end time ─────
@@ -374,47 +378,49 @@
         after(t, () => {
           el.classList.add('forging');
           setFill(bd.base || 0);
-          tickNumber(b, bd.base || 0, 480);
+          tickNumber(b, bd.base || 0, 700);
         });
-        // Cards fly into the meter during the base fill (tracked timers, not a
-        // nested setTimeout — that failed to schedule under virtual time).
-        if (cardsFx && bd.baseCards && bd.baseCards.length) {
-          bd.baseCards.slice(0, 4).forEach((cd, i) => {
-            const url = cardImgFor(cd && cd.filename);
-            if (url) after(t + 90 + i * 130, () => spawnFlyCard(el, url));
-          });
-        }
-        t += 640;
+        // Cards rise into view one at a time during the base fill — spaced so
+        // each is readable before the next appears. (Tracked timers, not a
+        // nested setTimeout — that failed to schedule under virtual time.)
+        const shown = cardsFx ? (bd.baseCards || []).slice(0, 4)
+          .map(cd => cardImgFor(cd && cd.filename)).filter(Boolean) : [];
+        shown.forEach((url, i) => after(t + 150 + i * 480, () => spawnFlyCard(el, url)));
+        // Base dwell stretches to cover the card parade.
+        t += shown.length ? (150 + shown.length * 480 + 1050) : 820;
 
         (bd.steps || []).forEach(step => {
           const at = t;
           if (step.kind === 'coinflip') {
+            // Toss… (long spin, hold your breath) …land, beat, then the result.
             after(at, () => { flipCoin(calloutHost, step.won); if (soundOn) playHit('coin'); });
-            after(at + 640, () => {
+            after(at + 1750, () => {
+              if (soundOn) playHit(step.won ? 'mult' : 'debuff');
               if (step.won) {
                 running = Math.max(0, running + step.amount);
-                setFill(running); tickNumber(b, running, 300);
+                setFill(running); tickNumber(b, running, 380);
                 showCallout(calloutHost, { kind: 'coin', label: step.label, amount: step.amount });
                 bump(el);
+                sparkBurst(el, 6, 0.2);
               } else {
                 showCallout(calloutHost, { kind: 'miss', label: step.label }, 'Tails');
               }
             });
-            t += 1060;
+            t += 2450;
             return;
           }
           const sapping = step.kind === 'debuff' && sapFx && step.from != null;
           if (sapping) after(at, () => sapStreak(step.from, el));
-          after(at + (sapping ? 320 : 0), () => {
+          after(at + (sapping ? 380 : 0), () => {
             showCallout(calloutHost, step);
             if (soundOn) playHit(step.kind);
             running = step.kind === 'mult' ? running * step.amount : running + step.amount;
             running = Math.max(0, running);
-            setFill(running); tickNumber(b, running, 300);
+            setFill(running); tickNumber(b, running, 380);
             bump(el);
             if (step.kind === 'mult') sparkBurst(el, 8, 0.3);
           });
-          t += sapping ? 720 : 400;
+          t += sapping ? 1050 : 700;
         });
 
         // Lock to the authoritative total.
@@ -423,7 +429,7 @@
           if (b) b.textContent = c.power || 0;
           el.classList.add('locked'); el.classList.remove('forging');
         });
-        return t + 140;
+        return t + 200;
       };
 
       // ── CLASH: everyone converges on the center ─────────────────────
@@ -510,33 +516,33 @@
       // ── Timeline ────────────────────────────────────────────────────
       after(950, () => titleEl.classList.add('perched'));
 
-      // Arena roll-call
+      // Arena roll-call — each heir gets their own entrance beat.
       const rollStart = 1080;
-      combatantEls.forEach((el, i) => after(rollStart + i * 140, () => el.classList.add('in')));
+      combatantEls.forEach((el, i) => after(rollStart + i * 260, () => el.classList.add('in')));
       after(rollStart + 120, () => heraldSay(`${combatants.length} heirs enter the arena — let the Melee begin!`));
 
-      // Forge (staggered per fighter)
-      const forgeStart = rollStart + combatants.length * 140 + 320;
+      // Forge — wide stagger so the eye can follow one fighter at a time.
+      const forgeStart = rollStart + combatants.length * 260 + 550;
       let forgeEnd = forgeStart;
       combatantEls.forEach((el, i) => {
         const c = combatants[i];
-        forgeEnd = Math.max(forgeEnd, scheduleForge(el, c, forgeStart + i * 300));
+        forgeEnd = Math.max(forgeEnd, scheduleForge(el, c, forgeStart + i * 900));
       });
 
-      // Clash → resolve
-      const clashAt = forgeEnd + 240;
-      after(clashAt - 300, () => heraldSay('They clash for the crown!'));
+      // Clash → resolve (a breath of stillness first — everyone armed)
+      const clashAt = forgeEnd + 650;
+      after(clashAt - 550, () => heraldSay('They clash for the crown!'));
       after(clashAt, doClash);
 
       // Podium coronation (rises out of the settling dust)
-      const podiumStart = clashAt + 540;
+      const podiumStart = clashAt + 700;
       after(podiumStart, showResults);
-      after(podiumStart + 260, () => revealTier(2, false));
-      after(podiumStart + 1060, () => revealTier(1, false));
-      after(podiumStart + 1880, () => revealTier(0, true));
-      after(podiumStart + 2780, markRevealed);
+      after(podiumStart + 350, () => revealTier(2, false));
+      after(podiumStart + 1350, () => revealTier(1, false));
+      after(podiumStart + 2400, () => revealTier(0, true));
+      after(podiumStart + 3400, markRevealed);
       // Auto-continue only if enabled (preview disables it so it waits for a tap).
-      if (autoCloseMs) after(podiumStart + 2780 + autoCloseMs, () => { if (state !== 'closed') close(); });
+      if (autoCloseMs) after(podiumStart + 3400 + autoCloseMs, () => { if (state !== 'closed') close(); });
     });
   }
 
