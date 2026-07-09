@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>FAVOR — Melee Reveal Preview</title>
+<link rel="stylesheet" href="../css/style.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #140a04; font-family: 'Cinzel', serif; }
+  .pv-bar {
+    position: fixed; z-index: 20000; top: 0; left: 0; right: 0;
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center;
+    padding: 8px 12px; background: rgba(10,5,2,0.82); border-bottom: 1px solid rgba(201,168,76,0.3);
+  }
+  .pv-bar b { color: #e8d48b; letter-spacing: 2px; font-size: 12px; margin-right: 6px; text-transform: uppercase; }
+  .pv-btn {
+    font-family: 'Cinzel', serif; font-size: 12px; font-weight: 700; letter-spacing: 1px;
+    color: #e8d48b; background: rgba(201,168,76,0.10); border: 1px solid rgba(201,168,76,0.4);
+    border-radius: 16px; padding: 5px 13px; cursor: pointer;
+  }
+  .pv-btn:hover { color: #fff4d2; border-color: #e8d48b; background: rgba(201,168,76,0.2); }
+  .pv-btn.on { background: rgba(201,168,76,0.28); color: #fff4d2; }
+  .pv-note { color: rgba(201,168,76,0.7); font-size: 11px; }
+  /* The overlay lives here just like #meleeSplash does in the game. */
+  #meleeSplash { }
+</style>
+</head>
+<body>
+
+  <div class="pv-bar">
+    <b>Melee Preview</b>
+    <button class="pv-btn on" data-count="3">3 Players</button>
+    <button class="pv-btn" data-count="4">4 Players</button>
+    <button class="pv-btn" data-count="5">5 Players</button>
+    <span class="pv-note">|</span>
+    <button class="pv-btn" id="pvTie">Tie for 1st</button>
+    <button class="pv-btn" id="pvReplay">▶ Replay</button>
+    <span class="pv-note">|</span>
+    <button class="pv-btn" data-speed="1">1×</button>
+    <button class="pv-btn on" data-speed="1" id="pvSpeed1">Normal</button>
+    <button class="pv-btn" data-speed="1.8">Slow</button>
+    <button class="pv-btn" data-speed="0.6">Fast</button>
+  </div>
+
+  <div id="meleeSplash"></div>
+
+  <script src="../js/melee.js"></script>
+  <script>
+    // Mock data mirrors the engine's resolveMelee() output shape exactly:
+    // { playerIndex, name, power, placement, prestige }, sorted power-desc.
+    const CHARS = [
+      { file: 'Explorer.jpg',  name: 'You' },
+      { file: 'Knight.jpg',    name: 'Prince Aldric' },
+      { file: 'Duchess.jpg',   name: 'Princess Sera' },
+      { file: 'Bandit.jpg',    name: 'Lord Cassius' },
+      { file: 'Magician.jpg',  name: 'Lady Elara' },
+    ];
+    // Act 1 melee prestige by placement (matches MELEE_REWARDS act 1).
+    const PRESTIGE = { 1: 5, 2: 3, 3: 1 };
+
+    let count = 3, speed = 1, tie = false;
+
+    function portraitFor(pi) { return '../assets/characters/' + CHARS[pi].file; }
+
+    function buildResults() {
+      // Random powers, high→low, with an optional tie at the top.
+      let powers = [];
+      let base = 7 + Math.floor(Math.random() * 6);
+      for (let i = 0; i < count; i++) { powers.push(Math.max(0, base)); base -= 1 + Math.floor(Math.random() * 3); }
+      if (tie && count >= 2) powers[1] = powers[0];   // co-champions
+      powers.sort((a, b) => b - a);
+
+      const results = [];
+      let placement = 1, i = 0;
+      while (i < count) {
+        const tied = [i];
+        while (i + 1 < count && powers[i + 1] === powers[i]) { i++; tied.push(i); }
+        tied.forEach(idx => results.push({
+          playerIndex: idx, name: CHARS[idx].name, power: powers[idx],
+          placement, prestige: PRESTIGE[placement] || 0
+        }));
+        placement += tied.length; i++;
+      }
+      return results;
+    }
+
+    function play() {
+      const host = document.getElementById('meleeSplash');
+      host.onclick = null; host.classList.remove('active'); host.innerHTML = '';
+      // Small delay so a re-trigger fully resets the overlay first.
+      setTimeout(() => playMeleeCinematic(host, buildResults(), 1, { speed, portraitFor,
+        powerIcon: '../assets/icons/power.png' }), 60);
+    }
+
+    // Controls
+    document.querySelectorAll('[data-count]').forEach(b => b.onclick = () => {
+      document.querySelectorAll('[data-count]').forEach(x => x.classList.remove('on'));
+      b.classList.add('on'); count = +b.dataset.count; play();
+    });
+    document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => {
+      if (b.id === 'pvSpeed1') return;
+      speed = +b.dataset.speed; play();
+    });
+    document.getElementById('pvTie').onclick = (e) => { tie = !tie; e.target.classList.toggle('on', tie); play(); };
+    document.getElementById('pvReplay').onclick = play;
+
+    play();
+  </script>
+</body>
+</html>

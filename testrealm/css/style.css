@@ -4718,7 +4718,11 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     animation: peekIn 0.14s cubic-bezier(0.2, 1.3, 0.3, 1);
 }
 
-/* ═══ MELEE SPLASH — end-of-act tournament moment ═══════════════════ */
+/* ═══ MELEE — the end-of-act coronation cinematic ══════════════════════
+   A staged reveal: banner slam → the field clashes (portraits land, Power
+   bars charge) → the three who earned Prestige ascend a rising podium, the
+   champion crowned in gold. Tap skips to the result; tap again to continue.
+   Everything animates on transform/opacity so it stays smooth on phones.   */
 
 #meleeSplash {
     position: fixed;
@@ -4727,117 +4731,300 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     display: none;
     align-items: center;
     justify-content: center;
-    background: radial-gradient(ellipse at center, rgba(30,14,6,0.88), rgba(8,4,2,0.96));
-    backdrop-filter: blur(3px);
-    cursor: pointer;
-}
-#meleeSplash.active { display: flex; animation: msFade 0.3s ease; }
-
-.ms-inner {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    max-width: 94vw;
-    max-height: 96dvh;
-}
-.ms-banner {
-    font-family: 'Cinzel', serif;
-    font-weight: 900;
-    letter-spacing: 8px;
-    font-size: clamp(20px, 7dvh, 36px);
-    color: var(--gold-light);
-    text-transform: uppercase;
-    text-shadow: 0 0 24px rgba(201,168,76,0.55), 0 3px 6px rgba(0,0,0,0.8);
-    display: flex;
-    align-items: baseline;
-    gap: 14px;
-    animation: msBanner 0.5s cubic-bezier(0.2, 1.4, 0.3, 1);
-}
-.ms-act {
-    font-size: 0.45em;
-    letter-spacing: 4px;
-    color: var(--gold-dark);
-}
-.ms-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: min(500px, 92vw);
-    overflow-y: auto;
-    overflow-x: hidden;   /* rows slide in from ±46px — no scrollbar flash */
-    padding: 4px;
-}
-.ms-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 5px 14px;
-    border: 1px solid rgba(201,168,76,0.25);
-    border-radius: 10px;
-    background: linear-gradient(90deg, rgba(46,26,12,0.88), rgba(24,12,5,0.92));
-    opacity: 0;
-    transform: translateX(-46px);
-    animation: msRow 0.45s cubic-bezier(0.2, 1.2, 0.3, 1) forwards;
-}
-.ms-row:nth-child(even) { transform: translateX(46px); }
-.ms-row.winner {
-    border-color: var(--gold-light);
-    box-shadow: 0 0 20px rgba(201,168,76,0.45);
-}
-.ms-place {
-    font-family: 'Cinzel', serif;
-    font-size: 11px;
-    color: var(--gold-dark);
-    width: 30px;
-    flex-shrink: 0;
-}
-.ms-row.winner .ms-place { color: var(--gold-light); }
-.ms-portrait {
-    width: 34px; height: 34px;
-    border-radius: 6px;
-    object-fit: cover;
-    border: 1px solid rgba(201,168,76,0.4);
-    flex-shrink: 0;
-}
-.ms-name {
-    font-family: 'Cinzel', serif;
-    font-size: 13px;
-    color: var(--gold);
-    flex: 1;
-    white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
+    background:
+        radial-gradient(ellipse 120% 80% at 50% 118%, rgba(139,26,26,0.28), transparent 60%),
+        radial-gradient(ellipse at center, rgba(34,16,7,0.90), rgba(6,3,1,0.985));
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
 }
-.ms-row.winner .ms-name { color: #ffe9ad; }
-.ms-power { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
-.ms-power img { width: 18px; height: 18px; }
-.ms-power b {
-    font-family: 'Cinzel', serif;
-    font-size: 16px;
-    color: #ffd97a;
-    min-width: 26px;
-    text-align: right;
+#meleeSplash.active { display: flex; animation: msFade 0.35s ease; }
+
+/* Vignette + a faint heraldic light from above the throne */
+#meleeSplash::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse 60% 55% at 50% -8%, rgba(201,168,76,0.16), transparent 55%);
+    pointer-events: none;
 }
-.ms-prestige {
-    font-family: 'Cinzel', serif;
-    font-size: 10px;
-    color: #8fd4ff;
-    width: 88px;
-    text-align: right;
-    flex-shrink: 0;
+
+.ms-stage {
+    position: relative;
+    width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(8px, 2.2dvh, 22px);
+    padding: 2dvh 3vw;
 }
-.ms-hint {
-    font-family: 'Cinzel', serif;
-    font-size: 10px;
-    letter-spacing: 2px;
+
+/* ── Embers drifting up through the whole scene ─────────────────────── */
+.ms-embers { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
+.ms-ember {
+    position: absolute;
+    bottom: -12px;
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #ffdf9e, rgba(201,168,76,0.15));
+    box-shadow: 0 0 6px rgba(255,201,110,0.8);
+    opacity: 0;
+    animation: msEmber linear infinite;
+}
+
+/* ── Full-screen flash (fires on the champion reveal) ───────────────── */
+.ms-flash {
+    position: absolute; inset: 0; z-index: 40;
+    background: radial-gradient(circle at 50% 42%, rgba(255,240,200,0.9), rgba(255,210,120,0.25) 40%, transparent 70%);
+    opacity: 0; pointer-events: none;
+}
+.ms-flash.go { animation: msFlash 0.66s ease-out; }
+
+/* ── The banner: slams center, then perches at the top ──────────────── */
+.ms-title {
+    position: relative; z-index: 20;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    transition: transform 0.7s cubic-bezier(0.4,0,0.2,1), margin 0.7s cubic-bezier(0.4,0,0.2,1);
+    transform: scale(1.18);
+}
+.ms-title.perched { transform: scale(0.62); margin-bottom: -1.4em; opacity: 0.96; }
+.ms-title-main {
+    font-family: 'Cinzel', serif; font-weight: 900;
+    letter-spacing: 0.18em;
+    font-size: clamp(26px, 8.5dvh, 58px);
+    line-height: 1;
     text-transform: uppercase;
-    color: var(--gold-dark);
-    opacity: 0.7;
+    background: linear-gradient(180deg, #fff4d2 0%, #e8d48b 34%, #c9a84c 62%, #8b6914 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.7)) drop-shadow(0 0 26px rgba(201,168,76,0.5));
+    display: flex; align-items: center; gap: 0.4em;
+    animation: msBannerIn 0.62s cubic-bezier(0.15,1.5,0.35,1);
 }
-@keyframes msRow { to { opacity: 1; transform: none; } }
-@keyframes msBanner { from { opacity: 0; transform: scale(1.35); } }
+.ms-title-main .ms-sword { color: #d9b85e; -webkit-text-fill-color: #d9b85e; filter: drop-shadow(0 0 10px rgba(201,168,76,0.6)); }
+.ms-title-act {
+    font-family: 'Cinzel', serif; font-weight: 700;
+    letter-spacing: 0.5em; text-indent: 0.5em;
+    font-size: clamp(10px, 1.9dvh, 14px);
+    color: var(--gold-dark);
+    text-transform: uppercase;
+    opacity: 0; animation: msFadeUp 0.6s ease 0.28s forwards;
+}
+/* Shock-ring behind the banner slam */
+.ms-shockwave {
+    position: absolute; top: 42%; left: 50%; z-index: 15;
+    width: 40px; height: 40px; margin: -20px 0 0 -20px;
+    border: 2px solid rgba(201,168,76,0.8);
+    border-radius: 50%;
+    opacity: 0; pointer-events: none;
+    animation: msShock 0.7s ease-out 0.05s;
+}
+
+/* ── The podium ─────────────────────────────────────────────────────── */
+.ms-podium {
+    position: relative; z-index: 10;
+    display: flex; align-items: flex-end; justify-content: center;
+    gap: clamp(10px, 2.4vw, 30px);
+}
+/* Warm arena-floor glow beneath the plinths */
+.ms-podium::after {
+    content: ''; position: absolute; left: 50%; bottom: -6px;
+    width: 118%; height: 46px; transform: translateX(-50%);
+    background: radial-gradient(ellipse at center, rgba(201,168,76,0.30), transparent 70%);
+    filter: blur(3px); pointer-events: none; z-index: -1;
+}
+
+.ms-tier {
+    display: flex; flex-direction: column; align-items: center;
+    opacity: 0; transform: translateY(46px);
+    transition: opacity 0.5s ease, transform 0.6s cubic-bezier(0.16,1.05,0.3,1);
+    width: clamp(88px, 15vw, 132px);
+}
+.ms-tier.show { opacity: 1; transform: none; }
+
+/* Fighters standing on a tier (usually one; ties stack side-by-side) */
+.ms-fighters { display: flex; gap: 6px; align-items: flex-end; margin-bottom: 8px; }
+
+.ms-fighter { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; width: 100%; }
+
+.ms-portrait-wrap { position: relative; }
+.ms-portrait {
+    display: block;
+    width: clamp(44px, 8.5dvh, 78px); height: clamp(44px, 8.5dvh, 78px);
+    border-radius: 10px; object-fit: cover;
+    border: 2px solid rgba(201,168,76,0.5);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(0,0,0,0.4);
+    background: #1a0f07;
+}
+/* Champion portrait: bigger, gold-rimmed, radiant */
+.ms-tier.champ { width: clamp(96px, 17vw, 158px); }
+.ms-tier.champ .ms-portrait {
+    width: clamp(58px, 12.5dvh, 118px); height: clamp(58px, 12.5dvh, 118px);
+    border-color: #ffe9ad;
+    box-shadow: 0 0 0 2px rgba(255,233,173,0.5), 0 0 34px rgba(201,168,76,0.75), 0 8px 22px rgba(0,0,0,0.65);
+}
+/* A light sweep across the champion portrait */
+.ms-tier.champ .ms-portrait-wrap::after {
+    content: ''; position: absolute; inset: 0; border-radius: 10px; overflow: hidden;
+    background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.55) 48%, transparent 62%);
+    background-size: 260% 100%; background-position: 180% 0;
+    pointer-events: none;
+}
+.ms-tier.champ.lit .ms-portrait-wrap::after { animation: msSweep 1s ease-out 0.15s; }
+
+/* Crown descends onto the champion */
+.ms-crown {
+    position: absolute; left: 50%; top: -18px; transform: translate(-50%, -12px) scale(0.6);
+    width: clamp(40px, 6vw, 60px); height: auto;
+    opacity: 0; filter: drop-shadow(0 3px 5px rgba(0,0,0,0.6)) drop-shadow(0 0 12px rgba(255,206,110,0.7));
+    z-index: 3;
+}
+.ms-tier.champ.lit .ms-crown { animation: msCrown 0.6s cubic-bezier(0.2,1.6,0.35,1) 0.2s forwards; }
+
+/* Laurels flanking the champion */
+.ms-laurel {
+    position: absolute; top: 50%; transform: translateY(-50%) scale(0.5);
+    width: clamp(22px, 3.4vw, 34px); height: auto; opacity: 0;
+    filter: drop-shadow(0 0 6px rgba(201,168,76,0.5));
+}
+.ms-laurel.left  { right: 100%; margin-right: 2px; }
+.ms-laurel.right { left: 100%;  margin-left: 2px; transform: translateY(-50%) scale(-0.5, 0.5); }
+.ms-tier.champ.lit .ms-laurel.left  { animation: msLaurelL 0.5s ease-out 0.35s forwards; }
+.ms-tier.champ.lit .ms-laurel.right { animation: msLaurelR 0.5s ease-out 0.35s forwards; }
+
+.ms-name {
+    font-family: 'Cinzel', serif; font-weight: 700;
+    font-size: clamp(11px, 1.7dvh, 14px);
+    color: var(--gold); text-align: center;
+    max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ms-tier.champ .ms-name { color: #ffe9ad; font-size: clamp(13px, 2.1dvh, 17px); text-shadow: 0 0 12px rgba(201,168,76,0.55); }
+
+/* Power readout + charging bar */
+.ms-power { display: flex; align-items: center; gap: 4px; }
+.ms-power img { width: clamp(13px, 1.9dvh, 17px); height: clamp(13px, 1.9dvh, 17px); }
+.ms-power b {
+    font-family: 'Cinzel', serif; font-weight: 900;
+    font-size: clamp(15px, 2.4dvh, 21px);
+    color: #ffd97a; min-width: 1.4em; text-align: left;
+    font-variant-numeric: tabular-nums;
+}
+.ms-tier.champ .ms-power b { font-size: clamp(19px, 3dvh, 27px); color: #ffe9ad; }
+.ms-bar {
+    width: 78%; height: 5px; border-radius: 3px;
+    background: rgba(0,0,0,0.5); box-shadow: inset 0 0 0 1px rgba(201,168,76,0.25);
+    overflow: hidden;
+}
+.ms-bar-fill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #8b6914, #e8d48b);
+    box-shadow: 0 0 8px rgba(232,212,139,0.7);
+    transition: width 0.75s cubic-bezier(0.2,0.8,0.2,1);
+}
+.ms-tier.champ .ms-bar-fill { background: linear-gradient(90deg, #c9a84c, #fff4d2); }
+
+/* Prestige stamp — the reward for a podium finish */
+.ms-prestige {
+    margin-top: 5px;
+    font-family: 'Cinzel', serif; font-weight: 700;
+    font-size: clamp(9px, 1.5dvh, 12px);
+    letter-spacing: 0.06em;
+    color: #ffcf6b;
+    padding: 2px 9px; border-radius: 11px;
+    border: 1px solid rgba(201,168,76,0.45);
+    background: rgba(201,168,76,0.10);
+    opacity: 0; transform: scale(0.7);
+}
+.ms-tier.show .ms-prestige { animation: msStamp 0.42s cubic-bezier(0.2,1.6,0.35,1) 0.45s forwards; }
+.ms-tier.champ .ms-prestige { color: #fff1c4; font-size: clamp(11px, 1.8dvh, 14px); border-color: #ffe9ad; background: rgba(232,212,139,0.16); }
+
+/* The plinth each tier stands on — numeral carved in the face */
+.ms-plinth {
+    position: relative; width: 100%;
+    border-radius: 5px 5px 3px 3px;
+    background: linear-gradient(180deg, #4a2f18, #2a1a10);
+    box-shadow: inset 0 2px 0 rgba(201,168,76,0.28), inset 0 0 22px rgba(0,0,0,0.55), 0 5px 14px rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center;
+}
+.ms-plinth::before {
+    content: ''; position: absolute; inset: 3px; border-radius: 3px;
+    border: 1px solid rgba(201,168,76,0.18); pointer-events: none;
+}
+.ms-numeral {
+    font-family: 'Cinzel', serif; font-weight: 900;
+    font-size: clamp(20px, 4dvh, 34px);
+    color: rgba(201,168,76,0.45);
+    text-shadow: 0 1px 0 rgba(0,0,0,0.6);
+}
+.ms-tier.p-center .ms-plinth { height: clamp(50px, 12dvh, 116px); background: linear-gradient(180deg, #6b4a1e, #3a2410); box-shadow: inset 0 2px 0 rgba(255,233,173,0.4), inset 0 0 26px rgba(0,0,0,0.5), 0 6px 20px rgba(0,0,0,0.55); }
+.ms-tier.p-center .ms-numeral { color: #ffe9ad; text-shadow: 0 0 14px rgba(201,168,76,0.7); }
+.ms-tier.p-left   .ms-plinth { height: clamp(38px, 9dvh, 86px); }
+.ms-tier.p-right  .ms-plinth { height: clamp(28px, 6.5dvh, 62px); }
+
+/* ── Also-rans: the rest of the field, a quiet row beneath ──────────── */
+.ms-alsoran {
+    display: flex; gap: clamp(10px, 2.4vw, 22px); align-items: flex-start; justify-content: center;
+    z-index: 10; flex-wrap: wrap;
+    opacity: 0; transform: translateY(14px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.ms-alsoran.show { opacity: 0.82; transform: none; }
+.ms-ar {
+    display: flex; flex-direction: column; align-items: center; gap: 3px; width: clamp(52px, 8vw, 68px);
+}
+.ms-ar img {
+    width: clamp(34px, 5.4dvh, 46px); height: clamp(34px, 5.4dvh, 46px);
+    border-radius: 8px; object-fit: cover;
+    border: 1px solid rgba(201,168,76,0.3); filter: saturate(0.7) brightness(0.82);
+}
+.ms-ar-place { font-family: 'Cinzel', serif; font-size: 10px; color: var(--gold-dark); letter-spacing: 0.05em; }
+.ms-ar-name { font-family: 'Cinzel', serif; font-size: 11px; color: rgba(201,168,76,0.8); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ms-ar-power { display: flex; align-items: center; gap: 3px; }
+.ms-ar-power img { width: 12px; height: 12px; border: 0; border-radius: 0; filter: none; }
+.ms-ar-power b { font-family: 'Cinzel', serif; font-size: 12px; color: #d9b85e; }
+
+.ms-hint {
+    /* In the flow (not pinned) so it never collides with the also-ran row on
+       short landscape phones — it simply trails the podium. */
+    margin-top: clamp(2px, 1.4dvh, 12px);
+    text-align: center; z-index: 30;
+    font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--gold-dark); opacity: 0;
+}
+.ms-hint.show { animation: msHint 2.2s ease-in-out infinite; }
+
+/* ── Keyframes ──────────────────────────────────────────────────────── */
 @keyframes msFade { from { opacity: 0; } }
+@keyframes msBannerIn { 0% { opacity: 0; transform: scale(1.6); letter-spacing: 0.5em; } 60% { opacity: 1; } 100% { opacity: 1; transform: scale(1); letter-spacing: 0.18em; } }
+@keyframes msFadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes msShock { 0% { opacity: 0.9; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-width: 3px; } 100% { opacity: 0; width: 560px; height: 560px; margin: -280px 0 0 -280px; border-width: 0.5px; } }
+@keyframes msEmber { 0% { opacity: 0; transform: translateY(0) translateX(0); } 12% { opacity: 0.9; } 88% { opacity: 0.7; } 100% { opacity: 0; transform: translateY(-102dvh) translateX(var(--drift, 12px)); } }
+@keyframes msFlash { 0% { opacity: 0; } 22% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes msSweep { 0% { background-position: 180% 0; } 100% { background-position: -80% 0; } }
+@keyframes msCrown { 0% { opacity: 0; transform: translate(-50%, -22px) scale(0.6) rotate(-8deg); } 70% { opacity: 1; } 100% { opacity: 1; transform: translate(-50%, -12px) scale(1) rotate(0deg); } }
+@keyframes msLaurelL { to { opacity: 0.9; transform: translateY(-50%) scale(1); } }
+@keyframes msLaurelR { to { opacity: 0.9; transform: translateY(-50%) scale(-1, 1); } }
+@keyframes msStamp { 0% { opacity: 0; transform: scale(0.5) rotate(-5deg); } 70% { opacity: 1; transform: scale(1.12); } 100% { opacity: 1; transform: scale(1) rotate(0); } }
+@keyframes msHint { 0%,100% { opacity: 0.35; } 50% { opacity: 0.85; } }
+@keyframes msShake { 10%,90% { transform: translate(-1px,0); } 30%,70% { transform: translate(2px,-1px); } 50% { transform: translate(-2px,1px); } }
+.ms-stage.shake { animation: msShake 0.4s ease; }
+
+/* Spark burst when a fighter lands on the podium */
+.ms-spark { position: absolute; left: 50%; top: 40%; width: 6px; height: 6px; border-radius: 50%; background: #ffe9ad; box-shadow: 0 0 8px #ffd97a; opacity: 0; pointer-events: none; z-index: 4; }
+.ms-spark.go { animation: msSparkFly 0.55s ease-out forwards; }
+@keyframes msSparkFly { 0% { opacity: 1; transform: translate(0,0) scale(1); } 100% { opacity: 0; transform: translate(var(--sx,0), var(--sy,0)) scale(0.3); } }
+
+/* Short landscape (phones held sideways) — trim the vertical footprint so the
+   banner, podium, also-rans and hint all fit without overlap or scroll. */
+@media (max-height: 470px) {
+    .ms-stage { gap: 5px; padding: 1dvh 3vw; }
+    .ms-title.perched { margin-bottom: -1.7em; }
+    .ms-prestige { margin-top: 3px; }
+    .ms-fighters { margin-bottom: 5px; }
+    .ms-alsoran { gap: 14px; }
+    .ms-crown { top: -13px; }
+}
 
 /* ═══ ACTION PANEL — shared body wrapper + table-scene breathing ═════ */
 
