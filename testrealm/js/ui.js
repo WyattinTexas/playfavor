@@ -4339,7 +4339,8 @@ function showMeleeSplash(results, actNum) {
         portraitFor: (pi) => {
             const p = (pi != null && game.players[pi]) ? game.players[pi] : null;
             return p && p.character ? `assets/characters/${p.character.filename}` : 'assets/ui/cover.jpg';
-        }
+        },
+        breakdownFor: (pi) => (typeof game.powerBreakdown === 'function' ? game.powerBreakdown(pi) : null)
     });
 }
 

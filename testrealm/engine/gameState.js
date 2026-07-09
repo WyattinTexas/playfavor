@@ -1985,6 +1985,74 @@ class FavorGame {
         return Math.max(0, power);
     }
 
+    /**
+     * Read-only companion to calculatePower: the ordered story of how a
+     * player's Melee Power came to be — base (from cards + board), then each
+     * bonus / debuff / doubling as its own step. Drives the Melee "forge"
+     * animation. PURE: never mutates (unlike calculatePower, which consumes
+     * defendTheThrone), so it's safe to call after resolveMelee. The cinematic
+     * still locks the meter to the authoritative total, so any rare drift
+     * (e.g. an already-spent Defend the Throne) never shows a wrong number.
+     */
+    powerBreakdown(playerIndex) {
+        const player = this.players[playerIndex];
+        const steps = [];
+        let power = player.skills.power || 0;
+        const base = power;
+        const baseCards = player.playedCards
+            .filter(c => (c.skills || []).includes('power'))
+            .map(c => c.name);
+
+        // Blind Faith pairings (+6 each for Heaven's Blade / Archeus)
+        if (player.playedCards.some(c => c.name === 'Blind Faith')) {
+            player.playedCards.forEach(c => {
+                if (c.special === 'power_6_if_blind_faith' || c.name === 'Archeus') {
+                    power += 6;
+                    steps.push({ kind: 'bonus', label: c.name + ' + Blind Faith', amount: 6 });
+                }
+            });
+        }
+
+        // Power bonuses (Liquid Courage coin, Dawnharbinger / King of the Sky)
+        if (player.powerBonuses) {
+            player.powerBonuses.forEach(bonus => {
+                if (bonus.act !== this.currentAct) return;
+                if (bonus.conditional === 'most_survival') {
+                    const mySurvival = player.skills.survival || 0;
+                    let hasMost = true;
+                    for (let i = 0; i < this.playerCount; i++) {
+                        if (i !== playerIndex && (this.players[i].skills.survival || 0) >= mySurvival) { hasMost = false; break; }
+                    }
+                    if (hasMost && mySurvival > 0) {
+                        power += bonus.amount;
+                        steps.push({ kind: 'bonus', label: bonus.source || 'Bonus', amount: bonus.amount });
+                    }
+                } else {
+                    power += bonus.amount;
+                    const coin = /courage/i.test(bonus.source || '');
+                    steps.push({ kind: coin ? 'coin' : 'bonus', label: bonus.source || 'Bonus', amount: bonus.amount });
+                }
+            });
+        }
+
+        // Power debuffs (Fuzzy Head −3, etc.)
+        if (player.powerDebuffs) {
+            player.powerDebuffs.forEach(debuff => {
+                if (debuff.act !== this.currentAct) return;
+                power += debuff.amount;
+                steps.push({ kind: 'debuff', label: debuff.source || 'Debuff', amount: debuff.amount });
+            });
+        }
+
+        // Melee Spectacular: doubling — the crescendo of the forge
+        if (player.powerX2 === this.currentAct) {
+            power *= 2;
+            steps.push({ kind: 'mult', label: 'Melee Spectacular', amount: 2 });
+        }
+
+        return { base, baseCards, steps, computedTotal: Math.max(0, power) };
+    }
+
     // ─── ACT TRANSITIONS ───────────────────────────────────────
 
     endAct() {
