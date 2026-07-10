@@ -2149,23 +2149,61 @@ class FavorGame {
             });
         }
 
-        // Power debuffs (Fuzzy Head −3, etc.) — `from` is the caster; the
-        // card art comes from the CASTER's board.
-        if (player.powerDebuffs) {
-            player.powerDebuffs.forEach(debuff => {
-                if (debuff.act !== this.currentAct) return;
-                power += debuff.amount;
-                steps.push({ kind: 'debuff', label: debuff.source || 'Debuff', amount: debuff.amount, from: debuff.from, filename: cardArt(debuff.source, debuff.from) });
-            });
-        }
-
-        // Melee Spectacular: doubling — the crescendo of the forge
-        if (player.powerX2 === this.currentAct) {
+        // Melee Spectacular: doubling — the crescendo of the forge.
+        // NOTE: engine order applies debuffs BEFORE the double, i.e.
+        // (own + debuffs) × 2 = own×2 + debuffs×2 — so incoming-attack deltas
+        // below are scaled by the VICTIM's mult factor to stay exact.
+        const hasMult = player.powerX2 === this.currentAct;
+        if (hasMult) {
             power *= 2;
             steps.push({ kind: 'mult', label: 'Melee Spectacular', amount: 2, filename: cardArt('Melee Spectacular') });
         }
 
-        return { base, baseOther, baseCards, steps, computedTotal: Math.max(0, power) };
+        // ownRawTotal: this player's power from their OWN sources only —
+        // what their forge builds on stage before any attacks land.
+        const ownRawTotal = power;
+
+        // ATTACKS THIS PLAYER DEALT (Fuzzy Head et al): shown on the CASTER's
+        // turn — the card appears in the caster's row and red bolts strike
+        // every victim's score at once (Wyatt's rule: the card only shows for
+        // the player who played it). One step per source card, with the
+        // per-victim display delta (scaled by the victim's ×2 if active).
+        const dealtBySource = {};
+        for (let v = 0; v < this.playerCount; v++) {
+            if (v === playerIndex) continue;
+            const victim = this.players[v];
+            (victim.powerDebuffs || []).forEach(d => {
+                if (d.act !== this.currentAct || d.from !== playerIndex) return;
+                const key = d.source || 'Attack';
+                if (!dealtBySource[key]) dealtBySource[key] = { amount: d.amount, hits: {} };
+                const factor = victim.powerX2 === this.currentAct ? 2 : 1;
+                dealtBySource[key].hits[v] = (dealtBySource[key].hits[v] || 0) + d.amount * factor;
+            });
+        }
+        Object.entries(dealtBySource).forEach(([src, info]) => {
+            steps.push({
+                kind: 'attack', label: src, amount: info.amount,
+                filename: cardArt(src),
+                hits: Object.entries(info.hits).map(([pi, delta]) => ({ playerIndex: +pi, delta }))
+            });
+        });
+
+        // rawTotal: own sources plus every debuff this player SUFFERED
+        // (scaled by own mult) — may be NEGATIVE. The final tally clamps to 0
+        // (computedTotal == calculatePower), per the printed rules.
+        let suffered = 0;
+        (player.powerDebuffs || []).forEach(d => {
+            if (d.act !== this.currentAct) return;
+            suffered += d.amount * (hasMult ? 2 : 1);
+        });
+        const rawTotal = ownRawTotal + suffered;
+
+        return {
+            base, baseOther, baseCards, steps,
+            ownRawTotal, rawTotal,
+            sliderPosition: player.sliderPosition,
+            computedTotal: Math.max(0, rawTotal)
+        };
     }
 
     // ─── ACT TRANSITIONS ───────────────────────────────────────

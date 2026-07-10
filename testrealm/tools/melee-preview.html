@@ -6,11 +6,11 @@
 <title>FAVOR — Melee Reveal Preview</title>
 <!-- ?v= stamped by the deploy bump (same as index.html) — without it, GitHub
      Pages' ~10-min cache serves STALE js/css here and fixes look unshipped. -->
-<link rel="stylesheet" href="../css/style.css?v=20260710145033">
+<link rel="stylesheet" href="../css/style.css?v=20260710160103">
 <!-- Melee cinematic styling lives in its own file since the testrealm GAME was
      reset to the testrealm2 build (whose style.css has a different .ms-* splash).
      Loaded AFTER style.css so these .ms-* rules win here in the preview. -->
-<link rel="stylesheet" href="../css/melee.css?v=20260710145033">
+<link rel="stylesheet" href="../css/melee.css?v=20260710160103">
 <style>
   html, body { margin: 0; height: 100%; background: #140a04; font-family: 'Cinzel', serif; }
   .pv-bar {
@@ -69,7 +69,7 @@
 
   <div id="meleeSplash"></div>
 
-  <script src="../js/melee.js?v=20260710145033"></script>
+  <script src="../js/melee.js?v=20260710160103"></script>
   <script>
     // Mock data mirrors the engine's resolveMelee() output shape exactly:
     // { playerIndex, name, power, placement, prestige }, sorted power-desc.
@@ -105,98 +105,126 @@
     let count = 3, speed = 1, tie = false, sapFx = true, cardsFx = true;
 
     function portraitFor(pi) { return '../assets/characters/' + CHARS[pi].file; }
+    // Mock slider slots so the ring shows at varied positions per fighter.
+    const SLOTS = [0, 2, 4, 1, 3];
 
-    function buildResults() {
-      // Random powers, high→low, with an optional tie at the top.
-      let powers = [];
-      let base = 7 + Math.floor(Math.random() * 6);
-      for (let i = 0; i < count; i++) { powers.push(Math.max(0, base)); base -= 1 + Math.floor(Math.random() * 3); }
-      if (tie && count >= 2) powers[1] = powers[0];   // co-champions
-      powers.sort((a, b) => b - a);
+    // ── One coherent scenario, mirroring powerBreakdown v2 exactly ──────
+    // Fighter 0 is the CHAMPION and the Fuzzy Head caster (the card shows
+    // only in their row; red bolts wound everyone else). ownRaw per fighter
+    // is composed from real cards; rawTotal = ownRaw + wounds (may be
+    // NEGATIVE); results.power = max(0, rawTotal) — the floored final tally.
+    // The spread exercises every tier: platinum 21+, gold 16-20, bright
+    // 11-15, drab ≤10, plus a negative-raw lock that podiums at 0.
+    function buildScenario() {
+      const rnd = (n) => Math.floor(Math.random() * n);
+      const casterPi = 0;
+      const plan = [];
+      // per seat: target ownRaw + own steps
+      for (let piIdx = 0; piIdx < count; piIdx++) {
+        const p = { pi: piIdx, steps: [], mult: false, coin: null };
+        if (piIdx === 0) {          // platinum champ, ×2, casts Fuzzy Head
+          p.ownRaw = 22 + rnd(4) * 2;                 // even → clean ×2
+          p.mult = true;
+        } else if (piIdx === 1) {   // gold via a WON coin
+          p.ownRaw = 20 + rnd(3);                     // raw 17-19 after −3
+          p.coin = { won: true };
+        } else if (piIdx === 2) {   // bright
+          p.ownRaw = 15 + rnd(2);                     // raw 12-13
+        } else if (piIdx === 3) {   // negative lock → 0 at the tally
+          p.ownRaw = 1 + rnd(2);                      // raw −2..−1
+          p.coin = { won: false };
+        } else {                    // drab
+          p.ownRaw = 10 + rnd(2);                     // raw 7-8
+        }
+        plan.push(p);
+      }
+      if (tie && count >= 2) plan[1].ownRaw = plan[0].ownRaw + 3;  // co-champions after the wound
 
+      // raw + floored power
+      plan.forEach(p => {
+        p.wound = (p.pi === casterPi) ? 0 : -3;
+        p.raw = p.ownRaw + p.wound;
+        p.power = Math.max(0, p.raw);
+      });
+
+      // placements from floored powers
+      const order = plan.slice().sort((a, b) => b.power - a.power);
       const results = [];
       let placement = 1, i = 0;
-      while (i < count) {
-        const tied = [i];
-        while (i + 1 < count && powers[i + 1] === powers[i]) { i++; tied.push(i); }
-        tied.forEach(idx => results.push({
-          playerIndex: idx, name: CHARS[idx].name, power: powers[idx],
+      while (i < order.length) {
+        const tied = [order[i]];
+        while (i + 1 < order.length && order[i + 1].power === order[i].power) { i++; tied.push(order[i]); }
+        tied.forEach(p => results.push({
+          playerIndex: p.pi, name: CHARS[p.pi].name, power: p.power,
           placement, prestige: PRESTIGE[placement] || 0
         }));
         placement += tied.length; i++;
       }
-      return results;
-    }
 
-    // Demo Power breakdowns with COHERENT arithmetic — the shown cards' amounts
-    // plus the board share (baseOther) sum exactly to the base, and the steps
-    // (a doubling, a live coin win AND loss, a cross-fighter sap) carry it to
-    // the final power. Mirrors what game.powerBreakdown() produces for real.
-    function buildBreakdowns(results) {
-      const map = {};
-      // Attach the demo mission to the FIRST fighter with room for its +3,
-      // so a mission card is guaranteed to appear every run.
+      // breakdowns
+      const bds = {};
       let missionUsed = false;
-      results.forEach((r, rank) => {
-        const p = r.power, steps = [];
-        let preBase = p;
-        // Steps carry the SOURCE CARD's art (audit-verified filenames) so the
-        // enabling card lands in the row with its badge — ×2, +4, −3, or a
-        // grey 0 for a lost coin.
-        if (rank === 0 && p >= 4 && p % 2 === 0) {              // champion: doubled
-          preBase = p / 2; steps.push({ kind: 'mult', label: 'Melee Spectacular', amount: 2, filename: 'Aerial Spectacular Card.jpg' });
-        } else if (rank === 1 && p >= 4) {                      // a WON coin (+4)
-          preBase = p - 4; steps.push({ kind: 'coinflip', label: 'Shot of Courage', amount: 4, won: true, filename: 'Liquid Wind Card.jpg' });
-        } else if (rank === 3) {                                // a LOST coin (Tails)
-          steps.push({ kind: 'coinflip', label: 'Shot of Courage', amount: 4, won: false, filename: 'Liquid Wind Card.jpg' });
+      plan.forEach(p => {
+        const steps = [];
+        // preBase: what the board+cards must sum to BEFORE own modifiers
+        let preBase = p.ownRaw;
+        if (p.mult) preBase = preBase / 2;
+        if (p.coin && p.coin.won) preBase -= 4;
+        preBase = Math.max(0, preBase);
+
+        if (p.coin) steps.push({ kind: 'coinflip', label: 'Shot of Courage', amount: 4, won: p.coin.won, filename: 'Liquid Wind Card.jpg' });
+        if (p.mult) steps.push({ kind: 'mult', label: 'Melee Spectacular', amount: 2, filename: 'Aerial Spectacular Card.jpg' });
+        if (p.pi === casterPi) {
+          steps.push({
+            kind: 'attack', label: 'Fuzzy Head', amount: -3,
+            filename: 'Cursed Coating Card.jpg',
+            hits: plan.filter(q => q.pi !== casterPi).map(q => ({ playerIndex: q.pi, delta: -3 }))
+          });
         }
-        // Fuzzy Head hits EVERY other player, exactly like the real engine
-        // (the caster plays it once; each victim's row shows the card −3).
-        // Demo caster = the eventual champion (results[0]).
-        if (rank !== 0) {
-          preBase += 3;
-          steps.push({ kind: 'debuff', label: 'Fuzzy Head', amount: -3, from: results[0].playerIndex, filename: 'Cursed Coating Card.jpg' });
-        }
-        // Split the base into board slot + REAL power cards/missions whose
-        // printed amounts sum to it exactly. Whatever the cards can't cover
-        // becomes the board share — shown in the row as the board tile.
+
+        // compose preBase from board share + real cards
         const baseCards = [];
-        let remaining = Math.max(0, preBase);
-        let baseOther = remaining > 3 ? 1 : 0;                  // board-slot share
+        let remaining = preBase;
+        let baseOther = remaining > 3 ? 1 + (remaining > 8 ? 1 : 0) : 0;
         remaining -= baseOther;
         if (!missionUsed && remaining >= POWER_MISSION.pips) {
           baseCards.push({ name: POWER_MISSION.name, filename: POWER_MISSION.filename, amount: POWER_MISSION.pips, mission: true });
-          remaining -= POWER_MISSION.pips;
-          missionUsed = true;
+          remaining -= POWER_MISSION.pips; missionUsed = true;
         }
-        let ti = r.playerIndex, oi = r.playerIndex;             // vary art per fighter
-        while (remaining >= 2 && baseCards.length < 3) {
+        let ti = p.pi, oi = p.pi;
+        while (remaining >= 2 && baseCards.length < 5) {
           const c = POWER_TWOS[ti++ % POWER_TWOS.length];
           baseCards.push({ name: c.name, filename: c.filename, amount: c.pips, mission: false });
           remaining -= c.pips;
         }
-        if (remaining >= 1 && baseCards.length < 3) {
+        if (remaining >= 1 && baseCards.length < 6) {
           const c = POWER_ONES[oi % POWER_ONES.length];
           baseCards.push({ name: c.name, filename: c.filename, amount: c.pips, mission: false });
           remaining -= c.pips;
         }
-        baseOther += remaining;                                 // overflow → board share
-        map[r.playerIndex] = { base: Math.max(0, preBase), baseOther, baseCards, steps };
+        baseOther += remaining;
+
+        bds[p.pi] = {
+          base: preBase, baseOther, baseCards, steps,
+          ownRawTotal: p.ownRaw, rawTotal: p.raw,
+          sliderPosition: SLOTS[p.pi % SLOTS.length],
+          computedTotal: p.power
+        };
       });
-      return map;
+      return { results, bds };
     }
 
     function play() {
       const host = document.getElementById('meleeSplash');
-      const results = buildResults();
-      const bd = buildBreakdowns(results);
+      const { results, bds } = buildScenario();
       // playMeleeCinematic cancels any prior run on this host and re-renders,
       // so a speed change can't leave old timers wiping the new cards.
       // autoCloseMs:0 → it waits for a click instead of vanishing on its own.
       playMeleeCinematic(host, results, 1, {
         speed, portraitFor, sapFx, cardsFx, autoCloseMs: 0,
         powerIcon: '../assets/icons/power.png',
-        breakdownFor: (pi) => bd[pi],
+        ringSrc: '../assets/ui/slider-ring.png',
+        breakdownFor: (pi) => bds[pi],
         cardImgFor: (filename, mission) => (filename ? '../assets/cards/' + (mission ? 'missions/' : 'regular/') + filename : null),
         prestigeTokenFor: (d) => (d === 25
           ? '../assets/tokens/Tokens_Design_v1_Prestige_25_v1.jpg'

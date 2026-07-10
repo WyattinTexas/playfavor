@@ -144,8 +144,8 @@
 .ms-portrait-wrap { position: relative; }
 .ms-portrait {
     display: block; position: relative; z-index: 1;
-    width: clamp(44px, 8.5dvh, 78px); height: clamp(44px, 8.5dvh, 78px);
-    border-radius: 10px; object-fit: cover;
+    width: clamp(84px, 14vw, 128px); aspect-ratio: 800 / 504; height: auto;
+    border-radius: 8px; object-fit: cover;
     border: 2px solid rgba(201,168,76,0.5);
     box-shadow: 0 6px 16px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(0,0,0,0.4);
     background: #1a0f07;
@@ -153,7 +153,7 @@
 /* Champion portrait: bigger, gold-rimmed, radiant */
 .ms-tier.champ { width: clamp(96px, 17vw, 158px); }
 .ms-tier.champ .ms-portrait {
-    width: clamp(58px, 12.5dvh, 118px); height: clamp(58px, 12.5dvh, 118px);
+    width: clamp(110px, 20vw, 168px); aspect-ratio: 800 / 504; height: auto;
     border-color: #ffe9ad;
     box-shadow: 0 0 0 2px rgba(255,233,173,0.5), 0 0 34px rgba(201,168,76,0.75), 0 8px 22px rgba(0,0,0,0.65);
 }
@@ -234,7 +234,10 @@
     color: #ffd97a; min-width: 1.4em; text-align: left;
     font-variant-numeric: tabular-nums;
 }
-.ms-tier.champ .ms-power b { font-size: clamp(19px, 3dvh, 27px); color: #ffe9ad; }
+/* champion keeps a size floor; the COLOR comes from the power tier */
+.ms-tier.champ .ms-power b { font-size: clamp(19px, 3dvh, 27px); }
+.ms-tier.champ .ms-power.pw-gold b { font-size: clamp(22px, 3.6dvh, 30px); }
+.ms-tier.champ .ms-power.pw-plat b { font-size: clamp(25px, 4.1dvh, 34px); }
 /* (meter bars removed — the power number and the badged card row carry the count) */
 
 /* Prestige stamp — the reward for a podium finish */
@@ -309,8 +312,8 @@
     display: flex; flex-direction: column; align-items: center; gap: 3px; width: clamp(52px, 8vw, 68px);
 }
 .ms-ar img {
-    width: clamp(34px, 5.4dvh, 46px); height: clamp(34px, 5.4dvh, 46px);
-    border-radius: 8px; object-fit: cover;
+    width: clamp(70px, 11vw, 100px); aspect-ratio: 800 / 504; height: auto;
+    border-radius: 6px; object-fit: cover;
     border: 1px solid rgba(201,168,76,0.3); filter: saturate(0.7) brightness(0.82);
 }
 .ms-ar-place { font-family: 'Cinzel', serif; font-size: 10px; color: var(--gold-dark); letter-spacing: 0.05em; }
@@ -344,7 +347,7 @@
 .ms-combatant {
     position: relative;
     display: flex; flex-direction: column; align-items: center; gap: 5px;
-    width: clamp(72px, 13vw, 116px);
+    width: clamp(100px, 17vw, 156px);
     opacity: 0; transform: translateY(22px) scale(0.9);
     transition: transform 0.5s cubic-bezier(0.16,1.05,0.3,1), opacity 0.4s ease, filter 0.4s ease;
 }
@@ -392,10 +395,18 @@
 }
 .ms-cb-portrait {
     display: block;
-    width: clamp(52px, 10dvh, 84px); height: clamp(52px, 10dvh, 84px);
-    border-radius: 10px; object-fit: cover;
+    /* the character board art is landscape 800x504 — show ALL of it */
+    width: 100%; aspect-ratio: 800 / 504; height: auto;
+    border-radius: 8px; object-fit: cover;
     border: 2px solid rgba(201,168,76,0.45); background: #1a0f07;
     transition: border-color 0.3s ease;
+}
+/* Slider ring riding the board's skill track (game's own geometry) */
+.ms-ring {
+    position: absolute; width: 13%; aspect-ratio: 1; height: auto;
+    transform: translate(-50%, -50%);
+    pointer-events: none; z-index: 2;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.65));
 }
 .ms-combatant.forging .ms-cb-portrait { border-color: #e8d48b; }
 .ms-cb-name {
@@ -410,6 +421,85 @@
     font-size: clamp(15px,2.3dvh,20px); color: #ffd97a;
     font-variant-numeric: tabular-nums;
 }
+/* Wounded scores read red — negatives are real mid-battle */
+.ms-cb-power.neg b { color: #ff8a7a !important; -webkit-text-fill-color: #ff8a7a !important; background: none !important; }
+/* A struck fighter flashes red for a beat */
+.ms-combatant.struck .ms-cb-portrait { animation: msStruck 0.5s ease; }
+@keyframes msStruck {
+    0%, 100% { border-color: rgba(201,168,76,0.45); box-shadow: none; }
+    30% { border-color: #ff6a5a; box-shadow: 0 0 18px rgba(255,80,60,0.65); }
+}
+
+/* ── POWER TIERS: the tally wears its weight class ──────────────────────
+   ≤10 drab · 11-15 bright + sparkle · 16-20 gold, glitter, rumble, badge ·
+   21+ platinum, burst, big rumble, richer badge. Sizes stay phone-safe.  */
+.ms-cb-power b, .ms-power b { position: relative; z-index: 0; transition: font-size 0.25s ease, color 0.25s ease; }
+
+/* drab — an unremarkable showing, but readable */
+.pw-drab b { color: #b6b0a4; text-shadow: none; }
+
+/* bright — a solid tally: a touch bigger, one shy twinkle */
+.pw-bright b { font-size: clamp(18px, 2.9dvh, 24px); color: #ffe08a; text-shadow: 0 0 10px rgba(255,224,138,0.45); }
+.pw-bright b::after {
+    content: '✦'; position: absolute; top: -0.42em; right: -0.62em;
+    font-size: 0.45em; color: #fff4d2;
+    animation: pwTwinkle 1.8s ease-in-out infinite;
+}
+
+/* gold — a champion's number: gradient, glitter, medallion badge */
+.pw-gold b {
+    font-size: clamp(21px, 3.4dvh, 28px);
+    background: linear-gradient(180deg, #fff4d2 0%, #ffd97a 45%, #c9a84c 80%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    filter: drop-shadow(0 0 8px rgba(255,217,122,0.55));
+}
+.pw-gold b::before {
+    content: ''; position: absolute; z-index: -1;
+    left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 1.9em; height: 1.9em; border-radius: 50%;
+    background: radial-gradient(circle at 38% 32%, rgba(201,168,76,0.45), rgba(107,74,30,0.25) 60%, transparent 75%);
+    box-shadow: inset 0 0 0 1px rgba(232,212,139,0.35);
+}
+.pw-gold b::after {
+    content: '✦'; position: absolute; top: -0.5em; right: -0.7em;
+    font-size: 0.5em; color: #fff4d2; -webkit-text-fill-color: #fff4d2;
+    animation: pwTwinkle 1.3s ease-in-out infinite;
+}
+
+/* platinum — legendary: silver-white shine, richer badge, sparkle rain */
+.pw-plat b {
+    font-size: clamp(24px, 3.9dvh, 32px);
+    background: linear-gradient(180deg, #ffffff 0%, #dde6f0 35%, #9fb2c6 70%, #e8eef6 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    filter: drop-shadow(0 0 10px rgba(210,228,248,0.75));
+    animation: pwPlatShine 2.4s ease-in-out infinite;
+}
+.pw-plat b::before {
+    content: ''; position: absolute; z-index: -1;
+    left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 2em; height: 2em; border-radius: 50%;
+    background: radial-gradient(circle at 38% 32%, rgba(220,232,246,0.5), rgba(90,110,135,0.3) 58%, transparent 75%);
+    box-shadow: inset 0 0 0 1px rgba(235,243,252,0.55), 0 0 14px rgba(190,215,240,0.4);
+}
+.pw-plat b::after {
+    content: '✦'; position: absolute; top: -0.52em; right: -0.72em;
+    font-size: 0.52em; color: #fff; -webkit-text-fill-color: #fff;
+    animation: pwTwinkle 0.9s ease-in-out infinite;
+}
+/* platinum sparks are white-hot */
+.ms-spark.plat { background: #f2f7ff; box-shadow: 0 0 9px rgba(220,235,255,0.95); }
+
+/* the gold-tier rumble shakes just that fighter */
+.ms-combatant.pw-rumbling { animation: pwRumble 0.45s ease; }
+@keyframes pwRumble {
+    10%, 90% { transform: translate(-1px, 0); }
+    30%, 70% { transform: translate(2px, -1px) rotate(0.4deg); }
+    50% { transform: translate(-2px, 1px) rotate(-0.4deg); }
+}
+@keyframes pwTwinkle { 0%, 100% { opacity: 0.25; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.15); } }
+@keyframes pwPlatShine { 0%, 100% { filter: drop-shadow(0 0 8px rgba(210,228,248,0.6)); } 50% { filter: drop-shadow(0 0 15px rgba(230,242,255,0.95)); } }
 /* (forge meter bars removed — the badged row IS the meter) */
 /* Combat-hit callouts float up over the fighter */
 .ms-cb-callout { position: absolute; bottom: 100%; left: 50%; width: 0; height: 0; z-index: 8; }
@@ -513,10 +603,10 @@
 .ms-rowitem {
     position: relative;
     flex: 0 0 auto;              /* never squish — overflow scrolls instead */
-    width: clamp(84px, 12vw, 150px);
+    width: clamp(76px, 10.5vw, 132px);
     opacity: 0; transform: translateY(20px) scale(0.6);
 }
-.ms-rowitem img {
+.ms-rowitem img:not(.ms-ring) {
     display: block; width: 100%; aspect-ratio: 5 / 7; height: auto;
     border-radius: 7px; object-fit: cover;
     border: 2px solid rgba(232,212,139,0.8);
@@ -550,7 +640,7 @@
     box-shadow: 0 2px 7px rgba(0,0,0,0.6);
 }
 /* Modifier source cards read slightly cooler than base contributors */
-.ms-rowitem.mod img { border-color: rgba(201,168,76,0.5); }
+.ms-rowitem.mod img:not(.ms-ring) { border-color: rgba(201,168,76,0.5); }
 /* Dismissed rows TUCK beside the fighter — a mini overlapped strip so each
    player's played evidence stays visible through the rest of the battle.
    Absolutely positioned: never reflows the arena. Rides along (and fades)
@@ -570,15 +660,22 @@
     opacity: 0; transform: translateY(8px) scale(0.55);
     transition: opacity 0.3s ease, transform 0.35s cubic-bezier(0.2,1.2,0.35,1);
 }
+.ms-tuckcard.board { width: clamp(36px, 5.4vw, 52px); aspect-ratio: 800 / 504; }
 .ms-tuckcard:first-child { margin-left: 0; }
 .ms-tuckcard:nth-child(odd) { rotate: -3deg; }
 .ms-tuckcard:nth-child(even) { rotate: 2.5deg; }
 .ms-tuckcard.go { opacity: 1; transform: none; }
 
 /* The character-board tile leads the row with a caption */
-.ms-rowitem.board img { border-color: rgba(201,168,76,0.55); filter: saturate(0.92); }
+.ms-rowitem.board { width: auto; }
+.ms-rowitem.board img:not(.ms-ring) {
+    /* full landscape board as the played 'card' — height matches the hand */
+    height: clamp(94px, 12.6vw, 158px); width: auto; aspect-ratio: 800 / 504;
+    border-color: rgba(201,168,76,0.55); filter: saturate(0.92);
+}
 .ms-rowcap {
-    position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%);
+    /* corner chip — the bottom edge belongs to the slot track + ring */
+    position: absolute; left: 6px; top: 6px; transform: none;
     font-family: 'Cinzel', serif; font-weight: 700; font-size: 10px;
     letter-spacing: 0.14em; text-transform: uppercase;
     color: #ffe9ad; text-shadow: 0 1px 2px rgba(0,0,0,0.9);
@@ -587,7 +684,11 @@
 }
 /* While the row is on the table, the arena lifts so meters stay visible */
 .ms-arena { transition: padding 0.45s ease, opacity 0.45s ease; }
-.ms-arena.spot { padding-bottom: clamp(96px, 26dvh, 190px); }
+.ms-arena.spot {
+    align-items: flex-start;
+    padding-top: clamp(66px, 16dvh, 112px);   /* clear the perched banner */
+    padding-bottom: clamp(96px, 26dvh, 190px);
+}
 
 .ms-continue {
     position: absolute; left: 50%; transform: translateX(-50%) translateY(8px);

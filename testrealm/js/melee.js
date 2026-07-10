@@ -142,14 +142,35 @@
       // reveals who is strongest).
       const combatants = results.slice().sort((a, b) => a.playerIndex - b.playerIndex);
 
+      // Breakdowns fetched up-front: the ring overlay needs each player's
+      // slider slot at build time, and attacks need every fighter's numbers.
+      const bdOf = {};
+      combatants.forEach(c => {
+        bdOf[c.playerIndex] = (breakdownFor && breakdownFor(c.playerIndex))
+          || { base: c.power || 0, baseOther: c.power || 0, baseCards: [], steps: [], ownRawTotal: c.power || 0, rawTotal: c.power || 0 };
+      });
+
+      // The slider ring, on the game's own board track (BOARD_OV_TRACK).
+      const RING_LEFTS = [17, 33.4, 50, 66.3, 82.9];
+      const RING_TOP = 84.7;
+      const ringSrc = opts.ringSrc || 'assets/ui/slider-ring.png';
+      const ringHTML = (slot) => (slot == null || !RING_LEFTS[slot]) ? '' :
+        `<img class="ms-ring" src="${ringSrc}" alt=""
+              style="left:${RING_LEFTS[slot]}%; top:${RING_TOP}%">`;
+
       // ── Markup ──────────────────────────────────────────────────────
       const img = (pi, cls, name) =>
         `<img class="${cls}" src="${portraitFor(pi)}" alt="${name}" onerror="this.onerror=null;this.src='${fallback}'">`;
 
+      // Full character board (never cropped) with the slider ring on the
+      // player's current skill slot — you can SEE why the board pays power.
       const combatantHTML = (c) => `
         <div class="ms-combatant" data-pi="${c.playerIndex}" data-power="${c.power || 0}">
           <div class="ms-cb-callout"></div>
-          <div class="ms-cb-portrait-wrap">${img(c.playerIndex, 'ms-cb-portrait', c.name)}</div>
+          <div class="ms-cb-portrait-wrap">
+            ${img(c.playerIndex, 'ms-cb-portrait', c.name)}
+            ${ringHTML(bdOf[c.playerIndex] && bdOf[c.playerIndex].sliderPosition)}
+          </div>
           <div class="ms-cb-name">${c.name}</div>
           <div class="ms-cb-power"><img src="${powerIcon}" alt="Power"><b>0</b></div>
         </div>`;
@@ -279,14 +300,14 @@
         timers.push(setTimeout(() => { if (!run.killed) b.textContent = target; }, dur + 60));
       };
 
-      const sparkBurst = (el, n, up) => {
+      const sparkBurst = (el, n, up, cls) => {
         const rect = el.getBoundingClientRect();
         const hostRect = host.getBoundingClientRect();
         const cx = rect.left - hostRect.left + rect.width / 2;
         const cy = rect.top - hostRect.top + rect.height * (up == null ? 0.35 : up);
         for (let i = 0; i < n; i++) {
           const s = document.createElement('span');
-          s.className = 'ms-spark';
+          s.className = 'ms-spark' + (cls ? ' ' + cls : '');
           const ang = Math.random() * Math.PI * 2;
           const dist = 40 + Math.random() * 80;
           s.style.left = cx + 'px'; s.style.top = cy + 'px';
@@ -297,6 +318,54 @@
           s.classList.add('go');
           setTimeout(() => s.remove(), 700 * speed);
         }
+      };
+
+      // ── Live score display: every fighter's number = own forge progress
+      // plus WOUNDS from attacks (may be negative mid-battle; the final
+      // tally floors at 0). Attacks can strike fighters before or after
+      // their own turn — refresh handles both. ─────────────────────────
+      const dispBase = {}, wound = {};
+      combatants.forEach(c => { dispBase[c.playerIndex] = 0; wound[c.playerIndex] = 0; });
+      const combatantOf = (pi) => combatantEls.find(e => +e.dataset.pi === pi);
+
+      // Power tiers — the tally wears its weight class (Wyatt's spec):
+      // ≤10 drab · 11-15 bright+sparkle · 16-20 gold, glitter, rumble,
+      // badge · 21+ platinum, burst, big rumble, richer badge.
+      const TIER_CLASSES = ['pw-drab', 'pw-bright', 'pw-gold', 'pw-plat'];
+      const tierFor = (v) => (v >= 21 ? 'pw-plat' : v >= 16 ? 'pw-gold' : v >= 11 ? 'pw-bright' : 'pw-drab');
+      const applyTier = (pwEl, value, celebrate) => {
+        if (!pwEl) return;
+        const cls = tierFor(Math.max(0, value));   // tier reads the tally floor
+        TIER_CLASSES.forEach(t => pwEl.classList.remove(t));
+        pwEl.classList.add(cls);
+        if (!celebrate) return;
+        const fighter = pwEl.closest('.ms-combatant, .ms-fighter');
+        if (cls === 'pw-plat') {
+          stage.classList.add('shake');
+          setTimeout(() => stage.classList.remove('shake'), 500 * speed);
+          sparkBurst(pwEl, 18, 0.5, 'plat');
+        } else if (cls === 'pw-gold') {
+          if (fighter) {
+            fighter.classList.remove('pw-rumbling'); void fighter.offsetWidth;
+            fighter.classList.add('pw-rumbling');
+          }
+          sparkBurst(pwEl, 10, 0.5);
+        } else if (cls === 'pw-bright') {
+          sparkBurst(pwEl, 4, 0.5);
+        }
+      };
+
+      const refreshCount = (pi, dur, celebrate) => {
+        const el = combatantOf(pi);
+        if (!el) return;
+        const pw = el.querySelector('.ms-cb-power');
+        const b = pw && pw.querySelector('b');
+        if (!b) return;
+        const val = dispBase[pi] + wound[pi];
+        tickNumber(b, val, dur || 340);
+        pw.classList.toggle('neg', val < 0);
+        // Locked fighters keep their tier honest if a later attack drops them.
+        if (el.classList.contains('locked') || celebrate) applyTier(pw, val, celebrate);
       };
 
       // ── Herald / announcer ──────────────────────────────────────────
@@ -339,9 +408,9 @@
         setTimeout(() => coin.remove(), 2200 * speed);
       };
 
-      const sapStreak = (fromPi, toEl) => {
-        const fromEl = combatantEls.find(e => +e.dataset.pi === fromPi);
-        if (!fromEl || fromEl === toEl) return;
+      // A red bolt from one fighter to another (Fuzzy Head's strike).
+      const streakBetween = (fromEl, toEl) => {
+        if (!fromEl || !toEl || fromEl === toEl) return;
         const h = stage.getBoundingClientRect();
         const a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
         const x1 = a.left - h.left + a.width / 2, y1 = a.top - h.top + a.height * 0.4;
@@ -361,33 +430,34 @@
       // ── FORGE: one fighter's full story, player-paced ────────────────
       const runFighter = async (i) => {
         const el = combatantEls[i], c = combatants[i];
-        const b = el.querySelector('.ms-cb-power b');
+        const pi = c.playerIndex;
         const calloutHost = el.querySelector('.ms-cb-callout');
-        const bd = (breakdownFor && breakdownFor(c.playerIndex)) || { base: c.power || 0, steps: [] };
+        const bd = bdOf[pi];
 
         // Only actual power contributors appear (cards AND missions, each
         // carrying its amount). Art-less contributors fold into the board
-        // share so the number never lies.
+        // share so the number never lies. (Cap 8 — Act 3 hands run long and
+        // the row scrolls.)
         const visCards = [];
         if (cardsFx) {
-          (bd.baseCards || []).slice(0, 4).forEach(cd => {
+          (bd.baseCards || []).slice(0, 8).forEach(cd => {
             const url = (cd && cd.amount > 0) ? cardImgFor(cd.filename, cd.mission) : null;
             if (url) visCards.push({ url, amount: cd.amount, mission: !!cd.mission });
           });
         }
         const baseStart = Math.max(0, (bd.base || 0) - visCards.reduce((a, x) => a + x.amount, 0));
-        let running = 0;
 
         el.classList.add('forging', 'active');   // the stage lights this fighter
         await delay(650); if (run.killed) return;
 
         // EVERY point (and every modifier) gets a face in the row. Badges
         // spell the arithmetic: gold +N, red −N, grey 0 (a lost coin), ×2.
-        const dealRowItem = (url, badgeText, cls, caption) => {
+        const dealRowItem = (url, badgeText, cls, caption, ringSlot) => {
           const item = document.createElement('div');
           item.className = 'ms-rowitem' + (cls ? ' ' + cls : '');
           item.innerHTML =
             `<img src="${url}" alt="">` +
+            (ringSlot != null ? ringHTML(ringSlot) : '') +
             `<span class="ms-rowamt${/^[−-]/.test(badgeText) ? ' neg' : badgeText === '0' ? ' zero' : ''}">${badgeText}</span>` +
             (caption ? `<span class="ms-rowcap">${caption}</span>` : '');
           const im = item.querySelector('img');
@@ -397,29 +467,31 @@
           item.classList.add('go');
         };
 
+        // The board leads the row FULL and un-cropped, wearing the slider
+        // ring on the player's current skill slot — the visible reason the
+        // board pays power.
         if (cardsFx && baseStart > 0) {
-          dealRowItem(portraitFor(c.playerIndex), '+' + baseStart, 'board', 'Board');
-          running = baseStart;
-          tickNumber(b, running, 340);
+          dealRowItem(portraitFor(pi), '+' + baseStart, 'board', 'Board', bd.sliderPosition);
+          dispBase[pi] = baseStart;
+          refreshCount(pi, 340);
           bump(el);
           await delay(950); if (run.killed) return;
         } else {
-          // Cards off (or no board share): open the count at the board share.
-          running = baseStart;
-          tickNumber(b, running, 500);
+          dispBase[pi] = baseStart;
+          refreshCount(pi, 500);
           await delay(200); if (run.killed) return;
         }
 
         for (const vc of visCards) {
           dealRowItem(vc.url, '+' + vc.amount, vc.mission ? 'missioncard' : '');
-          running = Math.max(0, running + vc.amount);
-          tickNumber(b, running, 340);
+          dispBase[pi] += vc.amount;
+          refreshCount(pi, 340);
           bump(el);
           await delay(950); if (run.killed) return;
         }
 
         // Modifiers land as combat hits — and their SOURCE CARD joins the
-        // row too (a lost coin's card shows a grey 0; a sap shows red −N).
+        // row too (a lost coin's card shows a grey 0).
         const stepArt = (step) => (cardsFx && step.filename) ? cardImgFor(step.filename, !!step.missionCard) : null;
         for (const step of (bd.steps || [])) {
           if (step.kind === 'coinflip') {
@@ -427,8 +499,8 @@
             await delay(1750); if (run.killed) return;
             const cu = stepArt(step);
             if (step.won) {
-              running = Math.max(0, running + step.amount);
-              tickNumber(b, running, 380);
+              dispBase[pi] += step.amount;
+              refreshCount(pi, 380);
               showCallout(calloutHost, { kind: 'coin', label: step.label, amount: step.amount });
               if (cu) dealRowItem(cu, '+' + step.amount, 'mod');
               bump(el);
@@ -440,12 +512,42 @@
             await delay(700); if (run.killed) return;
             continue;
           }
+          if (step.kind === 'attack') {
+            // FUZZY HEAD: the card shows ONLY here, on the caster's turn —
+            // then red bolts strike EVERY other fighter's score at once.
+            // Wounds can drive scores negative; the final tally floors at 0.
+            const au = stepArt(step);
+            if (au) dealRowItem(au, '' + step.amount, 'mod', 'vs all');
+            showCallout(calloutHost, { kind: 'debuff', label: step.label, amount: step.amount });
+            await delay(350); if (run.killed) return;
+            (step.hits || []).forEach((h, k) => {
+              timers.push(setTimeout(() => {
+                if (run.killed) return;
+                const victimEl = combatantOf(h.playerIndex);
+                if (!victimEl) return;
+                if (sapFx) streakBetween(el, victimEl);
+                timers.push(setTimeout(() => {
+                  if (run.killed) return;
+                  wound[h.playerIndex] += h.delta;
+                  refreshCount(h.playerIndex, 380);
+                  bump(victimEl);
+                  victimEl.classList.remove('struck'); void victimEl.offsetWidth;
+                  victimEl.classList.add('struck');
+                }, 300 * speed));
+              }, k * 140 * speed));
+            });
+            await delay(350 * ((step.hits || []).length) + 700); if (run.killed) return;
+            continue;
+          }
           const sapping = step.kind === 'debuff' && sapFx && step.from != null;
-          if (sapping) { sapStreak(step.from, el); await delay(380); if (run.killed) return; }
+          if (sapping) {
+            streakBetween(combatantOf(step.from), el);
+            await delay(380); if (run.killed) return;
+          }
           showCallout(calloutHost, step);
-          running = step.kind === 'mult' ? running * step.amount : running + step.amount;
-          running = Math.max(0, running);
-          tickNumber(b, running, 380);
+          if (step.kind === 'mult') dispBase[pi] *= step.amount;
+          else dispBase[pi] += step.amount;
+          refreshCount(pi, 380);
           const su = stepArt(step);
           if (su) {
             dealRowItem(su,
@@ -458,10 +560,15 @@
           await delay(700); if (run.killed) return;
         }
 
-        // Lock to the authoritative total; the herald calls it.
-        if (b) b.textContent = c.power || 0;
+        // Lock to the fighter's own authoritative total (wounds ride on top —
+        // the displayed score may be negative mid-battle) and CELEBRATE the
+        // tally at its weight class: drab / bright / gold / platinum.
+        dispBase[pi] = (bd.ownRawTotal != null) ? bd.ownRawTotal : (c.power || 0);
         el.classList.add('locked'); el.classList.remove('forging');
-        heraldSay(`${c.name}: ${c.power || 0} Power!`);
+        refreshCount(pi, 420, true);
+        const lockVal = dispBase[pi] + wound[pi];
+        heraldSay(`${c.name}: ${lockVal} Power!`);
+        await delay(500); if (run.killed) return;
 
         // The row STAYS until dismissed via the Continue button (only the
         // button advances — the row itself is scrollable on phones).
@@ -481,9 +588,11 @@
           // so everyone's evidence stays "kind of visible" through the battle.
           const tuck = document.createElement('div');
           tuck.className = 'ms-tuck';
-          Array.from(rowEl.querySelectorAll('.ms-rowitem img')).forEach((im, k) => {
+          Array.from(rowEl.querySelectorAll('.ms-rowitem')).forEach((item, k) => {
+            const im = item.querySelector('img');
+            if (!im) return;
             const t = document.createElement('img');
-            t.className = 'ms-tuckcard';
+            t.className = 'ms-tuckcard' + (item.classList.contains('board') ? ' board' : '');
             t.src = im.src;
             t.style.transitionDelay = (k * 55) + 'ms';
             tuck.appendChild(t);
@@ -520,8 +629,10 @@
       // ── PODIUM ──────────────────────────────────────────────────────
       const fillTier = (el, instant) => {
         el.querySelectorAll('.ms-fighter').forEach(f => {
-          const pw = +f.dataset.power;
+          const pw = +f.dataset.power;         // final tally — already floored at 0
           const b = f.querySelector('.ms-power b');
+          const pwEl = f.querySelector('.ms-power');
+          applyTier(pwEl, pw, !instant);       // the tally wears its weight class
           if (instant) { if (b) b.textContent = pw; } else { tickNumber(b, pw, 720); }
         });
       };
