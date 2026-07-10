@@ -2572,6 +2572,63 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
   ok(/★ 0/.test(shelf.balance), `fresh balance reads ★ 0 (${shelf.balance})`);
   ok(shelf.art, 'every shelf card shows the real character art');
 
+  // Board inspect: tap a painting → the whole board on the easel (print-
+  // res hd/ recut) with name + the same buy tag ("hmm, maybe I'll buy").
+  await page.evaluate(() => { document.querySelector('.st-card[data-char="duchess"] .st-frame img').click(); });
+  await page.waitForFunction(() => {
+    const i = document.querySelector('#storeInspect .st-insp-frame img');
+    return i && i.complete && i.naturalWidth > 0;
+  }, { timeout: 8000 });
+  await sleep(350);
+  const insp = await page.evaluate(() => {
+    const box = document.getElementById('storeInspect');
+    const img = box.querySelector('.st-insp-frame img');
+    const r = img.getBoundingClientRect();
+    return {
+      active: box.classList.contains('active'),
+      hd: img.src.includes('assets/characters/hd/'),
+      big: r.width >= window.innerWidth * 0.55,
+      fits: r.width <= window.innerWidth && r.height <= window.innerHeight,
+      name: (box.querySelector('.st-name') || {}).textContent,
+      buy: ((box.querySelector('.st-buy') || {}).textContent || '').trim(),
+    };
+  });
+  ok(insp.active, 'tapping a painting opens the board inspect');
+  ok(insp.hd, 'the easel shows the print-res recut (hd/)');
+  ok(insp.big && insp.fits, 'board fills the stage and stays on-screen');
+  ok(insp.name === 'Duchess' && /★ 100/.test(insp.buy),
+    `easel carries name + price (${insp.name}, ${insp.buy})`);
+  await page.screenshot({ path: join(SHOTS, 'store-inspect.png') });
+
+  // Broke tap from the easel: BOTH buttons say why (shared selector),
+  // and the easel survives the 1.2s restore re-render.
+  await page.evaluate(() => { document.querySelector('#storeInspect .st-buy').click(); });
+  await sleep(250);
+  const brokeBeat = await page.evaluate(() => ({
+    insp: (document.querySelector('#storeInspect .st-buy') || {}).textContent,
+    shelf: (document.querySelector('.st-card[data-char="duchess"] .st-buy') || {}).textContent,
+  }));
+  ok(brokeBeat.insp === 'Not enough ★' && brokeBeat.shelf === 'Not enough ★',
+    `broke tap says why on easel AND shelf (${brokeBeat.insp} / ${brokeBeat.shelf})`);
+  await sleep(1400);
+  const restored = await page.evaluate(() => ({
+    active: document.getElementById('storeInspect').classList.contains('active'),
+    buy: ((document.querySelector('#storeInspect .st-buy') || {}).textContent || '').trim(),
+  }));
+  ok(restored.active && /★ 100/.test(restored.buy),
+    `easel survives the re-render, price restored (${restored.buy})`);
+
+  // Scrim click closes just the easel — the stall stays open.
+  await page.evaluate(() => { document.getElementById('storeInspect').click(); });
+  await sleep(250);
+  const inspClosed = await page.evaluate(() => ({
+    insp: document.getElementById('storeInspect').classList.contains('active'),
+    store: document.getElementById('storePanel').classList.contains('active'),
+    cards: document.querySelectorAll('.st-card').length,
+  }));
+  ok(!inspClosed.insp && inspClosed.store && inspClosed.cards === 10,
+    'scrim closes the easel, the stall stays open');
+
   // Broke: the buy path refuses and nothing is written.
   const broke = await page.evaluate(async () => {
     const r = await FLB.buyCharacter('duchess');

@@ -350,6 +350,7 @@ html, body {
     display: flex;
     flex-direction: column;
     transition: transform 0.25s;
+    cursor: pointer;                  /* the painting opens the board inspect */
 }
 .st-card:hover { transform: translateY(-3px); }
 /* every hero stands on a wooden plank */
@@ -470,6 +471,76 @@ html, body {
     animation: ntPulse 1.5s ease-in-out infinite;
 }
 .st-buy.poor { opacity: 0.6; }
+/* ── Board inspect — tap a painting, the whole board on the easel ──
+   Full color even when unowned (the player is judging the goods), the
+   print-res recut from assets/characters/hd/, same buy button along. */
+.st-inspect {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 5, 1, 0.84);
+    z-index: 6;
+}
+.st-inspect.active { display: flex; }
+.st-insp-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    animation: inspIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes inspIn {
+    from { transform: scale(0.84); opacity: 0; }
+    to   { transform: scale(1); opacity: 1; }
+}
+.st-insp-frame {
+    padding: 6px;                     /* the gilded frame, sized up */
+    background: linear-gradient(160deg, #e8c34b, #8a6a1f 38%, #f0d278 66%, #6d4f16);
+    border-radius: 6px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.75), 0 0 34px rgba(232, 195, 75, 0.18);
+}
+.st-insp-frame img {
+    display: block;
+    max-width: min(88vw, 1240px);
+    max-height: 72vh;
+    border-radius: 3px;
+}
+.st-insp-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.st-insp-row .st-name { font-size: 16px; }
+/* inspect's price tag sits beside the plate, not hung off a shelf frame —
+   no rope rigging (::before grommet, ::after string), no settle-swing */
+.st-insp-row .st-buy {
+    position: static;
+    transform: none;
+    animation: none;
+    padding: 6px 14px;
+    font-size: 13px;
+}
+.st-insp-row .st-buy::before, .st-insp-row .st-buy::after { display: none; }
+.st-insp-close {
+    position: absolute;
+    top: 14px; right: 78px;           /* beside the panel's ESC badge, not on it */
+    width: 34px; height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Cinzel', serif;
+    font-size: 15px;
+    color: var(--gold);
+    background: linear-gradient(180deg, rgba(58, 36, 14, 0.92), rgba(30, 17, 6, 0.92));
+    border: 1px solid rgba(201, 168, 76, 0.45);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.st-insp-close:hover { color: var(--gold-light); box-shadow: 0 0 12px rgba(232, 195, 75, 0.35); }
+
 /* the wares counter along the bottom — the realm's goods on display */
 .st-counter {
     display: flex;

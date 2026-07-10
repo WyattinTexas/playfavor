@@ -510,6 +510,23 @@
         const panel = document.getElementById('storePanel');
         if (panel) panel.classList.remove('active');
         _confirmingBuy = null;
+        _inspecting = null;
+        const insp = document.getElementById('storeInspect');
+        if (insp) { insp.classList.remove('active'); insp.innerHTML = ''; }
+    }
+
+    // One source of truth for a hero's action button — the shelf card and
+    // the board inspect must always agree (owned / offline / confirm / price).
+    function storeActionHtml(c, owned, stars) {
+        if (owned.includes(c.id)) return '<span class="st-owned">Owned</span>';
+        if (mode !== 'firebase') {
+            // Browse-only offline — see buyCharacter's offline guard.
+            return `<button class="st-buy poor" disabled>★ ${STORE_PRICE}</button>`;
+        }
+        if (_confirmingBuy === c.id) {
+            return `<button class="st-buy confirm" onclick="event.stopPropagation(); FLB.confirmBuy('${c.id}')">Buy — ★ ${STORE_PRICE}?</button>`;
+        }
+        return `<button class="st-buy${stars < STORE_PRICE ? ' poor' : ''}" onclick="event.stopPropagation(); FLB.askBuy('${c.id}')">★ ${STORE_PRICE}</button>`;
     }
 
     function renderStore() {
@@ -523,37 +540,66 @@
         const anim = _shelfAnim; _shelfAnim = false;
         body.innerHTML = chars.map((c, i) => {
             const isOwned = owned.includes(c.id);
-            let action;
-            if (isOwned) {
-                action = '<span class="st-owned">Owned</span>';
-            } else if (mode !== 'firebase') {
-                // Browse-only offline — see buyCharacter's offline guard.
-                action = `<button class="st-buy poor" disabled>★ ${STORE_PRICE}</button>`;
-            } else if (_confirmingBuy === c.id) {
-                action = `<button class="st-buy confirm" onclick="event.stopPropagation(); FLB.confirmBuy('${c.id}')">Buy — ★ ${STORE_PRICE}?</button>`;
-            } else if (stars < STORE_PRICE) {
-                action = `<button class="st-buy poor" onclick="event.stopPropagation(); FLB.askBuy('${c.id}')">★ ${STORE_PRICE}</button>`;
-            } else {
-                action = `<button class="st-buy" onclick="event.stopPropagation(); FLB.askBuy('${c.id}')">★ ${STORE_PRICE}</button>`;
-            }
-            return `<div class="st-card${isOwned ? ' owned' : ''}" data-char="${c.id}"${anim ? ` style="animation: shelfIn 0.45s ${(i * 0.045).toFixed(3)}s cubic-bezier(0.16,1,0.3,1) backwards"` : ''}>
+            return `<div class="st-card${isOwned ? ' owned' : ''}" data-char="${c.id}"${anim ? ` style="animation: shelfIn 0.45s ${(i * 0.045).toFixed(3)}s cubic-bezier(0.16,1,0.3,1) backwards"` : ''}
+                onclick="FLB.inspectChar('${c.id}')">
                 <div class="st-frame">
                     <img src="assets/characters/${c.filename}" alt="${c.name}">
                 </div>
                 <div class="st-plate">
                     <span class="st-name">${c.name}</span>
                 </div>
-                ${action}
+                ${storeActionHtml(c, owned, stars)}
             </div>`;
         }).join('');
+        renderInspect();   // confirm/purchase re-renders keep the easel honest
+    }
+
+    // ── Board inspect — tap a painting, the whole board goes up on the
+    // easel (print-res recut, full color even if unowned) so a player can
+    // actually judge the goods; the same buy button rides along.
+    let _inspecting = null;
+
+    function inspectChar(charId) {
+        _inspecting = charId;
+        renderInspect();
+    }
+    function closeInspect() {
+        _inspecting = null;
+        renderInspect();
+    }
+    function renderInspect() {
+        const box = document.getElementById('storeInspect');
+        if (!box) return;
+        const c = _inspecting
+            && ((window.FAVOR_DATA || {}).characters || []).find(x => x.id === _inspecting);
+        if (!c) { box.classList.remove('active'); box.innerHTML = ''; return; }
+        const owned = ownedIds();
+        const stars = (_me && _me.stars) || 0;
+        box.innerHTML = `
+            <div class="st-insp-inner" onclick="event.stopPropagation()">
+                <div class="st-insp-frame">
+                    <img src="assets/characters/hd/${c.filename}" alt="${c.name}">
+                </div>
+                <div class="st-insp-row">
+                    <span class="st-name">${c.name}</span>
+                    ${storeActionHtml(c, owned, stars)}
+                </div>
+            </div>
+            <div class="st-insp-close" onclick="event.stopPropagation(); FLB.closeInspect()">✕</div>`;
+        box.classList.add('active');
     }
 
     function askBuy(charId) {
         const stars = (_me && _me.stars) || 0;
         if (stars < STORE_PRICE) {
-            // Can't afford — the button says so for a beat.
-            const btn = document.querySelector(`.st-card[data-char="${charId}"] .st-buy`);
-            if (btn) { btn.textContent = 'Not enough ★'; setTimeout(renderStore, 1200); }
+            // Can't afford — the button says so for a beat (shelf card
+            // AND the inspect easel, whichever the tap came from).
+            const btns = document.querySelectorAll(
+                `.st-card[data-char="${charId}"] .st-buy, #storeInspect .st-buy`);
+            if (btns.length) {
+                btns.forEach(b => { b.textContent = 'Not enough ★'; });
+                setTimeout(renderStore, 1200);
+            }
             return;
         }
         _confirmingBuy = charId;
@@ -570,10 +616,13 @@
         } else if (res.why === 'stars' || res.why === 'offline') {
             // Every refusal says WHY for a beat — a silently reverting
             // confirm button reads as dead (e.g. the wire dropped after
-            // boot and the pre-read refused).
-            const btn = document.querySelector(`.st-card[data-char="${charId}"] .st-buy`);
-            if (btn) {
-                btn.textContent = res.why === 'offline' ? 'Offline — try again' : 'Not enough ★';
+            // boot and the pre-read refused). Shelf AND inspect buttons.
+            const btns = document.querySelectorAll(
+                `.st-card[data-char="${charId}"] .st-buy, #storeInspect .st-buy`);
+            if (btns.length) {
+                btns.forEach(b => {
+                    b.textContent = res.why === 'offline' ? 'Offline — try again' : 'Not enough ★';
+                });
                 setTimeout(renderStore, 1200);
             }
         }
@@ -633,6 +682,7 @@
         queueSize, rename, renderProfileChip, snapshot,
         settleDue, drainMsgs, currentDateKey, ratingDelta, generateName,
         gameStars, ownedIds, buyCharacter, openStore, closeStore, askBuy, confirmBuy,
+        inspectChar, closeInspect,
         get mode() { return mode; }, uid,
     };
 })();
