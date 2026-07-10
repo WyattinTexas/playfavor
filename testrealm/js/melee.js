@@ -576,24 +576,26 @@
             const au = stepArt(step);
             const feat = au ? featureShow(au, `${step.label} — strikes all rivals!`) : null;
             if (feat) { await delay(2000); if (run.killed) { feat.remove(); return; } }
-            // ONE beam at a time, slow enough to follow: fire → the −3 rides
-            // the beam (power token + amount) → the victim's score wounds →
-            // a beat → the next rival.
+            // ALL beams fire at once — same slow, readable sweep, each with
+            // its −3 (power token + amount) riding the beam — then every
+            // victim's score wounds together.
             const boltFrom = feat ? feat.querySelector('.ms-feature-card') : el;
-            for (const h of (step.hits || [])) {
-              const victimEl = combatantOf(h.playerIndex);
-              if (!victimEl) continue;
+            const targets = (step.hits || [])
+              .map(h => ({ h, victimEl: combatantOf(h.playerIndex) }))
+              .filter(t => t.victimEl);
+            targets.forEach(({ h, victimEl }) => {
               const chip = `<img src="${powerIcon}" alt="Power">−${Math.abs(h.delta)}`;
               if (sapFx) streakBetween(boltFrom, victimEl, feat ? 'thick' : '', chip);
-              await delay(700); if (run.killed) { if (feat) feat.remove(); return; }
+            });
+            await delay(700); if (run.killed) { if (feat) feat.remove(); return; }
+            targets.forEach(({ h, victimEl }) => {
               wound[h.playerIndex] += h.delta;
               refreshCount(h.playerIndex, 380);
               bump(victimEl);
               victimEl.classList.remove('struck'); void victimEl.offsetWidth;
               victimEl.classList.add('struck');
-              await delay(800); if (run.killed) { if (feat) feat.remove(); return; }
-            }
-            await delay(300); if (run.killed) { if (feat) feat.remove(); return; }
+            });
+            await delay(1100); if (run.killed) { if (feat) feat.remove(); return; }
             if (feat) { await featureHide(feat); if (run.killed) return; }
             if (au) dealRowItem(au, '' + step.amount, 'mod', 'vs all');
             showCallout(calloutHost, { kind: 'debuff', label: step.label, amount: step.amount });
