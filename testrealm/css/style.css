@@ -5047,10 +5047,33 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
 .ms-combatant.in { opacity: 1; transform: none; }
 /* One fighter forges at a time — the stage lights them, rests the others.
    Locked fighters keep a readable afterglow so their totals stay legible. */
-.ms-arena.spot .ms-combatant.in { opacity: 0.4; filter: saturate(0.55) brightness(0.7); }
-.ms-arena.spot .ms-combatant.in.locked { opacity: 0.8; filter: saturate(0.85) brightness(0.95); }
-.ms-arena.spot .ms-combatant.in.active { opacity: 1; filter: none; transform: scale(1.07); z-index: 3; }
-.ms-combatant.hit { animation: msCbHit 0.3s ease; }
+.ms-arena.spot .ms-combatant.in { opacity: 0.35; filter: saturate(0.5) brightness(0.62); }
+/* Finished fighters keep a readable afterglow — dimmer than the star, but
+   their locked totals stay bright gold for comparison (rule below). */
+.ms-arena.spot .ms-combatant.in.locked { opacity: 0.85; filter: saturate(0.9) brightness(0.95); }
+.ms-arena.spot .ms-combatant.in.locked .ms-cb-power b {
+    color: #ffe9ad; text-shadow: 0 0 10px rgba(201,168,76,0.65);
+}
+/* The active fighter is LIT and RAISED — stage lights on. */
+.ms-arena.spot .ms-combatant.in.active {
+    opacity: 1; filter: none;
+    transform: translateY(-9px) scale(1.12);
+    z-index: 3;
+}
+.ms-arena.spot .ms-combatant.in.active .ms-cb-portrait {
+    border-color: #ffe9ad;
+    box-shadow: 0 0 26px rgba(232,212,139,0.55), 0 8px 20px rgba(0,0,0,0.65);
+}
+/* Pool of warm stage-light at the active fighter's feet */
+.ms-arena.spot .ms-combatant.in.active::before {
+    content: ''; position: absolute; left: 50%; bottom: -10px; z-index: -1;
+    width: 165%; height: 34px; transform: translateX(-50%);
+    background: radial-gradient(ellipse at center, rgba(232,212,139,0.4), transparent 70%);
+    filter: blur(3px); pointer-events: none;
+}
+/* The hit-punch lives on the portrait, NOT the fighter — animating the
+   fighter's transform would stomp the active raise on every meter bump. */
+.ms-combatant.hit .ms-cb-portrait-wrap { animation: msCbHit 0.3s ease; }
 .ms-combatant.charge {
     transform: translateX(var(--chx, 0)) scale(1.14); opacity: 0;
     transition: transform 0.5s cubic-bezier(0.5,0,0.85,0.4), opacity 0.5s ease 0.12s;
