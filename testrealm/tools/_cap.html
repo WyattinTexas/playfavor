@@ -58,10 +58,13 @@
       : '../assets/tokens/Copy of Tokens_Design_v1_Prestige_' + d + '_v1.jpg'),
   });
   // Jump straight to the podium once the stage exists.
-  setTimeout(() => {
-    const skip = document.querySelector('.ms-skip');
-    if (skip) skip.click();
-  }, 2500);
+  // Open with #forge to stay in the forge instead (mid-battle frames).
+  if (location.hash !== '#forge') {
+    setTimeout(() => {
+      const skip = document.querySelector('.ms-skip');
+      if (skip) skip.click();
+    }, 2500);
+  }
 </script>
 </body>
 </html>
