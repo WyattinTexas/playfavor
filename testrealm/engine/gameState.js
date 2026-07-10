@@ -293,7 +293,7 @@ class FavorGame {
         for (const c of player.playedCards) {
             if (c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_and_philosopher') count += 1;
             if (c.special === 'minds_eye_x5') count += 5;
-            if (c.special === 'minds_eye_x2_philosopher_stone_x5') count += 2;
+            if (c.special === 'minds_eye_x2' || c.special === 'minds_eye_x2_philosopher_stone_x5') count += 2;
         }
         count += player.bonusMindsEye || 0; // mission success rewards
         return count;
@@ -943,6 +943,11 @@ class FavorGame {
                 this.addLog(`${player.name}'s ${card.name}: +1 Knowledge (Mind's Eye)`);
                 break;
 
+            case 'minds_eye_x2':
+                // Deadeye: grants 2 Mind's Eye (counted in getMindsEyeCount)
+                this.addLog(`${player.name}'s ${card.name}: +2 Mind's Eye`);
+                break;
+
             // --- Knowledge multipliers ---
 
             case 'knowledge_x5':
@@ -978,20 +983,22 @@ class FavorGame {
                 break;
 
             case 'coin_flip_4_power':
-                // Liquid Courage: 50% chance to gain 4 power for melee. The
-                // outcome is decided here but recorded on coinFlips (win OR
-                // lose) so the Melee can reveal it as a live coin toss. `coin`
-                // tags the won bonus so powerBreakdown shows ONE coin step.
+            case 'coin_flip_5_power':
+                // Melee coin flip (Life Essence is the printed +5). The outcome
+                // is decided here but recorded on coinFlips (win OR lose) so
+                // the Melee can reveal it as a live coin toss. `coin` tags the
+                // won bonus so powerBreakdown shows ONE coin step.
                 {
+                    const amt = special === 'coin_flip_5_power' ? 5 : 4;
                     const won = Math.random() < 0.5;
                     if (!player.coinFlips) player.coinFlips = [];
-                    player.coinFlips.push({ source: card.name, act: this.currentAct, won: won, amount: 4 });
+                    player.coinFlips.push({ source: card.name, act: this.currentAct, won: won, amount: amt });
                     if (won) {
                         if (!player.powerBonuses) player.powerBonuses = [];
-                        player.powerBonuses.push({ amount: 4, act: this.currentAct, source: card.name, coin: true });
-                        this.addLog(`${player.name}'s Liquid Courage: HEADS! +4 Power for melee`);
+                        player.powerBonuses.push({ amount: amt, act: this.currentAct, source: card.name, coin: true });
+                        this.addLog(`${player.name}'s ${card.name}: HEADS! +${amt} Power for melee`);
                     } else {
-                        this.addLog(`${player.name}'s Liquid Courage: TAILS! No bonus`);
+                        this.addLog(`${player.name}'s ${card.name}: TAILS! No bonus`);
                     }
                 }
                 break;

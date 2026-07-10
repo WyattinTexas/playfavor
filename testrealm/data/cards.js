@@ -151,13 +151,20 @@ window.FAVOR_DATA.cards = [
     cost: null, skills: [], requirements: ["alchemy", "alchemy", "alchemy", "philosopher_stone"], rewards: {},
     special: "multiply_gold_x2" },
 
-  { id: cid(), name: "Shot of Courage", audit: "Pick one of your missions to no longer have a requirement to succeed, Req: 4 Alchemy & 1 Minds Eye, Act 3", filename: "Liquid Wind Card.jpg", act: 3, type: "potion",
+  // AUDIT FIX 2026-07-10 (visual, art = ground truth): the AUDIT TEXTS and
+  // REQUIREMENTS of Shot of Courage and Life Essence were swapped with each
+  // other (Wyatt's audit JSON carries the same swap). The printed Shot of
+  // Courage is the melee coin flip (+4, sword icon) requiring 3 Alchemy &
+  // 3 Prospecting; the printed Life Essence removes a mission's requirement,
+  // requiring 4 Alchemy & 1 Mind's Eye. The specials below were correct all
+  // along — only text/requirements needed the swap back.
+  { id: cid(), name: "Shot of Courage", audit: "Next Melee Flip a coin if the result is heads gain +4 Power, Req: 3 Alchemy & 3 Prospecting, Act 3", filename: "Liquid Wind Card.jpg", act: 3, type: "potion",
     cost: null, skills: [],
-    requirements: ["alchemy", "alchemy", "alchemy", "alchemy", "minds_eye"],
+    requirements: ["alchemy", "alchemy", "alchemy", "prospecting", "prospecting", "prospecting"],
     rewards: {}, special: "coin_flip_4_power" },
 
-  { id: cid(), name: "Life Essence", audit: "Next Melee Flip a coin if the result is heads gain +5 Power, Req: 3 Alchemy & 3 Prospecting, Act 3", filename: "Stream of Life Card.jpg", act: 3, type: "potion",
-    cost: null, skills: [], requirements: ["alchemy", "alchemy", "alchemy", "prospecting", "prospecting", "prospecting"], rewards: {},
+  { id: cid(), name: "Life Essence", audit: "Pick one of your missions to no longer have a requirement to succeed, Req: 4 Alchemy & 1 Minds Eye, Act 3", filename: "Stream of Life Card.jpg", act: 3, type: "potion",
+    cost: null, skills: [], requirements: ["alchemy", "alchemy", "alchemy", "alchemy", "minds_eye"], rewards: {},
     special: "remove_mission_requirements" },
 
   { id: cid(), name: "Mind Eraser", audit: "Remove 15 Scorn, Req: 1 Prospecting & 1 Alchemy, Act 3", filename: "Trouble Brew Card.jpg", act: 2, type: "potion",
@@ -301,9 +308,13 @@ window.FAVOR_DATA.cards = [
   { id: cid(), name: "Training Friend", audit: "1 power, req: none, Act 1", filename: "Training Friend.jpg", act: 1, type: "weapon",
     cost: null, skills: ["power"], requirements: [], rewards: {} },
 
-  { id: cid(), name: "Deadeye", audit: "5 Survival, Req: 1 Power & 2 Mind's Eye, Act 3", filename: "All Seer Card.jpg", act: 3, type: "weapon",
-    cost: null, skills: ["survival", "survival", "survival", "survival", "survival"],
-    requirements: ["power", "minds_eye", "minds_eye"], rewards: {} },
+  // AUDIT FIX 2026-07-10 (visual, art = ground truth): Deadeye's data was
+  // fully INVERTED. The printed card REQUIRES 5 Survival (leaf ×5, left) and
+  // GRANTS 2 Mind's Eye + 1 Power (right column). It is a missed power card.
+  { id: cid(), name: "Deadeye", audit: "2 Mind's Eye & 1 Power, Req: 5 Survival, Act 3", filename: "All Seer Card.jpg", act: 3, type: "weapon",
+    cost: null, skills: ["power"],
+    requirements: ["survival", "survival", "survival", "survival", "survival"], rewards: {},
+    special: "minds_eye_x2" },
 
   { id: cid(), name: "Blind Faith", audit: "1 power, req: none, Act 2", filename: "Griffin Boots Card.jpg", act: 2, type: "weapon",
     cost: null, skills: ["power"], requirements: [], rewards: {}, combo: "1/2" },
