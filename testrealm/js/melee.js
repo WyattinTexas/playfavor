@@ -540,9 +540,21 @@
         fillTier(el, false);
         sparkBurst(el, champ ? 22 : 6);
       };
+      // Center the 4th/5th column in the gutter between the 3rd plinth and
+      // the screen edge (equal distance to both, per Wyatt) — measured at
+      // runtime since the podium's width varies with players/ties.
+      const placeAlsoRans = () => {
+        if (!alsoEl) return;
+        const pod = host.querySelector('.ms-podium');
+        if (!pod) return;
+        const sr = stage.getBoundingClientRect();
+        const pr = pod.getBoundingClientRect();
+        const gutter = sr.right - pr.right;
+        alsoEl.style.right = Math.max(6, (gutter - alsoEl.offsetWidth) / 2) + 'px';
+      };
       const showResults = () => {
         arenaEl.classList.add('gone');
-        if (alsoEl) alsoEl.classList.add('show');
+        if (alsoEl) { placeAlsoRans(); alsoEl.classList.add('show'); }
       };
 
       const markRevealed = () => {
@@ -561,7 +573,7 @@
         rowEl.innerHTML = '';
         const pendingBtn = stage.querySelector('.ms-continue');
         if (pendingBtn) pendingBtn.remove();
-        if (alsoEl) alsoEl.classList.add('show');
+        if (alsoEl) { placeAlsoRans(); alsoEl.classList.add('show'); }
         podium.forEach((t, idx) => {
           const el = tierEls[idx];
           if (!el) return;

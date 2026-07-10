@@ -71,12 +71,15 @@
 
 /* ── The banner: slams center, then perches at the top ──────────────── */
 .ms-title {
-    position: relative; z-index: 20;
+    position: absolute; left: 0; right: 0; top: 38%; z-index: 20;
     display: flex; flex-direction: column; align-items: center; gap: 2px;
-    transition: transform 0.7s cubic-bezier(0.4,0,0.2,1), margin 0.7s cubic-bezier(0.4,0,0.2,1);
-    transform: scale(1.18);
+    transition: top 0.7s cubic-bezier(0.4,0,0.2,1), transform 0.7s cubic-bezier(0.4,0,0.2,1);
+    transform: translateY(-50%) scale(1.18);
+    pointer-events: none;
 }
-.ms-title.perched { transform: scale(0.62); margin-bottom: -1.4em; opacity: 0.96; }
+/* Perched: pinned near the very top, out of the podium's flow entirely —
+   the champion's crown can never collide with the banner again. */
+.ms-title.perched { top: clamp(20px, 5dvh, 36px); transform: translateY(0) scale(0.6); opacity: 0.96; }
 .ms-title-main {
     font-family: 'Cinzel', serif; font-weight: 900;
     letter-spacing: 0.18em;
@@ -292,7 +295,7 @@
    keeping the bottom clear so the podium, herald and banner never crowd
    each other on short screens. ─────────────────────────────────────── */
 .ms-alsoran {
-    position: absolute; right: clamp(8px, 2.6vw, 40px); top: 50%;
+    position: absolute; right: 12px; /* runtime-centered in the right gutter */ top: 50%;
     display: flex; flex-direction: column; align-items: center;
     gap: clamp(8px, 2.2dvh, 18px);
     z-index: 10;
@@ -632,7 +635,7 @@
 /* Herald / announcer line — pinned under the perched banner, where it can
    never collide with the lifted arena or the card row. */
 .ms-herald {
-    position: absolute; left: 0; right: 0; top: clamp(48px, 13dvh, 96px);
+    position: absolute; left: 0; right: 0; top: clamp(5px, 1.4dvh, 11px);
     min-height: 1.2em; text-align: center; z-index: 13;
     font-family: 'Cinzel', serif; font-style: italic; font-weight: 700;
     font-size: clamp(11px, 1.9dvh, 15px); letter-spacing: 0.04em;
@@ -667,7 +670,6 @@
    banner, podium, also-rans and hint all fit without overlap or scroll. */
 @media (max-height: 470px) {
     .ms-stage { gap: 5px; padding: 1dvh 3vw; }
-    .ms-title.perched { margin-bottom: -1.7em; }
     .ms-prestige { margin-top: 3px; }
     .ms-fighters { margin-bottom: 5px; }
     .ms-alsoran { gap: 10px; }
