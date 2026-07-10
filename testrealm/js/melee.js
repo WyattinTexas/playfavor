@@ -474,6 +474,20 @@
           void btn.offsetWidth;
           btn.classList.add('show');
           await waitContinue(15000); if (run.killed) return;
+          // Dismissed cards TUCK beside the fighter (mini overlapped strip),
+          // so everyone's evidence stays "kind of visible" through the battle.
+          const tuck = document.createElement('div');
+          tuck.className = 'ms-tuck';
+          Array.from(rowEl.querySelectorAll('.ms-rowitem img')).forEach((im, k) => {
+            const t = document.createElement('img');
+            t.className = 'ms-tuckcard';
+            t.src = im.src;
+            t.style.transitionDelay = (k * 55) + 'ms';
+            tuck.appendChild(t);
+          });
+          el.appendChild(tuck);
+          void tuck.offsetWidth;
+          tuck.querySelectorAll('.ms-tuckcard').forEach(t => t.classList.add('go'));
           rowEl.classList.add('out');
           await delay(300); if (run.killed) return;
           rowEl.innerHTML = '';

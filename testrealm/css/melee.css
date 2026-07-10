@@ -530,6 +530,30 @@
 }
 /* Modifier source cards read slightly cooler than base contributors */
 .ms-rowitem.mod img { border-color: rgba(201,168,76,0.5); }
+/* Dismissed rows TUCK beside the fighter — a mini overlapped strip so each
+   player's played evidence stays visible through the rest of the battle.
+   Absolutely positioned: never reflows the arena. Rides along (and fades)
+   with the fighter through the clash. */
+.ms-tuck {
+    position: absolute; top: calc(100% + 4px); left: 50%;
+    transform: translateX(-50%);
+    display: flex; justify-content: center;
+    z-index: 2; pointer-events: none;
+}
+.ms-tuckcard {
+    width: clamp(22px, 3.2vw, 32px); aspect-ratio: 5 / 7; height: auto;
+    border-radius: 3px; object-fit: cover;
+    border: 1px solid rgba(201,168,76,0.55);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+    margin-left: -9px;
+    opacity: 0; transform: translateY(8px) scale(0.55);
+    transition: opacity 0.3s ease, transform 0.35s cubic-bezier(0.2,1.2,0.35,1);
+}
+.ms-tuckcard:first-child { margin-left: 0; }
+.ms-tuckcard:nth-child(odd) { rotate: -3deg; }
+.ms-tuckcard:nth-child(even) { rotate: 2.5deg; }
+.ms-tuckcard.go { opacity: 1; transform: none; }
+
 /* The character-board tile leads the row with a caption */
 .ms-rowitem.board img { border-color: rgba(201,168,76,0.55); filter: saturate(0.92); }
 .ms-rowcap {

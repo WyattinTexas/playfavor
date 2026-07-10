@@ -6,11 +6,11 @@
 <title>FAVOR — Melee Reveal Preview</title>
 <!-- ?v= stamped by the deploy bump (same as index.html) — without it, GitHub
      Pages' ~10-min cache serves STALE js/css here and fixes look unshipped. -->
-<link rel="stylesheet" href="../css/style.css?v=20260710132114">
+<link rel="stylesheet" href="../css/style.css?v=20260710141334">
 <!-- Melee cinematic styling lives in its own file since the testrealm GAME was
      reset to the testrealm2 build (whose style.css has a different .ms-* splash).
      Loaded AFTER style.css so these .ms-* rules win here in the preview. -->
-<link rel="stylesheet" href="../css/melee.css?v=20260710132114">
+<link rel="stylesheet" href="../css/melee.css?v=20260710141334">
 <style>
   html, body { margin: 0; height: 100%; background: #140a04; font-family: 'Cinzel', serif; }
   .pv-bar {
@@ -27,16 +27,30 @@
   .pv-btn:hover { color: #fff4d2; border-color: #e8d48b; background: rgba(201,168,76,0.2); }
   .pv-btn.on { background: rgba(201,168,76,0.28); color: #fff4d2; }
   .pv-note { color: rgba(201,168,76,0.7); font-size: 11px; }
+  /* The toolbar is a DRAWER so the stage can be tested full-screen on a
+     phone: it slides away, leaving only the ⚙ handle. Starts closed on
+     short (landscape-phone) viewports. */
+  .pv-bar { transition: transform 0.25s ease, opacity 0.25s ease; }
+  .pv-bar.closed { transform: translateY(-105%); opacity: 0; pointer-events: none; }
+  .pv-toggle {
+    position: fixed; top: 8px; left: 10px; z-index: 20001;
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; color: #e8d48b; cursor: pointer;
+    background: rgba(10,5,2,0.75); border: 1px solid rgba(201,168,76,0.45);
+  }
+  .pv-toggle:hover { color: #fff4d2; border-color: #e8d48b; }
   /* The overlay lives here just like #meleeSplash does in the game. */
   #meleeSplash { }
-  /* The preview toolbar covers the stage's top edge — drop the Skip chip
-     below it (in-game there is no toolbar). */
-  #meleeSplash .ms-skip { top: 104px; }
+  /* Skip chip clears the drawer only while it's open (in-game: no toolbar). */
+  #meleeSplash .ms-skip { top: 10px; }
+  body.pv-open #meleeSplash .ms-skip { top: 104px; }
 </style>
 </head>
 <body>
 
-  <div class="pv-bar">
+  <button class="pv-toggle" id="pvToggle" title="Show/hide test controls">⚙</button>
+  <div class="pv-bar" id="pvBar">
     <b>Melee Preview</b>
     <button class="pv-btn on" data-count="3">3 Players</button>
     <button class="pv-btn" data-count="4">4 Players</button>
@@ -55,7 +69,7 @@
 
   <div id="meleeSplash"></div>
 
-  <script src="../js/melee.js?v=20260710132114"></script>
+  <script src="../js/melee.js?v=20260710141334"></script>
   <script>
     // Mock data mirrors the engine's resolveMelee() output shape exactly:
     // { playerIndex, name, power, placement, prestige }, sorted power-desc.
@@ -203,6 +217,16 @@
     document.getElementById('pvSap').onclick = (e) => { sapFx = !sapFx; e.target.classList.toggle('on', sapFx); play(); };
     document.getElementById('pvCards').onclick = (e) => { cardsFx = !cardsFx; e.target.classList.toggle('on', cardsFx); play(); };
     document.getElementById('pvReplay').onclick = play;
+
+    // Drawer: starts closed on landscape-phone-sized screens so the stage can
+    // be judged full-bleed; the ⚙ handle toggles it any time.
+    const pvBar = document.getElementById('pvBar');
+    const setDrawer = (open) => {
+      pvBar.classList.toggle('closed', !open);
+      document.body.classList.toggle('pv-open', open);
+    };
+    document.getElementById('pvToggle').onclick = () => setDrawer(pvBar.classList.contains('closed'));
+    setDrawer(!matchMedia('(max-height: 540px)').matches);
 
     play();
   </script>
