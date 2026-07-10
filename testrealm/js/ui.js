@@ -4342,7 +4342,11 @@ function showMeleeSplash(results, actNum) {
         },
         breakdownFor: (pi) => (typeof game.powerBreakdown === 'function' ? game.powerBreakdown(pi) : null),
         // Mission cards live in their own art folder.
-        cardImgFor: (filename, mission) => (filename ? `assets/cards/${mission ? 'missions' : 'regular'}/${filename}` : null)
+        cardImgFor: (filename, mission) => (filename ? `assets/cards/${mission ? 'missions' : 'regular'}/${filename}` : null),
+        // Physical prestige token art by denomination (25 lacks the "Copy of" prefix).
+        prestigeTokenFor: (d) => (d === 25
+            ? 'assets/tokens/Tokens_Design_v1_Prestige_25_v1.jpg'
+            : `assets/tokens/Copy of Tokens_Design_v1_Prestige_${d}_v1.jpg`)
         // sapFx / cardsFx / herald default on; autoClose uses the built-in fallback
     });
 }

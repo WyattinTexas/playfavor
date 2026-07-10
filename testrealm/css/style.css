@@ -5191,33 +5191,78 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     100% { opacity: 0; clip-path: inset(0 0 0 0); }
 }
 
-/* Power cards presented into the meter during the base forge — each rises
-   BIG above its fighter, holds long enough to actually read, then dives
-   into the Power bar. Sized off viewport WIDTH, not dvh — 10dvh collapsed
-   to ~39px on landscape phones, which is why the cards read as thumbnails. */
-.ms-flycard {
-    position: absolute; z-index: 11;
-    width: clamp(88px, 13vw, 170px); aspect-ratio: 5 / 7; height: auto;
+/* ── The card row — a fighter's power contributors laid on the table ──
+   Cards (and power missions) deal in one at a time and STAY, readable, until
+   the player dismisses the row (Continue ▸ / tap). Sized off viewport WIDTH,
+   not dvh — dvh collapsed to thumbnails on landscape phones. */
+.ms-cardrow {
+    position: absolute; left: 0; right: 0; bottom: clamp(28px, 7dvh, 54px);
+    display: flex; align-items: center; justify-content: center;
+    gap: clamp(8px, 1.6vw, 16px);
+    z-index: 12; pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+.ms-cardrow.out { opacity: 0; }
+.ms-rowcard {
+    width: clamp(84px, 12vw, 150px); aspect-ratio: 5 / 7; height: auto;
     border-radius: 7px; object-fit: cover;
     border: 2px solid rgba(232,212,139,0.8);
-    box-shadow: 0 10px 28px rgba(0,0,0,0.75), 0 0 24px rgba(201,168,76,0.4);
-    opacity: 0; transform: translate(-50%, -50%) translateY(18px) scale(0.55) rotate(-4deg);
-    pointer-events: none;
+    box-shadow: 0 8px 22px rgba(0,0,0,0.7), 0 0 18px rgba(201,168,76,0.35);
+    opacity: 0; transform: translateY(20px) scale(0.6);
 }
-/* 2.3s per card: quick rise, a LONG readable hold (~1.4s), then the dive.
-   Anchored on the portrait center so it fits short landscape-phone screens. */
-.ms-flycard.go { animation: msFlyCard 2.3s cubic-bezier(0.4,0,0.6,1) forwards; }
-@keyframes msFlyCard {
-    0%   { opacity: 0; transform: translate(-50%, -50%) translateY(18px) scale(0.55) rotate(-4deg); }
-    10%  { opacity: 1; transform: translate(-50%, -50%) translateY(-4px) scale(1)    rotate(-1deg); }
-    70%  { opacity: 1; transform: translate(-50%, -50%) translateY(-7px) scale(1)    rotate(1deg); }   /* the read */
-    94%  { opacity: 0.85; }
-    100% { opacity: 0; transform: translate(calc(-50% + var(--dx,0)), calc(-50% + var(--dy,0))) scale(0.1) rotate(8deg); }
-}
+.ms-rowcard.go { animation: msRowCardIn 0.55s cubic-bezier(0.2,1.3,0.35,1) forwards; }
+@keyframes msRowCardIn { to { opacity: 1; transform: none; } }
+/* While the row is on the table, the arena lifts so meters stay visible */
+.ms-arena { transition: padding 0.45s ease, opacity 0.45s ease; }
+.ms-arena.spot { padding-bottom: clamp(96px, 26dvh, 190px); }
 
-/* Herald / announcer line */
+.ms-continue {
+    pointer-events: auto; align-self: center;
+    font-family: 'Cinzel', serif; font-weight: 700; letter-spacing: 0.08em;
+    font-size: clamp(11px, 1.9dvh, 14px);
+    color: #2a1a0e;
+    background: linear-gradient(180deg, #f4e2a4, #c9a84c);
+    border: 1px solid #8b6914; border-radius: 20px;
+    padding: 9px 18px; cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 16px rgba(201,168,76,0.35);
+    opacity: 0; transform: translateY(8px);
+}
+.ms-continue.show { animation: msFadeUp 0.4s ease 0.15s forwards; }
+.ms-continue:hover { background: linear-gradient(180deg, #fff4d2, #d9b85e); }
+
+.ms-skip {
+    position: absolute; top: max(8px, 2dvh); right: 12px; z-index: 30;
+    font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(201,168,76,0.75);
+    border: 1px solid rgba(201,168,76,0.4); border-radius: 14px;
+    padding: 4px 11px; cursor: pointer;
+    background: rgba(0,0,0,0.35);
+}
+.ms-skip:hover { color: #ffe9ad; border-color: #ffe9ad; }
+
+/* Prestige paid in the physical token art (round gold/blue tokens) */
+.ms-prestige.tokens {
+    display: flex; align-items: center; gap: 3px;
+    background: none; border: none; padding: 2px 0;
+}
+.ms-ptoken-plus {
+    font-family: 'Cinzel', serif; font-weight: 900;
+    font-size: clamp(13px, 2.1dvh, 17px); color: #ffe9ad;
+    text-shadow: 0 0 8px rgba(201,168,76,0.6); margin-right: 1px;
+}
+.ms-ptoken {
+    width: clamp(22px, 3.8dvh, 34px); height: clamp(22px, 3.8dvh, 34px);
+    border-radius: 50%; object-fit: cover;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.55), 0 0 10px rgba(201,168,76,0.35);
+}
+.ms-tier.champ .ms-ptoken { width: clamp(26px, 4.6dvh, 40px); height: clamp(26px, 4.6dvh, 40px); }
+
+/* Herald / announcer line — pinned under the perched banner, where it can
+   never collide with the lifted arena or the card row. */
 .ms-herald {
-    min-height: 1.2em; margin-top: 4px; text-align: center; z-index: 12;
+    position: absolute; left: 0; right: 0; top: clamp(48px, 13dvh, 96px);
+    min-height: 1.2em; text-align: center; z-index: 13;
     font-family: 'Cinzel', serif; font-style: italic; font-weight: 700;
     font-size: clamp(11px, 1.9dvh, 15px); letter-spacing: 0.04em;
     color: #e8d48b; text-shadow: 0 0 12px rgba(201,168,76,0.4), 0 2px 3px rgba(0,0,0,0.7);

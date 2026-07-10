@@ -1,23 +1,31 @@
 /**
  * FAVOR — Melee battle & coronation cinematic.
  *
- * Four acts:
- *   1. ARENA  — every heir strides into the ring, facing center (VS).
- *   2. FORGE  — each fighter's Power assembles from their played cards, with
- *               modifiers firing as combat hits (×2 surges, −3 saps, coin +4).
+ * Player-paced battle in four acts:
+ *   1. ARENA  — every heir strides into the ring (VS roll-call).
+ *   2. FORGE  — one fighter at a time under the spotlight: their power
+ *               contributors (cards AND missions) deal into a persistent row
+ *               at the bottom of the stage, the meter climbing by each card's
+ *               exact amount as it lands. Modifiers fire as combat hits (live
+ *               coin toss, ×2 surges, cross-fighter saps). The row STAYS on
+ *               screen until dismissed (Continue button / tap), then the
+ *               stage moves to the next fighter.
  *   3. CLASH  — all charge the center; one collision resolves the field.
- *   4. PODIUM — the three who earned Prestige ascend; the champion is crowned
- *               (rays + laurels + synthesised fanfare). The rest remain as the
- *               defeated court.
+ *   4. PODIUM — the three who earned Prestige ascend; placements pay in
+ *               PRESTIGE TOKENS (the physical game's token art), the champion
+ *               is crowned (rays + laurels + fanfare). Losers remain as the
+ *               defeated court. A "Skip ▸▸" chip jumps to the result at any
+ *               time; tap on the result continues.
  *
  * playMeleeCinematic(host, results, actNum, opts) → Promise (resolves on continue)
  *   results : [{ playerIndex, name, power, placement, prestige }]  (power-desc)
- *   opts    : { speed, portraitFor(pi)→url, powerIcon, sound,
- *               breakdownFor(pi)→{ base, baseCards, steps:[{kind,label,amount}] } }
+ *   opts    : { speed, portraitFor(pi), powerIcon, sound, sapFx, cardsFx,
+ *               herald, autoCloseMs, breakdownFor(pi), cardImgFor(filename,
+ *               mission)→url, prestigeTokenFor(denom)→url }
  *
  * Self-contained (no ui.js deps) so tools/melee-preview.html can drive it.
- * The Forge meters LOCK to results.power (authoritative) — breakdown steps only
- * pace the fill and add flourish, so a rare drift never shows a wrong total.
+ * The meters LOCK to results.power (authoritative) — breakdowns only pace
+ * the reveal, so a drifting step can never show a wrong total.
  */
 (function () {
   'use strict';
@@ -25,6 +33,14 @@
   const ACTS = ['I', 'II', 'III'];
   const ORD = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
   const POS = ['p-center', 'p-left', 'p-right'];
+
+  // Physical prestige token denominations, largest first.
+  const TOKEN_DENOMS = [25, 10, 5, 1];
+  const tokenSplit = (n) => {
+    const out = [];
+    TOKEN_DENOMS.forEach(d => { while (n >= d) { out.push(d); n -= d; } });
+    return out;
+  };
 
   // ── Heraldry ──────────────────────────────────────────────────────────
   const CROWN_SVG = `
@@ -51,7 +67,7 @@
       </g>
     </svg>`;
 
-  // ── Synthesised coronation fanfare (Web Audio — no asset, offline) ─────
+  // ── Synthesised audio (no assets, offline) ─────────────────────────────
   let _actx = null;
   function audioCtx() {
     if (_actx) { if (_actx.state === 'suspended') _actx.resume().catch(() => {}); return _actx; }
@@ -88,7 +104,6 @@
     [C4, E4, G4, C5, E5, G5, C6].forEach(f => note(f, 0.42, 1.5, 0.12));
     note(C3, 0.42, 1.6, 0.34);
   }
-  // Short metallic tick for a Forge combat hit.
   function playHit(kind) {
     const ctx = audioCtx();
     if (!ctx) return;
@@ -107,10 +122,8 @@
   }
 
   function playMeleeCinematic(host, results, actNum, opts) {
-    // Cancel any prior run still animating on this host — otherwise its timers
-    // (auto-close wiping the DOM, scheduled hit/fanfare sounds) keep firing and
-    // clobber the fresh run. This is what let a speed change blank the cards
-    // while the old run's noises played on.
+    // Cancel any prior run still animating on this host — its timers would
+    // clobber the fresh run (auto-close wiping DOM, scheduled sounds).
     if (host && host._meleeCancel) { try { host._meleeCancel(); } catch (e) {} }
     return new Promise((resolve) => {
       opts = opts || {};
@@ -119,13 +132,12 @@
       const powerIcon = opts.powerIcon || 'assets/icons/power.png';
       const breakdownFor = opts.breakdownFor || null;
       const cardImgFor = opts.cardImgFor || (() => null);
+      const prestigeTokenFor = opts.prestigeTokenFor || null;
       const fallback = 'assets/ui/cover.jpg';
       const soundOn = opts.sound !== false;
-      const sapFx = opts.sapFx !== false;        // cross-fighter sap streak
-      const cardsFx = opts.cardsFx !== false;    // cards fly into the meter
-      const heraldOn = opts.herald !== false;    // announcer line
-      // ms to linger after the reveal before auto-continuing; 0/false = wait
-      // for a tap (used by the preview so it never vanishes on its own).
+      const sapFx = opts.sapFx !== false;
+      const cardsFx = opts.cardsFx !== false;
+      const heraldOn = opts.herald !== false;
       const autoCloseMs = (opts.autoCloseMs == null) ? 9000 : opts.autoCloseMs;
       const maxPower = Math.max(1, ...results.map(r => r.power || 0));
 
@@ -140,7 +152,7 @@
       const alsoRans = [];
       tiers.slice(3).forEach(t => t.members.forEach(m => alsoRans.push(m)));
 
-      // Arena combatants in seating order (so the Forge, not the layout,
+      // Arena combatants in seating order (the Forge, not the layout,
       // reveals who is strongest).
       const combatants = results.slice().sort((a, b) => a.playerIndex - b.playerIndex);
 
@@ -156,6 +168,19 @@
           <div class="ms-cb-power"><img src="${powerIcon}" alt="Power"><b>0</b></div>
           <div class="ms-cb-meter"><div class="ms-cb-fill"></div></div>
         </div>`;
+
+      // Prestige paid in the physical game's tokens (greedy 25/10/5/1);
+      // text pill fallback if no token art is wired.
+      const prestigeHTML = (amount) => {
+        if (!amount) return `<div class="ms-prestige" style="visibility:hidden">·</div>`;
+        if (prestigeTokenFor) {
+          const toks = tokenSplit(amount)
+            .map(d => `<img class="ms-ptoken" src="${prestigeTokenFor(d)}" alt="${d} Prestige">`)
+            .join('');
+          return `<div class="ms-prestige tokens"><span class="ms-ptoken-plus">+</span>${toks}</div>`;
+        }
+        return `<div class="ms-prestige">+${amount} Prestige</div>`;
+      };
 
       const fighterHTML = (r, champ) => `
         <div class="ms-fighter" data-power="${r.power || 0}">
@@ -173,7 +198,7 @@
         const champ = podiumIdx === 0;
         return `<div class="ms-tier ${POS[podiumIdx]}${champ ? ' champ' : ''}">
           <div class="ms-fighters">${t.members.map(m => fighterHTML(m, champ)).join('')}</div>
-          ${t.prestige ? `<div class="ms-prestige">+${t.prestige} Prestige</div>` : `<div class="ms-prestige" style="visibility:hidden">·</div>`}
+          ${prestigeHTML(t.prestige)}
           <div class="ms-plinth"><span class="ms-numeral">${t.placement}</span></div>
         </div>`;
       };
@@ -197,11 +222,11 @@
       const embers = Array.from({ length: 16 }, () => {
         const left = Math.round(Math.random() * 100);
         const dur = (3 + Math.random() * 3.4).toFixed(2);
-        const delay = (Math.random() * 4).toFixed(2);
+        const del = (Math.random() * 4).toFixed(2);
         const drift = Math.round((Math.random() - 0.5) * 60);
         const size = (3 + Math.random() * 3).toFixed(1);
         return `<span class="ms-ember" style="left:${left}%;width:${size}px;height:${size}px;
-                --drift:${drift}px;animation-duration:${dur}s;animation-delay:${delay}s"></span>`;
+                --drift:${drift}px;animation-duration:${dur}s;animation-delay:${del}s"></span>`;
       }).join('');
 
       host.innerHTML = `
@@ -215,7 +240,9 @@
           <div class="ms-arena">${combatants.map(combatantHTML).join('')}</div>
           <div class="ms-podium">${visual.join('')}</div>
           ${alsoHTML}
+          <div class="ms-cardrow"></div>
           <div class="ms-herald"></div>
+          <div class="ms-skip">Skip ▸▸</div>
           <div class="ms-flash"></div>
           <div class="ms-hint">Tap to continue</div>
         </div>`;
@@ -225,6 +252,8 @@
       const titleEl = host.querySelector('.ms-title');
       const arenaEl = host.querySelector('.ms-arena');
       const alsoEl = host.querySelector('.ms-alsoran');
+      const rowEl = host.querySelector('.ms-cardrow');
+      const skipEl = host.querySelector('.ms-skip');
       const flashEl = host.querySelector('.ms-flash');
       const hintEl = host.querySelector('.ms-hint');
       const heraldEl = host.querySelector('.ms-herald');
@@ -237,15 +266,20 @@
       const timers = [];
       const run = { killed: false };
       let state = 'playing';
-      const after = (ms, fn) => timers.push(setTimeout(() => { if (!run.killed) fn(); }, ms * speed));
+      let advanceTap = null;   // pending "Continue" resolver during the forge
 
-      // Let a later run (e.g. a speed re-trigger) stop this one cleanly:
-      // kill its guard, clear its pending timers, and settle its promise.
       host._meleeCancel = () => {
         run.killed = true;
         timers.forEach(clearTimeout); timers.length = 0;
         resolve();
       };
+
+      const delay = (ms) => new Promise(res => timers.push(setTimeout(res, ms * speed)));
+      const waitContinue = (fallbackMs) => new Promise(res => {
+        const done = () => { if (advanceTap === done) advanceTap = null; res(); };
+        advanceTap = done;
+        timers.push(setTimeout(done, fallbackMs * speed));   // never stall unattended
+      });
 
       const tickNumber = (b, target, dur) => {
         if (!b) return;
@@ -281,7 +315,7 @@
         }
       };
 
-      // ── Herald / announcer line ─────────────────────────────────────
+      // ── Herald / announcer ──────────────────────────────────────────
       const heraldSay = (text) => {
         if (!heraldOn || !heraldEl) return;
         heraldEl.classList.remove('show');
@@ -291,11 +325,11 @@
       };
       const championLine = () => {
         const cn = (podium[0] && podium[0].members[0] && podium[0].members[0].name) || 'The champion';
-        const verb = /^you$/i.test(cn) ? 'are' : 'is';   // "You are", not "You is"
+        const verb = /^you$/i.test(cn) ? 'are' : 'is';
         return `${cn} ${verb} crowned champion of Act ${ACTS[actNum - 1] || actNum}!`;
       };
 
-      // ── FORGE helpers ───────────────────────────────────────────────
+      // ── Combat FX ───────────────────────────────────────────────────
       const showCallout = (hostEl, step, textOverride) => {
         const badge = document.createElement('div');
         badge.className = 'ms-callout ' + step.kind;
@@ -304,15 +338,13 @@
                   : (step.amount > 0 ? '+' + step.amount : '' + step.amount);
         badge.innerHTML = `<b>${big}</b><span>${step.label || ''}</span>`;
         hostEl.appendChild(badge);
-        void badge.offsetWidth;            // paint the from-state, then animate
+        void badge.offsetWidth;
         badge.classList.add('go');
         setTimeout(() => badge.remove(), 1150 * speed);
       };
 
       const bump = (el) => { el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); };
 
-      // A coin that spins and lands on its real face (heads = won).
-      // The toss runs ~1.5s — long enough to hold your breath over.
       const flipCoin = (hostEl, won) => {
         const coin = document.createElement('div');
         coin.className = 'ms-coin';
@@ -323,7 +355,6 @@
         setTimeout(() => coin.remove(), 2200 * speed);
       };
 
-      // A sap projectile streaking from caster → victim.
       const sapStreak = (fromPi, toEl) => {
         const fromEl = combatantEls.find(e => +e.dataset.pi === fromPi);
         if (!fromEl || fromEl === toEl) return;
@@ -343,47 +374,18 @@
         setTimeout(() => streak.remove(), 640 * speed);
       };
 
-      // One card image rising above the fighter — held big and readable for a
-      // beat (players should SEE which power card this is) — then diving into
-      // the meter. The fighter bumps as it lands.
-      const spawnFlyCard = (el, url) => {
-        const meter = el.querySelector('.ms-cb-meter');
-        if (!meter) return;
-        const h = stage.getBoundingClientRect();
-        const m = meter.getBoundingClientRect();
-        // Anchor at the PORTRAIT's center — the card holds right over the
-        // fighter (it IS the focus during the read). Holding it above the
-        // fighter clipped the top of short landscape-phone screens.
-        const pw = el.querySelector('.ms-cb-portrait-wrap') || el;
-        const p = pw.getBoundingClientRect();
-        const sx = p.left - h.left + p.width / 2, sy = p.top - h.top + p.height / 2;
-        const mx = m.left - h.left + m.width / 2, my = m.top - h.top + m.height / 2;
-        const fc = document.createElement('img');
-        fc.className = 'ms-flycard'; fc.src = url; fc.onerror = () => fc.remove();
-        fc.style.left = sx + 'px'; fc.style.top = sy + 'px';
-        fc.style.setProperty('--dx', (mx - sx) + 'px');
-        fc.style.setProperty('--dy', (my - sy) + 'px');
-        stage.appendChild(fc);
-        void fc.offsetWidth; fc.classList.add('go');
-        setTimeout(() => fc.remove(), 2500 * speed);
-        // The landing beat (meter step + bump) is scheduled by the caller,
-        // which knows this card's power amount.
-      };
-
-      // ── FORGE: assemble one fighter's Power, return its end time ─────
-      const scheduleForge = (el, c, start) => {
+      // ── FORGE: one fighter's full story, player-paced ────────────────
+      const runFighter = async (i) => {
+        const el = combatantEls[i], c = combatants[i];
         const fill = el.querySelector('.ms-cb-fill');
         const b = el.querySelector('.ms-cb-power b');
         const calloutHost = el.querySelector('.ms-cb-callout');
         const bd = (breakdownFor && breakdownFor(c.playerIndex)) || { base: c.power || 0, steps: [] };
         const setFill = (v) => { if (fill) fill.style.width = Math.round(Math.max(0, v) / maxPower * 100) + '%'; };
-        let t = start;
 
-        // The cards ARE the arithmetic: only actual power contributors appear
-        // (played cards and missions, each carrying its amount), and the meter
-        // climbs by exactly that amount as each one lands. Contributors with
-        // no art fold into the opening fill so the number never lies. The
-        // opening fill itself is the character board's slot power (baseOther).
+        // Only actual power contributors appear (cards AND missions, each
+        // carrying its amount). Art-less contributors fold into the opening
+        // fill so the number never lies; opening fill = board-slot share.
         const visCards = [];
         if (cardsFx) {
           (bd.baseCards || []).slice(0, 4).forEach(cd => {
@@ -391,76 +393,90 @@
             if (url) visCards.push({ url, amount: cd.amount });
           });
         }
-        const baseStart = Math.max(0, (bd.base || 0) - visCards.reduce((a, c) => a + c.amount, 0));
+        const baseStart = Math.max(0, (bd.base || 0) - visCards.reduce((a, x) => a + x.amount, 0));
         let running = baseStart;
 
-        after(t, () => {
-          el.classList.add('forging', 'active');   // the stage lights this fighter
-          setFill(baseStart);
-          tickNumber(b, baseStart, 500);
-        });
-        // Deal the contributors one at a time — each holds ~1.4s for the read,
-        // the next rises as it dives, and the meter steps up on every landing.
-        // (Tracked timers, not a nested setTimeout — that failed to schedule
-        // under virtual time.)
-        visCards.forEach((vc, i) => {
-          const spawnAt = t + 150 + i * 1700;
-          after(spawnAt, () => spawnFlyCard(el, vc.url));
-          after(spawnAt + 2250, () => {                    // the dive lands
-            running = Math.max(0, running + vc.amount);
-            setFill(running); tickNumber(b, running, 340);
-            bump(el);
-            if (soundOn) playHit('bonus');
-          });
-        });
-        // Base dwell covers the whole parade (last card's landing + a beat).
-        t += visCards.length ? (visCards.length * 1700 + 950) : 820;
+        el.classList.add('forging', 'active');   // the stage lights this fighter
+        setFill(baseStart);
+        tickNumber(b, baseStart, 500);
+        await delay(750); if (run.killed) return;
 
-        (bd.steps || []).forEach(step => {
-          const at = t;
+        // Deal each contributor into the persistent row; the meter climbs by
+        // exactly that card's amount as it lands.
+        for (const vc of visCards) {
+          const card = document.createElement('img');
+          card.className = 'ms-rowcard';
+          card.src = vc.url;
+          card.onerror = () => card.remove();
+          rowEl.appendChild(card);
+          void card.offsetWidth;
+          card.classList.add('go');
+          running = Math.max(0, running + vc.amount);
+          setFill(running); tickNumber(b, running, 340);
+          bump(el);
+          if (soundOn) playHit('bonus');
+          await delay(950); if (run.killed) return;
+        }
+
+        // Modifiers land as combat hits.
+        for (const step of (bd.steps || [])) {
           if (step.kind === 'coinflip') {
-            // Toss… (long spin, hold your breath) …land, beat, then the result.
-            after(at, () => { flipCoin(calloutHost, step.won); if (soundOn) playHit('coin'); });
-            after(at + 1750, () => {
-              if (soundOn) playHit(step.won ? 'mult' : 'debuff');
-              if (step.won) {
-                running = Math.max(0, running + step.amount);
-                setFill(running); tickNumber(b, running, 380);
-                showCallout(calloutHost, { kind: 'coin', label: step.label, amount: step.amount });
-                bump(el);
-                sparkBurst(el, 6, 0.2);
-              } else {
-                showCallout(calloutHost, { kind: 'miss', label: step.label }, 'Tails');
-              }
-            });
-            t += 2450;
-            return;
+            flipCoin(calloutHost, step.won);
+            if (soundOn) playHit('coin');
+            await delay(1750); if (run.killed) return;
+            if (soundOn) playHit(step.won ? 'mult' : 'debuff');
+            if (step.won) {
+              running = Math.max(0, running + step.amount);
+              setFill(running); tickNumber(b, running, 380);
+              showCallout(calloutHost, { kind: 'coin', label: step.label, amount: step.amount });
+              bump(el);
+              sparkBurst(el, 6, 0.2);
+            } else {
+              showCallout(calloutHost, { kind: 'miss', label: step.label }, 'Tails');
+            }
+            await delay(700); if (run.killed) return;
+            continue;
           }
           const sapping = step.kind === 'debuff' && sapFx && step.from != null;
-          if (sapping) after(at, () => sapStreak(step.from, el));
-          after(at + (sapping ? 380 : 0), () => {
-            showCallout(calloutHost, step);
-            if (soundOn) playHit(step.kind);
-            running = step.kind === 'mult' ? running * step.amount : running + step.amount;
-            running = Math.max(0, running);
-            setFill(running); tickNumber(b, running, 380);
-            bump(el);
-            if (step.kind === 'mult') sparkBurst(el, 8, 0.3);
-          });
-          t += sapping ? 1050 : 700;
-        });
+          if (sapping) { sapStreak(step.from, el); await delay(380); if (run.killed) return; }
+          showCallout(calloutHost, step);
+          if (soundOn) playHit(step.kind);
+          running = step.kind === 'mult' ? running * step.amount : running + step.amount;
+          running = Math.max(0, running);
+          setFill(running); tickNumber(b, running, 380);
+          bump(el);
+          if (step.kind === 'mult') sparkBurst(el, 8, 0.3);
+          await delay(700); if (run.killed) return;
+        }
 
-        // Lock to the authoritative total, hand the stage to the next fighter.
-        after(t, () => {
-          setFill(c.power || 0);
-          if (b) b.textContent = c.power || 0;
-          el.classList.add('locked'); el.classList.remove('forging', 'active');
-          heraldSay(`${c.name}: ${c.power || 0} Power!`);
-        });
-        return t + 350;
+        // Lock to the authoritative total; the herald calls it.
+        setFill(c.power || 0);
+        if (b) b.textContent = c.power || 0;
+        el.classList.add('locked'); el.classList.remove('forging');
+        heraldSay(`${c.name}: ${c.power || 0} Power!`);
+
+        // The row STAYS until dismissed — Continue button or a tap anywhere.
+        // (Generous fallback so an unattended melee never stalls.)
+        if (visCards.length) {
+          const btn = document.createElement('button');
+          btn.className = 'ms-continue';
+          btn.textContent = 'Continue ▸';
+          btn.onclick = (e) => { e.stopPropagation(); if (advanceTap) advanceTap(); };
+          rowEl.appendChild(btn);
+          void btn.offsetWidth;
+          btn.classList.add('show');
+          await waitContinue(15000); if (run.killed) return;
+          rowEl.classList.add('out');
+          await delay(300); if (run.killed) return;
+          rowEl.innerHTML = '';
+          rowEl.classList.remove('out');
+        } else {
+          await delay(650); if (run.killed) return;
+        }
+        el.classList.remove('active');            // stage light moves on
       };
 
-      // ── CLASH: everyone converges on the center ─────────────────────
+      // ── CLASH ───────────────────────────────────────────────────────
       const doClash = () => {
         const arect = arenaEl.getBoundingClientRect();
         const cx = arect.left + arect.width / 2;
@@ -509,13 +525,17 @@
       const markRevealed = () => {
         if (state !== 'playing') return;
         state = 'revealed';
+        skipEl.style.display = 'none';
         hintEl.classList.add('show');
       };
-      const finalize = () => {                 // tap-to-skip → jump to result
+      const finalize = () => {                 // Skip ▸▸ → jump to the result
         run.killed = true;
         timers.forEach(clearTimeout); timers.length = 0;
+        advanceTap = null;
         titleEl.classList.add('perched');
         arenaEl.classList.add('gone');
+        arenaEl.classList.remove('spot');
+        rowEl.innerHTML = '';
         if (alsoEl) alsoEl.classList.add('show');
         podium.forEach((t, idx) => {
           const el = tierEls[idx];
@@ -525,6 +545,7 @@
           fillTier(el, true);
         });
         heraldSay(championLine());
+        skipEl.style.display = 'none';
         hintEl.classList.add('show');
         state = 'revealed';
       };
@@ -532,50 +553,61 @@
         if (state === 'closed') return;
         state = 'closed'; run.killed = true;
         timers.forEach(clearTimeout);
-        if (host._meleeCancel) host._meleeCancel = null;   // this run is done
+        if (host._meleeCancel) host._meleeCancel = null;
         host.classList.remove('active'); host.onclick = null;
         setTimeout(() => { host.innerHTML = ''; resolve(); }, 320 * speed);
       };
+
+      // Taps: during the forge a tap advances (same as Continue); on the
+      // result a tap closes. Skip ▸▸ jumps straight to the result.
       host.onclick = () => {
-        if (state === 'playing') finalize();
-        else if (state === 'revealed') close();
+        if (state === 'revealed') { close(); return; }
+        if (state === 'playing' && advanceTap) advanceTap();
       };
+      skipEl.onclick = (e) => { e.stopPropagation(); if (state === 'playing') finalize(); };
 
-      // ── Timeline ────────────────────────────────────────────────────
-      after(950, () => titleEl.classList.add('perched'));
+      // ── The show (async driver — forge beats are player-paced) ───────
+      (async () => {
+        await delay(950); if (run.killed) return;
+        titleEl.classList.add('perched');
 
-      // Arena roll-call — each heir gets their own entrance beat.
-      const rollStart = 1080;
-      combatantEls.forEach((el, i) => after(rollStart + i * 260, () => el.classList.add('in')));
-      after(rollStart + 120, () => heraldSay(`${combatants.length} heirs enter the arena — let the Melee begin!`));
+        // Roll-call
+        heraldSay(`${combatants.length} heirs enter the arena — let the Melee begin!`);
+        for (const el of combatantEls) {
+          el.classList.add('in');
+          await delay(260); if (run.killed) return;
+        }
+        await delay(400); if (run.killed) return;
 
-      // Forge — strictly ONE fighter at a time: each starts only after the
-      // previous locks, so a single card parade is ever on stage and the
-      // addition can actually be followed. The arena spotlights the active
-      // fighter (.spot dims the rest).
-      const forgeStart = rollStart + combatants.length * 260 + 550;
-      after(forgeStart - 50, () => arenaEl.classList.add('spot'));
-      let cursor = forgeStart;
-      combatantEls.forEach((el, i) => {
-        cursor = scheduleForge(el, combatants[i], cursor) + 150;
-      });
-      const forgeEnd = cursor;
-      after(forgeEnd, () => arenaEl.classList.remove('spot'));
+        // Forge — strictly one fighter at a time under the spotlight.
+        arenaEl.classList.add('spot');
+        await delay(350); if (run.killed) return;
+        for (let i = 0; i < combatantEls.length; i++) {
+          await runFighter(i); if (run.killed) return;
+        }
+        arenaEl.classList.remove('spot');
 
-      // Clash → resolve (a breath of stillness first — everyone armed)
-      const clashAt = forgeEnd + 650;
-      after(clashAt - 550, () => heraldSay('They clash for the crown!'));
-      after(clashAt, doClash);
+        // Clash
+        heraldSay('They clash for the crown!');
+        await delay(750); if (run.killed) return;
+        doClash();
+        await delay(700); if (run.killed) return;
 
-      // Podium coronation (rises out of the settling dust)
-      const podiumStart = clashAt + 700;
-      after(podiumStart, showResults);
-      after(podiumStart + 350, () => revealTier(2, false));
-      after(podiumStart + 1350, () => revealTier(1, false));
-      after(podiumStart + 2400, () => revealTier(0, true));
-      after(podiumStart + 3400, markRevealed);
-      // Auto-continue only if enabled (preview disables it so it waits for a tap).
-      if (autoCloseMs) after(podiumStart + 3400 + autoCloseMs, () => { if (state !== 'closed') close(); });
+        // Coronation
+        showResults();
+        await delay(350); if (run.killed) return;
+        revealTier(2, false);
+        await delay(1000); if (run.killed) return;
+        revealTier(1, false);
+        await delay(1050); if (run.killed) return;
+        revealTier(0, true);
+        await delay(1000); if (run.killed) return;
+        markRevealed();
+        if (autoCloseMs) {
+          await delay(autoCloseMs);
+          if (state !== 'closed' && !run.killed) close();
+        }
+      })();
     });
   }
 
