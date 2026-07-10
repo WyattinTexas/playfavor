@@ -235,10 +235,9 @@
     color: #ffd97a; min-width: 1.4em; text-align: left;
     font-variant-numeric: tabular-nums;
 }
-/* champion keeps a size floor; the COLOR comes from the power tier */
+/* champion keeps a size floor; the MATERIAL comes from the power tier —
+   tiers never change size, only substance */
 .ms-tier.champ .ms-power b { font-size: clamp(17px, 2.7dvh, 22px); }
-.ms-tier.champ .ms-power.pw-gold b { font-size: clamp(18px, 2.9dvh, 24px); }
-.ms-tier.champ .ms-power.pw-plat b { font-size: clamp(19px, 3dvh, 25px); }
 /* (meter bars removed — the power number and the badged card row carry the count) */
 
 /* Prestige stamp — the reward for a podium finish */
@@ -434,29 +433,45 @@
     30% { border-color: #ff6a5a; box-shadow: 0 0 18px rgba(255,80,60,0.65); }
 }
 
-/* ── POWER TIERS: the tally wears its weight class ──────────────────────
-   ≤10 drab · 11-15 bright + sparkle · 16-20 gold, glitter, rumble, badge ·
-   21+ platinum, burst, big rumble, richer badge. Sizes stay phone-safe.  */
-.ms-cb-power b, .ms-power b { position: relative; z-index: 0; transition: font-size 0.25s ease, color 0.25s ease; }
+/* ── POWER TIERS: a MATERIAL LADDER — every band reads as a different
+   substance, all at the SAME size (Wyatt: significant difference without
+   bigger numbers). ≤5 ash · 6-10 bronze · 11-15 silver · 16-20 gold ·
+   21-25 platinum · 26+ radiant (living light). ──────────────────────── */
+.ms-cb-power b, .ms-power b { position: relative; z-index: 0; transition: color 0.25s ease; }
 
-/* drab — an unremarkable showing, but readable */
-.pw-drab b { color: #b6b0a4; text-shadow: none; }
+/* ash — a cold hearth: dull, dusty, no shine at all */
+.pw-ash b { color: #837c6e; text-shadow: none; opacity: 0.8; }
+.pw-ash img { filter: grayscale(0.7) brightness(0.7); }
 
-/* bright — a solid tally: a touch bigger, one shy twinkle */
-.pw-bright b { font-size: clamp(16px, 2.5dvh, 21px); color: #ffe08a; text-shadow: 0 0 10px rgba(255,224,138,0.45); }
-.pw-bright b::after {
+/* bronze — a working soldier's metal: warm, matte, honest */
+.pw-bronze b {
+    background: linear-gradient(180deg, #eab687 0%, #b97a3e 55%, #7c4a1d 95%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    filter: drop-shadow(0 0 4px rgba(200,130,60,0.3));
+}
+
+/* silver — polished steel: a cool gleam and one shy twinkle */
+.pw-silver b {
+    background: linear-gradient(180deg, #f7fafd 0%, #c9d6e2 50%, #8fa3b8 95%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    filter: drop-shadow(0 0 6px rgba(190,210,230,0.45));
+}
+.pw-silver b::after {
     content: '✦'; position: absolute; top: -0.42em; right: -0.62em;
-    font-size: 0.45em; color: #fff4d2;
+    font-size: 0.45em; color: #eef4fb; -webkit-text-fill-color: #eef4fb;
     animation: pwTwinkle 1.8s ease-in-out infinite;
 }
 
-/* gold — a champion's number: gradient, glitter, glow (no badge circle) */
+/* gold — a champion's number: a LIVE gleam sweeps the metal, glitter */
 .pw-gold b {
-    font-size: clamp(17px, 2.7dvh, 22px);
-    background: linear-gradient(180deg, #fff4d2 0%, #ffd97a 45%, #c9a84c 80%);
+    background: linear-gradient(100deg, #c9a84c 0%, #ffd97a 30%, #fff4d2 50%, #ffd97a 70%, #c9a84c 100%);
+    background-size: 250% 100%;
     -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent; color: transparent;
-    filter: drop-shadow(0 0 8px rgba(255,217,122,0.55));
+    filter: drop-shadow(0 0 8px rgba(255,217,122,0.6));
+    animation: pwGleam 2.2s ease-in-out infinite;
 }
 .pw-gold b::after {
     content: '✦'; position: absolute; top: -0.5em; right: -0.7em;
@@ -464,22 +479,51 @@
     animation: pwTwinkle 1.3s ease-in-out infinite;
 }
 
-/* platinum — legendary: silver-white shine, glow, sparkle rain (no badge circle) */
+/* platinum — legendary: white-hot metal, pulsing halo, sparkle rain */
 .pw-plat b {
-    font-size: clamp(18px, 2.9dvh, 24px);
-    background: linear-gradient(180deg, #ffffff 0%, #dde6f0 35%, #9fb2c6 70%, #e8eef6 100%);
+    background: linear-gradient(100deg, #9fb2c6 0%, #dde6f0 30%, #ffffff 50%, #dde6f0 70%, #9fb2c6 100%);
+    background-size: 250% 100%;
     -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent; color: transparent;
-    filter: drop-shadow(0 0 10px rgba(210,228,248,0.75));
-    animation: pwPlatShine 2.4s ease-in-out infinite;
+    filter: drop-shadow(0 0 10px rgba(210,228,248,0.8));
+    animation: pwGleam 1.6s ease-in-out infinite, pwPlatShine 2.4s ease-in-out infinite;
 }
 .pw-plat b::after {
     content: '✦'; position: absolute; top: -0.52em; right: -0.72em;
     font-size: 0.52em; color: #fff; -webkit-text-fill-color: #fff;
     animation: pwTwinkle 0.9s ease-in-out infinite;
 }
-/* platinum sparks are white-hot */
+
+/* radiant — beyond metal: LIVING light, rose-gold aurora rolling through
+   the number, a breathing halo, twinkles on BOTH shoulders */
+.pw-radiant b {
+    background: linear-gradient(100deg,
+        #ffd97a 0%, #fff4d2 20%, #ffffff 35%, #ffd2e1 50%,
+        #ffffff 65%, #fff4d2 80%, #ffd97a 100%);
+    background-size: 300% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    animation: pwAurora 1.8s linear infinite, pwRadiantHalo 1.6s ease-in-out infinite;
+}
+.pw-radiant b::before {
+    content: '✦'; position: absolute; top: -0.5em; left: -0.72em;
+    font-size: 0.5em; color: #ffd2e1; -webkit-text-fill-color: #ffd2e1;
+    animation: pwTwinkle 1.1s ease-in-out 0.4s infinite;
+}
+.pw-radiant b::after {
+    content: '✦'; position: absolute; top: -0.52em; right: -0.72em;
+    font-size: 0.52em; color: #fff; -webkit-text-fill-color: #fff;
+    animation: pwTwinkle 0.7s ease-in-out infinite;
+}
+/* platinum/radiant sparks are white-hot */
 .ms-spark.plat { background: #f2f7ff; box-shadow: 0 0 9px rgba(220,235,255,0.95); }
+
+@keyframes pwGleam { 0%, 100% { background-position: 0% 0; } 50% { background-position: 100% 0; } }
+@keyframes pwAurora { 0% { background-position: 0% 0; } 100% { background-position: 300% 0; } }
+@keyframes pwRadiantHalo {
+    0%, 100% { filter: drop-shadow(0 0 8px rgba(255,220,160,0.7)); }
+    50% { filter: drop-shadow(0 0 16px rgba(255,235,210,1)) drop-shadow(0 0 26px rgba(255,180,210,0.45)); }
+}
 
 /* the gold-tier rumble shakes just that fighter */
 .ms-combatant.pw-rumbling { animation: pwRumble 0.45s ease; }
@@ -560,12 +604,62 @@
             mask: linear-gradient(90deg, transparent, #000 60%, #000);
 }
 .ms-sap.go { animation: msSap 0.42s ease-in forwards; }
+/* Heavy bolts fired from a FEATURED card — thicker, brighter, and above
+   the feature veil so the strike reads through the darkness */
+.ms-sap.thick {
+    height: 8px; border-radius: 8px; z-index: 46;
+    background: linear-gradient(90deg, rgba(255,120,100,0) 0%, rgba(255,110,90,0.4) 35%, #ff5a6a 88%, #ffe0d8 100%);
+    box-shadow: 0 0 14px rgba(255,90,90,0.75);
+}
+.ms-sap.thick.go { animation: msSap 0.55s ease-in forwards; }
 @keyframes msSap {
     0% { opacity: 0; clip-path: inset(0 100% 0 0); }
     25% { opacity: 1; }
     70% { opacity: 1; clip-path: inset(0 0 0 0); }
     100% { opacity: 0; clip-path: inset(0 0 0 0); }
 }
+
+/* ── FEATURE: a card takes center stage over a darkened arena ─────────
+   (Fuzzy Head's strike, Shot of Courage's coin). Everyone reads the card,
+   then its effect fires FROM the card, then it joins the queue. */
+.ms-feature {
+    position: absolute; inset: 0; z-index: 44;
+    opacity: 0; transition: opacity 0.35s ease;
+    pointer-events: none;
+}
+.ms-feature.go { opacity: 1; }
+.ms-feature.bye { opacity: 0; }
+.ms-feature-veil { position: absolute; inset: 0; background: rgba(8, 5, 2, 0.68); }
+.ms-feature-inner {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    display: flex; flex-direction: column; align-items: center;
+    gap: clamp(6px, 1.6dvh, 12px);
+}
+.ms-feature-card {
+    display: block; height: clamp(170px, 58dvh, 300px); width: auto;
+    border-radius: 10px;
+    border: 2px solid rgba(255,233,173,0.65);
+    box-shadow: 0 0 44px rgba(201,168,76,0.5), 0 16px 44px rgba(0,0,0,0.75);
+    background: #1a0f07;
+}
+.ms-feature.go .ms-feature-card { animation: msFeatureIn 0.5s cubic-bezier(0.2,1.4,0.35,1); }
+@keyframes msFeatureIn {
+    0% { opacity: 0; transform: translateY(26px) scale(0.6); }
+    100% { opacity: 1; transform: none; }
+}
+.ms-feature-cap {
+    font-family: 'Cinzel', serif; font-weight: 700;
+    font-size: clamp(11px, 2dvh, 15px); letter-spacing: 0.08em;
+    color: #ffe9ad; text-align: center; text-shadow: 0 2px 8px rgba(0,0,0,0.9);
+}
+/* The featured coin flips big, over the face of the card itself — it can
+   never clip a screen edge, and the toss reads as part of the card's story */
+.ms-feature-coinslot { position: absolute; left: 50%; top: 58%; width: 0; height: 0; }
+.ms-feature .ms-coin {
+    left: -28px; top: -28px; bottom: auto; margin-left: 0;
+    width: 56px; height: 56px;
+}
+.ms-feature .ms-coin-face { font-size: 28px; }
 
 /* ── The card row — a fighter's power contributors laid on the table ──
    Cards (and power missions) deal in one at a time and STAY, readable, until

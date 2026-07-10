@@ -332,11 +332,14 @@
       combatants.forEach(c => { dispBase[c.playerIndex] = 0; wound[c.playerIndex] = 0; });
       const combatantOf = (pi) => combatantEls.find(e => +e.dataset.pi === pi);
 
-      // Power tiers — the tally wears its weight class (Wyatt's spec):
-      // ≤10 drab · 11-15 bright+sparkle · 16-20 gold, glitter, rumble,
-      // badge · 21+ platinum, burst, big rumble, richer badge.
-      const TIER_CLASSES = ['pw-drab', 'pw-bright', 'pw-gold', 'pw-plat'];
-      const tierFor = (v) => (v >= 21 ? 'pw-plat' : v >= 16 ? 'pw-gold' : v >= 11 ? 'pw-bright' : 'pw-drab');
+      // Power tiers — a MATERIAL LADDER, all the same size (Wyatt's spec:
+      // the difference must be significant WITHOUT bigger numbers):
+      // ≤5 ash · 6-10 bronze · 11-15 silver · 16-20 gold (glitter+rumble) ·
+      // 21-25 platinum (shine+shake) · 26+ radiant (living light, big shake).
+      const TIER_CLASSES = ['pw-ash', 'pw-bronze', 'pw-silver', 'pw-gold', 'pw-plat', 'pw-radiant'];
+      const tierFor = (v) =>
+        v >= 26 ? 'pw-radiant' : v >= 21 ? 'pw-plat' : v >= 16 ? 'pw-gold' :
+        v >= 11 ? 'pw-silver' : v >= 6 ? 'pw-bronze' : 'pw-ash';
       const applyTier = (pwEl, value, celebrate) => {
         if (!pwEl) return;
         const cls = tierFor(Math.max(0, value));   // tier reads the tally floor
@@ -344,17 +347,24 @@
         pwEl.classList.add(cls);
         if (!celebrate) return;
         const fighter = pwEl.closest('.ms-combatant, .ms-fighter');
-        if (cls === 'pw-plat') {
+        const rumble = () => {
+          if (!fighter) return;
+          fighter.classList.remove('pw-rumbling'); void fighter.offsetWidth;
+          fighter.classList.add('pw-rumbling');
+        };
+        if (cls === 'pw-radiant') {
+          stage.classList.add('shake');
+          setTimeout(() => stage.classList.remove('shake'), 650 * speed);
+          sparkBurst(pwEl, 24, 0.6, 'plat');
+          sparkBurst(pwEl, 10, 0.4);
+        } else if (cls === 'pw-plat') {
           stage.classList.add('shake');
           setTimeout(() => stage.classList.remove('shake'), 500 * speed);
           sparkBurst(pwEl, 18, 0.5, 'plat');
         } else if (cls === 'pw-gold') {
-          if (fighter) {
-            fighter.classList.remove('pw-rumbling'); void fighter.offsetWidth;
-            fighter.classList.add('pw-rumbling');
-          }
+          rumble();
           sparkBurst(pwEl, 10, 0.5);
-        } else if (cls === 'pw-bright') {
+        } else if (cls === 'pw-silver') {
           sparkBurst(pwEl, 4, 0.5);
         }
       };
@@ -413,7 +423,8 @@
       };
 
       // A red bolt from one fighter to another (Fuzzy Head's strike).
-      const streakBetween = (fromEl, toEl) => {
+      // extraCls 'thick' = the heavy bolts fired from a featured card.
+      const streakBetween = (fromEl, toEl, extraCls) => {
         if (!fromEl || !toEl || fromEl === toEl) return;
         const h = stage.getBoundingClientRect();
         const a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
@@ -421,7 +432,7 @@
         const x2 = b.left - h.left + b.width / 2, y2 = b.top - h.top + b.height * 0.4;
         const dx = x2 - x1, dy = y2 - y1;
         const streak = document.createElement('div');
-        streak.className = 'ms-sap';
+        streak.className = 'ms-sap' + (extraCls ? ' ' + extraCls : '');
         streak.style.left = x1 + 'px'; streak.style.top = y1 + 'px';
         streak.style.width = Math.hypot(dx, dy) + 'px';
         streak.style.transform = 'rotate(' + (Math.atan2(dy, dx) * 180 / Math.PI) + 'deg)';
@@ -429,6 +440,30 @@
         void streak.offsetWidth;
         streak.classList.add('go');
         setTimeout(() => streak.remove(), 640 * speed);
+      };
+
+      // ── FEATURE: a card takes center stage over a darkened arena so
+      // everyone can READ it before its effect fires (Fuzzy Head's strike,
+      // Shot of Courage's coin). Returns the overlay element. ────────────
+      const featureShow = (url, caption) => {
+        const f = document.createElement('div');
+        f.className = 'ms-feature';
+        f.innerHTML =
+          `<div class="ms-feature-veil"></div>
+           <div class="ms-feature-inner">
+             <img class="ms-feature-card" src="${url}" alt="">
+             ${caption ? `<div class="ms-feature-cap">${caption}</div>` : ''}
+             <div class="ms-feature-coinslot"></div>
+           </div>`;
+        stage.appendChild(f);
+        void f.offsetWidth;
+        f.classList.add('go');
+        return f;
+      };
+      const featureHide = async (f) => {
+        f.classList.remove('go'); f.classList.add('bye');
+        await delay(380);
+        f.remove();
       };
 
       // ── FORGE: one fighter's full story, player-paced ────────────────
@@ -499,9 +534,23 @@
         const stepArt = (step) => (cardsFx && step.filename) ? cardImgFor(step.filename, !!step.missionCard) : null;
         for (const step of (bd.steps || [])) {
           if (step.kind === 'coinflip') {
-            flipCoin(calloutHost, step.won);
-            await delay(1750); if (run.killed) return;
+            // SHOT OF COURAGE: the card takes CENTER STAGE over a darkened
+            // arena so everyone can read it, THEN the coin flips — and the
+            // card drops back into the queue with the others.
             const cu = stepArt(step);
+            let feat = null;
+            if (cu) {
+              feat = featureShow(cu, `${c.name} ${/^you$/i.test(c.name) ? 'play' : 'plays'} ${step.label}!`);
+              await delay(2000); if (run.killed) { feat.remove(); return; }
+              flipCoin(feat.querySelector('.ms-feature-coinslot'), step.won);
+            } else {
+              flipCoin(calloutHost, step.won);
+            }
+            await delay(1750); if (run.killed) { if (feat) feat.remove(); return; }
+            if (feat) {
+              await delay(500); if (run.killed) { feat.remove(); return; }
+              await featureHide(feat); if (run.killed) return;
+            }
             if (step.won) {
               dispBase[pi] += step.amount;
               refreshCount(pi, 380);
@@ -517,19 +566,20 @@
             continue;
           }
           if (step.kind === 'attack') {
-            // FUZZY HEAD: the card shows ONLY here, on the caster's turn —
-            // then red bolts strike EVERY other fighter's score at once.
-            // Wounds can drive scores negative; the final tally floors at 0.
+            // FUZZY HEAD: the card takes CENTER STAGE so everyone can read
+            // it — then HEAVY red bolts fire from the card itself at EVERY
+            // other fighter at once. Wounds can drive scores negative; the
+            // final tally floors at 0. The card then joins the queue.
             const au = stepArt(step);
-            if (au) dealRowItem(au, '' + step.amount, 'mod', 'vs all');
-            showCallout(calloutHost, { kind: 'debuff', label: step.label, amount: step.amount });
-            await delay(350); if (run.killed) return;
+            const feat = au ? featureShow(au, `${step.label} — strikes all rivals!`) : null;
+            if (feat) { await delay(2000); if (run.killed) { feat.remove(); return; } }
+            const boltFrom = feat ? feat.querySelector('.ms-feature-card') : el;
             (step.hits || []).forEach((h, k) => {
               timers.push(setTimeout(() => {
                 if (run.killed) return;
                 const victimEl = combatantOf(h.playerIndex);
                 if (!victimEl) return;
-                if (sapFx) streakBetween(el, victimEl);
+                if (sapFx) streakBetween(boltFrom, victimEl, feat ? 'thick' : '');
                 timers.push(setTimeout(() => {
                   if (run.killed) return;
                   wound[h.playerIndex] += h.delta;
@@ -538,9 +588,13 @@
                   victimEl.classList.remove('struck'); void victimEl.offsetWidth;
                   victimEl.classList.add('struck');
                 }, 300 * speed));
-              }, k * 140 * speed));
+              }, k * 180 * speed));
             });
-            await delay(350 * ((step.hits || []).length) + 700); if (run.killed) return;
+            await delay(180 * ((step.hits || []).length) + 900); if (run.killed) { if (feat) feat.remove(); return; }
+            if (feat) { await featureHide(feat); if (run.killed) return; }
+            if (au) dealRowItem(au, '' + step.amount, 'mod', 'vs all');
+            showCallout(calloutHost, { kind: 'debuff', label: step.label, amount: step.amount });
+            await delay(600); if (run.killed) return;
             continue;
           }
           const sapping = step.kind === 'debuff' && sapFx && step.from != null;
@@ -566,7 +620,7 @@
 
         // Lock to the fighter's own authoritative total (wounds ride on top —
         // the displayed score may be negative mid-battle) and CELEBRATE the
-        // tally at its weight class: drab / bright / gold / platinum.
+        // tally at its weight class on the material ladder (ash → radiant).
         dispBase[pi] = (bd.ownRawTotal != null) ? bd.ownRawTotal : (c.power || 0);
         el.classList.add('locked'); el.classList.remove('forging');
         refreshCount(pi, 420, true);
@@ -686,6 +740,7 @@
         arenaEl.classList.add('gone');
         arenaEl.classList.remove('spot');
         rowEl.innerHTML = '';
+        stage.querySelectorAll('.ms-feature').forEach(x => x.remove());
         const pendingBtn = stage.querySelector('.ms-continue');
         if (pendingBtn) pendingBtn.remove();
         if (alsoEl) { placeAlsoRans(); alsoEl.classList.add('show'); }
