@@ -6,11 +6,11 @@
 <title>FAVOR — Melee Reveal Preview</title>
 <!-- ?v= stamped by the deploy bump (same as index.html) — without it, GitHub
      Pages' ~10-min cache serves STALE js/css here and fixes look unshipped. -->
-<link rel="stylesheet" href="../css/style.css?v=20260710131104">
+<link rel="stylesheet" href="../css/style.css?v=20260710132114">
 <!-- Melee cinematic styling lives in its own file since the testrealm GAME was
      reset to the testrealm2 build (whose style.css has a different .ms-* splash).
      Loaded AFTER style.css so these .ms-* rules win here in the preview. -->
-<link rel="stylesheet" href="../css/melee.css?v=20260710131104">
+<link rel="stylesheet" href="../css/melee.css?v=20260710132114">
 <style>
   html, body { margin: 0; height: 100%; background: #140a04; font-family: 'Cinzel', serif; }
   .pv-bar {
@@ -55,7 +55,7 @@
 
   <div id="meleeSplash"></div>
 
-  <script src="../js/melee.js?v=20260710131104"></script>
+  <script src="../js/melee.js?v=20260710132114"></script>
   <script>
     // Mock data mirrors the engine's resolveMelee() output shape exactly:
     // { playerIndex, name, power, placement, prestige }, sorted power-desc.
@@ -133,10 +133,15 @@
           preBase = p / 2; steps.push({ kind: 'mult', label: 'Melee Spectacular', amount: 2, filename: 'Aerial Spectacular Card.jpg' });
         } else if (rank === 1 && p >= 4) {                      // a WON coin (+4)
           preBase = p - 4; steps.push({ kind: 'coinflip', label: 'Shot of Courage', amount: 4, won: true, filename: 'Liquid Wind Card.jpg' });
-        } else if (rank === 2) {                                // sapped by the leader (from pi 0)
-          preBase = p + 3; steps.push({ kind: 'debuff', label: 'Fuzzy Head', amount: -3, from: 0, filename: 'Cursed Coating Card.jpg' });
         } else if (rank === 3) {                                // a LOST coin (Tails)
           steps.push({ kind: 'coinflip', label: 'Shot of Courage', amount: 4, won: false, filename: 'Liquid Wind Card.jpg' });
+        }
+        // Fuzzy Head hits EVERY other player, exactly like the real engine
+        // (the caster plays it once; each victim's row shows the card −3).
+        // Demo caster = the eventual champion (results[0]).
+        if (rank !== 0) {
+          preBase += 3;
+          steps.push({ kind: 'debuff', label: 'Fuzzy Head', amount: -3, from: results[0].playerIndex, filename: 'Cursed Coating Card.jpg' });
         }
         // Split the base into board slot + REAL power cards/missions whose
         // printed amounts sum to it exactly. Whatever the cards can't cover

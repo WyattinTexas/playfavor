@@ -104,22 +104,6 @@
     [C4, E4, G4, C5, E5, G5, C6].forEach(f => note(f, 0.42, 1.5, 0.12));
     note(C3, 0.42, 1.6, 0.34);
   }
-  function playHit(kind) {
-    const ctx = audioCtx();
-    if (!ctx) return;
-    const now = ctx.currentTime + 0.01;
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = kind === 'debuff' ? 'triangle' : 'square';
-    const f = kind === 'mult' ? 880 : kind === 'debuff' ? 180 : 620;
-    o.frequency.setValueAtTime(f, now);
-    o.frequency.exponentialRampToValueAtTime(f * (kind === 'debuff' ? 0.6 : 1.6), now + 0.12);
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(0.14, now + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
-    o.connect(g); g.connect(ctx.destination);
-    o.start(now); o.stop(now + 0.2);
-  }
 
   function playMeleeCinematic(host, results, actNum, opts) {
     // Cancel any prior run still animating on this host — its timers would
@@ -134,7 +118,9 @@
       const cardImgFor = opts.cardImgFor || (() => null);
       const prestigeTokenFor = opts.prestigeTokenFor || null;
       const fallback = 'assets/ui/cover.jpg';
-      const soundOn = opts.sound !== false;
+      // Sound is OFF unless explicitly enabled (Wyatt found the battle
+      // ticks annoying). opts.sound === true re-enables the crown fanfare.
+      const soundOn = opts.sound === true;
       const sapFx = opts.sapFx !== false;
       const cardsFx = opts.cardsFx !== false;
       const heraldOn = opts.herald !== false;
@@ -416,7 +402,6 @@
           running = baseStart;
           tickNumber(b, running, 340);
           bump(el);
-          if (soundOn) playHit('bonus');
           await delay(950); if (run.killed) return;
         } else {
           // Cards off (or no board share): open the count at the board share.
@@ -430,7 +415,6 @@
           running = Math.max(0, running + vc.amount);
           tickNumber(b, running, 340);
           bump(el);
-          if (soundOn) playHit('bonus');
           await delay(950); if (run.killed) return;
         }
 
@@ -440,9 +424,7 @@
         for (const step of (bd.steps || [])) {
           if (step.kind === 'coinflip') {
             flipCoin(calloutHost, step.won);
-            if (soundOn) playHit('coin');
             await delay(1750); if (run.killed) return;
-            if (soundOn) playHit(step.won ? 'mult' : 'debuff');
             const cu = stepArt(step);
             if (step.won) {
               running = Math.max(0, running + step.amount);
@@ -461,7 +443,6 @@
           const sapping = step.kind === 'debuff' && sapFx && step.from != null;
           if (sapping) { sapStreak(step.from, el); await delay(380); if (run.killed) return; }
           showCallout(calloutHost, step);
-          if (soundOn) playHit(step.kind);
           running = step.kind === 'mult' ? running * step.amount : running + step.amount;
           running = Math.max(0, running);
           tickNumber(b, running, 380);
