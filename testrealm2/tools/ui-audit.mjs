@@ -295,8 +295,9 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
     return !!t && /survival/i.test(t.textContent);
   }), 'skill chip tap shows its name tooltip');
 
-  // Rival chip → board (ring on its track) + played cards, all at once;
-  // no stat pills, no reveal toggle — board + cards only.
+  // Rival chip → their full purse + summed skills as one HUD-language
+  // chip rail, then board (ring on its track) + played cards. No stat
+  // pills, no reveal toggle.
   await page.evaluate(() => document.querySelector('#tvSeats .pmat.opp').click());
   await sleep(400);
   const opp = await page.evaluate(() => {
@@ -304,6 +305,7 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
     const wrap = ring ? ring.parentElement.getBoundingClientRect() : null;
     const r = ring ? ring.getBoundingClientRect() : null;
     const vis = el => !!el && el.offsetParent !== null && el.getBoundingClientRect().width > 0;
+    const rail = document.getElementById('oppOvChips');
     return {
       active: document.getElementById('oppOverlay').classList.contains('active'),
       stacks: document.querySelectorAll('#oppOvStacks .tv-stack-card').length,
@@ -313,6 +315,8 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
       expectPct: BOARD_OV_TRACK.lefts[game.players[1].sliderPosition],
       statsShown: vis(document.getElementById('oppOvStats')),
       toggleShown: vis(document.getElementById('oppOvToggle')),
+      chipsShown: vis(rail) && rail.children.length >= 10,   // 4 purse + 6 skills minimum
+      panelShown: vis(document.getElementById('oppOvPanel')),
       boardLeftOfStacks: (() => {
         const b = document.querySelector('.opp-ov-boardwrap').getBoundingClientRect();
         const s = document.getElementById('oppOvStacks').getBoundingClientRect();
@@ -326,7 +330,8 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
   ok(opp.boardLeftOfStacks, 'board sits left, cards beside it');
   ok(opp.ringShown && Math.abs(opp.ringPct - opp.expectPct) < 2,
     `their ring rides the board track (${opp.ringPct.toFixed(1)}% vs ${opp.expectPct}%)`);
-  ok(!opp.statsShown, 'no stat pills — board + cards is all that is revealed');
+  ok(opp.chipsShown && !opp.panelShown, 'their purse + summed skills ride the HUD chip rail (desktop panel hidden)');
+  ok(!opp.statsShown, 'no stat pills — chips, board and cards carry it all');
   ok(!opp.toggleShown, 'no View Played Cards toggle');
   await page.screenshot({ path: join(SHOTS, 'hud-rival-overlay.png') });
   await page.evaluate(() => closeOppOverlay());
@@ -783,6 +788,8 @@ console.log('── Desktop: rival rail entries + overlay (real mouse click)');
   const ov = await page.evaluate(() => {
     const ring = document.getElementById('oppOvRing').getBoundingClientRect();
     const board = document.getElementById('oppOvBoard').getBoundingClientRect();
+    const panel = document.getElementById('oppOvPanel');
+    const pr = panel.getBoundingClientRect();
     return {
       open: document.getElementById('oppOverlay').classList.contains('active'),
       boardBig: board.height > 250,
@@ -790,6 +797,12 @@ console.log('── Desktop: rival rail entries + overlay (real mouse click)');
       ringLeft: document.getElementById('oppOvRing').style.left,
       cards: document.querySelectorAll('#oppOvCards img').length,
       pillArt: document.querySelectorAll('#oppOvStats .pill-icon').length,
+      panelShown: panel.offsetParent !== null && pr.width > 100,
+      panelSkillRows: panel.querySelectorAll('.skill-row:not(.flex-skill):not(.special-ability)').length,
+      panelTokens: panel.querySelectorAll('.token-val').length,
+      panelLeftOfBoard: pr.right <= board.left + 2,
+      panelIn: pr.top >= 0 && pr.bottom <= window.innerHeight + 1,
+      chipsHidden: (() => { const c = document.getElementById('oppOvChips'); return !c || c.offsetParent === null; })(),
     };
   });
   ok(ov.open, 'REAL click on the rail opens the rival overlay');
@@ -797,6 +810,10 @@ console.log('── Desktop: rival rail entries + overlay (real mouse click)');
   ok(ov.ringOnBoard && ov.ringLeft === '66.3%', `their ring rides the board track (${ov.ringLeft})`);
   ok(ov.cards === 3, `all played cards shown (${ov.cards})`);
   ok(ov.pillArt === 4, 'overlay stats use real token art');
+  ok(ov.panelShown && ov.panelSkillRows === 6 && ov.panelTokens === 3,
+    `their variables read like YOUR stats panel (6 skill rows, 3 tokens — got ${ov.panelSkillRows}/${ov.panelTokens})`);
+  ok(ov.panelLeftOfBoard && ov.panelIn, 'panel sits left of the board, fully on-screen');
+  ok(ov.chipsHidden, 'phone chip rail stays hidden on desktop');
   await page.screenshot({ path: join(SHOTS, 'rival-overlay-desktop.png') });
   await page.close();
 }
@@ -2770,6 +2787,149 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
   ok(pfitc.cardIn && pfitc.chipsIn && !pfitc.hscroll,
     `phone ceremony fits 844×390 (card ${pfitc.cardIn}, chips ${pfitc.chipsIn}, hscroll ${pfitc.hscroll})`);
   await phone.screenshot({ path: join(SHOTS, 'mission-ceremony-phone.png') });
+  await phone.close();
+}
+
+// ═══ OPPONENT VIEW: summed stats in the inspect overlay + the play spotlight ═══
+console.log('── Opponent view: inspect panel/chips sum their spread; spotlight = who + BIG card + chips');
+{
+  // Shared rig: rival 1 gets a KNOWN spread the surfaces must sum faithfully.
+  const rigRival = () => {
+    const byName = n => FAVOR_DATA.cards.find(c => c.name === n);
+    const p = game.players[1];
+    p.playedCards = ['Hunting', 'Concoction', 'Mining Guild'].map(n => ({ ...byName(n) }));
+    p.gold = 14; p.prestige = 6; p.scorn = 3; p.favor = 22;
+    p.skills = { survival: 4, charisma: 2, alchemy: 3, prospecting: 1, knowledge: 2, power: 5 };
+    p.flexSkills = [['charisma', 'prospecting']];
+    p.philosopherStone = 2;
+    game.emblemHolder = 1;
+    renderGameState();
+  };
+
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('oppview: ' + m.text()); });
+  await page.setViewport({ width: 1440, height: 900 });
+  await startGame(page);
+  await page.evaluate(rigRival);
+  await page.evaluate(() => openOppOverlay(1));
+  await sleep(500);
+  const panel = await page.evaluate(() => {
+    const el = document.getElementById('oppOvPanel');
+    return {
+      tokens: [...el.querySelectorAll('.token-val')].map(x => x.textContent.trim()).join(','),
+      skills: [...el.querySelectorAll('.skill-row:not(.flex-skill):not(.special-ability) .skill-value')]
+        .map(x => x.textContent.trim()).join(','),
+      flex: !!el.querySelector('.skill-row.flex-skill'),
+      phil: (el.querySelectorAll('.skill-row.special-ability')[0] || { textContent: '' }).textContent.includes('2:1'),
+      emblem: !!el.querySelector('.emblem-tag'),
+    };
+  });
+  ok(panel.tokens === '14,6,3', `token totem = their purse (${panel.tokens})`);
+  ok(panel.skills === '4,2,3,1,2,5', `six skills summed exactly (${panel.skills})`);
+  ok(panel.flex && panel.phil && panel.emblem, 'flex pair, Phil. Stone 2:1 and Emblem Holder all present');
+  await page.screenshot({ path: join(SHOTS, 'opp-inspect-desktop.png') });
+  await page.evaluate(() => closeOppOverlay());
+  await sleep(300);
+
+  // ── Spotlight: the play is the moment — no track, no pills, no history ──
+  await page.evaluate(() => { showCardSpotlight(1, { ...FAVOR_DATA.cards.find(c => c.name === 'Hunting') }, 'play'); });
+  await sleep(900);
+  const spot = await page.evaluate(() => {
+    const sp = document.getElementById('cardSpotlight');
+    const card = sp.querySelector('.spotlight-card');
+    const r = card ? card.getBoundingClientRect() : null;
+    return {
+      track: !!sp.querySelector('.opp-slot-track'),
+      pills: !!sp.querySelector('.stat-pill'),
+      thumbs: !!sp.querySelector('.opp-turn-played'),
+      cardBig: !!r && r.height >= window.innerHeight * 0.45,
+      cardIn: !!r && r.top >= 0 && r.bottom <= window.innerHeight + 1,
+      title: (sp.querySelector('.spl-title') || { textContent: '' }).textContent,
+      names: sp.querySelectorAll('.spotlight-name').length,
+      chips: [...sp.querySelectorAll('.spl-chips .mc-chip')].map(c => c.textContent.trim()),
+    };
+  });
+  ok(!spot.track && !spot.pills && !spot.thumbs, 'no slot track, no purse pills, no history thumbnails');
+  ok(spot.cardBig && spot.cardIn, 'the card IS the moment (≥45% of screen height, on-screen)');
+  ok(/plays/.test(spot.title) && spot.names === 1, 'one headline (who + verb), card name said once');
+  ok(spot.chips.length === 1 && /\+2 Survival/.test(spot.chips[0]),
+    `Hunting reads +2 Survival (${spot.chips.join('|') || 'none'})`);
+  await page.screenshot({ path: join(SHOTS, 'spotlight-play-desktop.png') });
+  await page.evaluate(() => document.getElementById('cardSpotlight').click());
+  await sleep(500);
+
+  // Mission Letter: the two-chip story (pays 1g, buys a mission)
+  await page.evaluate(() => { showCardSpotlight(1, { ...FAVOR_DATA.cards.find(c => c.type === 'mission_letter') }, 'play'); });
+  await sleep(700);
+  const letter = await page.evaluate(() =>
+    [...document.querySelectorAll('#cardSpotlight .spl-chips .mc-chip')].map(c => c.textContent.trim()));
+  ok(letter.length === 2 && /1 Gold/.test(letter[0]) && /Chooses a Mission/.test(letter[1]),
+    `Mission Letter reads -1 Gold + Chooses a Mission (${letter.join('|')})`);
+  await page.evaluate(() => document.getElementById('cardSpotlight').click());
+  await sleep(500);
+
+  // Discard variant: red verb, honest +3 Gold
+  await page.evaluate(() => { showCardSpotlight(1, { ...FAVOR_DATA.cards.find(c => c.name === 'Concoction') }, 'discard'); });
+  await sleep(700);
+  const disc = await page.evaluate(() => ({
+    variant: document.getElementById('cardSpotlight').classList.contains('discard-variant'),
+    verb: (document.querySelector('#cardSpotlight .spl-verb') || { textContent: '' }).textContent,
+    chips: [...document.querySelectorAll('#cardSpotlight .spl-chips .mc-chip')].map(c => c.textContent.trim()).join('|'),
+  }));
+  ok(disc.variant && /discards/.test(disc.verb) && /\+3 Gold/.test(disc.chips),
+    `discard variant: red verb + honest +3 Gold (${disc.chips})`);
+  await page.screenshot({ path: join(SHOTS, 'spotlight-discard-desktop.png') });
+  await page.evaluate(() => document.getElementById('cardSpotlight').click());
+  await page.close();
+
+  // ── Phone 844×390: chip rail sums the spread; spotlight reads left-to-right ──
+  const phone = await browser.newPage();
+  phone.on('console', m => { if (m.type() === 'error') consoleErrors.push('oppview-phone: ' + m.text()); });
+  await phone.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  await startGame(phone);
+  await phone.evaluate(rigRival);
+  await phone.evaluate(() => openOppOverlay(1));
+  await sleep(500);
+  const rail = await phone.evaluate(() => {
+    const el = document.getElementById('oppOvChips');
+    const r = el.getBoundingClientRect();
+    return {
+      purse: [...el.querySelectorAll('.tv-purse-chip b')].map(x => x.textContent.trim()).slice(0, 4).join(','),
+      skills: [...el.querySelectorAll('.tv-skill-chip:not(.flex):not(.special) b')].map(x => x.textContent.trim()).join(','),
+      flex: !!el.querySelector('.tv-skill-chip.flex'),
+      specials: el.querySelectorAll('.tv-skill-chip.special').length,
+      emblem: !!el.querySelector('.tv-purse-chip.emblem'),
+      inViewport: r.left >= -1 && r.right <= window.innerWidth + 1 && r.bottom <= window.innerHeight + 1,
+      hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
+    };
+  });
+  ok(rail.purse === '14,6,22,3', `full purse incl. Favor on the rail (${rail.purse})`);
+  ok(rail.skills === '4,2,3,1,2,5', `six skills as HUD chips (${rail.skills})`);
+  ok(rail.flex && rail.specials >= 1 && rail.emblem, 'flex pair, Phil. Stone and Emblem chips present');
+  ok(rail.inViewport && !rail.hscroll, 'rail fits the phone viewport, no horizontal scroll');
+  await phone.screenshot({ path: join(SHOTS, 'opp-inspect-phone.png') });
+  await phone.evaluate(() => closeOppOverlay());
+  await sleep(300);
+
+  await phone.evaluate(() => { showCardSpotlight(1, { ...FAVOR_DATA.cards.find(c => c.name === 'Hunting') }, 'play'); });
+  await sleep(900);
+  const pspot = await phone.evaluate(() => {
+    const sp = document.getElementById('cardSpotlight');
+    const card = sp.querySelector('.spotlight-card').getBoundingClientRect();
+    const head = sp.querySelector('.spl-head').getBoundingClientRect();
+    const pay = sp.querySelector('.spl-payoff').getBoundingClientRect();
+    const inV = r => r.top >= -1 && r.bottom <= window.innerHeight + 1 && r.left >= -1 && r.right <= window.innerWidth + 1;
+    return {
+      cardBig: card.height >= window.innerHeight * 0.66,
+      row: head.right <= card.left + 2 && card.right <= pay.left + 2,
+      allIn: [card, head, pay].every(inV),
+    };
+  });
+  ok(pspot.cardBig, 'phone spotlight: card takes ≥66% of screen height');
+  ok(pspot.row, 'reads left-to-right: who | card | payoff');
+  ok(pspot.allIn, 'every beat on-screen, nothing clipped');
+  await phone.screenshot({ path: join(SHOTS, 'spotlight-play-phone.png') });
+  await phone.evaluate(() => document.getElementById('cardSpotlight').click());
   await phone.close();
 }
 

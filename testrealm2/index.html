@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — Test Realm</title>
-    <link rel="stylesheet" href="css/style.css?v=20260709155251">
+    <link rel="stylesheet" href="css/style.css?v=20260710000023">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
@@ -187,13 +187,19 @@
                         <div class="opp-ov-stats" id="oppOvStats"></div>
                     </div>
                 </div>
-                <!-- Board + ring (ring shows on phone; wrapper is display:contents on desktop) -->
-                <div class="opp-ov-boardwrap">
-                    <img class="opp-ov-board" id="oppOvBoard" src="">
-                    <img class="opp-ov-ring" id="oppOvRing" src="assets/ui/slider-ring.png" alt="">
+                <!-- Phone: full purse + summed skills in the HUD's chip language -->
+                <div class="opp-ov-chips" id="oppOvChips"></div>
+                <div class="opp-ov-mid">
+                    <!-- Desktop: their variables as the same juicy panel you read your own in -->
+                    <div class="opp-ov-panel" id="oppOvPanel"></div>
+                    <!-- Board + ring (both layouts) -->
+                    <div class="opp-ov-boardwrap">
+                        <img class="opp-ov-board" id="oppOvBoard" src="">
+                        <img class="opp-ov-ring" id="oppOvRing" src="assets/ui/slider-ring.png" alt="">
+                    </div>
+                    <!-- Phone: their played cards as tucked stacks, right of the board -->
+                    <div class="opp-ov-stacks" id="oppOvStacks"></div>
                 </div>
-                <!-- Phone: their played cards as tucked stacks, right of the board -->
-                <div class="opp-ov-stacks" id="oppOvStacks"></div>
                 <!-- Toggle (desktop landscape fallback): reveals the played-cards panel -->
                 <button class="opp-ov-toggle" id="oppOvToggle" onclick="toggleOppCards(event)"></button>
                 <!-- Played-cards panel: inline on desktop, toggled overlay on landscape -->
@@ -367,11 +373,11 @@
          falls back to local standings if these can't reach the project) -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="data/cards.js?v=20260709155251"></script>
-    <script src="data/missions.js?v=20260709155251"></script>
-    <script src="data/characters.js?v=20260709155251"></script>
-    <script src="engine/gameState.js?v=20260709155251"></script>
-    <script src="js/ui.js?v=20260709155251"></script>
-    <script src="js/meta.js?v=20260709155251"></script>
+    <script src="data/cards.js?v=20260710000023"></script>
+    <script src="data/missions.js?v=20260710000023"></script>
+    <script src="data/characters.js?v=20260710000023"></script>
+    <script src="engine/gameState.js?v=20260710000023"></script>
+    <script src="js/ui.js?v=20260710000023"></script>
+    <script src="js/meta.js?v=20260710000023"></script>
 </body>
 </html>

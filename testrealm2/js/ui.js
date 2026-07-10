@@ -61,58 +61,6 @@ const SPECIAL_DESCRIPTIONS = {
     "power_6_if_blind_faith":        "+6 Power in Melee while you own Blind Faith.",
 };
 
-// ─── SLOT SPECIAL LABELS (Character Board) ───────────────
-const SLOT_SPECIAL_LABELS = {
-    "steal_3_prestige_each":       "Steal 3 Prestige",
-    "steal_2_gold_each":           "Steal 2 Gold each",
-    "give_1_gold_each":            "Give 1 Gold each",
-    "all_others_1_scorn":          "Others +1 Scorn",
-    "convert_gold_to_prestige":    "Gold \u2192 Prestige",
-    "philosopher_stone":           "Philosopher\u2019s Stone",
-    "philosopher_stone_x2":        "2\u00D7 Philosopher\u2019s Stone",
-    "minds_eye":                   "Mind\u2019s Eye",
-    "minds_eye_x5":                "5\u00D7 Mind\u2019s Eye",
-    "minds_eye_and_philosopher":   "Mind\u2019s Eye + Phil. Stone",
-    "pick_one":                    "Choose a Skill",
-    "borrow_any_player":           "Borrow from any player",
-    "mission_fail_10_gold":        "Fail mission \u2192 +10 Gold",
-    "choose_mission":              "Choose a Mission",
-};
-
-/**
- * Build a compact label array for a character board slot.
- * Returns an array of short strings like ["+5 Gold", "Power +1", "15 Favor"].
- */
-function buildSlotLabel(slot) {
-    if (!slot) return ['(empty)'];
-    const parts = [];
-
-    // Skills
-    if (slot.skills) {
-        Object.entries(slot.skills).forEach(([skill, val]) => {
-            const name = skill.charAt(0).toUpperCase() + skill.slice(1);
-            parts.push(`${name} +${val}`);
-        });
-    }
-
-    // One-time gold
-    if (slot.gold) parts.push(`+${slot.gold} Gold`);
-
-    // One-time scorn
-    if (slot.scorn) parts.push(`+${slot.scorn} Scorn`);
-
-    // Favor
-    if (slot.favor) parts.push(`${slot.favor} Favor`);
-
-    // Special
-    if (slot.special && SLOT_SPECIAL_LABELS[slot.special]) {
-        parts.push(SLOT_SPECIAL_LABELS[slot.special]);
-    }
-
-    if (parts.length === 0) parts.push('\u2014');
-    return parts;
-}
-
 // ─── ANIMATION QUEUE ─────────────────────────────────────
 
 class AnimationQueue {
@@ -153,120 +101,84 @@ const animationQueue = new AnimationQueue();
 
 // ─── CARD SPOTLIGHT SYSTEM ───────────────────────────────
 
-/**
- * Build a read-only mini slot track for an opponent's character board.
- */
-function buildMiniSlotTrack(playerIndex) {
-    const player = game.players[playerIndex];
-    const char = player.character;
-    if (!char || !char.slots) return '';
+// Printed card contents -> payout chips in the mission-ceremony language
+// (mc-chip): skills aggregated ("Survival, Survival" -> +2 Survival),
+// either/or specials wear both faces, costs read as bad chips. Chips say
+// only what the card says -- sentence-length specials keep their line.
+const SPOTLIGHT_FLEX = {
+    charisma_or_prospecting: ['charisma', 'prospecting'],
+    alchemy_or_prospecting:  ['alchemy', 'prospecting'],
+};
 
-    const posNames = ['1', '2', '3', '4', '5'];
-    const claimed = player.claimedSlots || new Set([2]);
+function spotlightChips(card, action) {
+    const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+    const icon = k => `assets/icons/${k}.png`;
+    const chip = (img, label, cls = 'good') =>
+        `<span class="mc-chip ${cls}"><img src="${img}" alt="">${label}</span>`;
 
-    let cells = '';
-    for (let i = 0; i < 5; i++) {
-        const isCurrent = i === player.sliderPosition;
-        const isClaimed = claimed.has(i) && !isCurrent;
-        const stateClass = isCurrent ? 'current' : isClaimed ? 'claimed' : 'unclaimed';
-        const labels = buildSlotLabel(char.slots[i]);
+    if (action === 'discard') return [chip(icon('gold'), '+3 Gold')];
+    if (action === 'discard_slide') return [chip('assets/ui/slider-ring.png', 'Slides the Ring')];
 
-        cells += `<div class="opp-slot-cell ${stateClass}">
-            <div class="opp-slot-num">${posNames[i]}</div>
-            <div class="opp-slot-rewards">${labels.map(l => `<div class="opp-slot-line">${l}</div>`).join('')}</div>
-        </div>`;
+    if (card.type === 'mission_letter') {
+        return [chip(icon('gold'), '−1 Gold', 'bad'),
+                chip(icon('mission'), 'Chooses a Mission')];
     }
 
-    return `<div class="opp-slot-track">
-        ${cells}
-        <div class="opp-slot-ring" style="transform: translateX(${player.sliderPosition * 100}%)"></div>
-    </div>`;
+    const chips = [];
+    const counts = {};
+    (card.skills || []).forEach(s => { counts[s] = (counts[s] || 0) + 1; });
+    Object.entries(counts).forEach(([s, n]) => chips.push(chip(icon(s), `+${n} ${cap(s)}`)));
+
+    if (SPOTLIGHT_FLEX[card.special]) {
+        const [a, b] = SPOTLIGHT_FLEX[card.special];
+        chips.push(`<span class="mc-chip good"><img src="${icon(a)}" alt=""><img src="${icon(b)}" alt="">${cap(a)} or ${cap(b)}</span>`);
+    }
+
+    const favor = (card.favor || 0) + ((card.rewards && card.rewards.favor) || 0);
+    if (favor) chips.push(chip(icon('favor'), `+${favor} Favor`));
+    if (card.rewards && card.rewards.gold) chips.push(chip(icon('gold'), `+${card.rewards.gold} Gold`));
+    if (card.rewards && card.rewards.prestige) chips.push(chip(icon('prestige'), `+${card.rewards.prestige} Prestige`));
+    if (card.rewards && card.rewards.scorn) chips.push(chip(icon('scorn'), `+${card.rewards.scorn} Scorn`, 'bad'));
+    if (card.cost) chips.push(chip(icon('gold'), `−${card.cost} Gold`, 'bad'));
+    return chips;
 }
 
 function buildSpotlightContent(playerIndex, card, action) {
     const isDiscard = (action === 'discard' || action === 'discard_slide');
     const player = game.players[playerIndex];
-    const playerName = player.name;
     const char = player.character;
     const avatarSrc = char ? `assets/characters/${char.filename}` : '';
     const charName = char ? char.name : '';
-
-    const actionLabel = isDiscard
-        ? `${playerName} discards...`
-        : `${playerName} plays...`;
-
-    // Build new card display
-    const imgSrc = `assets/cards/regular/${card.filename}`;
     const safeCardName = card.name.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
-    const actionTag = isDiscard ? 'DISCARDING' : 'NOW PLAYING';
 
-    // Build effect description for the new card
-    let effectText = '';
-    if (isDiscard) {
-        effectText = action === 'discard_slide' ? 'Slider move' : '+3 Gold';
-    } else if (card.special && SPECIAL_DESCRIPTIONS[card.special]) {
-        effectText = SPECIAL_DESCRIPTIONS[card.special];
-    } else {
-        const parts = [];
-        if (card.rewards) {
-            if (card.rewards.gold) parts.push(`+${card.rewards.gold}g`);
-            if (card.rewards.prestige) parts.push(`+${card.rewards.prestige} Pres`);
-            if (card.rewards.favor) parts.push(`+${card.rewards.favor} Fav`);
-        }
-        if (card.favor) parts.push(`+${card.favor} Fav`);
-        if (card.skills && card.skills.length > 0) parts.push(card.skills.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', '));
-        effectText = parts.join(' \u00B7 ');
-    }
-
-    // Stats
-    const state = game.getState(0);
-    const ps = state.players[playerIndex];
-
-    // Previously played cards (before this card is added)
-    const playedCards = player.playedCards || [];
-    let playedHtml = '';
-    if (playedCards.length > 0) {
-        playedHtml = `<div class="opp-turn-played">
-            ${playedCards.slice(-8).map(c =>
-                `<img class="opp-turn-played-card" src="assets/cards/regular/${c.filename}" alt="${c.name}">`
-            ).join('')}
-        </div>`;
-    }
+    // One story, four beats: who plays -> the card lands BIG (flip +
+    // shimmer) -> its name -> what it does, as ceremony chips. No slot
+    // track, no purse pills, no prior-play thumbnails -- the rival rail
+    // and inspect overlay carry standing info; this moment is the play.
+    const chips = spotlightChips(card, action).join('');
+    const special = (!isDiscard && card.special && SPECIAL_DESCRIPTIONS[card.special] && !SPOTLIGHT_FLEX[card.special])
+        ? `<div class="spl-special">${SPECIAL_DESCRIPTIONS[card.special]}</div>` : '';
 
     let html = `<div class="spotlight-backdrop"></div>`;
-    html += `<div class="opp-turn-inner">`;
-
-    // Header
-    html += `<div class="opp-turn-header">
-        <img class="opp-turn-avatar" src="${avatarSrc}" alt="${charName}">
-        <div class="opp-turn-header-info">
-            <div class="opp-turn-name">${playerName}</div>
-            <div class="opp-turn-char">${charName}</div>
+    html += `<div class="spl-inner">`;
+    html += `<div class="spl-head">
+        <img class="spl-avatar" src="${avatarSrc}" alt="${charName}">
+        <div class="spl-head-text">
+            <div class="spl-title">${player.name} <span class="spl-verb">${isDiscard ? 'discards…' : 'plays…'}</span></div>
+            <div class="spl-char">${charName}</div>
         </div>
     </div>`;
-
-    // Ring track
-    html += `<div class="opp-turn-ring">${buildMiniSlotTrack(playerIndex)}</div>`;
-
-    // Stats
-    html += `<div class="opp-turn-stats">${statPillsHtml(ps)}</div>`;
-
-    // Action label
-    html += `<div class="spotlight-player">${actionLabel}</div>`;
-
-    // New card + previously played
-    html += `<div class="opp-turn-cards-area">`;
-    html += playedHtml;
-    html += `<div class="opp-turn-new-card ${isDiscard ? 'discard' : 'play'}">
-        <div class="opp-turn-new-tag">${actionTag}</div>
-        <img src="${imgSrc}" alt="${safeCardName}" onerror="this.style.display='none'">
-        <div class="opp-turn-new-name">${card.name}</div>
-        ${effectText ? `<div class="opp-turn-new-effect">${effectText}</div>` : ''}
+    html += `<div class="spl-stage">
+        <div class="spl-glow"></div>
+        <div class="spotlight-card"><img src="assets/cards/regular/${card.filename}" alt="${safeCardName}" onerror="this.style.display='none'"></div>
+    </div>`;
+    html += `<div class="spl-payoff">
+        <div class="spotlight-name">${card.name}</div>
+        ${chips ? `<div class="spl-chips">${chips}</div>` : ''}
+        ${special}
     </div>`;
     html += `</div>`;
-
-    html += `<div class="spotlight-dismiss">click to continue</div>`;
-    html += `</div>`;
+    html += `<div class="spotlight-dismiss">tap to continue</div>`;
 
     return { html, isDiscard };
 }
@@ -1120,11 +1032,13 @@ const SKILL_ICONS = {
     minds_eye:   `<img class="skill-svg" src="assets/icons/minds_eye.png" alt="Mind's Eye">`
 };
 
-function renderStatsPanel(state) {
-    const panel = document.getElementById('statsPanel');
-    const player = state.players[0];
-    const gp = game.players[0];
-    const emblem = state.emblemHolder === 0 ? `<div class="emblem-tag">${emblemBadge()} Emblem Holder</div>` : '';
+// The juicy panel body -- token totem + summed skills -- for ANY player.
+// Your left-rail panel and the rival inspect overlay's desktop panel both
+// read from here, so a rival's spread displays exactly like your own.
+function buildStatsPanelHtml(playerIndex, state) {
+    const player = state.players[playerIndex];
+    const gp = game.players[playerIndex];
+    const emblem = state.emblemHolder === playerIndex ? `<div class="emblem-tag">${emblemBadge()} Emblem Holder</div>` : '';
 
     // Resource tokens row
     const resourcesHtml = `
@@ -1166,7 +1080,7 @@ function renderStatsPanel(state) {
             </div>`;
     });
 
-    // Flex skills (Mining Guild etc.): one unit, EITHER option per use —
+    // Flex skills (Mining Guild etc.): one unit, EITHER option per use --
     // shown as their own rows so the fixed totals above never wander.
     const flexPairs = {};
     (player.flexSkills || []).forEach(pair => {
@@ -1177,17 +1091,17 @@ function renderStatsPanel(state) {
         const [a, b] = key.split('|');
         const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
         skillsHtml += `
-            <div class="skill-row flex-skill" title="Counts as ${cap(a)} OR ${cap(b)} — your choice each time, never both">
+            <div class="skill-row flex-skill" title="Counts as ${cap(a)} OR ${cap(b)} -- one per use, never both">
                 <span class="skill-icon flex-pair">${SKILL_ICONS[a]}${SKILL_ICONS[b]}</span>
                 <span class="skill-label">${cap(a)} <i>or</i> ${cap(b)}</span>
                 <span class="skill-value has-skill">${n > 1 ? '×' + n : '✦'}</span>
             </div>`;
     });
 
-    // Special abilities: Philosopher's Stone & Mind's Eye \u2014 the engine
+    // Special abilities: Philosopher's Stone & Mind's Eye -- the engine
     // count (cards + slot + mission rewards), shown as the digit it is.
     const hasPhilosopher = gp.philosopherStone && gp.philosopherStone > 0;
-    const mindsEyeCount = game.getMindsEyeCount(0);
+    const mindsEyeCount = game.getMindsEyeCount(playerIndex);
 
     if (hasPhilosopher) {
         skillsHtml += `
@@ -1199,7 +1113,7 @@ function renderStatsPanel(state) {
     }
     if (mindsEyeCount > 0) {
         skillsHtml += `
-            <div class="skill-row special-ability" title="Mind's Eye \u2014 already counted in Knowledge">
+            <div class="skill-row special-ability" title="Mind's Eye — already counted in Knowledge">
                 <span class="skill-icon">${SKILL_ICONS.minds_eye}</span>
                 <span class="skill-label">Mind's Eye</span>
                 <span class="skill-value has-skill">${mindsEyeCount}</span>
@@ -1207,15 +1121,70 @@ function renderStatsPanel(state) {
     }
     skillsHtml += '</div>';
 
-    // No act badge (the phase pill says it) and no ring-dot row (the board
-    // thumb above wears the ring ON the art) — the panel is tokens + skills.
-    panel.innerHTML = `
-        ${resourcesHtml}
-        ${skillsHtml}
-        ${emblem}
-    `;
+    return `${resourcesHtml}${skillsHtml}${emblem}`;
+}
 
-    // Position dynamically after board thumb loads (desktop only — in compact
+// The same variables in the phone HUD's chip language -- purse first
+// (the overlay is the only place a rival's full purse shows on phones),
+// then the six skills, flex pairs, specials, and the Emblem. Tap a chip
+// for its name, exactly like your own rail.
+function buildStatChipsHtml(playerIndex, state) {
+    const p = state.players[playerIndex];
+    const gp = game.players[playerIndex];
+    const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+    const purse = (k, img, val, label) =>
+        `<span class="tv-purse-chip ${k}" onclick="tvChipTip(event, '${label}')">
+            <img src="${img}" alt="${label}"><b>${val}</b></span>`;
+
+    let h = purse('gold', PURSE_ICONS.gold, p.gold, 'Gold')
+          + purse('prestige', TOKEN_IMG.prestige, p.prestige, 'Prestige')
+          + purse('favor', PURSE_ICONS.favor, p.favor || 0, 'Favor')
+          + purse('scorn', PURSE_ICONS.scorn, p.scorn, 'Scorn');
+
+    const skills = p.skills || {};
+    ['survival', 'charisma', 'alchemy', 'prospecting', 'knowledge', 'power'].forEach(k => {
+        const val = skills[k] || 0;
+        h += `<span class="tv-skill-chip${val > 0 ? '' : ' zero'}"
+                    onclick="tvChipTip(event, '${cap(k)}')">${SKILL_ICONS[k]}<b>${val}</b></span>`;
+    });
+
+    const flexPairs = {};
+    (p.flexSkills || []).forEach(pair => {
+        const key = pair.join('|');
+        flexPairs[key] = (flexPairs[key] || 0) + 1;
+    });
+    Object.entries(flexPairs).forEach(([key, n]) => {
+        const [a, b] = key.split('|');
+        h += `<span class="tv-skill-chip flex"
+                    onclick="tvChipTip(event, '${cap(a)} or ${cap(b)} — one per use, never both')">
+                    <span class="flex-pair">${SKILL_ICONS[a]}${SKILL_ICONS[b]}</span><b>${n > 1 ? '×' + n : '✦'}</b></span>`;
+    });
+
+    if (gp.philosopherStone && gp.philosopherStone > 0) {
+        h += `<span class="tv-skill-chip special"
+                    onclick="tvChipTip(event, 'Philosopher\\'s Stone — ${gp.philosopherStone}:1')">
+                    ${SKILL_ICONS.philosopher}<b>${gp.philosopherStone}</b></span>`;
+    }
+    const mindsEye = game.getMindsEyeCount(playerIndex);
+    if (mindsEye > 0) {
+        h += `<span class="tv-skill-chip special"
+                    onclick="tvChipTip(event, 'Mind\\'s Eye — already counted in Knowledge')">
+                    ${SKILL_ICONS.minds_eye}<b>${mindsEye}</b></span>`;
+    }
+    if (state.emblemHolder === playerIndex) {
+        h += `<span class="tv-purse-chip emblem" onclick="tvChipTip(event, 'Emblem Holder')">
+                <img src="${EMBLEM_IMG}" alt="Emblem Holder"><b>Emblem</b></span>`;
+    }
+    return h;
+}
+
+function renderStatsPanel(state) {
+    const panel = document.getElementById('statsPanel');
+    // No act badge (the phase pill says it) and no ring-dot row (the board
+    // thumb above wears the ring ON the art) -- the panel is tokens + skills.
+    panel.innerHTML = buildStatsPanelHtml(0, state);
+
+    // Position dynamically after board thumb loads (desktop only -- in compact
     // landscape the .left-rail flex flow handles stacking, so clear inline top).
     if (isCompactLandscape()) {
         panel.style.top = '';
@@ -2315,6 +2284,12 @@ function openOppOverlay(playerIndex) {
     }
 
     document.getElementById('oppOvStats').innerHTML = statPillsHtml(p);
+
+    // Their variables, summed and displayed like your own: the juicy
+    // token-totem panel on desktop, the HUD chip rail on phones (CSS
+    // shows exactly one of the two per layout).
+    document.getElementById('oppOvPanel').innerHTML = buildStatsPanelHtml(playerIndex, state);
+    document.getElementById('oppOvChips').innerHTML = buildStatChipsHtml(playerIndex, state);
 
     const cardsEl = document.getElementById('oppOvCards');
     cardsEl.innerHTML = '';
