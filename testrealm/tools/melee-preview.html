@@ -126,14 +126,17 @@
       results.forEach((r, rank) => {
         const p = r.power, steps = [];
         let preBase = p;
+        // Steps carry the SOURCE CARD's art (audit-verified filenames) so the
+        // enabling card lands in the row with its badge — ×2, +4, −3, or a
+        // grey 0 for a lost coin.
         if (rank === 0 && p >= 4 && p % 2 === 0) {              // champion: doubled
-          preBase = p / 2; steps.push({ kind: 'mult', label: 'Melee Spectacular', amount: 2 });
+          preBase = p / 2; steps.push({ kind: 'mult', label: 'Melee Spectacular', amount: 2, filename: 'Aerial Spectacular Card.jpg' });
         } else if (rank === 1 && p >= 4) {                      // a WON coin (+4)
-          preBase = p - 4; steps.push({ kind: 'coinflip', label: 'Shot of Courage', amount: 4, won: true });
+          preBase = p - 4; steps.push({ kind: 'coinflip', label: 'Shot of Courage', amount: 4, won: true, filename: 'Liquid Wind Card.jpg' });
         } else if (rank === 2) {                                // sapped by the leader (from pi 0)
-          preBase = p + 3; steps.push({ kind: 'debuff', label: 'Fuzzy Head', amount: -3, from: 0 });
+          preBase = p + 3; steps.push({ kind: 'debuff', label: 'Fuzzy Head', amount: -3, from: 0, filename: 'Cursed Coating Card.jpg' });
         } else if (rank === 3) {                                // a LOST coin (Tails)
-          steps.push({ kind: 'coinflip', label: 'Shot of Courage', amount: 4, won: false });
+          steps.push({ kind: 'coinflip', label: 'Shot of Courage', amount: 4, won: false, filename: 'Liquid Wind Card.jpg' });
         }
         // Split the base into board slot + REAL power cards/missions whose
         // printed amounts sum to it exactly. Whatever the cards can't cover

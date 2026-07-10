@@ -230,18 +230,7 @@
     font-variant-numeric: tabular-nums;
 }
 .ms-tier.champ .ms-power b { font-size: clamp(19px, 3dvh, 27px); color: #ffe9ad; }
-.ms-bar {
-    width: 78%; height: 5px; border-radius: 3px;
-    background: rgba(0,0,0,0.5); box-shadow: inset 0 0 0 1px rgba(201,168,76,0.25);
-    overflow: hidden;
-}
-.ms-bar-fill {
-    height: 100%; width: 0%;
-    background: linear-gradient(90deg, #8b6914, #e8d48b);
-    box-shadow: 0 0 8px rgba(232,212,139,0.7);
-    transition: width 0.75s cubic-bezier(0.2,0.8,0.2,1);
-}
-.ms-tier.champ .ms-bar-fill { background: linear-gradient(90deg, #c9a84c, #fff4d2); }
+/* (meter bars removed — the power number and the badged card row carry the count) */
 
 /* Prestige stamp — the reward for a podium finish */
 .ms-prestige {
@@ -412,17 +401,7 @@
     font-size: clamp(15px,2.3dvh,20px); color: #ffd97a;
     font-variant-numeric: tabular-nums;
 }
-.ms-cb-meter {
-    width: 84%; height: 6px; border-radius: 3px;
-    background: rgba(0,0,0,0.5); box-shadow: inset 0 0 0 1px rgba(201,168,76,0.25);
-    overflow: hidden;
-}
-.ms-cb-fill {
-    height: 100%; width: 0%;
-    background: linear-gradient(90deg, #8b6914, #e8d48b);
-    box-shadow: 0 0 8px rgba(232,212,139,0.7);
-    transition: width 0.55s cubic-bezier(0.2,0.8,0.2,1);
-}
+/* (forge meter bars removed — the badged row IS the meter) */
 /* Combat-hit callouts float up over the fighter */
 .ms-cb-callout { position: absolute; bottom: 100%; left: 50%; width: 0; height: 0; z-index: 8; }
 .ms-callout {
@@ -536,6 +515,21 @@
     border: 1px solid #8b6914; border-radius: 14px;
     box-shadow: 0 2px 7px rgba(0,0,0,0.6), 0 0 10px rgba(201,168,76,0.45);
 }
+/* A modifier that HURT this fighter (sap): red badge; a lost coin: grey 0 */
+.ms-rowamt.neg {
+    color: #fff0ec;
+    background: radial-gradient(circle at 34% 30%, #e2604e, #8b1a1a 72%);
+    border-color: #5c0f0f;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.6), 0 0 10px rgba(200,60,50,0.5);
+}
+.ms-rowamt.zero {
+    color: #e8e2d4;
+    background: radial-gradient(circle at 34% 30%, #9a948a, #55504a 72%);
+    border-color: #3a3630;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.6);
+}
+/* Modifier source cards read slightly cooler than base contributors */
+.ms-rowitem.mod img { border-color: rgba(201,168,76,0.5); }
 /* The character-board tile leads the row with a caption */
 .ms-rowitem.board img { border-color: rgba(201,168,76,0.55); filter: saturate(0.92); }
 .ms-rowcap {

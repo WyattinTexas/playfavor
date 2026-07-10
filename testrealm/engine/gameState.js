@@ -293,7 +293,7 @@ class FavorGame {
         for (const c of player.playedCards) {
             if (c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_and_philosopher') count += 1;
             if (c.special === 'minds_eye_x5') count += 5;
-            if (c.special === 'minds_eye_x2_philosopher_stone_x5') count += 2;
+            if (c.special === 'minds_eye_x2' || c.special === 'minds_eye_x2_philosopher_stone_x5') count += 2;
         }
         count += player.bonusMindsEye || 0; // mission success rewards
         return count;
@@ -943,6 +943,11 @@ class FavorGame {
                 this.addLog(`${player.name}'s ${card.name}: +1 Knowledge (Mind's Eye)`);
                 break;
 
+            case 'minds_eye_x2':
+                // Deadeye: grants 2 Mind's Eye (counted in getMindsEyeCount)
+                this.addLog(`${player.name}'s ${card.name}: +2 Mind's Eye`);
+                break;
+
             // --- Knowledge multipliers ---
 
             case 'knowledge_x5':
@@ -966,26 +971,35 @@ class FavorGame {
                 break;
 
             case 'minus_3_power_all_others':
-                // Fuzzy Head: each OTHER player loses 3 power for melee
+                // Fuzzy Head: each OTHER player loses 3 power for melee.
+                // `from` records the caster so the Melee can draw the sap FX
+                // and show the caster's card in the victim's row.
                 for (let i = 0; i < this.playerCount; i++) {
                     if (i !== playerIndex) {
                         if (!this.players[i].powerDebuffs) this.players[i].powerDebuffs = [];
-                        this.players[i].powerDebuffs.push({ amount: -3, act: this.currentAct, source: card.name });
+                        this.players[i].powerDebuffs.push({ amount: -3, act: this.currentAct, source: card.name, from: playerIndex });
                         this.addLog(`${this.players[i].name} receives -3 power from ${player.name}'s Fuzzy Head`);
                     }
                 }
                 break;
 
             case 'coin_flip_4_power':
-                // Liquid Courage: 50% chance to gain 4 power for melee
+            case 'coin_flip_5_power':
+                // Melee coin flip. The outcome is decided here but recorded on
+                // coinFlips (win OR lose) so the Melee can reveal it as a live
+                // coin toss. `coin` tags the won bonus so powerBreakdown shows
+                // ONE coin step.
                 {
+                    const amt = special === 'coin_flip_5_power' ? 5 : 4;
                     const won = Math.random() < 0.5;
+                    if (!player.coinFlips) player.coinFlips = [];
+                    player.coinFlips.push({ source: card.name, act: this.currentAct, won: won, amount: amt });
                     if (won) {
                         if (!player.powerBonuses) player.powerBonuses = [];
-                        player.powerBonuses.push({ amount: 4, act: this.currentAct, source: card.name });
-                        this.addLog(`${player.name}'s Liquid Courage: HEADS! +4 Power for melee`);
+                        player.powerBonuses.push({ amount: amt, act: this.currentAct, source: card.name, coin: true });
+                        this.addLog(`${player.name}'s ${card.name}: HEADS! +${amt} Power for melee`);
                     } else {
-                        this.addLog(`${player.name}'s Liquid Courage: TAILS! No bonus`);
+                        this.addLog(`${player.name}'s ${card.name}: TAILS! No bonus`);
                     }
                 }
                 break;
@@ -2053,6 +2067,105 @@ class FavorGame {
 
         // Power cannot go below 0
         return Math.max(0, power);
+    }
+
+    /**
+     * Read-only companion to calculatePower: the ordered story of how a
+     * player's Melee Power came to be — base (from cards + board), then each
+     * bonus / debuff / doubling as its own step. Drives the Melee "forge"
+     * animation. PURE: never mutates (unlike calculatePower, which consumes
+     * defendTheThrone), so it's safe to call after resolveMelee. The cinematic
+     * still locks the meter to the authoritative total, so any rare drift
+     * (e.g. an already-spent Defend the Throne) never shows a wrong number.
+     */
+    powerBreakdown(playerIndex) {
+        const player = this.players[playerIndex];
+        const steps = [];
+        let power = player.skills.power || 0;
+        const base = power;
+        // Attribute the base to its actual sources so the Melee forge can SHOW
+        // the arithmetic: every power-granting played card (amount = its power
+        // pips), every completed mission whose success reward granted power,
+        // and baseOther = whatever remains (the character-board slot). The sum
+        // baseOther + Σ amounts always equals base.
+        const baseCards = [];
+        player.playedCards.forEach(c => {
+            const n = (c.skills || []).filter(s => s === 'power').length;
+            if (n > 0) baseCards.push({ name: c.name, filename: c.filename || null, amount: n, mission: false });
+        });
+        (player.completedMissions || []).forEach(m => {
+            const n = (m.successRewards && m.successRewards.skills && m.successRewards.skills.power) || 0;
+            if (n > 0) baseCards.push({ name: m.name, filename: m.filename || null, amount: n, mission: true });
+        });
+        const baseOther = Math.max(0, base - baseCards.reduce((a, c) => a + c.amount, 0));
+
+        // Modifier steps carry the SOURCE CARD's art too — the Melee shows the
+        // enabling card in the row with its badge (Wyatt's rule: if a card
+        // affects someone's power, the card itself must appear).
+        const cardArt = (name, ownerIdx) => {
+            const owner = this.players[ownerIdx == null ? playerIndex : ownerIdx];
+            const c = owner && owner.playedCards.find(x => x.name === name);
+            return c ? (c.filename || null) : null;
+        };
+
+        // Blind Faith pairings (+6 each for Heaven's Blade / Archeus)
+        if (player.playedCards.some(c => c.name === 'Blind Faith')) {
+            player.playedCards.forEach(c => {
+                if (c.special === 'power_6_if_blind_faith' || c.name === 'Archeus') {
+                    power += 6;
+                    steps.push({ kind: 'bonus', label: c.name + ' + Blind Faith', amount: 6, filename: c.filename || null });
+                }
+            });
+        }
+
+        // Power bonuses (Dawnharbinger / King of the Sky). Coin-flip bonuses
+        // are tagged `coin` — counted here but shown as a live coin toss below.
+        if (player.powerBonuses) {
+            player.powerBonuses.forEach(bonus => {
+                if (bonus.act !== this.currentAct) return;
+                if (bonus.conditional === 'most_survival') {
+                    const mySurvival = player.skills.survival || 0;
+                    let hasMost = true;
+                    for (let i = 0; i < this.playerCount; i++) {
+                        if (i !== playerIndex && (this.players[i].skills.survival || 0) >= mySurvival) { hasMost = false; break; }
+                    }
+                    if (hasMost && mySurvival > 0) {
+                        power += bonus.amount;
+                        steps.push({ kind: 'bonus', label: bonus.source || 'Bonus', amount: bonus.amount, filename: cardArt(bonus.source) });
+                    }
+                } else {
+                    power += bonus.amount;
+                    if (!bonus.coin) steps.push({ kind: 'bonus', label: bonus.source || 'Bonus', amount: bonus.amount, filename: cardArt(bonus.source) });
+                }
+            });
+        }
+
+        // Coin flips (Shot of Courage) — a live toss that lands on its real
+        // result. Won flips already added their bonus via powerBonuses.
+        if (player.coinFlips) {
+            player.coinFlips.forEach(flip => {
+                if (flip.act !== this.currentAct) return;
+                steps.push({ kind: 'coinflip', label: flip.source || 'Shot of Courage', amount: flip.amount || 4, won: !!flip.won, filename: cardArt(flip.source) });
+            });
+        }
+
+        // Power debuffs (Fuzzy Head −3, etc.) — `from` is the caster; the
+        // card art comes from the CASTER's board.
+        if (player.powerDebuffs) {
+            player.powerDebuffs.forEach(debuff => {
+                if (debuff.act !== this.currentAct) return;
+                power += debuff.amount;
+                steps.push({ kind: 'debuff', label: debuff.source || 'Debuff', amount: debuff.amount, from: debuff.from, filename: cardArt(debuff.source, debuff.from) });
+            });
+        }
+
+        // Melee Spectacular: doubling — the crescendo of the forge
+        if (player.powerX2 === this.currentAct) {
+            power *= 2;
+            steps.push({ kind: 'mult', label: 'Melee Spectacular', amount: 2, filename: cardArt('Melee Spectacular') });
+        }
+
+        return { base, baseOther, baseCards, steps, computedTotal: Math.max(0, power) };
     }
 
     // ─── ACT TRANSITIONS ───────────────────────────────────────

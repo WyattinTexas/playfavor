@@ -166,7 +166,6 @@
           <div class="ms-cb-portrait-wrap">${img(c.playerIndex, 'ms-cb-portrait', c.name)}</div>
           <div class="ms-cb-name">${c.name}</div>
           <div class="ms-cb-power"><img src="${powerIcon}" alt="Power"><b>0</b></div>
-          <div class="ms-cb-meter"><div class="ms-cb-fill"></div></div>
         </div>`;
 
       // Prestige paid in the physical game's tokens (greedy 25/10/5/1);
@@ -191,7 +190,6 @@
           <div class="ms-name">${r.name}</div>
           ${champ ? '<div class="ms-champ-label">✦ Champion ✦</div>' : ''}
           <div class="ms-power"><img src="${powerIcon}" alt="Power"><b>0</b></div>
-          <div class="ms-bar"><div class="ms-bar-fill"></div></div>
         </div>`;
 
       const tierHTML = (t, podiumIdx) => {
@@ -377,11 +375,9 @@
       // ── FORGE: one fighter's full story, player-paced ────────────────
       const runFighter = async (i) => {
         const el = combatantEls[i], c = combatants[i];
-        const fill = el.querySelector('.ms-cb-fill');
         const b = el.querySelector('.ms-cb-power b');
         const calloutHost = el.querySelector('.ms-cb-callout');
         const bd = (breakdownFor && breakdownFor(c.playerIndex)) || { base: c.power || 0, steps: [] };
-        const setFill = (v) => { if (fill) fill.style.width = Math.round(Math.max(0, v) / maxPower * 100) + '%'; };
 
         // Only actual power contributors appear (cards AND missions, each
         // carrying its amount). Art-less contributors fold into the board
@@ -397,19 +393,16 @@
         let running = 0;
 
         el.classList.add('forging', 'active');   // the stage lights this fighter
-        setFill(0);
         await delay(650); if (run.killed) return;
 
-        // EVERY point gets a face. The board share is not silent — the
-        // fighter's own character board leads the row with its +N badge, then
-        // each card lands with its badge, the meter climbing by exactly that
-        // amount. The row reads as the literal sum: +3 +2 +2 +2 = 9.
-        const dealRowItem = (url, amount, cls, caption) => {
+        // EVERY point (and every modifier) gets a face in the row. Badges
+        // spell the arithmetic: gold +N, red −N, grey 0 (a lost coin), ×2.
+        const dealRowItem = (url, badgeText, cls, caption) => {
           const item = document.createElement('div');
           item.className = 'ms-rowitem' + (cls ? ' ' + cls : '');
           item.innerHTML =
             `<img src="${url}" alt="">` +
-            `<span class="ms-rowamt">+${amount}</span>` +
+            `<span class="ms-rowamt${/^[−-]/.test(badgeText) ? ' neg' : badgeText === '0' ? ' zero' : ''}">${badgeText}</span>` +
             (caption ? `<span class="ms-rowcap">${caption}</span>` : '');
           const im = item.querySelector('img');
           im.onerror = () => item.remove();
@@ -419,43 +412,48 @@
         };
 
         if (cardsFx && baseStart > 0) {
-          dealRowItem(portraitFor(c.playerIndex), baseStart, 'board', 'Board');
+          dealRowItem(portraitFor(c.playerIndex), '+' + baseStart, 'board', 'Board');
           running = baseStart;
-          setFill(running); tickNumber(b, running, 340);
+          tickNumber(b, running, 340);
           bump(el);
           if (soundOn) playHit('bonus');
           await delay(950); if (run.killed) return;
         } else {
-          // Cards off (or no board share): open the meter at the board share.
+          // Cards off (or no board share): open the count at the board share.
           running = baseStart;
-          setFill(running); tickNumber(b, running, 500);
+          tickNumber(b, running, 500);
           await delay(200); if (run.killed) return;
         }
 
         for (const vc of visCards) {
-          dealRowItem(vc.url, vc.amount, vc.mission ? 'missioncard' : '');
+          dealRowItem(vc.url, '+' + vc.amount, vc.mission ? 'missioncard' : '');
           running = Math.max(0, running + vc.amount);
-          setFill(running); tickNumber(b, running, 340);
+          tickNumber(b, running, 340);
           bump(el);
           if (soundOn) playHit('bonus');
           await delay(950); if (run.killed) return;
         }
 
-        // Modifiers land as combat hits.
+        // Modifiers land as combat hits — and their SOURCE CARD joins the
+        // row too (a lost coin's card shows a grey 0; a sap shows red −N).
+        const stepArt = (step) => (cardsFx && step.filename) ? cardImgFor(step.filename, !!step.missionCard) : null;
         for (const step of (bd.steps || [])) {
           if (step.kind === 'coinflip') {
             flipCoin(calloutHost, step.won);
             if (soundOn) playHit('coin');
             await delay(1750); if (run.killed) return;
             if (soundOn) playHit(step.won ? 'mult' : 'debuff');
+            const cu = stepArt(step);
             if (step.won) {
               running = Math.max(0, running + step.amount);
-              setFill(running); tickNumber(b, running, 380);
+              tickNumber(b, running, 380);
               showCallout(calloutHost, { kind: 'coin', label: step.label, amount: step.amount });
+              if (cu) dealRowItem(cu, '+' + step.amount, 'mod');
               bump(el);
               sparkBurst(el, 6, 0.2);
             } else {
               showCallout(calloutHost, { kind: 'miss', label: step.label }, 'Tails');
+              if (cu) dealRowItem(cu, '0', 'mod');
             }
             await delay(700); if (run.killed) return;
             continue;
@@ -466,14 +464,20 @@
           if (soundOn) playHit(step.kind);
           running = step.kind === 'mult' ? running * step.amount : running + step.amount;
           running = Math.max(0, running);
-          setFill(running); tickNumber(b, running, 380);
+          tickNumber(b, running, 380);
+          const su = stepArt(step);
+          if (su) {
+            dealRowItem(su,
+              step.kind === 'mult' ? '×' + step.amount
+                : (step.amount > 0 ? '+' + step.amount : '−' + Math.abs(step.amount)),
+              'mod');
+          }
           bump(el);
           if (step.kind === 'mult') sparkBurst(el, 8, 0.3);
           await delay(700); if (run.killed) return;
         }
 
         // Lock to the authoritative total; the herald calls it.
-        setFill(c.power || 0);
         if (b) b.textContent = c.power || 0;
         el.classList.add('locked'); el.classList.remove('forging');
         heraldSay(`${c.name}: ${c.power || 0} Power!`);
@@ -519,9 +523,7 @@
       const fillTier = (el, instant) => {
         el.querySelectorAll('.ms-fighter').forEach(f => {
           const pw = +f.dataset.power;
-          const fill = f.querySelector('.ms-bar-fill');
           const b = f.querySelector('.ms-power b');
-          if (fill) fill.style.width = Math.round((pw / maxPower) * 100) + '%';
           if (instant) { if (b) b.textContent = pw; } else { tickNumber(b, pw, 720); }
         });
       };
