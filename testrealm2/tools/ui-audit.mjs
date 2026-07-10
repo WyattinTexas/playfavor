@@ -2933,6 +2933,210 @@ console.log('── Opponent view: inspect panel/chips sum their spread; spotlig
   await phone.close();
 }
 
+// ═══ DESKTOP: drag-to-play — the phone's Hearthstone pull, mouse-driven ═══
+console.log('── Desktop: drag a card up and release → action sheet (click still works)');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('desk-drag: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('desk-drag pageerror: ' + e.message));
+  await page.setViewport({ width: 1440, height: 900 });
+  await startGame(page);
+  await sleep(400);
+
+  // Middle card, same as the hover-bloom flow: the left rail's mission
+  // strip overhangs the leftmost card's center at this viewport.
+  const measureMid = () => page.evaluate(() => {
+    const cards = [...document.querySelectorAll('#handZone .hand-card')];
+    const card = cards[Math.floor(cards.length / 2)];
+    const r = card.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, i: parseInt(card.getAttribute('data-hand-i'), 10) };
+  });
+  const c = await measureMid();
+  ok(!isNaN(c.i), `desktop hand cards carry data-hand-i (#${c.i})`);
+
+  // Press + tiny wiggle: below the slop, no drag yet.
+  await page.mouse.move(c.x, c.y);
+  await sleep(300);
+  await page.mouse.down();
+  await page.mouse.move(c.x + 4, c.y - 4);
+  await sleep(120);
+  ok(await page.evaluate(() => !document.querySelector('#handZone .hand-card.dragging')),
+    'sub-slop wiggle stays a click, not a drag');
+
+  // Pull up past the lift line: card detaches and rides the cursor.
+  await page.mouse.move(c.x + 30, c.y - 160, { steps: 8 });
+  await sleep(250);
+  const midDrag = await page.evaluate(() => {
+    const d = document.querySelector('#handZone .hand-card.dragging');
+    return {
+      dragging: !!d,
+      followed: d ? /scale\(1\.45\)/.test(d.style.transform) : false,
+      dimmed: [...document.querySelectorAll('#handZone .hand-card:not(.dragging)')]
+        .every(x => parseFloat(getComputedStyle(x).opacity) < 0.7),
+      hoverDead: [...document.querySelectorAll('#handZone .hand-card:not(.dragging)')]
+        .every(x => getComputedStyle(x).pointerEvents === 'none'),
+    };
+  });
+  ok(midDrag.dragging, 'past the lift line the card detaches (mouse)');
+  ok(midDrag.followed, 'the card rides the cursor at drag scale');
+  ok(midDrag.dimmed && midDrag.hoverDead, 'the rest of the fan dims and goes hover-dead');
+  await page.screenshot({ path: join(SHOTS, 'desktop-drag-up.png') });
+
+  // Release up top → the action sheet, for THIS card.
+  await page.mouse.up();
+  await sleep(500);
+  const committed = await page.evaluate(() => ({
+    panel: !!document.querySelector('.action-panel.active'),
+    sel: selectedHandCard,
+    dragLeft: !!document.querySelector('#handZone .hand-card.dragging'),
+  }));
+  ok(committed.panel && committed.sel === c.i, `release up top opens the sheet for that card (selected #${committed.sel})`);
+  ok(!committed.dragLeft, 'the card snapped home');
+  await page.screenshot({ path: join(SHOTS, 'desktop-drag-commit.png') });
+  await page.evaluate(() => { window._finalChoicePending = false; hideActionPanel(); });
+  await sleep(300);
+
+  // hideActionPanel leaves the .selected card (and its fan reflow) in
+  // place until the next render — re-render and re-measure before the
+  // next gesture or the coordinates go stale.
+  const fresh = async () => {
+    await page.evaluate(() => renderGameState());
+    await sleep(250);
+    return measureMid();
+  };
+
+  // Drag up then back low = cancel: no sheet, and the release click
+  // must NOT re-select the card it just put back.
+  const c2 = await fresh();
+  await page.mouse.move(c2.x, c2.y);
+  await page.mouse.down();
+  await page.mouse.move(c2.x + 10, c2.y - 160, { steps: 6 });
+  await sleep(180);
+  const midCancel = await page.evaluate(() => !!document.querySelector('#handZone .hand-card.dragging'));
+  await page.mouse.move(c2.x + 2, c2.y - 8, { steps: 6 });
+  await sleep(150);
+  await page.mouse.up();
+  await sleep(450);
+  const cancelled = await page.evaluate(() => ({
+    panel: !!document.querySelector('.action-panel.active'),
+    dragging: !!document.querySelector('#handZone .hand-card.dragging'),
+  }));
+  ok(midCancel, 'cancel fixture: the drag really engaged before dropping back');
+  ok(!cancelled.panel && !cancelled.dragging, 'dragging back down cancels cleanly (release ≠ click)');
+
+  // The classic desktop click flow survives untouched.
+  const c3 = await fresh();
+  await page.mouse.move(c3.x, c3.y);
+  await sleep(200);
+  await page.mouse.down();
+  await page.mouse.up();
+  await sleep(400);
+  const clicked = await page.evaluate(() => ({
+    panel: !!document.querySelector('.action-panel.active'),
+    sel: selectedHandCard,
+  }));
+  ok(clicked.panel && clicked.sel === c3.i, `a plain click still selects and opens the sheet (#${clicked.sel})`);
+  await page.evaluate(() => { window._finalChoicePending = false; hideActionPanel(); });
+  await page.close();
+}
+
+// ═══ STAT FLOATS: a gain pops "+N" off the stat itself, both layouts ═══
+console.log('── Stat floats: +N rises off the grown stat (desktop rail + phone chips)');
+{
+  // Desktop: +3 Charisma (Wyatt's Settling Claims beat) + gold/favor purse.
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('stat-float: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('stat-float pageerror: ' + e.message));
+  await page.setViewport({ width: 1440, height: 900 });
+  await startGame(page);
+  await sleep(400);
+
+  await page.evaluate(() => {
+    const p = game.players[0];
+    p.bonusSkills = { ...(p.bonusSkills || {}), charisma: ((p.bonusSkills || {}).charisma || 0) + 3 };
+    game.applySlotSkills(p);   // bonusSkills only lands on the skill rebuild
+    p.gold += 4;
+    p.favor = (p.favor || 0) + 5;
+    renderGameState();
+  });
+  await sleep(350);   // mid-flight (floats stagger 130ms apart)
+  const desk = await page.evaluate(() => {
+    const floats = [...document.querySelectorAll('.stat-float')].map(f => {
+      const r = f.getBoundingClientRect();
+      return { text: f.textContent, x: r.left, y: r.top + r.height / 2, bad: f.classList.contains('bad') };
+    });
+    // New geometry: LEVEL with the stat's row (y), in the open air right
+    // of the panel (x past the rail) — never rising across the row above.
+    const levelRightOf = (sel, railSel) => {
+      const a = document.querySelector(sel);
+      const rail = document.querySelector(railSel);
+      if (!a || !rail) return null;
+      const ar = a.getBoundingClientRect(), rr = rail.getBoundingClientRect();
+      return (f) => Math.abs(f.y - (ar.top + ar.height / 2)) < 45 && f.x >= rr.right;
+    };
+    const chaPlace = levelRightOf('#statsPanel [data-stat="charisma"]', '#statsPanel');
+    const goldPlace = levelRightOf('#statsPanel [data-stat="gold"]', '#statsPanel .resource-tokens');
+    return {
+      texts: floats.map(f => f.text).sort().join(','),
+      chaPlaced: !!floats.find(f => f.text === '+3' && chaPlace && chaPlace(f)),
+      goldPlaced: !!floats.find(f => f.text === '+4' && goldPlace && goldPlace(f)),
+      anyBad: floats.some(f => f.bad),
+      onBody: [...document.querySelectorAll('.stat-float')].every(f => f.parentElement === document.body),
+    };
+  });
+  ok(desk.texts === '+3,+4,+5', `desktop floats for every gain (${desk.texts})`);
+  ok(desk.chaPlaced, '+3 pops level with the Charisma row, right of the panel');
+  ok(desk.goldPlaced, '+4 pops level with the gold token, clear of the totem');
+  ok(!desk.anyBad, 'no scorn styling on plain gains');
+  ok(desk.onBody, 'floats live on document.body (re-render-proof)');
+  await page.screenshot({ path: join(SHOTS, 'stat-float-desktop.png') });
+  await sleep(1800);
+  ok(await page.evaluate(() => document.querySelectorAll('.stat-float').length === 0),
+    'floats clean themselves up');
+  await page.close();
+
+  // Phone: skill gain floats on the rail chip; purse gains keep their
+  // token-drop narration and do NOT double up with a float.
+  const phone = await browser.newPage();
+  phone.on('console', m => { if (m.type() === 'error') consoleErrors.push('stat-float-phone: ' + m.text()); });
+  await phone.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  await startGame(phone);
+  await sleep(400);
+
+  await phone.evaluate(() => {
+    const p = game.players[0];
+    p.bonusSkills = { ...(p.bonusSkills || {}), prospecting: ((p.bonusSkills || {}).prospecting || 0) + 2 };
+    game.applySlotSkills(p);   // bonusSkills only lands on the skill rebuild
+    p.gold += 3;
+    renderGameState();
+  });
+  await sleep(350);
+  const ph = await phone.evaluate(() => {
+    const floats = [...document.querySelectorAll('.stat-float')].map(f => {
+      const r = f.getBoundingClientRect();
+      return { text: f.textContent, x: r.left, y: r.top + r.height / 2, right: r.right };
+    });
+    const chip = document.querySelector('#tvSkills [data-stat="prospecting"]');
+    const rail = document.getElementById('tvSkills');
+    const cr = chip ? chip.getBoundingClientRect() : null;
+    const rr = rail ? rail.getBoundingClientRect() : null;
+    return {
+      count: floats.length,
+      text: floats[0] ? floats[0].text : '',
+      placed: !!(cr && rr && floats[0]
+        && Math.abs(floats[0].y - (cr.top + cr.height / 2)) < 40
+        && floats[0].x >= rr.right),
+      onScreen: floats.every(f => f.right <= window.innerWidth && f.y >= 0),
+      goldDrop: !!document.querySelector('.tv-token-drop.gold'),
+    };
+  });
+  ok(ph.count === 1 && ph.text === '+2', `phone: exactly the skill float, no purse double (${ph.count}× "${ph.text}")`);
+  ok(ph.placed && ph.onScreen, 'the +2 pops level with the Prospecting chip, right of the rail, on-screen');
+  ok(ph.goldDrop, 'gold keeps its seat-chip token drop');
+  await phone.screenshot({ path: join(SHOTS, 'stat-float-phone.png') });
+  await phone.close();
+}
+
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));
 
 await browser.close();

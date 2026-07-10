@@ -1043,15 +1043,15 @@ function buildStatsPanelHtml(playerIndex, state) {
     // Resource tokens row
     const resourcesHtml = `
         <div class="resource-tokens">
-            <span class="resource-token gold-token">
+            <span class="resource-token gold-token" data-stat="gold">
                 <img src="assets/tokens/Copy of Tokens_Design_v1_Gold_1_v1.jpg" alt="Gold" class="token-img">
                 <span class="token-val gold-val">${player.gold}</span>
             </span>
-            <span class="resource-token prestige-token">
+            <span class="resource-token prestige-token" data-stat="prestige">
                 <img src="assets/tokens/Copy of Tokens_Design_v1_Prestige_1_v1.jpg" alt="Prestige" class="token-img">
                 <span class="token-val prestige-val">${player.prestige}</span>
             </span>
-            <span class="resource-token scorn-token">
+            <span class="resource-token scorn-token" data-stat="scorn">
                 <img src="assets/tokens/Copy of Tokens_Design_v1_Scorn_1_v1.jpg" alt="Scorn" class="token-img">
                 <span class="token-val scorn-val">${player.scorn}</span>
             </span>
@@ -1073,7 +1073,7 @@ function buildStatsPanelHtml(playerIndex, state) {
     skillEntries.forEach(s => {
         const val = skills[s.key] || 0;
         skillsHtml += `
-            <div class="skill-row">
+            <div class="skill-row" data-stat="${s.key}">
                 <span class="skill-icon">${s.icon}</span>
                 <span class="skill-label">${s.label}</span>
                 <span class="skill-value${val > 0 ? ' has-skill' : ''}">${val}</span>
@@ -1376,6 +1376,7 @@ function renderHand(state) {
 
         html += `<div class="hand-card${isSelected ? ' selected' : ''}"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
+                    data-hand-i="${i}"
                     onclick="event.stopPropagation(); selectHandCard(${i})"
                     ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
                     <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
@@ -1455,7 +1456,7 @@ function renderTvPurse(state) {
     if (!el) return;
     const p = state.players[0];
     const chip = (k, img, val, label) =>
-        `<span class="tv-purse-chip ${k}" onclick="tvChipTip(event, '${label}')">
+        `<span class="tv-purse-chip ${k}" data-stat="${k}" onclick="tvChipTip(event, '${label}')">
             <img src="${img}" alt="${label}"><b>${val}</b></span>`;
     // 2×2 reading order (Wyatt's 7/7 call): gold · prestige on top,
     // favor · scorn beneath.
@@ -1481,7 +1482,7 @@ function renderTvSkills(state) {
 
     ['survival', 'charisma', 'alchemy', 'prospecting', 'knowledge', 'power'].forEach(k => {
         const val = skills[k] || 0;
-        h += `<span class="tv-skill-chip${val > 0 ? '' : ' zero'}"
+        h += `<span class="tv-skill-chip${val > 0 ? '' : ' zero'}" data-stat="${k}"
                     onclick="tvChipTip(event, '${cap(k)}')">${SKILL_ICONS[k]}<b>${val}</b></span>`;
         rows++;
     });
@@ -1802,6 +1803,49 @@ function tvDropToken(matEl, key, amount) {
     setTimeout(() => el.remove(), 1100 * window.CINEMATIC_SPEED);
 }
 
+// ── Stat float: a "+N" pops off the stat that just grew, rises and
+// fades — the payoff beat for playing a card (Wyatt: "boom, +3 Charisma
+// goes up"). Lives on document.body, NOT #tvFx: the panel re-render that
+// triggers it must not wipe it, and #tvFx sits inside the phone table
+// view, which desktop hides.
+function statFloatFx(anchor, key, amount, idx) {
+    if (!anchor) return;
+    const r = anchor.getBoundingClientRect();
+    if (!r.width && !r.height) return;   // anchor hidden (other layout's surface)
+    // Escape the dense column: the float hangs in the open air just RIGHT
+    // of the panel/rail, level with its stat — a rise that starts ON the
+    // anchor drifts across the row above it and "+3" over the next row's
+    // "2" reads as "+32" (caught in the audit shot).
+    const rail = anchor.closest('.resource-tokens') || anchor.closest('#tvSkills')
+        || anchor.closest('#statsPanel');
+    const baseX = (rail ? rail.getBoundingClientRect().right : r.right) + 16;
+    // Purse tokens share one row — fan simultaneous floats out sideways.
+    const fan = anchor.closest('.resource-tokens') ? (idx || 0) * 34 : 0;
+    const el = document.createElement('div');
+    el.className = `stat-float${key === 'scorn' ? ' bad' : ''}`;
+    el.textContent = `+${amount}`;
+    el.style.left = `${baseX + fan}px`;
+    el.style.top = `${r.top + r.height / 2}px`;
+    el.style.animationDuration = `${1.15 * window.CINEMATIC_SPEED}s`;
+    el.style.animationDelay = `${(idx || 0) * 130}ms`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1300 * window.CINEMATIC_SPEED + (idx || 0) * 130);
+}
+
+// Where a given stat lives on the CURRENT layout (your surfaces only).
+function _statAnchor(key) {
+    if (isCompactLandscape()) {
+        return document.querySelector(`#tvSkills [data-stat="${key}"]`)
+            || document.querySelector(`#tvPurse [data-stat="${key}"]`);
+    }
+    // Desktop: skill rows (float off the VALUE digit, not the wide row)
+    // + token totem. Favor has no panel token — its float rises off the
+    // token row so the gain still lands somewhere real.
+    const row = document.querySelector(`#statsPanel [data-stat="${key}"]`);
+    if (row) return row.querySelector('.skill-value') || row;
+    return document.querySelector('#statsPanel .resource-tokens');
+}
+
 function tvAnimateNewCard(matEl, card) {
     const fx = document.getElementById('tvFx');
     if (!fx || !matEl || !card) return;
@@ -1842,7 +1886,25 @@ function tvAnimateDeltas(state) {
             cardCount: (p.playedCards || []).length,
             missionNames: acquired.map(m => m.name)
         };
+        if (i === 0) {
+            const sk = p.skills || {};
+            curr.skills = {};
+            ['survival', 'charisma', 'alchemy', 'prospecting', 'knowledge', 'power']
+                .forEach(k => { curr.skills[k] = sk[k] || 0; });
+        }
         const prev = _tvPrev[i];
+
+        // YOUR gains float as "+N" off the stat itself. Skills float on
+        // both layouts; purse floats are desktop-only — the phone already
+        // narrates those with tvDropToken on your seat chip below.
+        if (prev && i === 0) {
+            let n = 0;
+            const bump = (key, d) => {
+                if (d > 0) statFloatFx(_statAnchor(key), key, d, n++);
+            };
+            if (!animate) ['gold', 'prestige', 'scorn', 'favor'].forEach(k => bump(k, curr[k] - prev[k]));
+            Object.keys(curr.skills).forEach(k => bump(k, curr.skills[k] - ((prev.skills || {})[k] || 0)));
+        }
 
         if (prev && animate) {
             const matEl = tvMatEl(i);
@@ -4207,6 +4269,68 @@ function _bloomRelease(e) {
 }
 document.addEventListener('pointerup', _bloomRelease, { passive: true });
 document.addEventListener('pointercancel', _bloomRelease, { passive: true });
+
+// ═══ DESKTOP DRAG-TO-PLAY — the phone's Hearthstone pull, mouse-driven ═══
+// Press a fan card and pull: it leaves the fan and rides the cursor;
+// release above the same HAND_DRAG_LIFT line and its action sheet opens —
+// exactly the phone gesture. Release low and it tucks back home. A plain
+// click (no pull) still selects the classic way, and hover-bloom keeps
+// working: the drag's inline !important transform is the only thing that
+// outranks the hover rule, and only while dragging.
+const DESK_DRAG_SLOP = 8;   // px of travel before a press becomes a drag
+let _deskDrag = null;
+
+document.addEventListener('pointerdown', (e) => {
+    if (isCompactLandscape() || e.button !== 0) return;
+    const card = e.target.closest && e.target.closest('#handZone .hand-card');
+    if (!card) return;
+    _deskDrag = { startX: e.clientX, startY: e.clientY, active: false,
+                  card, baseTransform: card.style.transform };
+}, { passive: true });
+
+document.addEventListener('pointermove', (e) => {
+    const d = _deskDrag;
+    if (!d) return;
+    if (!d.active) {
+        if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) <= DESK_DRAG_SLOP) return;
+        d.active = true;
+        d.card.classList.add('dragging');
+        const zone = document.getElementById('handZone');
+        if (zone) zone.classList.add('drag-from');
+    }
+    d.card.style.setProperty('transform',
+        `translate(${Math.round(e.clientX - d.startX)}px, ${Math.round(e.clientY - d.startY - 24)}px) scale(1.45)`,
+        'important');
+}, { passive: true });
+
+function _deskDragEnd(e, allowCommit) {
+    const d = _deskDrag;
+    _deskDrag = null;
+    if (!d || !d.active) return;
+    const card = d.card;
+    card.classList.remove('dragging');        // transition comes back on
+    card.style.removeProperty('transform');   // drop the !important drag transform
+    card.style.transform = d.baseTransform;   // snap home
+    const zone = document.getElementById('handZone');
+    if (zone) zone.classList.remove('drag-from');
+    // A real drag's release must never read as a click: a low release
+    // would otherwise "click" the card it just put back and open the
+    // sheet the player was cancelling out of.
+    _peekSwallowClick = true;
+    setTimeout(() => { _peekSwallowClick = false; }, 400);
+    if (allowCommit && (d.startY - e.clientY) > HAND_DRAG_LIFT) {
+        const i = parseInt(card.getAttribute('data-hand-i'), 10);
+        if (!isNaN(i)) setTimeout(() => selectHandCard(i), 0);
+    }
+}
+document.addEventListener('pointerup', (e) => _deskDragEnd(e, true), { passive: true });
+document.addEventListener('pointercancel', (e) => _deskDragEnd(e, false), { passive: true });
+
+// The fan is <img>s — without this, the browser's native image drag
+// hijacks the pointer stream on the very first pull.
+document.addEventListener('dragstart', (e) => {
+    if (e.target.closest && e.target.closest('.hand-card')) e.preventDefault();
+});
 
 // ═══ MELEE SPLASH — end-of-act tournament flair ═══════════════════════
 // A quick full-screen moment (Battlegrounds combat splash energy): banner,
