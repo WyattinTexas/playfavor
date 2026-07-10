@@ -881,6 +881,52 @@ console.log('── Desktop: hover-bloom and selected cards paint above the phas
   ok(selLayer.selected, 'a hand card is selected (fixture valid)');
   ok(selLayer.z > selLayer.pillZ,
     `.game-layout outranks the pill while a card is selected (${selLayer.z} > ${selLayer.pillZ})`);
+
+  // Hover must outrank a selected neighbor (z 33 vs 31): with the middle
+  // card selected, hover the card beside it — the BLOOM wins the hit-test
+  // over the selected card's territory (a selected card used to paint
+  // over the bloom of the card you were reading — Wyatt's screenshot).
+  await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.hand-zone .hand-card')];
+    selectHandCard(Math.floor(cards.length / 2));
+  });
+  await sleep(300);
+  const duelPt = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.hand-zone .hand-card')];
+    const mid = Math.floor(cards.length / 2);
+    const sel = cards[mid].getBoundingClientRect();
+    const hov = cards[mid + 1].getBoundingClientRect();
+    return { hx: hov.left + hov.width / 2, hy: hov.top + hov.height / 2,
+             sx: sel.left + sel.width / 2, sy: sel.top + sel.height / 2 };
+  });
+  await page.mouse.move(duelPt.hx, duelPt.hy);
+  await sleep(450);
+  const duel = await page.evaluate((pt) => {
+    const hovered = [...document.querySelectorAll('.hand-zone .hand-card')].find(x => x.matches(':hover'));
+    const el = document.elementFromPoint(pt.sx, pt.sy);
+    return {
+      hovered: !!hovered,
+      bloomWins: !!(hovered && (hovered === el || hovered.contains(el))),
+      hit: el ? (el.className.toString() || el.tagName) : 'none',
+    };
+  }, duelPt);
+  ok(duel.hovered, 'a neighbor of the selected card is hovered (fixture valid)');
+  ok(duel.bloomWins, `hover-bloom paints ABOVE the selected neighbor (hit: ${duel.hit})`);
+  await page.screenshot({ path: join(SHOTS, 'desktop-bloom-over-selected.png') });
+
+  // Outside click closes the panel AND strips .selected — the class used
+  // to linger (nothing re-renders on hide) and bury later blooms at z 31.
+  // (400,60): empty felt between the board thumb and the phase pill —
+  // clear of the root-level action panel, which is exempt from the hide.
+  await page.mouse.move(400, 60);
+  await page.mouse.down(); await page.mouse.up();
+  await sleep(300);
+  const cleared = await page.evaluate(() => ({
+    panel: !!document.querySelector('.action-panel.active'),
+    stale: document.querySelectorAll('.hand-card.selected').length,
+  }));
+  ok(!cleared.panel && cleared.stale === 0,
+    `outside click leaves no stale .selected behind (${cleared.stale})`);
   await page.close();
 }
 
@@ -3089,6 +3135,11 @@ console.log('── Stat floats: +N rises off the grown stat (desktop rail + pho
   ok(desk.goldPlaced, '+4 pops level with the gold token, clear of the totem');
   ok(!desk.anyBad, 'no scorn styling on plain gains');
   ok(desk.onBody, 'floats live on document.body (re-render-proof)');
+  // Pacing: the activation loop must wait the "+N" beat out before the
+  // next player's spotlight (floats were playing under rival turns).
+  ok(await page.evaluate(() =>
+    typeof statFloatWait === 'function' && /statFloatWait\(\)/.test(String(activateAllCards))),
+    'activation loop awaits the +N beat before the next spotlight');
   await page.screenshot({ path: join(SHOTS, 'stat-float-desktop.png') });
   await sleep(1800);
   ok(await page.evaluate(() => document.querySelectorAll('.stat-float').length === 0),

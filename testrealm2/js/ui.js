@@ -1829,7 +1829,19 @@ function statFloatFx(anchor, key, amount, idx) {
     el.style.animationDuration = `${1.15 * window.CINEMATIC_SPEED}s`;
     el.style.animationDelay = `${(idx || 0) * 130}ms`;
     document.body.appendChild(el);
-    setTimeout(() => el.remove(), 1300 * window.CINEMATIC_SPEED + (idx || 0) * 130);
+    const life = 1300 * window.CINEMATIC_SPEED + (idx || 0) * 130;
+    // The activation loop waits for this before the next spotlight takes
+    // the stage — otherwise your "+N" payoff plays under the rival's turn.
+    _statFloatUntil = Math.max(_statFloatUntil, Date.now() + life);
+    setTimeout(() => el.remove(), life);
+}
+
+// When the newest stat float finishes (epoch ms); statFloatWait() pauses
+// exactly that long and no longer, so back-to-back beats never double-wait.
+let _statFloatUntil = 0;
+function statFloatWait() {
+    const ms = _statFloatUntil - Date.now();
+    return ms > 0 ? new Promise(r => setTimeout(r, ms)) : Promise.resolve();
 }
 
 // Where a given stat lives on the CURRENT layout (your surfaces only).
@@ -2739,6 +2751,10 @@ function hideActionPanel() {
     if (window._finalChoicePending) return;
     document.getElementById('actionPanel').classList.remove('active');
     selectedHandCard = null;
+    // Nothing re-renders the hand here, so the .selected card (z 31)
+    // would linger and paint OVER a neighbor's hover-bloom (Wyatt's
+    // buried-bloom screenshot) — strip the class with the selection.
+    document.querySelectorAll('.hand-card.selected').forEach(c => c.classList.remove('selected'));
     clearTargetHighlights();
     if (typeof coachTick === 'function') coachTick();
 }
@@ -3196,6 +3212,11 @@ async function activateAllCards(humanAction) {
             // Animate stat changes after each card resolves
             renderGameState();
             animateStatChanges();
+
+            // YOUR payoff gets its beat: if "+N" floats just fired off your
+            // stats, let them land before the next player's spotlight takes
+            // the stage (Wyatt: the pluses were playing under rival turns).
+            await statFloatWait();
 
             // Brief pause between cards from the same player
             if (cardIdx < cards.length - 1) {

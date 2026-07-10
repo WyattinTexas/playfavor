@@ -1671,7 +1671,9 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
     .hand-card:hover {
         transform: translateX(var(--bloomShift, 0px)) translateY(-14px) scale(var(--bloomScaleDesk, 4)) rotate(0deg) !important;
         transform-origin: bottom center;
-        z-index: 30;
+        /* Above .selected (31): the card you're READING always wins the
+           stack — a selected neighbor used to paint over the bloom. */
+        z-index: 33;
         border-color: var(--gold);
         box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 20px rgba(201,168,76,0.1);
     }
