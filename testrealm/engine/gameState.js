@@ -293,7 +293,7 @@ class FavorGame {
         for (const c of player.playedCards) {
             if (c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_and_philosopher') count += 1;
             if (c.special === 'minds_eye_x5') count += 5;
-            if (c.special === 'minds_eye_x2' || c.special === 'minds_eye_x2_philosopher_stone_x5') count += 2;
+            if (c.special === 'minds_eye_x2_philosopher_stone_x5') count += 2;
         }
         count += player.bonusMindsEye || 0; // mission success rewards
         return count;
@@ -811,7 +811,7 @@ class FavorGame {
                         let bestIdx = 0;
                         let bestFavor = -1;
                         this.visibleMissions.forEach((m, i) => {
-                            const favor = m.favor || (m.successRewards ? m.successRewards.favor : 0) || 0;
+                            const favor = this.missionFavorEstimate(player.index, m);
                             if (favor > bestFavor) { bestFavor = favor; bestIdx = i; }
                         });
                         this.chooseMission(player.index, bestIdx);
@@ -943,11 +943,6 @@ class FavorGame {
                 this.addLog(`${player.name}'s ${card.name}: +1 Knowledge (Mind's Eye)`);
                 break;
 
-            case 'minds_eye_x2':
-                // Deadeye: grants 2 Mind's Eye (counted in getMindsEyeCount)
-                this.addLog(`${player.name}'s ${card.name}: +2 Mind's Eye`);
-                break;
-
             // --- Knowledge multipliers ---
 
             case 'knowledge_x5':
@@ -971,34 +966,26 @@ class FavorGame {
                 break;
 
             case 'minus_3_power_all_others':
-                // Fuzzy Head: each OTHER player loses 3 power for melee.
-                // `from` records the caster so the Melee can draw the sap FX.
+                // Fuzzy Head: each OTHER player loses 3 power for melee
                 for (let i = 0; i < this.playerCount; i++) {
                     if (i !== playerIndex) {
                         if (!this.players[i].powerDebuffs) this.players[i].powerDebuffs = [];
-                        this.players[i].powerDebuffs.push({ amount: -3, act: this.currentAct, source: card.name, from: playerIndex });
+                        this.players[i].powerDebuffs.push({ amount: -3, act: this.currentAct, source: card.name });
                         this.addLog(`${this.players[i].name} receives -3 power from ${player.name}'s Fuzzy Head`);
                     }
                 }
                 break;
 
             case 'coin_flip_4_power':
-            case 'coin_flip_5_power':
-                // Melee coin flip (Life Essence is the printed +5). The outcome
-                // is decided here but recorded on coinFlips (win OR lose) so
-                // the Melee can reveal it as a live coin toss. `coin` tags the
-                // won bonus so powerBreakdown shows ONE coin step.
+                // Liquid Courage: 50% chance to gain 4 power for melee
                 {
-                    const amt = special === 'coin_flip_5_power' ? 5 : 4;
                     const won = Math.random() < 0.5;
-                    if (!player.coinFlips) player.coinFlips = [];
-                    player.coinFlips.push({ source: card.name, act: this.currentAct, won: won, amount: amt });
                     if (won) {
                         if (!player.powerBonuses) player.powerBonuses = [];
-                        player.powerBonuses.push({ amount: amt, act: this.currentAct, source: card.name, coin: true });
-                        this.addLog(`${player.name}'s ${card.name}: HEADS! +${amt} Power for melee`);
+                        player.powerBonuses.push({ amount: 4, act: this.currentAct, source: card.name });
+                        this.addLog(`${player.name}'s Liquid Courage: HEADS! +4 Power for melee`);
                     } else {
-                        this.addLog(`${player.name}'s ${card.name}: TAILS! No bonus`);
+                        this.addLog(`${player.name}'s Liquid Courage: TAILS! No bonus`);
                     }
                 }
                 break;
@@ -1373,6 +1360,24 @@ class FavorGame {
     }
 
     /**
+     * What completing this mission is WORTH in favor right now — the printed
+     * favorValue plus whatever its per-asset success special would pay at
+     * this moment. Pure valuation for AI decisions (borrow fees, mission
+     * picks); pays nothing.
+     */
+    missionFavorEstimate(playerIndex, mission) {
+        const p = this.players[playerIndex];
+        let favor = mission.favorValue || 0;
+        switch (mission.successSpecial) {
+            case 'favor_per_charisma_x2':   favor += 2 * (p.skills.charisma || 0); break;
+            case 'favor_per_knowledge_x1':  favor += (p.skills.knowledge || 0); break;
+            case 'favor_per_minds_eye_x5':  favor += 5 * this.getMindsEyeCount(playerIndex); break;
+            case 'favor_per_philstone_x10': favor += 10 * (p.philosopherStone || 0); break;
+        }
+        return favor;
+    }
+
+    /**
      * Turn a held mission in EARLY, by choice — it resolves immediately,
      * success or failure, exactly as it would at its due date.
      */
@@ -1419,8 +1424,13 @@ class FavorGame {
             }
         }
         if (mission.reqFavor && player.favor < mission.reqFavor) return null;
-        if (mission.reqSpecial === 'favor_5_per_minds_eye' &&
-            player.favor < 5 * this.getMindsEyeCount(playerIndex)) return null;
+        if (mission.reqMaps && mission.reqMaps.length) {
+            const held = this.getPlayerMaps(playerIndex);
+            // A map ALTERNATIVE already completes it → nothing to borrow;
+            // a missing reqMapsAll map can never be borrowed.
+            if (!mission.reqMapsAll && mission.reqMaps.some(mp => held.includes(mp))) return null;
+            if (mission.reqMapsAll && !mission.reqMaps.every(mp => held.includes(mp))) return null;
+        }
 
         const gaps = this.unmetSkillReqs(playerIndex, skillReqs);
         const borrowable = this.getBorrowableSkills(playerIndex);
@@ -1483,6 +1493,26 @@ class FavorGame {
     resolveMissions() {
         const results = [];
 
+        // What each resolution actually PAID or COST — the mission ceremony
+        // shows these honest deltas. Per-asset favor depends on the player's
+        // state at this exact moment, so recomputing later would lie.
+        const measure = (idx, fn) => {
+            const p = this.players[idx];
+            const before = {
+                favor: p.favor, gold: p.gold, prestige: p.prestige, scorn: p.scorn,
+                stones: p.philosopherStone || 0, mindsEye: this.getMindsEyeCount(idx),
+            };
+            fn();
+            return {
+                favor: p.favor - before.favor,
+                gold: p.gold - before.gold,
+                prestige: p.prestige - before.prestige,
+                scorn: p.scorn - before.scorn,
+                stones: (p.philosopherStone || 0) - before.stones,
+                mindsEye: this.getMindsEyeCount(idx) - before.mindsEye,
+            };
+        };
+
         // Start with emblem holder, go clockwise
         let pi = this.emblemHolder;
         for (let i = 0; i < this.playerCount; i++) {
@@ -1506,10 +1536,10 @@ class FavorGame {
                     if (pi !== 0) {
                         const { success, details } = this.checkMissionRequirements(pi, mission);
                         if (success) {
-                            this.applyMissionRewards(pi, mission);
+                            const deltas = measure(pi, () => this.applyMissionRewards(pi, mission));
                             player.completedMissions.push(mission);
                             resolved.add(mission);
-                            playerResults.push({ mission, success: true, details });
+                            playerResults.push({ mission, success: true, details, deltas });
                         }
                     }
                     return;
@@ -1518,9 +1548,9 @@ class FavorGame {
                 const { success, details } = this.checkMissionRequirements(pi, mission);
                 if (success) {
                     resolved.add(mission);
-                    this.applyMissionRewards(pi, mission);
+                    const deltas = measure(pi, () => this.applyMissionRewards(pi, mission));
                     player.completedMissions.push(mission);
-                    playerResults.push({ mission, success: true, details });
+                    playerResults.push({ mission, success: true, details, deltas });
                 } else {
                     // Unmet at its due date — can borrowed skills save it?
                     // Borrowing is a CHOICE, never automatic: the human gets
@@ -1533,16 +1563,18 @@ class FavorGame {
                         player._pendingMissionBorrows.push(mission);
                         return; // stays in player.missions; the chooser resolves it
                     }
-                    if (plan && pi !== 0 && (mission.favorValue || 0) >= plan.cost * 2) {
-                        player.gold -= plan.cost;
-                        plan.borrowFrom.forEach(b => {
-                            this.players[b.neighborIndex].gold += BORROW_SKILL_COST;
+                    if (plan && pi !== 0 && this.missionFavorEstimate(pi, mission) >= plan.cost * 2) {
+                        const deltas = measure(pi, () => {
+                            player.gold -= plan.cost;
+                            plan.borrowFrom.forEach(b => {
+                                this.players[b.neighborIndex].gold += BORROW_SKILL_COST;
+                            });
+                            this.applyMissionRewards(pi, mission);
                         });
                         resolved.add(mission);
-                        this.applyMissionRewards(pi, mission);
                         player.completedMissions.push(mission);
                         this.addLog(`${player.name} borrows ${plan.borrowFrom.map(b => b.skill).join(', ')} (−${plan.cost}g) to complete ${mission.name}`);
-                        playerResults.push({ mission, success: true, details, borrowed: plan.cost });
+                        playerResults.push({ mission, success: true, details, borrowed: plan.cost, deltas });
                         return;
                     }
                     resolved.add(mission);
@@ -1551,7 +1583,11 @@ class FavorGame {
                     playerResults.push({ mission, success: false, details });
                 }
             });
-            failed.forEach(mission => this.applyMissionFailure(pi, mission));
+            failed.forEach(mission => {
+                const deltas = measure(pi, () => this.applyMissionFailure(pi, mission));
+                const entry = playerResults.find(r => r.mission === mission && !r.success);
+                if (entry) entry.deltas = deltas;
+            });
 
             // Remove only what actually resolved — missions still inside
             // their window carry over to the next act.
@@ -1635,10 +1671,22 @@ class FavorGame {
         if (mission.reqFavor && player.favor < mission.reqFavor) {
             missing.push(`${mission.reqFavor} Favor`); met = false;
         }
-        // The Shadow Guide: needs 5 Favor for each Mind's Eye you hold.
-        if (mission.reqSpecial === 'favor_5_per_minds_eye') {
-            const need = 5 * this.getMindsEyeCount(playerIndex);
-            if (player.favor < need) { missing.push(`${need} Favor (5 per Mind's Eye)`); met = false; }
+        // Mission maps come in two printed forms: an ALTERNATIVE ("7 Power &
+        // 7 Knowledge OR Guardian Map" — holding it completes the mission by
+        // itself) or, with reqMapsAll, one MORE requirement alongside the
+        // stats (The Shadow Guide's A Hidden Door).
+        if (mission.reqMaps && mission.reqMaps.length) {
+            const held = this.getPlayerMaps(playerIndex);
+            if (mission.reqMapsAll) {
+                mission.reqMaps.forEach(mp => {
+                    if (!held.includes(mp)) { missing.push(`${mp} Map`); met = false; }
+                });
+            } else if (mission.reqMaps.some(mp => held.includes(mp))) {
+                return {
+                    success: true,
+                    details: { missing: [], canBorrow: this.getBorrowableSkills(playerIndex), mapUsed: true }
+                };
+            }
         }
 
         return {
@@ -1658,6 +1706,9 @@ class FavorGame {
         if (s.favor) player.favor += s.favor;
         if (s.prestige) player.prestige += s.prestige;
         if (s.gold) player.gold += s.gold;
+        // Some successes sting: Usurper and Alchemic Seige print Scorn in the
+        // SUCCESS zone (red medallion) — a reward can hurt.
+        if (s.scorn) player.scorn += s.scorn;
         // Skill rewards persist in bonusSkills — applySlotSkills rebuilds
         // the tally from scratch, so a direct write here would vanish on
         // the next slider move.
@@ -1689,6 +1740,12 @@ class FavorGame {
                 const f = player.skills.knowledge || 0;
                 player.favor += f;
                 this.addLog(`${player.name}: +${f} Favor (1 per Knowledge)`);
+                break;
+            }
+            case 'favor_per_minds_eye_x5': {
+                const f = 5 * this.getMindsEyeCount(playerIndex);
+                player.favor += f;
+                this.addLog(`${player.name}: +${f} Favor (5 per Mind's Eye)`);
                 break;
             }
             case 'philosopher_stone_x2_grant':
@@ -1996,95 +2053,6 @@ class FavorGame {
 
         // Power cannot go below 0
         return Math.max(0, power);
-    }
-
-    /**
-     * Read-only companion to calculatePower: the ordered story of how a
-     * player's Melee Power came to be — base (from cards + board), then each
-     * bonus / debuff / doubling as its own step. Drives the Melee "forge"
-     * animation. PURE: never mutates (unlike calculatePower, which consumes
-     * defendTheThrone), so it's safe to call after resolveMelee. The cinematic
-     * still locks the meter to the authoritative total, so any rare drift
-     * (e.g. an already-spent Defend the Throne) never shows a wrong number.
-     */
-    powerBreakdown(playerIndex) {
-        const player = this.players[playerIndex];
-        const steps = [];
-        let power = player.skills.power || 0;
-        const base = power;
-        // Attribute the base to its actual sources so the Melee forge can SHOW
-        // the arithmetic: every power-granting played card (amount = its power
-        // pips), every completed mission whose success reward granted power,
-        // and baseOther = whatever remains (the character-board slot). The sum
-        // baseOther + Σ amounts always equals base.
-        const baseCards = [];
-        player.playedCards.forEach(c => {
-            const n = (c.skills || []).filter(s => s === 'power').length;
-            if (n > 0) baseCards.push({ name: c.name, filename: c.filename || null, amount: n, mission: false });
-        });
-        (player.completedMissions || []).forEach(m => {
-            const n = (m.successRewards && m.successRewards.skills && m.successRewards.skills.power) || 0;
-            if (n > 0) baseCards.push({ name: m.name, filename: m.filename || null, amount: n, mission: true });
-        });
-        const baseOther = Math.max(0, base - baseCards.reduce((a, c) => a + c.amount, 0));
-
-        // Blind Faith pairings (+6 each for Heaven's Blade / Archeus)
-        if (player.playedCards.some(c => c.name === 'Blind Faith')) {
-            player.playedCards.forEach(c => {
-                if (c.special === 'power_6_if_blind_faith' || c.name === 'Archeus') {
-                    power += 6;
-                    steps.push({ kind: 'bonus', label: c.name + ' + Blind Faith', amount: 6 });
-                }
-            });
-        }
-
-        // Power bonuses (Dawnharbinger / King of the Sky). Coin-flip bonuses
-        // are tagged `coin` — counted here but shown as a live coin toss below.
-        if (player.powerBonuses) {
-            player.powerBonuses.forEach(bonus => {
-                if (bonus.act !== this.currentAct) return;
-                if (bonus.conditional === 'most_survival') {
-                    const mySurvival = player.skills.survival || 0;
-                    let hasMost = true;
-                    for (let i = 0; i < this.playerCount; i++) {
-                        if (i !== playerIndex && (this.players[i].skills.survival || 0) >= mySurvival) { hasMost = false; break; }
-                    }
-                    if (hasMost && mySurvival > 0) {
-                        power += bonus.amount;
-                        steps.push({ kind: 'bonus', label: bonus.source || 'Bonus', amount: bonus.amount });
-                    }
-                } else {
-                    power += bonus.amount;
-                    if (!bonus.coin) steps.push({ kind: 'bonus', label: bonus.source || 'Bonus', amount: bonus.amount });
-                }
-            });
-        }
-
-        // Coin flips (Liquid Courage) — a live toss that lands on its real
-        // result. Won flips already added their +4 to `power` via powerBonuses.
-        if (player.coinFlips) {
-            player.coinFlips.forEach(flip => {
-                if (flip.act !== this.currentAct) return;
-                steps.push({ kind: 'coinflip', label: flip.source || 'Liquid Courage', amount: flip.amount || 4, won: !!flip.won });
-            });
-        }
-
-        // Power debuffs (Fuzzy Head −3, etc.) — `from` is the caster, for the sap FX.
-        if (player.powerDebuffs) {
-            player.powerDebuffs.forEach(debuff => {
-                if (debuff.act !== this.currentAct) return;
-                power += debuff.amount;
-                steps.push({ kind: 'debuff', label: debuff.source || 'Debuff', amount: debuff.amount, from: debuff.from });
-            });
-        }
-
-        // Melee Spectacular: doubling — the crescendo of the forge
-        if (player.powerX2 === this.currentAct) {
-            power *= 2;
-            steps.push({ kind: 'mult', label: 'Melee Spectacular', amount: 2 });
-        }
-
-        return { base, baseOther, baseCards, steps, computedTotal: Math.max(0, power) };
     }
 
     // ─── ACT TRANSITIONS ───────────────────────────────────────

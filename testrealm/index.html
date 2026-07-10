@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — Test Realm</title>
-    <link rel="stylesheet" href="css/style.css?v=20260710124853">
+    <link rel="stylesheet" href="css/style.css?v=20260710125451">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
@@ -58,16 +58,10 @@
             </button>
         </div>
 
-        <div class="test-toggles">
-            <label class="prompt-test-toggle" title="Replay the in-game tutorial prompts on your next game">
-                <input type="checkbox" id="promptTestToggle" onchange="togglePromptTest(this.checked)">
-                <span>Prompt Test</span>
-            </label>
-            <label class="prompt-test-toggle" title="Skip straight to the Act 1 Melee — everyone starts with a full board and one card left to play">
-                <input type="checkbox" id="battleTestToggle" onchange="toggleBattleTest(this.checked)">
-                <span>Battle Test</span>
-            </label>
-        </div>
+        <label class="prompt-test-toggle" title="Replay the in-game tutorial prompts on your next game">
+            <input type="checkbox" id="promptTestToggle" onchange="togglePromptTest(this.checked)">
+            <span>Prompt Test</span>
+        </label>
 
         <p class="title-footer">3–5 Players &bull; 45–90 Minutes &bull; 1st Edition</p>
     </div>
@@ -87,11 +81,15 @@
         <div class="ov-close" onclick="FLB.closeLeaderboard()">ESC</div>
     </div>
 
-    <!-- ═══ CHARACTER STORE (title-screen panel — buy heroes with ★) ═══ -->
+    <!-- ═══ CHARACTER STORE — a market stall under the royal awning ═══ -->
     <div class="lb-panel store-panel" id="storePanel" onclick="FLB.closeStore()">
         <div class="lb-inner st-inner" onclick="event.stopPropagation()">
-            <div class="lb-title">Character Store <span class="st-stars" id="storeStars"></span></div>
+            <div class="st-awning" aria-hidden="true"></div>
+            <div class="lb-title st-sign">The Royal Emporium<span class="st-stars" id="storeStars"></span></div>
             <div class="st-grid" id="storeBody"></div>
+            <div class="st-counter" aria-hidden="true">
+                <img src="assets/icons/gold.png" alt=""><img src="assets/icons/prospecting.png" alt=""><img src="assets/icons/maps.png" alt=""><img src="assets/icons/favor.png" alt=""><img src="assets/icons/philosopher.png" alt=""><img src="assets/icons/minds_eye.png" alt=""><img src="assets/icons/alchemy.png" alt=""><img src="assets/icons/knowledge.png" alt="">
+            </div>
             <div class="lb-foot">Every game pays Stars — 10 / 6 / 4 by finish, 2 for playing. New heroes join your select pool.</div>
         </div>
         <div class="ov-close" onclick="FLB.closeStore()">ESC</div>
@@ -189,13 +187,19 @@
                         <div class="opp-ov-stats" id="oppOvStats"></div>
                     </div>
                 </div>
-                <!-- Board + ring (ring shows on phone; wrapper is display:contents on desktop) -->
-                <div class="opp-ov-boardwrap">
-                    <img class="opp-ov-board" id="oppOvBoard" src="">
-                    <img class="opp-ov-ring" id="oppOvRing" src="assets/ui/slider-ring.png" alt="">
+                <!-- Phone: full purse + summed skills in the HUD's chip language -->
+                <div class="opp-ov-chips" id="oppOvChips"></div>
+                <div class="opp-ov-mid">
+                    <!-- Desktop: their variables as the same juicy panel you read your own in -->
+                    <div class="opp-ov-panel" id="oppOvPanel"></div>
+                    <!-- Board + ring (both layouts) -->
+                    <div class="opp-ov-boardwrap">
+                        <img class="opp-ov-board" id="oppOvBoard" src="">
+                        <img class="opp-ov-ring" id="oppOvRing" src="assets/ui/slider-ring.png" alt="">
+                    </div>
+                    <!-- Phone: their played cards as tucked stacks, right of the board -->
+                    <div class="opp-ov-stacks" id="oppOvStacks"></div>
                 </div>
-                <!-- Phone: their played cards as tucked stacks, right of the board -->
-                <div class="opp-ov-stacks" id="oppOvStacks"></div>
                 <!-- Toggle (desktop landscape fallback): reveals the played-cards panel -->
                 <button class="opp-ov-toggle" id="oppOvToggle" onclick="toggleOppCards(event)"></button>
                 <!-- Played-cards panel: inline on desktop, toggled overlay on landscape -->
@@ -341,6 +345,9 @@
     <!-- ═══ HOVER PEEK — mouse over any small card, see it huge ═══ -->
     <div class="hover-peek" id="hoverPeek"><img id="hoverPeekImg" src="" alt=""></div>
 
+    <!-- ═══ MISSION CEREMONY — the missions phase, player by player ═══ -->
+    <div id="missionCeremony"></div>
+
     <!-- ═══ MELEE SPLASH — end-of-act tournament moment ═══ -->
     <div id="meleeSplash"></div>
 
@@ -366,12 +373,11 @@
          falls back to local standings if these can't reach the project) -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="data/cards.js?v=20260710124853"></script>
-    <script src="data/missions.js?v=20260710124853"></script>
-    <script src="data/characters.js?v=20260710124853"></script>
-    <script src="engine/gameState.js?v=20260710124853"></script>
-    <script src="js/melee.js?v=20260710124853"></script>
-    <script src="js/ui.js?v=20260710124853"></script>
-    <script src="js/meta.js?v=20260710124853"></script>
+    <script src="data/cards.js?v=20260710125451"></script>
+    <script src="data/missions.js?v=20260710125451"></script>
+    <script src="data/characters.js?v=20260710125451"></script>
+    <script src="engine/gameState.js?v=20260710125451"></script>
+    <script src="js/ui.js?v=20260710125451"></script>
+    <script src="js/meta.js?v=20260710125451"></script>
 </body>
 </html>

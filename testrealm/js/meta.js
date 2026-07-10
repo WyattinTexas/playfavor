@@ -487,11 +487,13 @@
     // ── Store panel (lb-panel pattern: art IS the UI) ────────────────
 
     let _confirmingBuy = null;
+    let _shelfAnim = false;   // stagger the shelves in on OPEN only — mid-browse re-renders must not replay it
 
     async function openStore() {
         const panel = document.getElementById('storePanel');
         if (!panel) return;
         _confirmingBuy = null;
+        _shelfAnim = true;
         panel.classList.add('active');
         renderStore();
         // Freshen the record so the balance is honest, then re-render.
@@ -518,7 +520,8 @@
         const stars = (_me && _me.stars) || 0;
         document.getElementById('storeStars').innerHTML =
             `★ ${stars}${mode !== 'firebase' ? ' <span class="st-local">OFFLINE — BROWSE ONLY</span>' : ''}`;
-        body.innerHTML = chars.map(c => {
+        const anim = _shelfAnim; _shelfAnim = false;
+        body.innerHTML = chars.map((c, i) => {
             const isOwned = owned.includes(c.id);
             let action;
             if (isOwned) {
@@ -533,12 +536,14 @@
             } else {
                 action = `<button class="st-buy" onclick="event.stopPropagation(); FLB.askBuy('${c.id}')">★ ${STORE_PRICE}</button>`;
             }
-            return `<div class="st-card${isOwned ? ' owned' : ''}" data-char="${c.id}">
-                <img src="assets/characters/${c.filename}" alt="${c.name}">
+            return `<div class="st-card${isOwned ? ' owned' : ''}" data-char="${c.id}"${anim ? ` style="animation: shelfIn 0.45s ${(i * 0.045).toFixed(3)}s cubic-bezier(0.16,1,0.3,1) backwards"` : ''}>
+                <div class="st-frame">
+                    <img src="assets/characters/${c.filename}" alt="${c.name}">
+                </div>
                 <div class="st-plate">
                     <span class="st-name">${c.name}</span>
-                    ${action}
                 </div>
+                ${action}
             </div>`;
         }).join('');
     }
