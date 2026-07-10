@@ -433,99 +433,67 @@
     30% { border-color: #ff6a5a; box-shadow: 0 0 18px rgba(255,80,60,0.65); }
 }
 
-/* ── POWER TIERS: a MATERIAL LADDER — every band reads as a different
-   substance, all at the SAME size (Wyatt: significant difference without
-   bigger numbers). ≤5 ash · 6-10 bronze · 11-15 silver · 16-20 gold ·
-   21-25 platinum · 26+ radiant (living light). ──────────────────────── */
+/* ── POWER TIERS: RARITY COLORS — same size everywhere, the COLOR carries
+   the weight class. ≤5 gray · 6-10 green · 11-15 blue · 16-20 purple ·
+   21+ orange. Purple and orange wear a little sparkle. ─────────────── */
 .ms-cb-power b, .ms-power b { position: relative; z-index: 0; transition: color 0.25s ease; }
 
-/* ash — a cold hearth: dull, dusty, no shine at all */
-.pw-ash b { color: #837c6e; text-shadow: none; opacity: 0.8; }
-.pw-ash img { filter: grayscale(0.7) brightness(0.7); }
+/* gray — an unremarkable showing, but readable */
+.pw-gray b { color: #9a958a; text-shadow: none; }
+.pw-gray img { filter: grayscale(0.6) brightness(0.75); }
 
-/* bronze — a working soldier's metal: warm, matte, honest */
-.pw-bronze b {
-    background: linear-gradient(180deg, #eab687 0%, #b97a3e 55%, #7c4a1d 95%);
+/* green — a solid tally */
+.pw-green b {
+    background: linear-gradient(180deg, #c8f0a8 0%, #7ec95c 55%, #43913a 95%);
     -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent; color: transparent;
-    filter: drop-shadow(0 0 4px rgba(200,130,60,0.3));
+    filter: drop-shadow(0 0 5px rgba(110,200,90,0.4));
 }
 
-/* silver — polished steel: a cool gleam and one shy twinkle */
-.pw-silver b {
-    background: linear-gradient(180deg, #f7fafd 0%, #c9d6e2 50%, #8fa3b8 95%);
+/* blue — a strong tally */
+.pw-blue b {
+    background: linear-gradient(180deg, #c2e2ff 0%, #6fb1f0 55%, #2f6fc4 95%);
     -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent; color: transparent;
-    filter: drop-shadow(0 0 6px rgba(190,210,230,0.45));
-}
-.pw-silver b::after {
-    content: '✦'; position: absolute; top: -0.42em; right: -0.62em;
-    font-size: 0.45em; color: #eef4fb; -webkit-text-fill-color: #eef4fb;
-    animation: pwTwinkle 1.8s ease-in-out infinite;
+    filter: drop-shadow(0 0 6px rgba(90,160,235,0.5));
 }
 
-/* gold — a champion's number: a LIVE gleam sweeps the metal, glitter */
-.pw-gold b {
-    background: linear-gradient(100deg, #c9a84c 0%, #ffd97a 30%, #fff4d2 50%, #ffd97a 70%, #c9a84c 100%);
-    background-size: 250% 100%;
+/* purple — an epic tally: glow and a little sparkle */
+.pw-purple b {
+    background: linear-gradient(180deg, #ecd2ff 0%, #b573ea 55%, #7a37c4 95%);
     -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent; color: transparent;
-    filter: drop-shadow(0 0 8px rgba(255,217,122,0.6));
-    animation: pwGleam 2.2s ease-in-out infinite;
+    filter: drop-shadow(0 0 8px rgba(175,105,230,0.6));
 }
-.pw-gold b::after {
+.pw-purple b::after {
     content: '✦'; position: absolute; top: -0.5em; right: -0.7em;
-    font-size: 0.5em; color: #fff4d2; -webkit-text-fill-color: #fff4d2;
+    font-size: 0.5em; color: #ecd2ff; -webkit-text-fill-color: #ecd2ff;
     animation: pwTwinkle 1.3s ease-in-out infinite;
 }
 
-/* platinum — legendary: white-hot metal, pulsing halo, sparkle rain */
-.pw-plat b {
-    background: linear-gradient(100deg, #9fb2c6 0%, #dde6f0 30%, #ffffff 50%, #dde6f0 70%, #9fb2c6 100%);
-    background-size: 250% 100%;
+/* orange — legendary: fire-bright glow, a little sparkle on both shoulders */
+.pw-orange b {
+    background: linear-gradient(180deg, #ffe3b0 0%, #ffa63e 55%, #e06a10 95%);
     -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent; color: transparent;
-    filter: drop-shadow(0 0 10px rgba(210,228,248,0.8));
-    animation: pwGleam 1.6s ease-in-out infinite, pwPlatShine 2.4s ease-in-out infinite;
+    filter: drop-shadow(0 0 9px rgba(255,150,50,0.7));
 }
-.pw-plat b::after {
+.pw-orange b::before {
+    content: '✦'; position: absolute; top: -0.48em; left: -0.7em;
+    font-size: 0.45em; color: #ffe3b0; -webkit-text-fill-color: #ffe3b0;
+    animation: pwTwinkle 1.5s ease-in-out 0.5s infinite;
+}
+.pw-orange b::after {
     content: '✦'; position: absolute; top: -0.52em; right: -0.72em;
-    font-size: 0.52em; color: #fff; -webkit-text-fill-color: #fff;
-    animation: pwTwinkle 0.9s ease-in-out infinite;
+    font-size: 0.52em; color: #fff0d8; -webkit-text-fill-color: #fff0d8;
+    animation: pwTwinkle 1s ease-in-out infinite;
 }
 
-/* radiant — beyond metal: LIVING light, rose-gold aurora rolling through
-   the number, a breathing halo, twinkles on BOTH shoulders */
-.pw-radiant b {
-    background: linear-gradient(100deg,
-        #ffd97a 0%, #fff4d2 20%, #ffffff 35%, #ffd2e1 50%,
-        #ffffff 65%, #fff4d2 80%, #ffd97a 100%);
-    background-size: 300% 100%;
-    -webkit-background-clip: text; background-clip: text;
-    -webkit-text-fill-color: transparent; color: transparent;
-    animation: pwAurora 1.8s linear infinite, pwRadiantHalo 1.6s ease-in-out infinite;
-}
-.pw-radiant b::before {
-    content: '✦'; position: absolute; top: -0.5em; left: -0.72em;
-    font-size: 0.5em; color: #ffd2e1; -webkit-text-fill-color: #ffd2e1;
-    animation: pwTwinkle 1.1s ease-in-out 0.4s infinite;
-}
-.pw-radiant b::after {
-    content: '✦'; position: absolute; top: -0.52em; right: -0.72em;
-    font-size: 0.52em; color: #fff; -webkit-text-fill-color: #fff;
-    animation: pwTwinkle 0.7s ease-in-out infinite;
-}
-/* platinum/radiant sparks are white-hot */
-.ms-spark.plat { background: #f2f7ff; box-shadow: 0 0 9px rgba(220,235,255,0.95); }
+/* tier sparks match their rarity */
+.ms-spark.purple { background: #e3c2ff; box-shadow: 0 0 9px rgba(190,120,240,0.95); }
+.ms-spark.orange { background: #ffd9a0; box-shadow: 0 0 9px rgba(255,160,60,0.95); }
 
-@keyframes pwGleam { 0%, 100% { background-position: 0% 0; } 50% { background-position: 100% 0; } }
-@keyframes pwAurora { 0% { background-position: 0% 0; } 100% { background-position: 300% 0; } }
-@keyframes pwRadiantHalo {
-    0%, 100% { filter: drop-shadow(0 0 8px rgba(255,220,160,0.7)); }
-    50% { filter: drop-shadow(0 0 16px rgba(255,235,210,1)) drop-shadow(0 0 26px rgba(255,180,210,0.45)); }
-}
-
-/* the gold-tier rumble shakes just that fighter */
+/* the purple-tier rumble shakes just that fighter */
 .ms-combatant.pw-rumbling { animation: pwRumble 0.45s ease; }
 @keyframes pwRumble {
     10%, 90% { transform: translate(-1px, 0); }
@@ -533,7 +501,6 @@
     50% { transform: translate(-2px, 1px) rotate(-0.4deg); }
 }
 @keyframes pwTwinkle { 0%, 100% { opacity: 0.25; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.15); } }
-@keyframes pwPlatShine { 0%, 100% { filter: drop-shadow(0 0 8px rgba(210,228,248,0.6)); } 50% { filter: drop-shadow(0 0 15px rgba(230,242,255,0.95)); } }
 /* (forge meter bars removed — the badged row IS the meter) */
 /* Combat-hit callouts float up over the fighter */
 .ms-cb-callout { position: absolute; bottom: 100%; left: 50%; width: 0; height: 0; z-index: 8; }
@@ -604,14 +571,33 @@
             mask: linear-gradient(90deg, transparent, #000 60%, #000);
 }
 .ms-sap.go { animation: msSap 0.42s ease-in forwards; }
-/* Heavy bolts fired from a FEATURED card — thicker, brighter, and above
-   the feature veil so the strike reads through the darkness */
+/* Heavy bolts fired from a FEATURED card — thicker, brighter, above the
+   feature veil, and SLOW: one beam at a time, readable */
 .ms-sap.thick {
     height: 8px; border-radius: 8px; z-index: 46;
     background: linear-gradient(90deg, rgba(255,120,100,0) 0%, rgba(255,110,90,0.4) 35%, #ff5a6a 88%, #ffe0d8 100%);
     box-shadow: 0 0 14px rgba(255,90,90,0.75);
 }
-.ms-sap.thick.go { animation: msSap 0.55s ease-in forwards; }
+.ms-sap.thick.go { animation: msSap 1.35s ease-in-out forwards; }
+
+/* The damage rides the beam: power token + −N at the beam's midpoint */
+.ms-sapamt {
+    position: absolute; z-index: 47; pointer-events: none;
+    display: flex; align-items: center; gap: 3px;
+    transform: translate(-50%, -120%);
+    font-family: 'Cinzel', serif; font-weight: 900;
+    font-size: clamp(15px, 2.6dvh, 20px);
+    color: #ff8a7a; text-shadow: 0 0 10px rgba(255,90,90,0.65), 0 2px 4px rgba(0,0,0,0.9);
+    opacity: 0;
+}
+.ms-sapamt img { width: clamp(15px, 2.4dvh, 19px); height: auto; }
+.ms-sapamt.go { animation: msSapAmt 1.55s ease-out forwards; }
+@keyframes msSapAmt {
+    0% { opacity: 0; transform: translate(-50%, -90%) scale(0.7); }
+    15% { opacity: 1; transform: translate(-50%, -120%) scale(1.08); }
+    80% { opacity: 1; transform: translate(-50%, -120%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -150%) scale(1); }
+}
 @keyframes msSap {
     0% { opacity: 0; clip-path: inset(0 100% 0 0); }
     25% { opacity: 1; }

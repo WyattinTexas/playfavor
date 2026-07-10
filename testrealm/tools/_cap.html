@@ -27,13 +27,13 @@
     { file: 'Bandit.jpg',    name: 'Lord Cassius' },
   ];
   const portraitFor = (pi) => '../assets/characters/' + CHARS[pi].file;
-  // Powers span the material ladder: 27 radiant / 21 platinum / 17 gold /
-  // 12 silver / 3 ash. Fighter 0 carries BOTH feature moments (coin + attack).
+  // Powers span the rarity ladder: 24 orange / 18 purple / 13 blue /
+  // 8 green / 3 gray. Fighter 0 carries BOTH feature moments (coin + attack).
   const PLAN = [
-    { pi: 0, power: 27, place: 1, prestige: 5, slot: 0 },
-    { pi: 1, power: 21, place: 2, prestige: 3, slot: 2 },
-    { pi: 2, power: 17, place: 3, prestige: 1, slot: 4 },
-    { pi: 3, power: 12, place: 4, prestige: 0, slot: 1 },
+    { pi: 0, power: 24, place: 1, prestige: 5, slot: 0 },
+    { pi: 1, power: 18, place: 2, prestige: 3, slot: 2 },
+    { pi: 2, power: 13, place: 3, prestige: 1, slot: 4 },
+    { pi: 3, power: 8,  place: 4, prestige: 0, slot: 1 },
     { pi: 4, power: 3,  place: 5, prestige: 0, slot: 3 },
   ];
   const results = PLAN.map(p => ({
@@ -48,10 +48,10 @@
       sliderPosition: p.slot,
     };
   });
-  // Fighter 0: coin flip feature (Shot of Courage, won, 23+4=27) then the
+  // Fighter 0: coin flip feature (Shot of Courage, won, 20+4=24) then the
   // Fuzzy Head strike feature. Victims forge from own+3 so their FINAL
   // tallies land exactly on the showcase values above after the −3 wound.
-  bds[0].base = 23; bds[0].baseOther = 23;
+  bds[0].base = 20; bds[0].baseOther = 20;
   bds[0].steps = [
     { kind: 'coinflip', label: 'Shot of Courage', amount: 4, won: true, filename: 'Liquid Wind Card.jpg' },
     { kind: 'attack', label: 'Fuzzy Head', amount: -3, filename: 'Cursed Coating Card.jpg',

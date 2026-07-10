@@ -332,14 +332,13 @@
       combatants.forEach(c => { dispBase[c.playerIndex] = 0; wound[c.playerIndex] = 0; });
       const combatantOf = (pi) => combatantEls.find(e => +e.dataset.pi === pi);
 
-      // Power tiers — a MATERIAL LADDER, all the same size (Wyatt's spec:
-      // the difference must be significant WITHOUT bigger numbers):
-      // ≤5 ash · 6-10 bronze · 11-15 silver · 16-20 gold (glitter+rumble) ·
-      // 21-25 platinum (shine+shake) · 26+ radiant (living light, big shake).
-      const TIER_CLASSES = ['pw-ash', 'pw-bronze', 'pw-silver', 'pw-gold', 'pw-plat', 'pw-radiant'];
+      // Power tiers — RARITY COLORS, all the same size (Wyatt's spec):
+      // ≤5 gray · 6-10 green · 11-15 blue · 16-20 purple · 21+ orange.
+      // Purple and orange carry a little sparkle.
+      const TIER_CLASSES = ['pw-gray', 'pw-green', 'pw-blue', 'pw-purple', 'pw-orange'];
       const tierFor = (v) =>
-        v >= 26 ? 'pw-radiant' : v >= 21 ? 'pw-plat' : v >= 16 ? 'pw-gold' :
-        v >= 11 ? 'pw-silver' : v >= 6 ? 'pw-bronze' : 'pw-ash';
+        v >= 21 ? 'pw-orange' : v >= 16 ? 'pw-purple' :
+        v >= 11 ? 'pw-blue' : v >= 6 ? 'pw-green' : 'pw-gray';
       const applyTier = (pwEl, value, celebrate) => {
         if (!pwEl) return;
         const cls = tierFor(Math.max(0, value));   // tier reads the tally floor
@@ -347,25 +346,16 @@
         pwEl.classList.add(cls);
         if (!celebrate) return;
         const fighter = pwEl.closest('.ms-combatant, .ms-fighter');
-        const rumble = () => {
-          if (!fighter) return;
-          fighter.classList.remove('pw-rumbling'); void fighter.offsetWidth;
-          fighter.classList.add('pw-rumbling');
-        };
-        if (cls === 'pw-radiant') {
-          stage.classList.add('shake');
-          setTimeout(() => stage.classList.remove('shake'), 650 * speed);
-          sparkBurst(pwEl, 24, 0.6, 'plat');
-          sparkBurst(pwEl, 10, 0.4);
-        } else if (cls === 'pw-plat') {
+        if (cls === 'pw-orange') {
           stage.classList.add('shake');
           setTimeout(() => stage.classList.remove('shake'), 500 * speed);
-          sparkBurst(pwEl, 18, 0.5, 'plat');
-        } else if (cls === 'pw-gold') {
-          rumble();
-          sparkBurst(pwEl, 10, 0.5);
-        } else if (cls === 'pw-silver') {
-          sparkBurst(pwEl, 4, 0.5);
+          sparkBurst(pwEl, 14, 0.5, 'orange');
+        } else if (cls === 'pw-purple') {
+          if (fighter) {
+            fighter.classList.remove('pw-rumbling'); void fighter.offsetWidth;
+            fighter.classList.add('pw-rumbling');
+          }
+          sparkBurst(pwEl, 8, 0.5, 'purple');
         }
       };
 
@@ -423,14 +413,16 @@
       };
 
       // A red bolt from one fighter to another (Fuzzy Head's strike).
-      // extraCls 'thick' = the heavy bolts fired from a featured card.
-      const streakBetween = (fromEl, toEl, extraCls) => {
+      // extraCls 'thick' = the heavy, SLOW bolts fired from a featured card.
+      // labelHTML (e.g. power token + −3) rides the middle of the beam.
+      const streakBetween = (fromEl, toEl, extraCls, labelHTML) => {
         if (!fromEl || !toEl || fromEl === toEl) return;
         const h = stage.getBoundingClientRect();
         const a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
         const x1 = a.left - h.left + a.width / 2, y1 = a.top - h.top + a.height * 0.4;
         const x2 = b.left - h.left + b.width / 2, y2 = b.top - h.top + b.height * 0.4;
         const dx = x2 - x1, dy = y2 - y1;
+        const life = (extraCls === 'thick' ? 1500 : 640) * speed;
         const streak = document.createElement('div');
         streak.className = 'ms-sap' + (extraCls ? ' ' + extraCls : '');
         streak.style.left = x1 + 'px'; streak.style.top = y1 + 'px';
@@ -439,7 +431,18 @@
         stage.appendChild(streak);
         void streak.offsetWidth;
         streak.classList.add('go');
-        setTimeout(() => streak.remove(), 640 * speed);
+        setTimeout(() => streak.remove(), life);
+        if (labelHTML) {
+          const chip = document.createElement('div');
+          chip.className = 'ms-sapamt';
+          chip.innerHTML = labelHTML;
+          chip.style.left = (x1 + dx / 2) + 'px';
+          chip.style.top = (y1 + dy / 2) + 'px';
+          stage.appendChild(chip);
+          void chip.offsetWidth;
+          chip.classList.add('go');
+          setTimeout(() => chip.remove(), life + 200 * speed);
+        }
       };
 
       // ── FEATURE: a card takes center stage over a darkened arena so
@@ -573,24 +576,24 @@
             const au = stepArt(step);
             const feat = au ? featureShow(au, `${step.label} — strikes all rivals!`) : null;
             if (feat) { await delay(2000); if (run.killed) { feat.remove(); return; } }
+            // ONE beam at a time, slow enough to follow: fire → the −3 rides
+            // the beam (power token + amount) → the victim's score wounds →
+            // a beat → the next rival.
             const boltFrom = feat ? feat.querySelector('.ms-feature-card') : el;
-            (step.hits || []).forEach((h, k) => {
-              timers.push(setTimeout(() => {
-                if (run.killed) return;
-                const victimEl = combatantOf(h.playerIndex);
-                if (!victimEl) return;
-                if (sapFx) streakBetween(boltFrom, victimEl, feat ? 'thick' : '');
-                timers.push(setTimeout(() => {
-                  if (run.killed) return;
-                  wound[h.playerIndex] += h.delta;
-                  refreshCount(h.playerIndex, 380);
-                  bump(victimEl);
-                  victimEl.classList.remove('struck'); void victimEl.offsetWidth;
-                  victimEl.classList.add('struck');
-                }, 300 * speed));
-              }, k * 180 * speed));
-            });
-            await delay(180 * ((step.hits || []).length) + 900); if (run.killed) { if (feat) feat.remove(); return; }
+            for (const h of (step.hits || [])) {
+              const victimEl = combatantOf(h.playerIndex);
+              if (!victimEl) continue;
+              const chip = `<img src="${powerIcon}" alt="Power">−${Math.abs(h.delta)}`;
+              if (sapFx) streakBetween(boltFrom, victimEl, feat ? 'thick' : '', chip);
+              await delay(700); if (run.killed) { if (feat) feat.remove(); return; }
+              wound[h.playerIndex] += h.delta;
+              refreshCount(h.playerIndex, 380);
+              bump(victimEl);
+              victimEl.classList.remove('struck'); void victimEl.offsetWidth;
+              victimEl.classList.add('struck');
+              await delay(800); if (run.killed) { if (feat) feat.remove(); return; }
+            }
+            await delay(300); if (run.killed) { if (feat) feat.remove(); return; }
             if (feat) { await featureHide(feat); if (run.killed) return; }
             if (au) dealRowItem(au, '' + step.amount, 'mod', 'vs all');
             showCallout(calloutHost, { kind: 'debuff', label: step.label, amount: step.amount });
