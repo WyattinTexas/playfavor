@@ -45,7 +45,9 @@
     align-items: center;
     justify-content: center;
     gap: clamp(8px, 2.2dvh, 22px);
-    padding: 2dvh 3vw;
+    /* top padding reserves the herald + banner zone — the podium (with its
+       crown and rays) is fenced BELOW it on every screen height */
+    padding: clamp(100px, 24dvh, 150px) 3vw 2dvh;
 }
 
 /* ── Embers drifting up through the whole scene ─────────────────────── */
@@ -170,7 +172,7 @@
 /* Radiant light-rays fanning out behind the champion */
 .ms-rays {
     position: absolute; left: 50%; top: 50%;
-    width: 260%; height: 260%; transform: translate(-50%, -50%);
+    width: 215%; height: 215%; transform: translate(-50%, -50%);
     z-index: 0; pointer-events: none; opacity: 0;
     transition: opacity 0.6s ease;
     background: repeating-conic-gradient(from 0deg,
@@ -669,7 +671,7 @@
 /* Short landscape (phones held sideways) — trim the vertical footprint so the
    banner, podium, also-rans and hint all fit without overlap or scroll. */
 @media (max-height: 470px) {
-    .ms-stage { gap: 5px; padding: 1dvh 3vw; }
+    .ms-stage { gap: 5px; padding: clamp(94px, 26dvh, 126px) 3vw 1dvh; }
     .ms-prestige { margin-top: 3px; }
     .ms-fighters { margin-bottom: 5px; }
     .ms-alsoran { gap: 10px; }
