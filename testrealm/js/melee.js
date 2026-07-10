@@ -193,6 +193,7 @@
           <div class="ms-portrait-wrap">
             ${champ ? '<div class="ms-rays"></div>' + CROWN_SVG + laurel('left') + laurel('right') : ''}
             ${img(r.playerIndex, 'ms-portrait', r.name)}
+            ${ringHTML(bdOf[r.playerIndex] && bdOf[r.playerIndex].sliderPosition)}
           </div>
           <div class="ms-name">${r.name}</div>
           ${champ ? '<div class="ms-champ-label">✦ Champion ✦</div>' : ''}
@@ -217,7 +218,10 @@
         <div class="ms-alsoran">
           ${alsoRans.map(r => `
             <div class="ms-ar">
-              ${img(r.playerIndex, '', r.name)}
+              <div class="ms-ar-wrap">
+                ${img(r.playerIndex, '', r.name)}
+                ${ringHTML(bdOf[r.playerIndex] && bdOf[r.playerIndex].sliderPosition)}
+              </div>
               <div class="ms-ar-place">${ORD[r.placement - 1] || r.placement + 'th'}</div>
               <div class="ms-ar-name">${r.name}</div>
               <div class="ms-ar-power"><img src="${powerIcon}" alt=""><b>${r.power || 0}</b></div>

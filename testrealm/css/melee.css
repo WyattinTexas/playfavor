@@ -118,7 +118,8 @@
 .ms-podium {
     position: relative; z-index: 10;
     display: flex; align-items: flex-end; justify-content: center;
-    gap: clamp(10px, 2.4vw, 30px);
+    /* wide enough that 2nd/3rd boards never clip the champion's laurels */
+    gap: clamp(30px, 5vw, 62px);
 }
 /* Warm arena-floor glow beneath the plinths */
 .ms-podium::after {
@@ -230,14 +231,14 @@
 .ms-power img { width: clamp(13px, 1.9dvh, 17px); height: clamp(13px, 1.9dvh, 17px); }
 .ms-power b {
     font-family: 'Cinzel', serif; font-weight: 900;
-    font-size: clamp(15px, 2.4dvh, 21px);
+    font-size: clamp(14px, 2.1dvh, 18px);
     color: #ffd97a; min-width: 1.4em; text-align: left;
     font-variant-numeric: tabular-nums;
 }
 /* champion keeps a size floor; the COLOR comes from the power tier */
-.ms-tier.champ .ms-power b { font-size: clamp(19px, 3dvh, 27px); }
-.ms-tier.champ .ms-power.pw-gold b { font-size: clamp(22px, 3.6dvh, 30px); }
-.ms-tier.champ .ms-power.pw-plat b { font-size: clamp(25px, 4.1dvh, 34px); }
+.ms-tier.champ .ms-power b { font-size: clamp(17px, 2.7dvh, 22px); }
+.ms-tier.champ .ms-power.pw-gold b { font-size: clamp(18px, 2.9dvh, 24px); }
+.ms-tier.champ .ms-power.pw-plat b { font-size: clamp(19px, 3dvh, 25px); }
 /* (meter bars removed — the power number and the badged card row carry the count) */
 
 /* Prestige stamp — the reward for a podium finish */
@@ -311,10 +312,13 @@
 .ms-ar {
     display: flex; flex-direction: column; align-items: center; gap: 3px; width: clamp(52px, 8vw, 68px);
 }
-.ms-ar img {
-    width: clamp(70px, 11vw, 100px); aspect-ratio: 800 / 504; height: auto;
+/* board + slider-ring share a positioned wrap sized to the board itself,
+   so the ring's %-track geometry stays true (the board is wider than .ms-ar) */
+.ms-ar-wrap { position: relative; width: clamp(70px, 11vw, 100px); filter: saturate(0.7) brightness(0.82); }
+.ms-ar-wrap img:not(.ms-ring) {
+    display: block; width: 100%; aspect-ratio: 800 / 504; height: auto;
     border-radius: 6px; object-fit: cover;
-    border: 1px solid rgba(201,168,76,0.3); filter: saturate(0.7) brightness(0.82);
+    border: 1px solid rgba(201,168,76,0.3);
 }
 .ms-ar-place { font-family: 'Cinzel', serif; font-size: 10px; color: var(--gold-dark); letter-spacing: 0.05em; }
 .ms-ar-name { font-family: 'Cinzel', serif; font-size: 11px; color: rgba(201,168,76,0.8); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -418,7 +422,7 @@
 .ms-cb-power img { width: clamp(12px,1.7dvh,16px); height: clamp(12px,1.7dvh,16px); }
 .ms-cb-power b {
     font-family: 'Cinzel', serif; font-weight: 900;
-    font-size: clamp(15px,2.3dvh,20px); color: #ffd97a;
+    font-size: clamp(14px,2.1dvh,18px); color: #ffd97a;
     font-variant-numeric: tabular-nums;
 }
 /* Wounded scores read red — negatives are real mid-battle */
@@ -439,27 +443,20 @@
 .pw-drab b { color: #b6b0a4; text-shadow: none; }
 
 /* bright — a solid tally: a touch bigger, one shy twinkle */
-.pw-bright b { font-size: clamp(18px, 2.9dvh, 24px); color: #ffe08a; text-shadow: 0 0 10px rgba(255,224,138,0.45); }
+.pw-bright b { font-size: clamp(16px, 2.5dvh, 21px); color: #ffe08a; text-shadow: 0 0 10px rgba(255,224,138,0.45); }
 .pw-bright b::after {
     content: '✦'; position: absolute; top: -0.42em; right: -0.62em;
     font-size: 0.45em; color: #fff4d2;
     animation: pwTwinkle 1.8s ease-in-out infinite;
 }
 
-/* gold — a champion's number: gradient, glitter, medallion badge */
+/* gold — a champion's number: gradient, glitter, glow (no badge circle) */
 .pw-gold b {
-    font-size: clamp(21px, 3.4dvh, 28px);
+    font-size: clamp(17px, 2.7dvh, 22px);
     background: linear-gradient(180deg, #fff4d2 0%, #ffd97a 45%, #c9a84c 80%);
     -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent; color: transparent;
     filter: drop-shadow(0 0 8px rgba(255,217,122,0.55));
-}
-.pw-gold b::before {
-    content: ''; position: absolute; z-index: -1;
-    left: 50%; top: 50%; transform: translate(-50%, -50%);
-    width: 1.9em; height: 1.9em; border-radius: 50%;
-    background: radial-gradient(circle at 38% 32%, rgba(201,168,76,0.45), rgba(107,74,30,0.25) 60%, transparent 75%);
-    box-shadow: inset 0 0 0 1px rgba(232,212,139,0.35);
 }
 .pw-gold b::after {
     content: '✦'; position: absolute; top: -0.5em; right: -0.7em;
@@ -467,21 +464,14 @@
     animation: pwTwinkle 1.3s ease-in-out infinite;
 }
 
-/* platinum — legendary: silver-white shine, richer badge, sparkle rain */
+/* platinum — legendary: silver-white shine, glow, sparkle rain (no badge circle) */
 .pw-plat b {
-    font-size: clamp(24px, 3.9dvh, 32px);
+    font-size: clamp(18px, 2.9dvh, 24px);
     background: linear-gradient(180deg, #ffffff 0%, #dde6f0 35%, #9fb2c6 70%, #e8eef6 100%);
     -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent; color: transparent;
     filter: drop-shadow(0 0 10px rgba(210,228,248,0.75));
     animation: pwPlatShine 2.4s ease-in-out infinite;
-}
-.pw-plat b::before {
-    content: ''; position: absolute; z-index: -1;
-    left: 50%; top: 50%; transform: translate(-50%, -50%);
-    width: 2em; height: 2em; border-radius: 50%;
-    background: radial-gradient(circle at 38% 32%, rgba(220,232,246,0.5), rgba(90,110,135,0.3) 58%, transparent 75%);
-    box-shadow: inset 0 0 0 1px rgba(235,243,252,0.55), 0 0 14px rgba(190,215,240,0.4);
 }
 .pw-plat b::after {
     content: '✦'; position: absolute; top: -0.52em; right: -0.72em;

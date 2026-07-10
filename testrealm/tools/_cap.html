@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cap</title>
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/melee.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #14100b; overflow: hidden; }
+  #host { position: fixed; inset: 0; }
+  /* headless: CSS transitions freeze under virtual time — snap to end state */
+  .ms-title { transition: none !important; }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script src="../js/melee.js"></script>
+<script>
+  // Deterministic 5-player podium capture: plat champ, gold 2nd, bright 3rd,
+  // drab 4th/5th in the also-ran column. Rings on every board.
+  const CHARS = [
+    { file: 'Explorer.jpg',  name: 'You' },
+    { file: 'Knight.jpg',    name: 'Prince Aldric' },
+    { file: 'Duchess.jpg',   name: 'Princess Sera' },
+    { file: 'Magician.jpg',  name: 'Lady Elara' },
+    { file: 'Bandit.jpg',    name: 'Lord Cassius' },
+  ];
+  const portraitFor = (pi) => '../assets/characters/' + CHARS[pi].file;
+  const PLAN = [
+    { pi: 0, power: 24, place: 1, prestige: 5, slot: 0 },
+    { pi: 1, power: 17, place: 2, prestige: 3, slot: 2 },
+    { pi: 2, power: 12, place: 3, prestige: 1, slot: 4 },
+    { pi: 3, power: 7,  place: 4, prestige: 0, slot: 1 },
+    { pi: 4, power: 0,  place: 5, prestige: 0, slot: 3 },
+  ];
+  const results = PLAN.map(p => ({
+    playerIndex: p.pi, name: CHARS[p.pi].name, isHuman: p.pi === 0,
+    power: p.power, placement: p.place, prestige: p.prestige,
+  }));
+  const bds = {};
+  PLAN.forEach(p => {
+    bds[p.pi] = {
+      base: p.power, baseOther: p.power, baseCards: [], steps: [],
+      ownRawTotal: p.power, rawTotal: p.power, computedTotal: p.power,
+      sliderPosition: p.slot,
+    };
+  });
+  playMeleeCinematic(document.getElementById('host'), results, 1, {
+    speed: 1, sapFx: true, cardsFx: true, autoCloseMs: 0,
+    portraitFor,
+    powerIcon: '../assets/icons/power.png',
+    ringSrc: '../assets/ui/slider-ring.png',
+    breakdownFor: (pi) => bds[pi],
+    cardImgFor: () => null,
+    prestigeTokenFor: (d) => (d === 25
+      ? '../assets/tokens/Tokens_Design_v1_Prestige_25_v1.jpg'
+      : '../assets/tokens/Copy of Tokens_Design_v1_Prestige_' + d + '_v1.jpg'),
+  });
+  // Jump straight to the podium once the stage exists.
+  setTimeout(() => {
+    const skip = document.querySelector('.ms-skip');
+    if (skip) skip.click();
+  }, 2500);
+</script>
+</body>
+</html>
