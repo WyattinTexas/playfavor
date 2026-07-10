@@ -384,33 +384,56 @@
         const setFill = (v) => { if (fill) fill.style.width = Math.round(Math.max(0, v) / maxPower * 100) + '%'; };
 
         // Only actual power contributors appear (cards AND missions, each
-        // carrying its amount). Art-less contributors fold into the opening
-        // fill so the number never lies; opening fill = board-slot share.
+        // carrying its amount). Art-less contributors fold into the board
+        // share so the number never lies.
         const visCards = [];
         if (cardsFx) {
           (bd.baseCards || []).slice(0, 4).forEach(cd => {
             const url = (cd && cd.amount > 0) ? cardImgFor(cd.filename, cd.mission) : null;
-            if (url) visCards.push({ url, amount: cd.amount });
+            if (url) visCards.push({ url, amount: cd.amount, mission: !!cd.mission });
           });
         }
         const baseStart = Math.max(0, (bd.base || 0) - visCards.reduce((a, x) => a + x.amount, 0));
-        let running = baseStart;
+        let running = 0;
 
         el.classList.add('forging', 'active');   // the stage lights this fighter
-        setFill(baseStart);
-        tickNumber(b, baseStart, 500);
-        await delay(750); if (run.killed) return;
+        setFill(0);
+        await delay(650); if (run.killed) return;
 
-        // Deal each contributor into the persistent row; the meter climbs by
-        // exactly that card's amount as it lands.
+        // EVERY point gets a face. The board share is not silent — the
+        // fighter's own character board leads the row with its +N badge, then
+        // each card lands with its badge, the meter climbing by exactly that
+        // amount. The row reads as the literal sum: +3 +2 +2 +2 = 9.
+        const dealRowItem = (url, amount, cls, caption) => {
+          const item = document.createElement('div');
+          item.className = 'ms-rowitem' + (cls ? ' ' + cls : '');
+          item.innerHTML =
+            `<img src="${url}" alt="">` +
+            `<span class="ms-rowamt">+${amount}</span>` +
+            (caption ? `<span class="ms-rowcap">${caption}</span>` : '');
+          const im = item.querySelector('img');
+          im.onerror = () => item.remove();
+          rowEl.appendChild(item);
+          void item.offsetWidth;
+          item.classList.add('go');
+        };
+
+        if (cardsFx && baseStart > 0) {
+          dealRowItem(portraitFor(c.playerIndex), baseStart, 'board', 'Board');
+          running = baseStart;
+          setFill(running); tickNumber(b, running, 340);
+          bump(el);
+          if (soundOn) playHit('bonus');
+          await delay(950); if (run.killed) return;
+        } else {
+          // Cards off (or no board share): open the meter at the board share.
+          running = baseStart;
+          setFill(running); tickNumber(b, running, 500);
+          await delay(200); if (run.killed) return;
+        }
+
         for (const vc of visCards) {
-          const card = document.createElement('img');
-          card.className = 'ms-rowcard';
-          card.src = vc.url;
-          card.onerror = () => card.remove();
-          rowEl.appendChild(card);
-          void card.offsetWidth;
-          card.classList.add('go');
+          dealRowItem(vc.url, vc.amount, vc.mission ? 'missioncard' : '');
           running = Math.max(0, running + vc.amount);
           setFill(running); tickNumber(b, running, 340);
           bump(el);
@@ -457,7 +480,7 @@
 
         // The row STAYS until dismissed — Continue button or a tap anywhere.
         // (Generous fallback so an unattended melee never stalls.)
-        if (visCards.length) {
+        if (rowEl.children.length) {
           const btn = document.createElement('button');
           btn.className = 'ms-continue';
           btn.textContent = 'Continue ▸';

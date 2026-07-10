@@ -4988,10 +4988,28 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     color: rgba(201,168,76,0.45);
     text-shadow: 0 1px 0 rgba(0,0,0,0.6);
 }
-.ms-tier.p-center .ms-plinth { height: clamp(50px, 12dvh, 116px); background: linear-gradient(180deg, #6b4a1e, #3a2410); box-shadow: inset 0 2px 0 rgba(255,233,173,0.4), inset 0 0 26px rgba(0,0,0,0.5), 0 6px 20px rgba(0,0,0,0.55); }
-.ms-tier.p-center .ms-numeral { color: #ffe9ad; text-shadow: 0 0 14px rgba(201,168,76,0.7); }
-.ms-tier.p-left   .ms-plinth { height: clamp(38px, 9dvh, 86px); }
-.ms-tier.p-right  .ms-plinth { height: clamp(28px, 6.5dvh, 62px); }
+/* Medal metals: GOLD champion, SILVER second, BRONZE third */
+.ms-tier.p-center .ms-plinth {
+    height: clamp(50px, 12dvh, 116px);
+    background: linear-gradient(180deg, #a87f24 0%, #7a5c16 40%, #4a3408 100%);
+    box-shadow: inset 0 2px 0 rgba(255,238,180,0.65), inset 0 0 26px rgba(0,0,0,0.45), 0 6px 20px rgba(0,0,0,0.55), 0 0 18px rgba(201,168,76,0.3);
+}
+.ms-tier.p-center .ms-plinth::before { border-color: rgba(255,233,173,0.35); }
+.ms-tier.p-center .ms-numeral { color: #ffe9ad; text-shadow: 0 0 14px rgba(201,168,76,0.8); }
+.ms-tier.p-left .ms-plinth {
+    height: clamp(38px, 9dvh, 86px);
+    background: linear-gradient(180deg, #9aa2ad 0%, #666e79 40%, #363c44 100%);
+    box-shadow: inset 0 2px 0 rgba(235,240,246,0.6), inset 0 0 22px rgba(0,0,0,0.45), 0 5px 14px rgba(0,0,0,0.5);
+}
+.ms-tier.p-left .ms-plinth::before { border-color: rgba(226,232,240,0.3); }
+.ms-tier.p-left .ms-numeral { color: #e6ebf2; text-shadow: 0 0 10px rgba(180,195,210,0.6); }
+.ms-tier.p-right .ms-plinth {
+    height: clamp(28px, 6.5dvh, 62px);
+    background: linear-gradient(180deg, #9c6234 0%, #6e4220 40%, #3a2210 100%);
+    box-shadow: inset 0 2px 0 rgba(240,190,140,0.55), inset 0 0 20px rgba(0,0,0,0.45), 0 5px 14px rgba(0,0,0,0.5);
+}
+.ms-tier.p-right .ms-plinth::before { border-color: rgba(224,168,120,0.3); }
+.ms-tier.p-right .ms-numeral { color: #eab687; text-shadow: 0 0 10px rgba(200,130,70,0.6); }
 
 /* ── Also-rans: the rest of the field, a quiet row beneath ──────────── */
 .ms-alsoran {
@@ -5203,15 +5221,43 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     transition: opacity 0.3s ease;
 }
 .ms-cardrow.out { opacity: 0; }
-.ms-rowcard {
-    width: clamp(84px, 12vw, 150px); aspect-ratio: 5 / 7; height: auto;
+/* A row item: card / mission / character-board tile, each wearing a +N badge
+   so the row reads as the literal sum of the fighter's Power. */
+.ms-rowitem {
+    position: relative;
+    width: clamp(84px, 12vw, 150px);
+    opacity: 0; transform: translateY(20px) scale(0.6);
+}
+.ms-rowitem img {
+    display: block; width: 100%; aspect-ratio: 5 / 7; height: auto;
     border-radius: 7px; object-fit: cover;
     border: 2px solid rgba(232,212,139,0.8);
     box-shadow: 0 8px 22px rgba(0,0,0,0.7), 0 0 18px rgba(201,168,76,0.35);
-    opacity: 0; transform: translateY(20px) scale(0.6);
+    background: #1a0f07;
 }
-.ms-rowcard.go { animation: msRowCardIn 0.55s cubic-bezier(0.2,1.3,0.35,1) forwards; }
+.ms-rowitem.go { animation: msRowCardIn 0.55s cubic-bezier(0.2,1.3,0.35,1) forwards; }
 @keyframes msRowCardIn { to { opacity: 1; transform: none; } }
+/* The +N badge — the amount this item feeds the meter */
+.ms-rowamt {
+    position: absolute; top: -9px; right: -9px; z-index: 2;
+    min-width: 26px; height: 26px; padding: 0 5px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Cinzel', serif; font-weight: 900; font-size: 14px;
+    color: #2a1a0e;
+    background: radial-gradient(circle at 34% 30%, #fff4d2, #c9a84c 70%);
+    border: 1px solid #8b6914; border-radius: 14px;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.6), 0 0 10px rgba(201,168,76,0.45);
+}
+/* The character-board tile leads the row with a caption */
+.ms-rowitem.board img { border-color: rgba(201,168,76,0.55); filter: saturate(0.92); }
+.ms-rowcap {
+    position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%);
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: 10px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: #ffe9ad; text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+    background: rgba(20,10,4,0.72); border: 1px solid rgba(201,168,76,0.4);
+    border-radius: 9px; padding: 2px 8px; white-space: nowrap;
+}
 /* While the row is on the table, the arena lifts so meters stay visible */
 .ms-arena { transition: padding 0.45s ease, opacity 0.45s ease; }
 .ms-arena.spot { padding-bottom: clamp(96px, 26dvh, 190px); }

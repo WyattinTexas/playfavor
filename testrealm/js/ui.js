@@ -1055,6 +1055,16 @@ function setupBattleTest() {
     you._pendingPromiseDiscard = false;
     you._pendingSlotMission = false;
 
+    // Give YOU a completed power-reward mission (through the real reward path)
+    // so the Melee's card row always demos a mission contributor in-game.
+    const pm = window.FAVOR_DATA.missions.find(m =>
+        m.successRewards && m.successRewards.skills && m.successRewards.skills.power);
+    if (pm) {
+        const copy = JSON.parse(JSON.stringify(pm));
+        game.applyMissionRewards(0, copy);
+        you.completedMissions.push(copy);
+    }
+
     addLogEntry('⚔ Battle Test — boards pre-played, one card each remains');
 }
 

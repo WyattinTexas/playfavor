@@ -6,7 +6,7 @@
 <title>FAVOR — Melee Reveal Preview</title>
 <!-- ?v= stamped by the deploy bump (same as index.html) — without it, GitHub
      Pages' ~10-min cache serves STALE js/css here and fixes look unshipped. -->
-<link rel="stylesheet" href="../css/style.css?v=20260710123806">
+<link rel="stylesheet" href="../css/style.css?v=20260710124853">
 <style>
   html, body { margin: 0; height: 100%; background: #140a04; font-family: 'Cinzel', serif; }
   .pv-bar {
@@ -25,6 +25,9 @@
   .pv-note { color: rgba(201,168,76,0.7); font-size: 11px; }
   /* The overlay lives here just like #meleeSplash does in the game. */
   #meleeSplash { }
+  /* The preview toolbar covers the stage's top edge — drop the Skip chip
+     below it (in-game there is no toolbar). */
+  #meleeSplash .ms-skip { top: 104px; }
 </style>
 </head>
 <body>
@@ -48,7 +51,7 @@
 
   <div id="meleeSplash"></div>
 
-  <script src="../js/melee.js?v=20260710123806"></script>
+  <script src="../js/melee.js?v=20260710124853"></script>
   <script>
     // Mock data mirrors the engine's resolveMelee() output shape exactly:
     // { playerIndex, name, power, placement, prestige }, sorted power-desc.
@@ -113,6 +116,9 @@
     // the final power. Mirrors what game.powerBreakdown() produces for real.
     function buildBreakdowns(results) {
       const map = {};
+      // Attach the demo mission to the FIRST fighter with room for its +3,
+      // so a mission card is guaranteed to appear every run.
+      let missionUsed = false;
       results.forEach((r, rank) => {
         const p = r.power, steps = [];
         let preBase = p;
@@ -125,15 +131,17 @@
         } else if (rank === 3) {                                // a LOST coin (Tails)
           steps.push({ kind: 'coinflip', label: 'Shot of Courage', amount: 4, won: false });
         }
-        // Split the base into board slot + REAL power cards whose printed pips
-        // sum to it exactly (2nd-ranked fighter also shows a mission reward).
+        // Split the base into board slot + REAL power cards/missions whose
+        // printed amounts sum to it exactly. Whatever the cards can't cover
+        // becomes the board share — shown in the row as the board tile.
         const baseCards = [];
         let remaining = Math.max(0, preBase);
         let baseOther = remaining > 3 ? 1 : 0;                  // board-slot share
         remaining -= baseOther;
-        if (rank === 1 && remaining >= POWER_MISSION.pips) {
+        if (!missionUsed && remaining >= POWER_MISSION.pips) {
           baseCards.push({ name: POWER_MISSION.name, filename: POWER_MISSION.filename, amount: POWER_MISSION.pips, mission: true });
           remaining -= POWER_MISSION.pips;
+          missionUsed = true;
         }
         let ti = r.playerIndex, oi = r.playerIndex;             // vary art per fighter
         while (remaining >= 2 && baseCards.length < 3) {
