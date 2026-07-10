@@ -463,17 +463,20 @@
         el.classList.add('locked'); el.classList.remove('forging');
         heraldSay(`${c.name}: ${c.power || 0} Power!`);
 
-        // The row STAYS until dismissed — Continue button or a tap anywhere.
-        // (Generous fallback so an unattended melee never stalls.)
+        // The row STAYS until dismissed via the Continue button (only the
+        // button advances — the row itself is scrollable on phones).
+        // Generous fallback so an unattended melee never stalls.
         if (rowEl.children.length) {
           const btn = document.createElement('button');
           btn.className = 'ms-continue';
           btn.textContent = 'Continue ▸';
           btn.onclick = (e) => { e.stopPropagation(); if (advanceTap) advanceTap(); };
-          rowEl.appendChild(btn);
+          stage.appendChild(btn);              // outside the scroll strip
           void btn.offsetWidth;
           btn.classList.add('show');
-          await waitContinue(15000); if (run.killed) return;
+          await waitContinue(15000);
+          btn.remove();
+          if (run.killed) return;
           // Dismissed cards TUCK beside the fighter (mini overlapped strip),
           // so everyone's evidence stays "kind of visible" through the battle.
           const tuck = document.createElement('div');
@@ -556,6 +559,8 @@
         arenaEl.classList.add('gone');
         arenaEl.classList.remove('spot');
         rowEl.innerHTML = '';
+        const pendingBtn = stage.querySelector('.ms-continue');
+        if (pendingBtn) pendingBtn.remove();
         if (alsoEl) alsoEl.classList.add('show');
         podium.forEach((t, idx) => {
           const el = tierEls[idx];
@@ -578,11 +583,11 @@
         setTimeout(() => { host.innerHTML = ''; resolve(); }, 320 * speed);
       };
 
-      // Taps: during the forge a tap advances (same as Continue); on the
-      // result a tap closes. Skip ▸▸ jumps straight to the result.
+      // Taps: ONLY the Continue button advances the battle (stray taps —
+      // e.g. while scrolling the card row on a phone — must not skip a
+      // fighter). A tap on the final result closes; Skip ▸▸ jumps to it.
       host.onclick = () => {
-        if (state === 'revealed') { close(); return; }
-        if (state === 'playing' && advanceTap) advanceTap();
+        if (state === 'revealed') close();
       };
       skipEl.onclick = (e) => { e.stopPropagation(); if (state === 'playing') finalize(); };
 

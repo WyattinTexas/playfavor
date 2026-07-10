@@ -288,14 +288,18 @@
 .ms-tier.p-right .ms-plinth::before { border-color: rgba(224,168,120,0.3); }
 .ms-tier.p-right .ms-numeral { color: #eab687; text-shadow: 0 0 10px rgba(200,130,70,0.6); }
 
-/* ── Also-rans: the rest of the field, a quiet row beneath ──────────── */
+/* ── Also-rans: 4th/5th stand at the RIGHT side of the throne room —
+   keeping the bottom clear so the podium, herald and banner never crowd
+   each other on short screens. ─────────────────────────────────────── */
 .ms-alsoran {
-    display: flex; gap: clamp(10px, 2.4vw, 22px); align-items: flex-start; justify-content: center;
-    z-index: 10; flex-wrap: wrap;
-    opacity: 0; transform: translateY(14px);
+    position: absolute; right: clamp(8px, 2.6vw, 40px); top: 50%;
+    display: flex; flex-direction: column; align-items: center;
+    gap: clamp(8px, 2.2dvh, 18px);
+    z-index: 10;
+    opacity: 0; transform: translateY(-50%) translateX(16px);
     transition: opacity 0.5s ease, transform 0.5s ease;
 }
-.ms-alsoran.show { opacity: 0.82; transform: none; }
+.ms-alsoran.show { opacity: 0.82; transform: translateY(-50%); }
 .ms-ar {
     display: flex; flex-direction: column; align-items: center; gap: 3px; width: clamp(52px, 8vw, 68px);
 }
@@ -481,17 +485,29 @@
    the player dismisses the row (Continue ▸ / tap). Sized off viewport WIDTH,
    not dvh — dvh collapsed to thumbnails on landscape phones. */
 .ms-cardrow {
-    position: absolute; left: 0; right: 0; bottom: clamp(28px, 7dvh, 54px);
-    display: flex; align-items: center; justify-content: center;
+    position: absolute; left: 0; right: 0; bottom: clamp(52px, 12dvh, 84px);
+    display: flex; align-items: center;
     gap: clamp(8px, 1.6vw, 16px);
-    z-index: 12; pointer-events: none;
+    /* Swipeable when the hand is bigger than the screen. Top padding keeps
+       the +N badges (which poke above the cards) inside the scroll box. */
+    overflow-x: auto;
+    padding: 14px clamp(12px, 3vw, 28px) 6px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    z-index: 12; pointer-events: auto;
     transition: opacity 0.3s ease;
 }
+.ms-cardrow::-webkit-scrollbar { display: none; }
+/* Centered when it fits, scrolls from the true start when it doesn't
+   (justify-content:center would clip the left edge under overflow). */
+.ms-cardrow > :first-child { margin-left: auto; }
+.ms-cardrow > :last-child { margin-right: auto; }
 .ms-cardrow.out { opacity: 0; }
 /* A row item: card / mission / character-board tile, each wearing a +N badge
    so the row reads as the literal sum of the fighter's Power. */
 .ms-rowitem {
     position: relative;
+    flex: 0 0 auto;              /* never squish — overflow scrolls instead */
     width: clamp(84px, 12vw, 150px);
     opacity: 0; transform: translateY(20px) scale(0.6);
 }
@@ -569,7 +585,9 @@
 .ms-arena.spot { padding-bottom: clamp(96px, 26dvh, 190px); }
 
 .ms-continue {
-    pointer-events: auto; align-self: center;
+    position: absolute; left: 50%; transform: translateX(-50%) translateY(8px);
+    bottom: clamp(8px, 2.2dvh, 20px); z-index: 14;
+    pointer-events: auto;
     font-family: 'Cinzel', serif; font-weight: 700; letter-spacing: 0.08em;
     font-size: clamp(11px, 1.9dvh, 14px);
     color: #2a1a0e;
@@ -577,9 +595,10 @@
     border: 1px solid #8b6914; border-radius: 20px;
     padding: 9px 18px; cursor: pointer;
     box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 16px rgba(201,168,76,0.35);
-    opacity: 0; transform: translateY(8px);
+    opacity: 0;
 }
-.ms-continue.show { animation: msFadeUp 0.4s ease 0.15s forwards; }
+.ms-continue.show { animation: msContinueIn 0.4s ease 0.15s forwards; }
+@keyframes msContinueIn { to { opacity: 1; transform: translateX(-50%); } }
 .ms-continue:hover { background: linear-gradient(180deg, #fff4d2, #d9b85e); }
 
 .ms-skip {
@@ -651,7 +670,7 @@
     .ms-title.perched { margin-bottom: -1.7em; }
     .ms-prestige { margin-top: 3px; }
     .ms-fighters { margin-bottom: 5px; }
-    .ms-alsoran { gap: 14px; }
+    .ms-alsoran { gap: 10px; }
     .ms-crown { top: -13px; }
 }
 
