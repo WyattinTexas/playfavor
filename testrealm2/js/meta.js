@@ -728,7 +728,21 @@
         return (v >= 3 && v <= 5) ? v : 3;
     }
     function bindQueuePicker() {
-        const sel = document.getElementById('queueSelect');
+        // Segmented 3/4/5 row on the redesigned menu — one tap, stays lit.
+        const seg = document.getElementById('queueSeg');
+        if (seg) {
+            const paint = () => seg.querySelectorAll('button[data-q]').forEach(b =>
+                b.classList.toggle('on', parseInt(b.dataset.q, 10) === queueSize()));
+            seg.querySelectorAll('button[data-q]').forEach(b => {
+                b.onclick = () => {
+                    localStorage.setItem('favorQueue', b.dataset.q);
+                    paint();
+                };
+            });
+            paint();
+            return;
+        }
+        const sel = document.getElementById('queueSelect');   // legacy dropdown
         if (!sel) return;
         sel.value = String(queueSize());
         sel.onchange = () => localStorage.setItem('favorQueue', sel.value);

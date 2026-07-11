@@ -703,6 +703,9 @@ console.log('── Hero select: 3 random heroes, bots draw from the leftovers, 
     return b && b.offsetParent;
   }, { timeout: 20000 });
   await page.evaluate(() => {
+    // This flow keeps the REAL seed path (offer/seating fuzz) but must
+    // not enter the live matchmaking queue.
+    window._mpSkipQueue = true;
     const b = [...document.querySelectorAll('#title-screen .btn-royal')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     b.click();
@@ -1635,29 +1638,55 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
     .catch(() => {});
   await sleep(200);
 
-  // Menu renders: Play Now, queue picker, Leaderboard, profile chip.
+  // Menu renders: Play Now leads a single column beside the box art,
+  // segmented 3/4/5 table picker, Leaderboard/Store pair, quiet row.
   const menu = await page.evaluate(() => ({
     mode: FLB.mode,
     play: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /play now/i.test(b.textContent))),
-    queue: !!document.getElementById('queueSelect'),
-    queueOpts: [...document.querySelectorAll('#queueSelect option')].map(o => o.textContent.trim()),
+    seg: [...document.querySelectorAll('#queueSeg button[data-q]')].map(b => b.dataset.q),
+    segLit: document.querySelectorAll('#queueSeg button.on').length,
     lbBtn: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /leaderboard/i.test(b.textContent))),
-    howto: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /how to play/i.test(b.textContent))),
+    storeBtn: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /store/i.test(b.textContent))),
+    howto: !!([...document.querySelectorAll('.menu-link')].find(b => /how to play/i.test(b.textContent))),
     promptTest: !!document.getElementById('promptTestToggle'),
     chip: document.getElementById('profileChip').textContent.trim(),
     oldDropdownGone: !document.getElementById('playerCountSelect'),
   }));
   console.log(`   (leaderboard backend: ${menu.mode})`);
-  ok(menu.play && menu.lbBtn && menu.queue, 'menu renders Play Now + queue picker + Leaderboard');
-  ok(menu.queueOpts.join('|') === '3 Players|4 Players|5 Players', `queue offers the three tables (${menu.queueOpts.join(', ')})`);
+  ok(menu.play && menu.lbBtn && menu.storeBtn, 'menu renders Play Now + Leaderboard + Store');
+  ok(menu.seg.join('|') === '3|4|5' && menu.segLit === 1,
+    `segmented table picker offers 3/4/5 with one lit (${menu.seg.join(',')})`);
   ok(menu.howto && menu.promptTest, "How to Play + Prompt Test survive (Skylar's tutorial hooks)");
   ok(/Audit Herald/.test(menu.chip), `profile chip carries the royal name (${menu.chip.split('\n')[0]})`);
   ok(menu.oldDropdownGone, 'player-count dropdown is gone from character select');
+
+  // Landscape-first geometry: the art panel sits fully LEFT of the menu
+  // column, the primary dwarfs the secondaries, everything on-screen.
+  const geo = await page.evaluate(() => {
+    const art = document.querySelector('.title-art').getBoundingClientRect();
+    const col = document.querySelector('.title-menu').getBoundingClientRect();
+    const play = document.querySelector('.menu-play').getBoundingClientRect();
+    const pair = document.querySelector('.menu-pair .btn-royal').getBoundingClientRect();
+    return {
+      sideBySide: art.right <= col.left + 1,
+      colOn: col.top >= 0 && col.bottom <= window.innerHeight + 1,
+      artOn: art.top >= 0 && art.bottom <= window.innerHeight + 1,
+      playBigger: play.height > pair.height * 1.4 && play.width >= col.width - 2,
+      hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
+    };
+  });
+  ok(geo.sideBySide, 'landscape stage: box art left, menu column right');
+  ok(geo.colOn && geo.artOn && !geo.hscroll, 'stage fully on-screen, no h-scroll');
+  ok(geo.playBigger, 'Play Now is the unmistakable primary (full-width, tallest)');
   await page.screenshot({ path: join(SHOTS, 'menu-desktop.png') });
 
-  // Queue choice persists.
-  await page.evaluate(() => { const s = document.getElementById('queueSelect'); s.value = '4'; s.onchange(); });
-  ok(await page.evaluate(() => FLB.queueSize()) === 4, 'queue picker persists the chosen table size');
+  // Queue choice persists (segmented tap).
+  await page.evaluate(() => { document.querySelector('#queueSeg button[data-q="4"]').click(); });
+  ok(await page.evaluate(() => FLB.queueSize()) === 4, 'table picker persists the chosen size');
+  ok(await page.evaluate(() =>
+    document.querySelector('#queueSeg button[data-q="4"]').classList.contains('on')
+    && document.querySelectorAll('#queueSeg button.on').length === 1),
+    'the tapped segment lights and the old one dims');
 
   // Rating points table (+25 / +10 / −10 / 0 middle).
   const pts = await page.evaluate(() => [
@@ -1773,14 +1802,18 @@ console.log('── Phone: royal menu at 844×390');
   const m = await page.evaluate(() => {
     const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 2 && r.top < window.innerHeight; };
     const play = [...document.querySelectorAll('#title-screen .btn-royal')].find(b => /play now/i.test(b.textContent));
+    const art = document.querySelector('.title-art').getBoundingClientRect();
+    const col = document.querySelector('.title-menu').getBoundingClientRect();
     return {
       play: vis(play),
-      queue: vis(document.getElementById('queueSelect')),
+      seg: vis(document.getElementById('queueSeg')),
       chip: vis(document.getElementById('profileChip')),
+      sideBySide: art.right <= col.left + 1,
       hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
   });
-  ok(m.play && m.queue && m.chip, 'Play Now + queue + profile chip all reachable on a phone');
+  ok(m.play && m.seg && m.chip, 'Play Now + table picker + profile chip all reachable on a phone');
+  ok(m.sideBySide, 'landscape phone keeps the side-by-side stage');
   ok(!m.hscroll, 'no horizontal scroll on the phone menu');
   await page.screenshot({ path: join(SHOTS, 'menu-phone.png') });
   await page.close();
@@ -2369,11 +2402,17 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
 {
   const AUDIT_UID = 'uaudit' + Math.random().toString(36).slice(2, 8);
   // Favor rigs are exact: no cards played + every hero's center slot grants
-  // zero favor, so these values ARE the finish order.
+  // zero favor, so these values ARE the finish order. A known purse +
+  // skill spread rides along so the holdings strip can be asserted.
   const rigScoring = (pg, youFavor, p1Favor, p2Favor) => pg.evaluate((a, b, c) => {
     game.players[0].favor = a;
     game.players[1].favor = b;
     game.players[2].favor = c;
+    game.players[0].gold = 12;
+    game.players[0].prestige = 7;
+    game.players[0].scorn = 2;
+    game.players[0].bonusSkills = { knowledge: 3, power: 2 };
+    game.applySlotSkills(game.players[0]);
     showScoring();
   }, youFavor, p1Favor, p2Favor);
 
@@ -2425,6 +2464,32 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
     `breakdown rows wear placement colors (${win.tableCls.join(' · ')})`);
   ok(win.playAgain, 'Play Again survives');
   ok(!win.hscroll, 'no horizontal scroll');
+
+  // Final holdings — Wyatt: "show player resource variables, that's what
+  // people want to see." Every heir's row carries purse + all six skills.
+  const hold = await page.evaluate(() => {
+    const strips = [...document.querySelectorAll('.vs-place .vs-holdings')];
+    const mine = document.querySelector('.vs-place.me .vs-holdings');
+    const chipVal = (cls) => {
+      const c = mine.querySelector(`.vsh-chip.${cls} b`);
+      return c ? c.textContent : null;
+    };
+    const skillVals = [...mine.querySelectorAll('.vsh-chip.skill b')].map(b => b.textContent);
+    return {
+      strips: strips.length,
+      chipsEach: strips.map(s => s.querySelectorAll('.vsh-chip').length),
+      gold: chipVal('gold'), prestige: chipVal('prestige'), scorn: chipVal('scorn'),
+      skillVals,
+      allVisible: strips.every(s => s.getBoundingClientRect().height > 8),
+    };
+  });
+  ok(hold.strips === 3 && hold.chipsEach.every(n => n === 10),
+    `every heir shows final holdings (${hold.strips} strips × ${hold.chipsEach[0]} chips)`);
+  ok(hold.gold === '12' && hold.prestige === '7' && hold.scorn === '2',
+    `purse reads the rigged truth (gold ${hold.gold}, prestige ${hold.prestige}, scorn ${hold.scorn})`);
+  ok(hold.skillVals.includes('3') && hold.skillVals.includes('2'),
+    `skill chips carry the summed values (${hold.skillVals.join(',')})`);
+  ok(hold.allVisible, 'holdings strips render visibly on every row');
 
   // Count-up actually lands on the totals.
   await sleep(1500);
@@ -2554,10 +2619,11 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
   await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
   await sleep(400);
 
-  // Menu carries the Store button; Skylar's hooks survive beside it.
+  // Menu carries the Store button; Skylar's hooks survive beside it
+  // (How to Play lives in the quiet row as a .menu-link now).
   const menu = await page.evaluate(() => ({
     store: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /store/i.test(b.textContent))),
-    howto: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /how to play/i.test(b.textContent))),
+    howto: !!([...document.querySelectorAll('.menu-link')].find(b => /how to play/i.test(b.textContent))),
     promptTest: !!document.getElementById('promptTestToggle'),
   }));
   ok(menu.store && menu.howto && menu.promptTest, 'menu: Store button beside How to Play + Prompt Test');
@@ -3268,6 +3334,7 @@ async function startSeeded(page, seedRig) {
   }, { timeout: 20000 });
   await page.evaluate((rig) => {
     window.shuffleArray = (a) => [...a];
+    window._mpSkipQueue = true;   // real seed path, no live queue
     localStorage.setItem('favorQueue', '3');
     FLB.tableSeed = async () => rig;
     const b = [...document.querySelectorAll('#title-screen .btn-royal')]
@@ -3406,6 +3473,7 @@ async function startSeeded(page, seedRig) {
   // always matches whatever the profile carries. Never posted, no scrub.
   await page.evaluate(() => {
     window.shuffleArray = (a) => [...a];
+    window._mpSkipQueue = true;   // real seed path, no live queue
     localStorage.setItem('favorQueue', '3');
     FLB.tableSeed = async () => ({
       myRow: { uid: FLB.uid(), rating: 300 },
@@ -3500,6 +3568,193 @@ async function startSeeded(page, seedRig) {
   ok(quiet.bonus === 0, 'and receives no boon');
   ok(quiet.emblem === 0, `sole rated seat still takes the Emblem (seat ${quiet.emblem})`);
   await page.close();
+}
+
+// ═══ MULTIPLAYER — queue window, real 2-client match, lockstep, AFK boot ═══
+// Two ISOLATED browser contexts play each other through the real Firebase
+// queue. Timers are shrunk via FMP._T so the whole story runs in seconds.
+console.log('── Multiplayer: solo window, 2-client match, lockstep round, AFK boot');
+{
+  // Leave no stale matchmaking state behind OR in front.
+  const purgeMp = async (pg) => pg.evaluate(async () => {
+    await firebase.database().ref('favor/mp/queue').remove();
+    return true;
+  });
+
+  // ── Beat 1: nobody else queued — the window expires into the classic
+  //    table (the fake humans get you; Wyatt's Nation pattern). ──
+  {
+    const page = await browser.newPage();
+    page.on('console', m => { if (m.type() === 'error') consoleErrors.push('mp-solo: ' + m.text()); });
+    await page.setViewport({ width: 1280, height: 800 });
+    await page.goto(URL, { waitUntil: 'networkidle2' });
+    await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+    await purgeMp(page);
+    await page.evaluate(() => {
+      window.shuffleArray = (a) => [...a];
+      localStorage.setItem('favorQueue', '3');
+      FMP._T.windowMin = 1400; FMP._T.windowSpread = 1;   // fast solo window
+      const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+        .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
+      b.click();
+    });
+    await page.waitForFunction(() => document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent, { timeout: 20000 });
+    await page.evaluate(() => {
+      selectedCharacter = FAVOR_DATA.characters[0].id;
+      document.querySelector('.character-card').classList.add('selected');
+      document.getElementById('confirmBtn').style.display = 'inline-block';
+    });
+    await page.evaluate(() => document.getElementById('confirmBtn').click());
+    await page.waitForFunction(() =>
+      document.getElementById('promisePicker').classList.contains('active')
+      && /Searching the Realm/i.test(document.getElementById('promisePicker').textContent), { timeout: 8000 });
+    ok(true, 'confirming a hero opens the Searching the Realm beat');
+    await page.screenshot({ path: join(SHOTS, 'mp-searching.png') });
+    await page.waitForFunction(() => typeof game !== 'undefined' && game
+      && game.players.length === 3 && game.players[0].character, { timeout: 15000 });
+    const solo = await page.evaluate(() => ({
+      active: FMP.active(),
+      rivals: game.players.slice(1).map(p => p.name),
+      queueLeft: null,
+    }));
+    ok(!solo.active, 'window expired → NOT a network game');
+    ok(solo.rivals.length === 2 && solo.rivals.every(n => n && n !== 'You'),
+      `the fake humans fill the table (${solo.rivals.join(' & ')})`);
+    const qleft = await page.evaluate(async () =>
+      (await firebase.database().ref('favor/mp/queue').get()).val());
+    ok(!qleft, 'queue entry cleaned up after the window expired');
+    await page.close();
+  }
+
+  // ── Beats 2-4: a REAL match between two isolated clients. ──
+  {
+    const mkContext = async () => (browser.createBrowserContext
+      ? browser.createBrowserContext() : browser.createIncognitoBrowserContext());
+    const ctxA = await mkContext();
+    const ctxB = await mkContext();
+    const A_UID = 'uauditmpa' + Math.random().toString(36).slice(2, 6);
+    const B_UID = 'uauditmpb' + Math.random().toString(36).slice(2, 6);
+
+    const boot = async (ctx, uid, name, extra) => {
+      const pg = await ctx.newPage();
+      pg.on('console', m => { if (m.type() === 'error') consoleErrors.push(`mp-${name}: ` + m.text()); });
+      await pg.evaluateOnNewDocument((u, n) => {
+        localStorage.setItem('favorUid', u);
+        localStorage.setItem('favorName', n);
+        localStorage.setItem('favorQueue', '3');
+      }, uid, name);
+      await pg.setViewport({ width: 1280, height: 800 });
+      await pg.goto(URL, { waitUntil: 'networkidle2' });
+      await pg.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+      await pg.evaluate((cfg) => {
+        window.shuffleArray = (a) => [...a];
+        window.CINEMATIC_SPEED = 0.05;      // fast spotlights for the audit
+        FMP._T.windowMin = 30000;           // never fall solo mid-beat
+        FMP._T.windowSpread = 1;
+        Object.assign(FMP._T, cfg || {});
+        const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+          .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
+        b.click();
+      }, extra || {});
+      await pg.waitForFunction(() => document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent, { timeout: 20000 });
+      await pg.evaluate(() => {
+        selectedCharacter = FAVOR_DATA.characters[0].id;
+        document.querySelector('.character-card').classList.add('selected');
+        document.getElementById('confirmBtn').style.display = 'inline-block';
+      });
+      await pg.evaluate(() => document.getElementById('confirmBtn').click());
+      return pg;
+    };
+
+    // A hosts (earliest entry, 4s AFK clock for beat 4); B joins.
+    const pA = await boot(ctxA, A_UID, 'Audit MpA', { afk: 4500 });
+    await sleep(900);
+    const pB = await boot(ctxB, B_UID, 'Audit MpB', {});
+
+    const inGame = (pg) => pg.waitForFunction(() => typeof game !== 'undefined' && game
+      && game.players.length === 3 && game.players[0].character && FMP.active(), { timeout: 25000 });
+    await Promise.all([inGame(pA), inGame(pB)]);
+    ok(true, 'two queued clients matched into one live table');
+
+    const stateOf = (pg) => pg.evaluate(() => ({
+      seat: FMP.mySeat(),
+      host: FMP.isHost(),
+      seed: FMP.record().seed,
+      names: game.players.map(p => p.name),
+      handsCanon: [0, 1, 2].map(cs =>
+        game.players[FMP.localIdx(cs)].hand.map(c => c.id).join(',')).join(';'),
+      emblemCanon: FMP.canonSeat(game.emblemHolder),
+      hash: mpStateHash(),
+    }));
+    const sA = await stateOf(pA), sB = await stateOf(pB);
+    ok(sA.host && !sB.host && sA.seat === 0 && sB.seat === 1,
+      `first in queue hosts (A seat ${sA.seat}, B seat ${sB.seat})`);
+    ok(sA.seed === sB.seed, 'both clients build from one seed');
+    ok(sA.names.includes('Audit MpB') && sB.names.includes('Audit MpA'),
+      'each client sees the other by name at the table');
+    ok(sA.handsCanon === sB.handsCanon,
+      'LOCKSTEP: every hand identical across clients (canonical order)');
+    ok(sA.emblemCanon === sB.emblemCanon, `Emblem agrees across clients (canonical seat ${sA.emblemCanon})`);
+    await pA.screenshot({ path: join(SHOTS, 'mp-match-hostA.png') });
+    await pB.screenshot({ path: join(SHOTS, 'mp-match-clientB.png') });
+
+    // ── Beat 3: one full lockstep round — both discard their first card. ──
+    await pA.evaluate(() => discardSelectedCard(0));
+    await sleep(250);
+    await pB.evaluate(() => discardSelectedCard(0));
+    const roundDone = (pg) => pg.waitForFunction(() => game.phase === 'gameplay'
+      && game.pendingActivations.every(a => a === null)
+      && game.players[0].hand.length === 6, { timeout: 30000 }).then(() => true, () => false);
+    const [rdA, rdB] = await Promise.all([roundDone(pA), roundDone(pB)]);
+    ok(rdA && rdB, `both clients finish the round (A ${rdA}, B ${rdB})`);
+    const hA = await pA.evaluate(() => mpStateHash());
+    const hB = await pB.evaluate(() => mpStateHash());
+    ok(hA === hB, `LOCKSTEP: state hashes agree after a full round (${hA} vs ${hB})`);
+    const bLog = await pB.evaluate(() => document.getElementById('logEntries').innerText);
+    ok(/Audit MpA (discards|plays)/.test(bLog), "B's log narrates A's move (stream applied)");
+
+    // ── Beat 4: A picks, B goes silent — the 2-minute boot (shrunk to
+    //    4.5s) converts B's seat to AI everywhere and kicks B out. ──
+    await pA.evaluate(() => discardSelectedCard(0));
+    const booted = await pA.waitForFunction(() =>
+      game.players[1] && game.players[1]._remoteHuman === false, { timeout: 20000 })
+      .then(() => true, () => false);
+    ok(booted, "host's AFK clock boots the silent seat (remote → AI)");
+    const round2 = await pA.waitForFunction(() => game.phase === 'gameplay'
+      && game.pendingActivations.every(a => a === null)
+      && game.players[0].hand.length === 5, { timeout: 30000 })
+      .then(() => true, () => false);
+    const aLog = await pA.evaluate(() => document.getElementById('logEntries').innerText);
+    ok(round2, 'the table plays on with the AI in the empty seat');
+    ok(/removed for inactivity/i.test(aLog), 'the boot is announced at the table');
+    const bBooted = await pB.waitForFunction(() =>
+      document.getElementById('champOverlay').classList.contains('active')
+      && /Removed for Inactivity/i.test(document.getElementById('champTitle').textContent),
+      { timeout: 15000 }).then(() => true, () => false);
+    ok(bBooted, 'the booted player is told and returned to the menu path');
+    await pB.screenshot({ path: join(SHOTS, 'mp-afk-booted.png') });
+
+    // ── Leave no trace: THIS game, any prior crashed run's orphans, and
+    //    the queue — then prove nothing uaudit remains. ──
+    const swept = await pA.evaluate(async () => {
+      const gid = FMP.gid();
+      if (gid) await firebase.database().ref(`favor/mp/games/${gid}`).remove();
+      await firebase.database().ref('favor/mp/queue').remove();
+      const games = (await firebase.database().ref('favor/mp/games').get()).val() || {};
+      for (const [id, rec] of Object.entries(games)) {
+        if ((rec.roster || []).some(r => r.uid && r.uid.startsWith('uaudit'))) {
+          await firebase.database().ref(`favor/mp/games/${id}`).remove();
+        }
+      }
+      const after = (await firebase.database().ref('favor/mp/games').get()).val() || {};
+      const stray = Object.values(after).some(rec =>
+        (rec.roster || []).some(r => r.uid && r.uid.startsWith('uaudit')));
+      return { stray };
+    });
+    ok(!swept.stray, 'favor/mp swept clean of audit uids');
+    await pA.close(); await pB.close();
+    await ctxA.close(); await ctxB.close();
+  }
 }
 
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));

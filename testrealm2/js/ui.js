@@ -869,6 +869,22 @@ async function confirmCharacter() {
     // in-select dropdown moved there so Play Now can never skip past it).
     const playerCount = (window.FLB && FLB.queueSize()) || 3;
 
+    // MULTIPLAYER: confirming your hero queues you with it. A real match
+    // starts a lockstep table; the expired random window falls through to
+    // the classic game where the persona rivals present as people —
+    // indistinguishable from a slow lobby (Wyatt's spec).
+    if (window._pinEmblemSeed === undefined && !window._mpSkipQueue
+        && window.FMP && FMP.available()) {
+        if (window._confirmBusy) return;
+        window._confirmBusy = true;
+        let mpRes = null;
+        try { mpRes = await mpSearch(playerCount); } catch (e) { mpRes = { solo: true }; }
+        window._confirmBusy = false;
+        if (mpRes && mpRes.cancelled) return;             // back to hero select
+        if (mpRes && mpRes.game) { await startMpGame(mpRes); return; }
+        // window expired → the classic table below
+    }
+
     // One leaderboard read seeds the rated Emblem start, persona seating,
     // and the rank-1 boon. Prefetched at boot, raced against 1200ms here —
     // offline/slow/pinned falls back to the classic start (seat 0, generic
@@ -1053,17 +1069,475 @@ function showBoonPicker() {
             });
             ov.querySelector('#boonConfirm').onclick = () => {
                 if (!chosen) return;
-                applyRankOneBoon(0, chosen);
-                showNotification(`The Queen favors you \u2014 +1 ${cap(chosen)} all game`, 'act');
-                addLogEntry(`The Realm's Favorite: you gain +1 ${cap(chosen)} for the whole game`);
+                if (window.FMP && FMP.active()) {
+                    // Lockstep: the pick STREAMS \u2014 every client (this one
+                    // included) applies it on receipt, in stream order.
+                    FMP.publish('boon', { skill: chosen });
+                } else {
+                    applyRankOneBoon(0, chosen);
+                    showNotification(`The Queen favors you \u2014 +1 ${cap(chosen)} all game`, 'act');
+                    addLogEntry(`The Realm's Favorite: you gain +1 ${cap(chosen)} for the whole game`);
+                    renderGameState();
+                }
                 ov.classList.remove('active');
-                renderGameState();
                 resolve();
             };
         };
         render();
         ov.classList.add('active');
     });
+}
+
+// \u2550\u2550\u2550 MULTIPLAYER GLUE \u2014 queue UX, lockstep rounds, remote seats \u2550\u2550\u2550\u2550\u2550\u2550\u2550
+// The transport lives in js/mp.js (FMP). This block is everything the
+// game screen needs: the searching overlay, building a table from the
+// match record (rotated so YOU are seat 0 \u2014 a circle doesn't care), the
+// pick barrier, remote-seat activation driven by streamed moves, the
+// canonical-order end-of-act stages, and Wyatt's 2-minute AFK boot.
+
+const mpActive = () => !!(window.FMP && FMP.active());
+const mpPub = (type, data) => { if (mpActive()) FMP.publish(type, data); };
+
+// \u2500\u2500 Searching the realm \u2014 the queue beat on the select screen \u2500\u2500
+function mpSearch(size) {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        let cancelled = false;
+        const paint = (others) => {
+            ov.innerHTML = `
+                <div class="pp-inner boon">
+                    <div class="pp-title">Searching the Realm</div>
+                    <div class="pp-sub" id="mpqSub">${others > 0
+                        ? `<b>${others}</b> noble${others > 1 ? 's' : ''} in the ${size}-player queue\u2026`
+                        : `Calling for challengers to a ${size}-player table\u2026`}</div>
+                    <div class="mpq-spin"></div>
+                    <div class="pp-actions">
+                        <button class="btn-royal" id="mpqCancel"><span>Withdraw</span></button>
+                    </div>
+                </div>`;
+            ov.querySelector('#mpqCancel').onclick = () => {
+                cancelled = true;
+                FMP.cancelQueue();
+                ov.classList.remove('active');
+                resolve({ cancelled: true });
+            };
+        };
+        paint(0);
+        ov.classList.add('active');
+        FMP.enterQueue({
+            size,
+            hero: selectedCharacter,
+            onState: (kind, d) => {
+                if (cancelled) return;
+                const sub = document.getElementById('mpqSub');
+                if (sub && kind === 'searching') {
+                    sub.innerHTML = d.others > 0
+                        ? `<b>${d.others}</b> noble${d.others > 1 ? 's' : ''} found \u2014 forming the table\u2026`
+                        : `Calling for challengers to a ${size}-player table\u2026`;
+                }
+            },
+        }).then((res) => {
+            if (cancelled) return;
+            ov.classList.remove('active');
+            resolve(res);
+        });
+    });
+}
+
+// \u2500\u2500 Build the table from the match record \u2500\u2500
+async function startMpGame({ game: rec, mySeat }) {
+    const n = rec.size;
+    game = new FavorGame(n);
+    game.setSeed(rec.seed);
+    game.setDealOffset(mySeat);   // chunk k stays with canonical seat k
+    game.loadDecks();
+
+    // Rotate the canonical roster so the local human sits at seat 0. The
+    // table is a circle \u2014 rotation preserves every neighbor, pass, and
+    // emblem relationship, and the whole seat-0 UI stays true.
+    const choices = [];
+    for (let i = 0; i < n; i++) {
+        const r = rec.roster[(mySeat + i) % n];
+        choices.push({ characterId: r.hero, playerName: i === 0 ? 'You' : r.name });
+    }
+    game.initPlayers(choices);
+    for (let i = 1; i < n; i++) {
+        const r = rec.roster[(mySeat + i) % n];
+        const gp = game.players[i];
+        if (r.human) { gp._remoteHuman = true; gp._mpUid = r.uid; }
+        if (r.persona) {
+            gp._personaUid = r.personaUid;
+            gp._personaAI = { key: r.persona, strong: (r.strong || []).slice() };
+        }
+    }
+    game.setEmblemHolder(FMP.localIdx(rec.emblemSeat));
+
+    // Boots arrive as broadcast moves so every client converts the seat
+    // at the same point in the stream.
+    FMP.onBroadcast('afk_boot', (m) => mpApplyBoot(m));
+    FMP.onBroadcast('sync', (m) => mpCheckSync(m));
+
+    document.getElementById('character-select').classList.remove('active');
+    game.startAct(1);
+    addLogEntry('\u2550\u2550\u2550 Act 1 begins \u2550\u2550\u2550');
+    showNotification('Act 1 Begins \u2014 Choose wisely.', 'act');
+    const holderName = game.emblemHolder === 0 ? 'You' : game.players[game.emblemHolder].name;
+    showNotification(holderName === 'You' ? 'You hold the Emblem \u2014 you act first.'
+        : `${holderName} holds the Emblem and acts first.`, 'act');
+    addLogEntry(holderName === 'You' ? 'You hold the Emblem \u2014 you act first'
+        : `${holderName} holds the Emblem and acts first`);
+    if (typeof coachApplyPromptTest === 'function') coachApplyPromptTest();
+    showGameScreen();
+
+    // Rank-1 boon, streamed: the #1 seat picks; everyone applies on
+    // receipt. Personas pick by the shared heuristic \u2014 no stream needed.
+    if (rec.boonSeat >= 0) {
+        const li = FMP.localIdx(rec.boonSeat);
+        const bp = game.players[li];
+        if (bp._personaAI) {
+            const skill = bp._personaAI.strong.slice()
+                .sort((a, b) => (bp.skills[a] || 0) - (bp.skills[b] || 0))[0];
+            applyRankOneBoon(li, skill);
+            const capS = skill.charAt(0).toUpperCase() + skill.slice(1);
+            showNotification(`${bp.name} \u2014 the realm's #1 \u2014 receives the Queen's boon: +1 ${capS}`, 'act');
+            addLogEntry(`${bp.name}, the realm's #1, gains the Queen's boon: +1 ${capS} all game`);
+            renderGameState();
+        } else {
+            if (li === 0) showBoonPicker();   // publishes; applied below
+            else mpWaitShow(li, 'choosing the Queen\u2019s boon');
+            const mv = await FMP.waitFor(rec.boonSeat, 'boon');
+            mpWaitHide();
+            if (mv && BOON_SKILLS.includes(mv.skill)) {
+                applyRankOneBoon(FMP.localIdx(mv.seat), mv.skill);
+                const who = FMP.localIdx(mv.seat) === 0 ? 'You' : game.players[FMP.localIdx(mv.seat)].name;
+                const capS = mv.skill.charAt(0).toUpperCase() + mv.skill.slice(1);
+                showNotification(who === 'You'
+                    ? `The Queen favors you \u2014 +1 ${capS} all game`
+                    : `${who} \u2014 the realm's #1 \u2014 receives the Queen's boon: +1 ${capS}`, 'act');
+                addLogEntry(`The Queen's boon: +1 ${capS} to ${who === 'You' ? 'you' : who}`);
+                renderGameState();
+            }
+            // Booted at the boon \u2192 the Queen withdraws; no boon this game.
+        }
+    }
+    if (FMP.isHost()) mpPub('sync', { act: 1, hash: mpStateHash() });
+}
+
+// \u2500\u2500 Waiting pill \u2014 non-modal, shows who the table waits on + AFK clock \u2500\u2500
+let _mpWaitTimer = null;
+function mpWaitShow(localSeat, doing) {
+    let el = document.getElementById('mpWait');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'mpWait';
+        document.body.appendChild(el);
+    }
+    const name = game.players[localSeat] ? game.players[localSeat].name : 'a noble';
+    const started = Date.now();
+    const afk = (window.FMP && FMP._T.afk) || 120000;
+    const paint = () => {
+        const left = Math.max(0, afk - (Date.now() - started));
+        const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
+        el.innerHTML = `\u23f3 Waiting on <b>${name}</b> \u2014 ${doing} <span class="mpw-clock">${m}:${String(s).padStart(2, '0')}</span>`;
+    };
+    paint();
+    el.classList.add('on');
+    clearInterval(_mpWaitTimer);
+    _mpWaitTimer = setInterval(paint, 1000);
+}
+function mpWaitHide() {
+    clearInterval(_mpWaitTimer);
+    _mpWaitTimer = null;
+    const el = document.getElementById('mpWait');
+    if (el) el.classList.remove('on');
+}
+
+// \u2500\u2500 AFK boot (host published it; every client applies identically) \u2500\u2500
+function mpApplyBoot(m) {
+    if (!mpActive() || typeof m.target !== 'number') return;
+    FMP.markBooted(m.target);
+    const li = FMP.localIdx(m.target);
+    if (li === 0) {
+        // That's me \u2014 the court moved on. Leave cleanly and say so.
+        FMP.leaveGame();
+        const ov = document.getElementById('champOverlay');
+        if (ov) {
+            document.getElementById('champTitle').textContent = 'Removed for Inactivity';
+            document.getElementById('champSub').innerHTML =
+                'The court waited two minutes \u2014 the game continued without you.';
+            ov.classList.add('active');
+            const back = () => location.reload();
+            ov.onclick = back;
+            document.getElementById('champBtn').onclick = back;
+        } else {
+            location.reload();
+        }
+        return;
+    }
+    const gp = game.players[li];
+    if (gp) {
+        gp._remoteHuman = false;   // AI plays the seat from here on
+        showNotification(`${gp.name} was removed for inactivity \u2014 the court plays on.`, 'act');
+        addLogEntry(`${gp.name} was removed for inactivity`);
+    }
+}
+
+// \u2500\u2500 Lockstep round \u2014 the pick barrier \u2500\u2500
+// Bots pick deterministically at once; every remote human's pick is
+// awaited from the stream (canonical order for determinism); then hands
+// pass and activation runs exactly like solo.
+async function mpProcessRound(humanAction) {
+    for (let i = 1; i < game.playerCount; i++) {
+        const p = game.players[i];
+        if (!p._remoteHuman && game.pendingActivations[i] === null && p.hand.length > 0) {
+            aiPickCard(i);
+        }
+    }
+    renderGameState();
+
+    for (let cs = 0; cs < game.playerCount; cs++) {
+        const li = FMP.localIdx(cs);
+        if (li === 0) continue;
+        const p = game.players[li];
+        if (!p._remoteHuman || game.pendingActivations[li] !== null || !p.hand.length) continue;
+        mpWaitShow(li, 'choosing a card');
+        const mv = await FMP.waitFor(cs, 'pick');
+        mpWaitHide();
+        if (!mv) {           // booted mid-pick \u2014 the AI takes the seat over
+            if (game.pendingActivations[li] === null && p.hand.length) aiPickCard(li);
+            continue;
+        }
+        const hi = p.hand.findIndex(c => c.id === mv.cardId);
+        game.pickCard(li, hi >= 0 ? hi : 0);
+        p._mpRoundMove = mv;   // action + args consumed at activation
+        renderGameState();
+    }
+
+    game.passHands();
+    const needsMissionSelect = await activateAllCards(humanAction);
+    if (needsMissionSelect) {
+        renderGameState();
+        showMissionSelectUI();
+        return;
+    }
+    finishRound();
+}
+
+// \u2500\u2500 Remote seat activation \u2014 their streamed intent, our shared engine \u2500\u2500
+// Mirrors the local-human branch action for action; every wait can return
+// null (boot) and falls back to the exact AI move every client computes.
+async function mpActivateRemote(pi, card, cardIdx) {
+    const p = game.players[pi];
+    const cs = FMP.canonSeat(pi);
+    let mv;
+    if (cardIdx === 0) {
+        mv = p._mpRoundMove || null;
+        p._mpRoundMove = null;
+        if (mv && mv.cardId !== card.id) mv = null;   // stream skew \u2014 fall back honestly
+    } else {
+        mpWaitShow(pi, 'deciding their final card');
+        mv = await FMP.waitFor(cs, 'final');
+        mpWaitHide();
+    }
+
+    let action = mv && mv.action;
+    if (!action) {
+        // Boot/fallback: the same default the AI takes, on every client.
+        const { canPlay } = game.checkRequirements(pi, card);
+        action = (card.type === 'mission_letter') ? 'discard' : (canPlay ? 'play' : 'discard');
+    }
+
+    if (action === 'mission_letter' && card.type === 'mission_letter'
+        && p.gold >= 1 && game.visibleMissions.length > 0) {
+        await showCardSpotlight(pi, card, 'play');
+        const result = game.activateCard(pi, card.id, 'mission_letter');
+        if (result && result.chooseMission) {
+            mpWaitShow(pi, 'choosing a mission');
+            const pick = await FMP.waitFor(cs, 'mission_pick');
+            mpWaitHide();
+            const idx = pick && Number.isInteger(pick.missionIdx)
+                && pick.missionIdx >= 0 && pick.missionIdx < game.visibleMissions.length
+                ? pick.missionIdx : aiBestMission(pi);
+            game.chooseMission(pi, idx);
+            addLogEntry(`${p.name} uses a Mission Letter`);
+        }
+    } else if (action === 'borrow_play') {
+        const plan = (mv.borrow || []).map(b => ({ skill: b.skill, neighborIndex: FMP.localIdx(b.lender) }));
+        const borrowable = game.getBorrowableSkills(pi);
+        const covered = plan.length && plan.every(b =>
+            borrowable[b.skill] && borrowable[b.skill].includes(b.neighborIndex));
+        await showCardSpotlight(pi, card, covered ? 'play' : 'discard');
+        if (covered && p.gold >= plan.length * 2) {
+            game.activateCard(pi, card.id, 'play', plan);
+            addLogEntry(`${p.name} borrows and plays ${card.name}`);
+        } else {
+            game.activateCard(pi, card.id, 'discard');
+            addLogEntry(`${p.name} discards ${card.name} (+3 Gold)`);
+        }
+    } else if (action === 'discard_slide') {
+        const dir = mv.dir === -1 || mv.dir === 1 ? mv.dir : 1;
+        await showCardSpotlight(pi, card, 'discard');
+        game.activateCard(pi, card.id, 'discard_slide', dir);
+        addLogEntry(`${p.name} discards ${card.name} to slide their ring`);
+        if (p._pendingSlotMission) {
+            p._pendingSlotMission = false;
+            mpWaitShow(pi, 'choosing a mission');
+            const pick = await FMP.waitFor(cs, 'slot_mission');
+            mpWaitHide();
+            const idx = pick && Number.isInteger(pick.missionIdx)
+                && pick.missionIdx >= 0 && pick.missionIdx < game.visibleMissions.length
+                ? pick.missionIdx : aiBestMission(pi);
+            game.chooseMission(pi, idx);
+        }
+    } else if (action === 'play') {
+        const { canPlay } = game.checkRequirements(pi, card);
+        if (canPlay) {
+            await showCardSpotlight(pi, card, 'play');
+            game.activateCard(pi, card.id, 'play');
+            addLogEntry(`${p.name} plays ${card.name}`);
+        } else {
+            await showCardSpotlight(pi, card, 'discard');
+            game.activateCard(pi, card.id, 'discard');
+            addLogEntry(`${p.name} discards ${card.name}`);
+        }
+    } else {
+        await showCardSpotlight(pi, card, 'discard');
+        game.activateCard(pi, card.id, 'discard');
+        addLogEntry(`${p.name} discards ${card.name}`);
+    }
+
+    // Chemical Y resolved for a remote human \u2014 their pick, streamed.
+    if (p._pendingChemYPick) {
+        p._pendingChemYPick = false;
+        mpWaitShow(pi, 'choosing which favor doubles');
+        const pick = await FMP.waitFor(cs, 'chemy');
+        mpWaitHide();
+        const advs = p.playedCards.filter(c =>
+            c.type === 'adventure' && (c.favor || 0) > 0 && !c._favorDoubled);
+        let target = pick && advs.find(c => c.id === pick.cardId);
+        if (!target && advs.length) {
+            target = advs.reduce((a, b) => ((b.favor || 0) > (a.favor || 0) ? b : a));
+        }
+        if (target) {
+            target._favorDoubled = true;
+            addLogEntry(`${p.name}'s Chemical Y doubles ${target.name}`);
+        }
+    }
+}
+
+// \u2500\u2500 End-of-act stages, canonical order \u2014 every client applies every
+// seat's choices at the same point. Local seat uses the real choosers
+// (and publishes); remote seats stream; booted seats fall back to AI.
+async function mpEndActStages(borrowsPendingLocal) {
+    const n = game.playerCount;
+    for (let cs = 0; cs < n; cs++) {
+        const li = FMP.localIdx(cs);
+        const p = game.players[li];
+        if (li === 0) {
+            for (const m of borrowsPendingLocal) {
+                await showMissionBorrowChooser(m);   // publishes inside
+            }
+        } else if (p._remoteHuman || (p._pendingMissionBorrows || []).length) {
+            const pend = (p._pendingMissionBorrows || []).slice();
+            p._pendingMissionBorrows = [];
+            for (const m of pend) {
+                mpWaitShow(li, `deciding ${m.name}`);
+                const mv = p._remoteHuman ? await FMP.waitFor(cs, 'mission_borrow') : null;
+                mpWaitHide();
+                const idx = p.missions.indexOf(m);
+                if (idx < 0) continue;
+                const plan = game.missionBorrowPlan(li, m);
+                const accept = mv ? !!mv.accept
+                    : (plan && game.missionFavorEstimate(li, m) >= plan.cost); // boot \u2192 persona-grade judgment
+                if (accept && plan) {
+                    const res = game.completeMissionWithBorrow(li, idx);
+                    if (!res.success) game.failMissionByChoice(li, idx);
+                    else addLogEntry(`${p.name} borrows to complete ${m.name}`);
+                } else {
+                    game.failMissionByChoice(li, idx);
+                    addLogEntry(`${p.name} lets ${m.name} fail`);
+                }
+                renderGameState();
+            }
+        }
+    }
+    // Penalty discards \u2014 the failed owners pick which cards to give up.
+    for (let cs = 0; cs < n; cs++) {
+        const li = FMP.localIdx(cs);
+        const p = game.players[li];
+        const owed = p._pendingPenaltyDiscard || 0;
+        if (!owed) continue;
+        p._pendingPenaltyDiscard = 0;
+        if (li === 0) {
+            await showPenaltyDiscardPicker(owed);    // publishes inside
+        } else {
+            mpWaitShow(li, `discarding ${owed} to a failed mission`);
+            const mv = p._remoteHuman ? await FMP.waitFor(cs, 'penalty') : null;
+            mpWaitHide();
+            const ids = (mv && Array.isArray(mv.cardIds)) ? mv.cardIds : [];
+            let taken = ids.length
+                ? game.discardPlayedCards(li, c => ids.includes(c.id), Math.min(owed, ids.length))
+                : 0;
+            if (taken < Math.min(owed, p.playedCards.length + taken)) {
+                // Short or booted \u2014 the engine's own AI keep-score fills in.
+                p._remoteHuman = false;
+                game.penaltyDiscard(li, owed - taken);
+                if (mv) p._remoteHuman = true;
+            }
+            addLogEntry(`${p.name} discards ${owed} card(s) to a failed mission`);
+            renderGameState();
+        }
+    }
+    // A Promise \u2014 sacrifice any number for prestige.
+    for (let cs = 0; cs < n; cs++) {
+        const li = FMP.localIdx(cs);
+        const p = game.players[li];
+        if (!p._pendingPromiseDiscard) continue;
+        p._pendingPromiseDiscard = false;
+        if (li === 0) {
+            await showPromiseDiscardPicker();        // publishes inside
+        } else {
+            mpWaitShow(li, 'weighing A Promise');
+            const mv = p._remoteHuman ? await FMP.waitFor(cs, 'promise') : null;
+            mpWaitHide();
+            const ids = (mv && Array.isArray(mv.cardIds)) ? mv.cardIds : [];
+            if (ids.length) {
+                const nDone = game.discardPlayedCards(li, c => ids.includes(c.id));
+                p.prestige += 10 * nDone;
+                addLogEntry(`${p.name} honors A Promise: ${nDone} card(s), +${10 * nDone} Prestige`);
+            }
+            renderGameState();
+        }
+    }
+}
+
+// \u2500\u2500 Desync insurance \u2014 the host hashes the table each act; a mismatch
+// converts the remotes to AI locally rather than play a forked game.
+function mpStateHash() {
+    const n = game.playerCount;
+    const rows = [];
+    for (let cs = 0; cs < n; cs++) {
+        const p = game.players[FMP.localIdx(cs)];
+        rows.push([p.gold, p.prestige, p.scorn, p.favor,
+            (p.hand || []).map(c => c.id).join(','),
+            (p.playedCards || []).map(c => c.id).join(','),
+            (p.missions || []).map(m => m.id || m.name).join(',')].join('|'));
+    }
+    rows.push((game.visibleMissions || []).map(m => m.id || m.name).join(','));
+    rows.push(String(FMP.canonSeat(game.emblemHolder)));
+    const s = rows.join(';');
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return h;
+}
+function mpCheckSync(m) {
+    if (!mpActive() || FMP.isHost() || typeof m.hash !== 'number') return;
+    if (m.hash !== mpStateHash()) {
+        console.error('[FMP] state hash mismatch at act', m.act);
+        showNotification('The connection to the table slipped \u2014 the realm plays on.', 'error');
+        game.players.forEach(p => { p._remoteHuman = false; });
+        FMP.leaveGame();
+    }
 }
 
 // ─── GAME SCREEN ───────────────────────────────────────────
@@ -2697,6 +3171,9 @@ function renderMissionLBTurnIn(name) {
     if (!holder) return;
     holder.innerHTML = '';
     if (!game || game.phase !== 'gameplay') return;
+    // Anytime-actions can't ride the round barrier — early turn-ins sit
+    // out of multiplayer v1; missions resolve at their due date instead.
+    if (mpActive()) return;
     const p = game.players[0];
     const mi = (p.missions || []).findIndex(m => m.name === name);
     if (mi < 0) return;
@@ -3045,6 +3522,22 @@ function showFinalCardChoice(card) {
 // Apply the chosen action to the final card through the normal engine paths.
 async function resolveFinalCardChoice(card) {
     const act = await showFinalCardChoice(card);
+
+    if (mpActive()) {
+        // The final card's fate streams like the round pick did.
+        const data = {
+            action: (act === 'discard_slide_left' || act === 'discard_slide_right')
+                ? 'discard_slide' : act,
+        };
+        if (act === 'discard_slide_left') data.dir = -1;
+        if (act === 'discard_slide_right') data.dir = 1;
+        if (act === 'borrow_play') {
+            data.borrow = (window._finalBorrowChoice || []).map(b =>
+                ({ skill: b.skill, lender: FMP.canonSeat(b.neighborIndex) }));
+        }
+        mpPub('final', data);
+    }
+
     await showMiniSpotlight(card, act === 'play' || act === 'borrow_play' || act === 'mission_letter' ? 'play' : 'discard');
 
     if (act === 'play') {
@@ -3067,6 +3560,7 @@ async function resolveFinalCardChoice(card) {
         const result = game.activateCard(0, card.id, 'mission_letter');
         if (result && result.chooseMission) {
             renderGameState();
+            if (mpActive()) window._mpMissionCtx = 'mission_pick';
             await showMissionSelectAsync();
         }
     } else if (act === 'discard_slide_left' || act === 'discard_slide_right') {
@@ -3075,6 +3569,7 @@ async function resolveFinalCardChoice(card) {
         if (game.players[0]._pendingSlotMission) {
             game.players[0]._pendingSlotMission = false;
             renderGameState();
+            if (mpActive()) window._mpMissionCtx = 'slot_mission';
             await showMissionSelectAsync();
         }
     } else {
@@ -3099,6 +3594,7 @@ function playSelectedCard(cardIndex) {
 
     game.pickCard(0, cardIndex);
     hideActionPanel();
+    mpPub('pick', { cardId: card.id, action: 'play' });
 
     const skillText = card.skills && card.skills.length > 0
         ? ` \u2014 ${card.skills.join(', ')}`
@@ -3117,6 +3613,7 @@ function discardSelectedCard(cardIndex) {
 
     game.pickCard(0, cardIndex);
     hideActionPanel();
+    mpPub('pick', { cardId: card.id, action: 'discard' });
 
     game.players[0]._discardNext = true;
 
@@ -3131,6 +3628,19 @@ async function playMissionLetter(cardIndex) {
 
     const card = game.players[0].hand[cardIndex];
     if (!card || game.players[0].gold < 1) return;
+
+    if (mpActive()) {
+        // Lockstep: letters resolve at ACTIVATION in seat order (the
+        // physical rule) — never early, or two same-round letters could
+        // race for one mission and fork the clients.
+        game.pickCard(0, cardIndex);
+        hideActionPanel();
+        game.players[0]._letterNext = true;
+        mpPub('pick', { cardId: card.id, action: 'mission_letter' });
+        addLogEntry('You play a Mission Letter');
+        processRound('mission_letter');
+        return;
+    }
 
     game.pickCard(0, cardIndex);
     hideActionPanel();
@@ -3181,6 +3691,8 @@ function playWithBorrow(cardIndex) {
 
         game.pickCard(0, cardIndex);
         hideActionPanel();
+        mpPub('pick', { cardId: card.id, action: 'borrow_play',
+            borrow: chosen.map(b => ({ skill: b.skill, lender: FMP.canonSeat(b.neighborIndex) })) });
 
         game.players[0]._borrowNext = chosen;   // [{skill, neighborIndex}] \u2014 consumed at activation
 
@@ -3205,6 +3717,7 @@ function discardToSlide(cardIndex, direction) {
 
     game.pickCard(0, cardIndex);
     hideActionPanel();
+    mpPub('pick', { cardId: card.id, action: 'discard_slide', dir: direction });
 
     game.players[0]._discardSlideNext = direction;
 
@@ -3219,6 +3732,14 @@ function discardToSlide(cardIndex, direction) {
 // Pay 5 Gold to move slider (can do anytime during gameplay)
 async function payToSlide(direction) {
     if (!game || game.phase !== 'gameplay') return;
+
+    // Anytime-actions can't ride the round barrier — they'd apply at
+    // different points on different clients. Paid slides sit out of
+    // multiplayer v1 (discard-to-slide still works — it's pick-staged).
+    if (mpActive()) {
+        showNotification('Paid slides return in a future multiplayer update.', 'error');
+        return;
+    }
 
     const player = game.players[0];
     if (player.gold < 5) {
@@ -3249,6 +3770,10 @@ async function payToSlide(direction) {
 // ─── ROUND PROCESSING ─────────────────────────────────────
 
 async function processRound(humanAction) {
+    // Multiplayer rounds run the pick barrier instead — bots pick the
+    // same on every client; humans stream.
+    if (mpActive()) return mpProcessRound(humanAction);
+
     // AI picks
     for (let i = 1; i < game.playerCount; i++) {
         if (game.pendingActivations[i] === null && game.players[i].hand.length > 0) {
@@ -3309,6 +3834,7 @@ async function activateAllCards(humanAction) {
                     if (game.players[0]._pendingSlotMission) {
                         game.players[0]._pendingSlotMission = false;
                         renderGameState();
+                        if (mpActive()) window._mpMissionCtx = 'slot_mission';
                         await showMissionSelectAsync();
                     }
                 } else if (humanAction === 'discard' && cardIdx === 0 && game.players[0]._discardNext) {
@@ -3330,6 +3856,17 @@ async function activateAllCards(humanAction) {
                         game.activateCard(0, card.id, 'play', borrowFrom);
                     }
                     game.players[0]._borrowNext = false;
+                } else if (humanAction === 'mission_letter' && cardIdx === 0 && game.players[0]._letterNext) {
+                    // MP-staged Mission Letter: it resolves HERE, in seat
+                    // order, exactly where every other client applies it.
+                    game.players[0]._letterNext = false;
+                    await showMiniSpotlight(card, 'play');
+                    const result = game.activateCard(0, card.id, 'mission_letter');
+                    if (result && result.chooseMission) {
+                        renderGameState();
+                        window._mpMissionCtx = 'mission_pick';
+                        await showMissionSelectAsync();
+                    }
                 } else if (cardIdx > 0 || humanAction === 'mission_letter_done') {
                     // The auto-activated FINAL card: the player still chooses
                     // its fate — play / borrow / letter / discard / slide.
@@ -3367,7 +3904,11 @@ async function activateAllCards(humanAction) {
                 await showChemYPicker();
             }
 
-            if (pi !== 0) {
+            if (pi !== 0 && game.players[pi]._remoteHuman) {
+                // Remote human — their streamed choice drives our engine
+                // at exactly this point in the order on every client.
+                await mpActivateRemote(pi, card, cardIdx);
+            } else if (pi !== 0) {
                 // AI player
                 const isMissionLetter = card.type === 'mission_letter';
 
@@ -3465,6 +4006,13 @@ function showMissionSelectAsync() {
 }
 
 function selectMission(index) {
+    // In multiplayer the pick streams so every client applies it at the
+    // same point in the activation order (letter or slot-landing context
+    // is set by whoever opened the select).
+    if (mpActive() && window._mpMissionCtx) {
+        mpPub(window._mpMissionCtx, { missionIdx: index });
+        window._mpMissionCtx = null;
+    }
     game.chooseMission(0, index);
     document.getElementById('missionSelect').classList.remove('active');
     if (typeof coachTick === 'function') coachTick();
@@ -3610,8 +4158,9 @@ function endActPhases() {
     }
 
     // A PROMISE — the player chooses how many played cards to sacrifice
-    // (+10 Prestige each) before the Melee begins.
-    const promisePending = game.players[0]._pendingPromiseDiscard;
+    // (+10 Prestige each) before the Melee begins. In multiplayer the
+    // canonical-order stage loop owns the flag instead (mpEndActStages).
+    const promisePending = mpActive() ? false : game.players[0]._pendingPromiseDiscard;
     if (promisePending) game.players[0]._pendingPromiseDiscard = false;
 
     // MISSION BORROW — due missions short only on borrowable skills were
@@ -3651,6 +4200,11 @@ function endActPhases() {
                 showNotification(`The Emblem passes to ${hn}${hn === 'you' ? ' \u2014 you act first' : ''}.`, 'act');
                 addLogEntry(`The Emblem passes to ${hn}`);
                 renderGameState();
+                // Desync insurance: the host stamps the table each act;
+                // a client whose hash disagrees falls back to solo.
+                if (mpActive() && FMP.isHost()) {
+                    mpPub('sync', { act: game.currentAct, hash: mpStateHash() });
+                }
             }
         };
 
@@ -3661,12 +4215,19 @@ function endActPhases() {
         }
     }, meleeStart);
 
-    const afterBorrows = () => borrowsPending.reduce(
-        (chain, m) => chain.then(() => showMissionBorrowChooser(m)), Promise.resolve());
+    // Multiplayer: every seat's end-of-act choices (borrows, penalty
+    // picks, A Promise) resolve in CANONICAL order inside one stage so
+    // all clients mutate the engine at identical points. Solo keeps the
+    // classic local-first chain.
+    const afterBorrows = mpActive()
+        ? () => mpEndActStages(borrowsPending)
+        : () => borrowsPending.reduce(
+            (chain, m) => chain.then(() => showMissionBorrowChooser(m)), Promise.resolve());
     // PENALTY DISCARD — a failed mission says "Discard N Cards": the player
     // picks which (physical-game agency), not the engine. Read AFTER the
     // borrow choosers so declined missions' penalties are included.
     const afterPenalty = () => {
+        if (mpActive()) return Promise.resolve();   // handled in the stage loop
         const penaltyPending = game.players[0]._pendingPenaltyDiscard || 0;
         game.players[0]._pendingPenaltyDiscard = 0;
         return penaltyPending ? showPenaltyDiscardPicker(penaltyPending) : Promise.resolve();
@@ -3859,6 +4420,7 @@ function showMissionBorrowChooser(mission) {
             </div>`;
 
         ov.querySelector('#borrowYes').onclick = () => {
+            mpPub('mission_borrow', { accept: true, missionName: mission.name });
             const idx = game.players[0].missions.indexOf(mission);
             const res = game.completeMissionWithBorrow(0, idx);
             ov.classList.remove('active');
@@ -3875,6 +4437,7 @@ function showMissionBorrowChooser(mission) {
             resolve();
         };
         ov.querySelector('#borrowNo').onclick = () => {
+            mpPub('mission_borrow', { accept: false, missionName: mission.name });
             const idx = game.players[0].missions.indexOf(mission);
             game.failMissionByChoice(0, idx);
             ov.classList.remove('active');
@@ -3925,6 +4488,7 @@ function showPenaltyDiscardPicker(n) {
             ov.querySelector('#ppConfirm').onclick = () => {
                 if (chosen.size !== mustPick) return;
                 const picked = [...chosen].map(i => player.playedCards[i]);
+                mpPub('penalty', { cardIds: picked.map(c => c.id) });
                 const removed = game.discardPlayedCards(0, c => picked.includes(c), mustPick);
                 addLogEntry(`You discard ${removed} card(s) to a failed mission`);
                 ov.classList.remove('active');
@@ -3973,6 +4537,8 @@ function showPromiseDiscardPicker() {
                 };
             });
             const done = () => {
+                // Even "Keep All" streams — the other clients are waiting.
+                mpPub('promise', { cardIds: [...chosen].map(i => player.playedCards[i].id) });
                 if (chosen.size) {
                     const picked = [...chosen].map(i => player.playedCards[i]);
                     const n = game.discardPlayedCards(0, c => picked.includes(c));
@@ -4028,6 +4594,7 @@ function showChemYPicker() {
             });
             ov.querySelector('#chemYConfirm').onclick = () => {
                 const card = player.playedCards[chosen];
+                mpPub('chemy', { cardId: card.id });
                 card._favorDoubled = true;
                 addLogEntry(`Chemical Y doubles ${card.name} (+${card.favor} Favor at scoring)`);
                 showNotification(`${card.name} is now worth ${card.favor * 2} Favor`, 'play');
@@ -4073,12 +4640,17 @@ function showScoring() {
     // Post YOUR result to the leaderboard the moment scoring resolves —
     // rating points vs the table + best-Favor for today's daily board.
     // Seated persona rivals post rating-only placements to their permanent
-    // rows; generic bots present as people but never post.
-    const personaPlaces = scores.map((s, i) => {
-        const gp = game.players[s.playerIndex];
-        return gp && gp._personaUid ? { uid: gp._personaUid, name: gp.name, place: i } : null;
-    }).filter(Boolean);
+    // rows; generic bots present as people but never post. In multiplayer
+    // every client posts its OWN human — only the HOST posts the personas
+    // (three clients must not triple-pay a persona's delta).
+    const personaPlaces = (!mpActive() || FMP.isHost())
+        ? scores.map((s, i) => {
+            const gp = game.players[s.playerIndex];
+            return gp && gp._personaUid ? { uid: gp._personaUid, name: gp.name, place: i } : null;
+        }).filter(Boolean)
+        : [];
     if (window.FLB) FLB.postGameResult(scores, personaPlaces);
+    if (mpActive()) FMP.gameOver();   // host tidies the record; everyone detaches
 
     document.getElementById('game-screen').classList.remove('active');
     document.getElementById('scoring-screen').classList.add('active');
@@ -4120,14 +4692,35 @@ function showScoring() {
         }
     }
 
-    // Placement ladder — color-coded, trophies for the podium, totals roll.
+    // What everyone ENDED with — the table talk of the physical game
+    // ("show me your board!"). Purse + all six skills, real token art.
+    const vsHoldings = (pi) => {
+        const gp = game.players[pi];
+        const chip = (img, val, label, cls = '') =>
+            `<span class="vsh-chip ${cls}" title="${label}"><img src="${img}" alt="${label}"><b>${val}</b></span>`;
+        let h = chip(PURSE_ICONS.gold, gp.gold, 'Gold', 'gold')
+            + chip(TOKEN_IMG.prestige, gp.prestige, 'Prestige', 'prestige')
+            + chip(PURSE_ICONS.favor, gp.favor || 0, 'Favor', 'favor')
+            + chip(PURSE_ICONS.scorn, gp.scorn, 'Scorn', 'scorn');
+        ['survival', 'charisma', 'alchemy', 'prospecting', 'knowledge', 'power'].forEach(k => {
+            const v = gp.skills[k] || 0;
+            h += `<span class="vsh-chip skill${v ? '' : ' zero'}" title="${k.charAt(0).toUpperCase() + k.slice(1)}">${SKILL_ICONS[k]}<b>${v}</b></span>`;
+        });
+        return `<div class="vs-holdings">${h}</div>`;
+    };
+
+    // Placement ladder — color-coded, trophies for the podium, totals roll,
+    // and each heir's final holdings laid out beneath their name.
     const rows = scores.map((s, i) => {
         const p = VS_PLACES[i];
         return `<div class="vs-place ${p ? p.cls : 'pn'}${s.playerIndex === 0 ? ' me' : ''}">
-            <span class="vs-ord">${VS_ORDINAL[i] || (i + 1) + 'th'}</span>
-            ${p ? vsTrophy(p.color) : '<span class="vs-trophy none"></span>'}
-            <span class="vs-name">${s.name}</span>
-            <b class="vs-total" data-total="${s.finalScore}">0</b>
+            <div class="vs-place-row">
+                <span class="vs-ord">${VS_ORDINAL[i] || (i + 1) + 'th'}</span>
+                ${p ? vsTrophy(p.color) : '<span class="vs-trophy none"></span>'}
+                <span class="vs-name">${s.name}</span>
+                <b class="vs-total" data-total="${s.finalScore}">0</b>
+            </div>
+            ${vsHoldings(s.playerIndex)}
         </div>`;
     }).join('');
 

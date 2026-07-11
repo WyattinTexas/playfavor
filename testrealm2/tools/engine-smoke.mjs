@@ -620,6 +620,77 @@ console.log('── Mission borrowing: optional rescue at mission time, 2g/skill
     `persona borrows when favor ≥ 1× fee (gold → ${ai8.gold})`);
 }
 
+console.log('── Multiplayer lockstep: seeded engines deal identical worlds');
+{
+    const build = (seed) => {
+        const g = new FavorGame(3);
+        g.setSeed(seed);
+        g.loadDecks();
+        return g;
+    };
+    const deckIds = (g) => [1, 2, 3].map(a => g.actDecks[a].map(c => c.id).join(',')).join(';')
+        + '|' + g.visibleMissions.map(m => m.id || m.name).join(',');
+    const a = build(12345), b = build(12345), c = build(54321);
+    ok(deckIds(a) === deckIds(b), 'same seed → identical decks + revealed missions');
+    ok(deckIds(a) !== deckIds(c), 'different seed → different world');
+
+    // Liquid Courage's coin comes from the same stream.
+    const flips = (g) => Array.from({ length: 8 }, () => g._rand() < 0.5).join(',');
+    ok(flips(a) === flips(b), 'same seed → same coin flips after identical draws');
+
+    // Solo games keep Math.random — two unseeded games differ.
+    const s1 = new FavorGame(3); s1.loadDecks();
+    const s2 = new FavorGame(3); s2.loadDecks();
+    ok(deckIds(s1) !== deckIds(s2), 'unseeded games still shuffle freely');
+
+    // Deal offset: every client rotates the roster so ITS human is local
+    // seat 0 — the deal must still hand chunk k to CANONICAL seat k, or
+    // identical decks deal different hands (the first live-match desync).
+    const gA = new FavorGame(3); gA.setSeed(777); gA.loadDecks();
+    gA.initPlayers([{ characterId: 'explorer', playerName: 'A' },
+        { characterId: 'knight', playerName: 'B' }, { characterId: 'bandit', playerName: 'C' }]);
+    gA.startAct(1);
+    const gB = new FavorGame(3); gB.setSeed(777); gB.setDealOffset(1); gB.loadDecks();
+    gB.initPlayers([{ characterId: 'knight', playerName: 'B' },
+        { characterId: 'bandit', playerName: 'C' }, { characterId: 'explorer', playerName: 'A' }]);
+    gB.startAct(1);
+    const canonA = (k) => gA.players[k].hand.map(x => x.id).join(',');
+    const canonB = (k) => gB.players[((k - 1) + 3) % 3].hand.map(x => x.id).join(',');
+    ok([0, 1, 2].every(k => canonA(k) === canonB(k)),
+        'deal offset keeps chunk k with canonical seat k on a rotated client');
+    gA.startAct(2); gB.startAct(2);
+    ok([0, 1, 2].every(k => canonA(k) === canonB(k)),
+        'act-2 redeal stays canonical too');
+}
+
+console.log('── Remote humans: decisions DEFER (never auto-decided by another client)');
+{
+    // A remote human's borrowable mission must WAIT for their streamed
+    // choice — exactly like the local human's chooser pause.
+    const g = newGame();
+    const kCard = window.FAVOR_DATA.cards.find(c => (c.skills || []).includes('knowledge'));
+    const rp = g.players[1];
+    rp._remoteHuman = true;
+    rp.missions = [{ ...missionByName('A Day With the Birds'), favorValue: 50 }];
+    rp.skills.knowledge = 2;
+    rp.gold = 10;
+    g.players[0].playedCards.push({ ...kCard });
+    g.currentAct = 1;
+    g.resolveMissions();
+    ok((rp._pendingMissionBorrows || []).length === 1 && rp.completedMissions.length === 0,
+        'borrowable mission deferred for the remote human (no auto-borrow at 50 favor)');
+    ok(rp.failedMissions.length === 0, 'and not failed either — the stream decides');
+
+    // Penalty discards defer the same way.
+    const g2 = newGame();
+    const rp2 = g2.players[1];
+    rp2._remoteHuman = true;
+    rp2.playedCards.push({ ...kCard }, { ...kCard });
+    g2.penaltyDiscard(1, 2);
+    ok(rp2._pendingPenaltyDiscard === 2 && rp2.playedCards.length === 2,
+        'penalty discard deferred for the remote human (cards intact)');
+}
+
 console.log('── Emblem: rated seat + act-boundary clockwise pass');
 {
   const g = newGame();

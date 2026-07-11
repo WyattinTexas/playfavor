@@ -39,6 +39,7 @@ class FavorGame {
         this.playerCount = playerCount;
         this.currentAct = 0;         // 0 = not started, 1-3
         this.phase = PHASES.SETUP;
+        this._rand = Math.random;    // seedable — see setSeed()
         this.emblemHolder = 0;        // Player index with the Emblem (rated start seats it; act boundaries pass it +1)
         this.activePlayerIndex = 0;   // Current player acting
         this.turnInAct = 0;           // Which draft turn within the act
@@ -118,6 +119,35 @@ class FavorGame {
             (Number.isInteger(idx) && idx >= 0 && idx < this.playerCount) ? idx : 0;
     }
 
+    /**
+     * Seed every random the engine consumes (deck shuffles, Liquid
+     * Courage's coin) with mulberry32 — multiplayer lockstep needs every
+     * client to deal the same cards and flip the same coins. Call BEFORE
+     * loadDecks. Solo games never call this and keep Math.random.
+     */
+    setSeed(seed) {
+        let s = (seed >>> 0) || 1;
+        this._rand = () => {
+            s |= 0; s = (s + 0x6D2B79F5) | 0;
+            let t = Math.imul(s ^ (s >>> 15), 1 | s);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    /**
+     * Multiplayer deal alignment: every client rotates the shared roster
+     * so ITS human sits at local seat 0, which means "local seat i" names
+     * a DIFFERENT canonical player on every client. Deck chunk k must
+     * always land with CANONICAL seat k or the clients deal different
+     * hands from identical decks. The offset is the client's canonical
+     * seat: local player i holds canonical seat (i + offset) % n, so it
+     * takes chunk (i + offset) % n. Solo games leave it 0.
+     */
+    setDealOffset(k) {
+        this._dealOffset = Number.isInteger(k) ? ((k % this.playerCount) + this.playerCount) % this.playerCount : 0;
+    }
+
     startAct(actNumber) {
         this.currentAct = actNumber;
         this.turnInAct = 0;
@@ -150,9 +180,10 @@ class FavorGame {
         }
 
         // Assign initial hands — a fresh act is a fresh turn for the
-        // paid-slide direction lock too.
+        // paid-slide direction lock too. The deal offset keeps chunk k
+        // with canonical seat k across rotated multiplayer clients.
         this.players.forEach((p, i) => {
-            p.hand = this.hands[i];
+            p.hand = this.hands[(i + (this._dealOffset || 0)) % this.playerCount];
             p._paidSlideDir = null;
         });
 
@@ -824,8 +855,10 @@ class FavorGame {
             case 'choose_mission':
                 // One-time: choose a mission from the visible pool (free, no gold cost)
                 if (this.visibleMissions.length > 0) {
-                    if (player.index === 0) {
-                        // Human player: flag for UI to show mission select
+                    if (player.index === 0 || player._remoteHuman) {
+                        // Human (local OR remote) — the flag pauses for a
+                        // choice: local shows the picker, remote awaits the
+                        // owner's streamed pick. Never auto-decided.
                         player._pendingSlotMission = true;
                     } else {
                         // AI: auto-pick best mission
@@ -1000,7 +1033,7 @@ class FavorGame {
             case 'coin_flip_4_power':
                 // Liquid Courage: 50% chance to gain 4 power for melee
                 {
-                    const won = Math.random() < 0.5;
+                    const won = this._rand() < 0.5;
                     if (won) {
                         if (!player.powerBonuses) player.powerBonuses = [];
                         player.powerBonuses.push({ amount: 4, act: this.currentAct, source: card.name });
@@ -1059,9 +1092,9 @@ class FavorGame {
                         this.addLog(`${player.name}'s Chemical Y: no adventure favor to double`);
                         break;
                     }
-                    if (playerIndex === 0) {
-                        // Human chooses via the picker (UI shows it right
-                        // after this activation resolves).
+                    if (playerIndex === 0 || player._remoteHuman) {
+                        // Human (local or remote) chooses via picker/stream
+                        // right after this activation resolves.
                         player._pendingChemYPick = true;
                     } else {
                         const best = advs.reduce((a, b) => ((b.favor || 0) > (a.favor || 0) ? b : a));
@@ -1579,10 +1612,10 @@ class FavorGame {
                     // as _pendingPenaltyDiscard); the AI borrows only when
                     // the mission's favor clearly beats the gold fee.
                     const plan = this.missionBorrowPlan(pi, mission);
-                    if (plan && pi === 0) {
+                    if (plan && (pi === 0 || player._remoteHuman)) {
                         player._pendingMissionBorrows = player._pendingMissionBorrows || [];
                         player._pendingMissionBorrows.push(mission);
-                        return; // stays in player.missions; the chooser resolves it
+                        return; // stays in player.missions; the chooser/stream resolves it
                     }
                     // Persona rivals judge the trade sharper: any mission
                     // worth at least the fee is taken; generic bots still
@@ -1831,7 +1864,7 @@ class FavorGame {
     penaltyDiscard(playerIndex, n) {
         const player = this.players[playerIndex];
         if (!player.playedCards.length) return;
-        if (playerIndex === 0) {
+        if (playerIndex === 0 || player._remoteHuman) {
             player._pendingPenaltyDiscard = (player._pendingPenaltyDiscard || 0) + n;
             return;
         }
@@ -1898,7 +1931,7 @@ class FavorGame {
                 // A Promise: discard AS MANY of your played cards as you like,
                 // +10 Prestige each. The human picks via UI after mission
                 // resolution; the AI trades away its low-value cards.
-                if (playerIndex === 0) {
+                if (playerIndex === 0 || player._remoteHuman) {
                     player._pendingPromiseDiscard = true;
                 } else {
                     const cheap = player.playedCards.filter(c =>
@@ -2200,7 +2233,7 @@ class FavorGame {
     shuffle(array) {
         const a = [...array];
         for (let i = a.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
+            const j = Math.floor(this._rand() * (i + 1));
             [a[i], a[j]] = [a[j], a[i]];
         }
         return a;
