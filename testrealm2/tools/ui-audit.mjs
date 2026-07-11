@@ -53,6 +53,10 @@ async function startGame(page) {
   await page.evaluate(() => {
     window.shuffleArray = (a) => [...a];
     localStorage.setItem('favorQueue', '3');
+    // Pin the Emblem seed: seat 0, personas OFF, no boon — every rig below
+    // assumes the human acts first and the table is the four generic bots.
+    // The emblem/persona/boon flow rigs its own seed and skips this pin.
+    window._pinEmblemSeed = 0;
   });
   await page.evaluate(() => {
     const b = [...document.querySelectorAll('#title-screen .btn-royal')]
@@ -495,6 +499,9 @@ for (const [w, h] of [[844, 390], [932, 430], [667, 375]]) {
   await page.setViewport({ width: w, height: h, hasTouch: true, isMobile: true });
   await page.goto(URL, { waitUntil: 'networkidle2' });
   await page.evaluate(() => {
+    // Layout flow — pin the seed (seat 0, no personas, no boon) so chip
+    // sizes and zone fits never depend on who happened to sit down.
+    window._pinEmblemSeed = 0;
     const b = [...document.querySelectorAll('#title-screen .btn-royal')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     b.click();
@@ -3243,6 +3250,256 @@ console.log('── Stat floats: +N rises off the grown stat (desktop rail + pho
   ok(ph.goldDrop, 'gold keeps its seat-chip token drop');
   await phone.screenshot({ path: join(SHOTS, 'stat-float-phone.png') });
   await phone.close();
+}
+
+// ═══ EMBLEM + PERSONAS + RANK-1 BOON — rated start, act pass, choosers ═══
+// These beats rig FLB.tableSeed with uaudit-prefixed uids ONLY — the five
+// real persona_* rows must never feel an audit (asserted at the end).
+console.log('── Emblem/personas/boon: rated seat, act pass, both boon paths, persona post');
+
+// Shared launcher: the startGame dance WITHOUT the emblem pin — this flow
+// exercises the real seed path with a rigged seed injected pre-confirm.
+async function startSeeded(page, seedRig) {
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => {
+    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+      .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
+    return b && b.offsetParent;
+  }, { timeout: 20000 });
+  await page.evaluate((rig) => {
+    window.shuffleArray = (a) => [...a];
+    localStorage.setItem('favorQueue', '3');
+    FLB.tableSeed = async () => rig;
+    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+      .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
+    b.click();
+  }, seedRig);
+  await page.waitForFunction(() => document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent, { timeout: 20000 });
+  await page.evaluate(() => {
+    selectedCharacter = FAVOR_DATA.characters[0].id;
+    document.querySelector('.character-card').classList.add('selected');
+    document.getElementById('confirmBtn').style.display = 'inline-block';
+  });
+  await page.evaluate(() => document.getElementById('confirmBtn').click());
+}
+
+// ── Beat 1: rated table — persona takes the Emblem, claims the boon,
+//    the act boundary passes it, and the placement posts to its row. ──
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('emblem: ' + m.text()); });
+  await page.setViewport({ width: 1440, height: 900 });
+  const AUDIT_UID = 'uaudit' + Math.random().toString(36).slice(2, 8);
+  const P_UID = AUDIT_UID + 'p1';
+  await page.evaluateOnNewDocument((u) => {
+    localStorage.setItem('favorUid', u);
+    localStorage.setItem('favorName', 'Audit Noble');
+    localStorage.setItem('favorQueue', '3');
+  }, AUDIT_UID);
+
+  await startSeeded(page, {
+    myRow: { uid: AUDIT_UID, rating: 100 },
+    topRow: { uid: P_UID, name: 'Lord Ashcroft', score: 240 },
+    personas: [{ key: 'ashcroft', uid: P_UID, name: 'Lord Ashcroft', hero: 'knight',
+                 seedRating: 240, rating: 240, strong: ['power', 'survival'] }],
+    forceSeats: ['ashcroft'],   // rig seam — real seeds never set it
+  });
+  await page.waitForFunction(() => typeof game !== 'undefined' && game
+    && game.players.length === 3 && game.players[0].character, { timeout: 20000 });
+  await sleep(1200);
+  await page.evaluate(() => { const x = document.querySelector('.coach-x'); if (x && x.offsetParent) x.click(); });
+
+  const mode = await page.evaluate(() => FLB.mode);
+  ok(mode === 'firebase', `live board reachable for the persona-post beat (${mode})`);
+
+  const start = await page.evaluate(() => ({
+    emblem: game.emblemHolder,
+    p1name: game.players[1].name,
+    p1uid: game.players[1]._personaUid,
+    p1boon: { ...(game.players[1].bonusSkills || {}) },
+    p1power: game.players[1].skills.power || 0,
+    railBadgeOn: (() => {
+      const e = document.querySelector('.opp-entry .emblem-badge');
+      return e ? e.closest('.opp-entry').dataset.pi : 'none';
+    })(),
+    log: document.getElementById('logEntries').innerText,
+  }));
+  ok(start.emblem === 1, `rated table: highest rating holds the Act-1 Emblem (seat ${start.emblem})`);
+  ok(start.p1name === 'Lord Ashcroft' && start.p1uid === P_UID,
+    `persona seated under its own row uid (${start.p1name})`);
+  ok(start.log.includes('Lord Ashcroft holds the Emblem'), 'Act-1 seat announced in the log');
+  ok(start.railBadgeOn === '1', `rail badge rides the persona's entry (pi=${start.railBadgeOn})`);
+  ok(start.p1boon.power === 1 && start.p1power === 1,
+    `persona claimed the rank-1 boon (+1 power → ${start.p1power})`);
+  ok(start.log.includes("realm's #1"), 'persona boon announced publicly');
+  await page.screenshot({ path: join(SHOTS, 'emblem-persona-start.png') });
+
+  // Act boundary: engine passes it +1 clockwise; the badge moves with it.
+  await page.evaluate(() => { game.startAct(2); renderGameState(); });
+  await sleep(400);
+  const pass2 = await page.evaluate(() => ({
+    emblem: game.emblemHolder,
+    railBadgeOn: (() => {
+      const e = document.querySelector('.opp-entry .emblem-badge');
+      return e ? e.closest('.opp-entry').dataset.pi : 'none';
+    })(),
+  }));
+  ok(pass2.emblem === 2, `act boundary passes the Emblem +1 clockwise (seat ${pass2.emblem})`);
+  ok(pass2.railBadgeOn === '2', `the badge moved with it (pi=${pass2.railBadgeOn})`);
+  await page.screenshot({ path: join(SHOTS, 'emblem-act2-pass.png') });
+
+  // Persona placement posts to ITS row: rating only — no Stars, no daily.
+  await page.evaluate(() => {
+    game.players[0].favor = 50; game.players[1].favor = 100; game.players[2].favor = 5;
+    showScoring();
+  });
+  const post = await page.evaluate(async (puid) => {
+    for (let i = 0; i < 40; i++) {
+      const s = await firebase.database().ref(`favor/players/${puid}/rating`).get();
+      if (s.exists()) break;
+      await new Promise(r => setTimeout(r, 250));
+    }
+    const row = (await firebase.database().ref(`favor/players/${puid}`).get()).val() || {};
+    const key = FLB.currentDateKey();
+    const daily = (await firebase.database().ref(`favor/daily/${key}/scores/${puid}`).get()).exists();
+    return { rating: row.rating, stars: row.stars === undefined ? null : row.stars, daily };
+  }, P_UID);
+  ok(post.rating === 25, `persona 1st place posted +25 to the uaudit row (${post.rating})`);
+  ok(post.stars === null, 'persona earns no Stars');
+  ok(!post.daily, 'persona stays off the daily board');
+
+  // Leave no trace — remove-verify-retry for BOTH uids across every daily
+  // key, then prove the REAL persona rows never felt any of this.
+  const scrub = await page.evaluate(async (uids) => {
+    let verdict = 'RESIDUE';
+    for (let attempt = 0; attempt < 6 && verdict === 'RESIDUE'; attempt++) {
+      for (const u of uids) {
+        await firebase.database().ref(`favor/players/${u}`).remove();
+        const days = (await firebase.database().ref('favor/daily').get()).val() || {};
+        for (const k of Object.keys(days)) {
+          await firebase.database().ref(`favor/daily/${k}/scores/${u}`).remove();
+        }
+      }
+      await new Promise(r => setTimeout(r, 500));
+      let residue = false;
+      for (const u of uids) {
+        if ((await firebase.database().ref(`favor/players/${u}`).get()).exists()) residue = true;
+      }
+      verdict = residue ? 'RESIDUE' : 'clean';
+    }
+    const real = (await firebase.database().ref('favor/players/persona_ashcroft/rating').get()).val();
+    return { verdict, real };
+  }, [AUDIT_UID, P_UID]);
+  ok(scrub.verdict === 'clean', `audit rows scrubbed from favor/* (${scrub.verdict})`);
+  ok(scrub.real === 240, `REAL persona_ashcroft row untouched (rating ${scrub.real})`);
+  await page.close();
+}
+
+// ── Beat 2: the human is #1 — the chooser holds the stage until a pick. ──
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('boon: ' + m.text()); });
+  await page.setViewport({ width: 1440, height: 900 });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  // topRow = MY uid → the human chooser path; built in-page so the uid
+  // always matches whatever the profile carries. Never posted, no scrub.
+  await page.evaluate(() => {
+    window.shuffleArray = (a) => [...a];
+    localStorage.setItem('favorQueue', '3');
+    FLB.tableSeed = async () => ({
+      myRow: { uid: FLB.uid(), rating: 300 },
+      topRow: { uid: FLB.uid(), name: 'Me', score: 300 },
+      personas: [],
+    });
+    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+      .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
+    b.click();
+  });
+  await page.waitForFunction(() => document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent, { timeout: 20000 });
+  await page.evaluate(() => {
+    selectedCharacter = FAVOR_DATA.characters[0].id;
+    document.querySelector('.character-card').classList.add('selected');
+    document.getElementById('confirmBtn').style.display = 'inline-block';
+  });
+  await page.evaluate(() => document.getElementById('confirmBtn').click());
+
+  await page.waitForFunction(() => document.getElementById('promisePicker')
+    && document.getElementById('promisePicker').classList.contains('active')
+    && document.querySelectorAll('.boon-tile').length === 6, { timeout: 20000 });
+  ok(true, 'human #1: the boon chooser takes the stage at game start');
+  await page.screenshot({ path: join(SHOTS, 'boon-chooser.png') });
+
+  // No dismiss-without-pick: Escape and backdrop clicks change nothing.
+  await page.keyboard.press('Escape');
+  await page.mouse.click(8, 892);
+  await sleep(300);
+  const held = await page.evaluate(() => ({
+    active: document.getElementById('promisePicker').classList.contains('active'),
+    emblem: game.emblemHolder,
+    log: document.getElementById('logEntries').innerText,
+  }));
+  ok(held.active, 'chooser survives Escape + backdrop clicks (the Queen does not offer twice)');
+  ok(held.emblem === 0, `sole rated player holds the Emblem (seat ${held.emblem})`);
+  ok(held.log.includes('You hold the Emblem'), 'your Act-1 seat announced in the log');
+
+  const before = await page.evaluate(() => game.players[0].skills.knowledge || 0);
+  await page.evaluate(() => {
+    document.querySelector('.boon-tile[data-skill="knowledge"]').click();
+  });
+  await sleep(150);
+  await page.evaluate(() => document.getElementById('boonConfirm').click());
+  await page.waitForFunction(() => !document.getElementById('promisePicker').classList.contains('active'), { timeout: 8000 });
+
+  const claimed = await page.evaluate((prev) => {
+    const p = game.players[0];
+    const row = [...document.querySelectorAll('#statsPanel .skill-row')]
+      .find(r => (r.textContent || '').includes('Knowledge'));
+    const shown = row ? parseInt((row.querySelector('.skill-value') || {}).textContent, 10) : -1;
+    // The boon must COUNT: 2 more knowledge (rigged as mission rewards)
+    // makes 3 — 'A Day With the Birds' needs exactly 3. Pure probe.
+    const birds = FAVOR_DATA.missions.find(m => m.name === 'A Day With the Birds');
+    const shortBefore = game.probeMissionRequirements(0, { ...birds }).success;
+    p.bonusSkills.knowledge += 2;
+    game.applySlotSkills(p);
+    const passesNow = game.probeMissionRequirements(0, { ...birds }).success;
+    return {
+      skill: p.skills.knowledge - 2,   // minus the rig → boon's own effect
+      bonus: (p.bonusSkills || {}).knowledge,
+      shown, shortBefore, passesNow,
+    };
+  }, before);
+  ok(claimed.skill === before + 1, `+1 Knowledge landed (${before} → ${claimed.skill})`);
+  ok(claimed.bonus === 3 && claimed.shown === before + 1,
+    `stats panel shows the boon (${claimed.shown})`);
+  ok(!claimed.shortBefore && claimed.passesNow,
+    'a 3-Knowledge mission passes WITH the boon in the sum (fails without the rig)');
+  await page.screenshot({ path: join(SHOTS, 'boon-claimed.png') });
+  await page.close();
+}
+
+// ── Beat 3: rated but NOT #1 — no chooser, ever. ──
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('no-boon: ' + m.text()); });
+  await page.setViewport({ width: 1440, height: 900 });
+  await startSeeded(page, {
+    myRow: { uid: 'whoever', rating: 50 },
+    topRow: { uid: 'uauditghost_not_seated', name: 'Absent King', score: 999 },
+    personas: [],
+  });
+  await page.waitForFunction(() => typeof game !== 'undefined' && game
+    && game.players.length === 3 && game.players[0].character, { timeout: 20000 });
+  await sleep(900);
+  const quiet = await page.evaluate(() => ({
+    picker: document.getElementById('promisePicker').classList.contains('active'),
+    bonus: Object.keys(game.players[0].bonusSkills || {}).length,
+    emblem: game.emblemHolder,
+  }));
+  ok(!quiet.picker, 'non-#1 never sees the chooser');
+  ok(quiet.bonus === 0, 'and receives no boon');
+  ok(quiet.emblem === 0, `sole rated seat still takes the Emblem (seat ${quiet.emblem})`);
+  await page.close();
 }
 
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));

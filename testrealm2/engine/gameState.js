@@ -39,7 +39,7 @@ class FavorGame {
         this.playerCount = playerCount;
         this.currentAct = 0;         // 0 = not started, 1-3
         this.phase = PHASES.SETUP;
-        this.emblemHolder = 0;        // Player index with the Emblem
+        this.emblemHolder = 0;        // Player index with the Emblem (rated start seats it; act boundaries pass it +1)
         this.activePlayerIndex = 0;   // Current player acting
         this.turnInAct = 0;           // Which draft turn within the act
 
@@ -108,9 +108,30 @@ class FavorGame {
 
     // ─── ACT FLOW ──────────────────────────────────────────────
 
+    /**
+     * Seat the Emblem before Act 1 (rated start — the UI decides WHO from
+     * the leaderboard; the engine only records the seat). Anything outside
+     * the table clamps to seat 0, the classic default.
+     */
+    setEmblemHolder(idx) {
+        this.emblemHolder =
+            (Number.isInteger(idx) && idx >= 0 && idx < this.playerCount) ? idx : 0;
+    }
+
     startAct(actNumber) {
         this.currentAct = actNumber;
         this.turnInAct = 0;
+
+        // Act boundary: the Emblem passes one seat clockwise — the same +1
+        // circle activation order and borrow neighbors already walk.
+        // Activation and mission order derive from emblemHolder, so the
+        // whole table shifts with it for free.
+        if (actNumber > 1) {
+            this.emblemHolder = (this.emblemHolder + 1) % this.playerCount;
+            const holder = this.players[this.emblemHolder];
+            if (holder) this.addLog(`The Emblem passes to ${holder.name}`);
+        }
+
         this.addLog(`Act ${actNumber} begins!`);
 
         // Deal cards to each player from the current act's deck
@@ -1563,7 +1584,11 @@ class FavorGame {
                         player._pendingMissionBorrows.push(mission);
                         return; // stays in player.missions; the chooser resolves it
                     }
-                    if (plan && pi !== 0 && this.missionFavorEstimate(pi, mission) >= plan.cost * 2) {
+                    // Persona rivals judge the trade sharper: any mission
+                    // worth at least the fee is taken; generic bots still
+                    // demand a clear 2× win. Judgment only — no stat cheats.
+                    const borrowBar = plan ? plan.cost * (player._personaAI ? 1 : 2) : Infinity;
+                    if (plan && pi !== 0 && this.missionFavorEstimate(pi, mission) >= borrowBar) {
                         const deltas = measure(pi, () => {
                             player.gold -= plan.cost;
                             plan.borrowFrom.forEach(b => {

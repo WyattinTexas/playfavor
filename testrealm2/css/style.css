@@ -2845,7 +2845,11 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
     pointer-events: auto;
     max-width: 500px;
     text-align: center;
-    white-space: nowrap;
+    /* Long announcements (Emblem passes, the Queen's boon) wrap inside
+       the box — nowrap let them ghost past the gold edge. Short toasts
+       under the max-width still read as one line. */
+    white-space: normal;
+    line-height: 1.4;
 }
 
 .game-toast.show { opacity: 1; transform: translateY(0); }
@@ -5233,6 +5237,43 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     padding: 1px 7px;
     white-space: nowrap;
     text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+
+/* ═══ RANK-1 BOON — the realm's #1 chooses a skill ════════════════════
+   Rides the #promisePicker overlay: six skill-icon tiles, gold like the
+   royal favor it is. No dismiss path — the Queen does not offer twice. */
+.pp-inner.boon .boon-tiles {
+    display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
+    max-width: min(94vw, 520px); margin: 12px 0 4px;
+}
+.boon-tile {
+    width: 96px; padding: 12px 6px 9px;
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    background: rgba(24,15,7,0.6);
+    border: 1px solid rgba(201,168,76,0.28); border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.boon-tile img {
+    width: 46px; height: 46px; object-fit: contain;
+    filter: drop-shadow(0 3px 7px rgba(0,0,0,0.55));
+}
+.boon-tile span {
+    font-family: 'Cinzel', serif; font-size: 12px; font-weight: 700;
+    letter-spacing: 0.05em; color: var(--gold-light);
+}
+.boon-tile:hover { transform: translateY(-3px); border-color: rgba(232,205,120,0.6); }
+.boon-tile.chosen {
+    transform: translateY(-3px);
+    background: rgba(58,40,14,0.8);
+    border-color: var(--gold-light);
+    box-shadow: 0 0 0 2px rgba(232,205,120,0.55), 0 0 22px rgba(201,168,76,0.45);
+}
+/* Short landscape phones: six tiles must fit beside the title + button. */
+@media (orientation: landscape) and (max-height: 540px) {
+    .boon-tile { width: 76px; padding: 8px 4px 6px; gap: 5px; }
+    .boon-tile img { width: 34px; height: 34px; }
+    .boon-tile span { font-size: 10px; }
 }
 
 /* A doubled adventure card wears its ×2 in the played stacks. */

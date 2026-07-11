@@ -831,12 +831,65 @@ function selectCharacter(id, cardEl) {
         btn.scrollIntoView({ behavior: 'smooth', block: 'end' }));
 }
 
-function confirmCharacter() {
+// Which persona rivals sit at this table? Returns an array the size of the
+// bot count — persona defs in their seats, null where a generic bot plays.
+// Odds are session defaults awaiting Wyatt's veto: 1 in 5 tables seat two
+// personas, 2 in 3 seat at least one, cap two. seed.forceSeats is a rig
+// seam for the audit suite — real seeds never set it.
+function seatPersonas(seed, botCount) {
+    const seats = new Array(botCount).fill(null);
+    const pool = ((seed && seed.personas) || []).slice();
+    if (!pool.length || !botCount) return seats;
+
+    if (Array.isArray(seed.forceSeats)) {
+        seed.forceSeats
+            .map(key => pool.find(p => p.key === key))
+            .filter(Boolean)
+            .slice(0, botCount)
+            .forEach((p, i) => { seats[i] = p; });
+        return seats;
+    }
+
+    const roll = Math.random();
+    let n = roll < 0.2 ? 2 : roll < 2 / 3 ? 1 : 0;
+    n = Math.min(n, botCount, pool.length);
+    for (let k = 0; k < n; k++) {
+        const p = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+        let s = Math.floor(Math.random() * botCount);
+        while (seats[s]) s = (s + 1) % botCount;
+        seats[s] = p;
+    }
+    return seats;
+}
+
+async function confirmCharacter() {
     if (!selectedCharacter) return;
 
     // Table size = the queue you joined on the menu (persisted; the old
     // in-select dropdown moved there so Play Now can never skip past it).
     const playerCount = (window.FLB && FLB.queueSize()) || 3;
+
+    // One leaderboard read seeds the rated Emblem start, persona seating,
+    // and the rank-1 boon. Prefetched at boot, raced against 1200ms here —
+    // offline/slow/pinned falls back to the classic start (seat 0, generic
+    // bots, no boon). Resolved BEFORE `game` exists so nothing ever sees a
+    // half-built table.
+    let seed = null;
+    if (window._pinEmblemSeed === undefined
+        && window.FLB && typeof FLB.tableSeed === 'function') {
+        // The select screen stays interactive during this await — swallow
+        // a double-tap on Begin instead of building two games. The race
+        // never rejects, so the flag always clears.
+        if (window._confirmBusy) return;
+        window._confirmBusy = true;
+        try {
+            seed = await Promise.race([
+                FLB.tableSeed(),
+                new Promise(r => setTimeout(() => r(null), 1200)),
+            ]);
+        } catch (e) { seed = null; }
+        window._confirmBusy = false;
+    }
 
     game = new FavorGame(playerCount);
     game.loadDecks();
@@ -856,11 +909,69 @@ function confirmCharacter() {
 
     const shuffled = shuffleArray(available);
     const aiNames = ['Prince Aldric', 'Princess Sera', 'Lord Cassius', 'Lady Elara'];
+    const personaSeats = seatPersonas(seed, playerCount - 1);
+    const seatedPersonas = [];   // [{seat, def}] — marked on game.players below
+    const taken = (id) => choices.some(c => c.characterId === id);
+    let draw = 0;
+    const nextFree = () => {
+        while (draw < shuffled.length && taken(shuffled[draw])) draw++;
+        return shuffled[draw++];
+    };
     for (let i = 0; i < playerCount - 1; i++) {
-        choices.push({ characterId: shuffled[i], playerName: aiNames[i] });
+        const persona = personaSeats[i];
+        if (persona) {
+            // Signature hero for face recognition — random when it was
+            // offered to you or someone at the table already took it.
+            const heroId = (available.includes(persona.hero) && !taken(persona.hero))
+                ? persona.hero : nextFree();
+            choices.push({ characterId: heroId, playerName: persona.name });
+            seatedPersonas.push({ seat: i + 1, def: persona });
+        } else {
+            choices.push({ characterId: nextFree(), playerName: aiNames[i] });
+        }
     }
 
     game.initPlayers(choices);
+    seatedPersonas.forEach(({ seat, def }) => {
+        const gp = game.players[seat];
+        gp._personaUid = def.uid;
+        gp._personaAI = { key: def.key, strong: def.strong.slice() };
+    });
+
+    // ── Rated Emblem start: the highest rating at the table holds it in
+    // Act 1. Rated = you (your favor/players row exists) or a seated
+    // persona; ties break human-first, then lower seat. Nobody rated →
+    // random seat. No seed → seat 0, exactly the old behavior.
+    let emblemSeat = 0;
+    if (window._pinEmblemSeed !== undefined) {
+        emblemSeat = window._pinEmblemSeed;
+    } else if (seed) {
+        const rated = [];
+        if (seed.myRow) rated.push({ seat: 0, rating: seed.myRow.rating || 0 });
+        seatedPersonas.forEach(({ seat, def }) =>
+            rated.push({ seat, rating: def.rating || 0 }));
+        if (rated.length) {
+            const best = Math.max(...rated.map(r => r.rating));
+            emblemSeat = rated.filter(r => r.rating === best)
+                .sort((a, b) => a.seat - b.seat)[0].seat;
+        } else {
+            emblemSeat = Math.floor(Math.random() * playerCount);
+        }
+    }
+    game.setEmblemHolder(emblemSeat);
+
+    // ── Rank-1 boon: if the ALL-TIME #1 sits at this table — you or a
+    // persona — the Queen grants them +1 of one skill for the game. Only
+    // rank 1, only the all-time board, never the daily.
+    let boonSeat = -1;
+    if (window._pinEmblemSeed === undefined && seed && seed.topRow) {
+        if (seed.myRow && seed.topRow.uid === FLB.uid()) {
+            boonSeat = 0;
+        } else {
+            const sp = seatedPersonas.find(({ def }) => def.uid === seed.topRow.uid);
+            if (sp) boonSeat = sp.seat;
+        }
+    }
 
     document.getElementById('character-select').classList.remove('active');
 
@@ -868,10 +979,91 @@ function confirmCharacter() {
     addLogEntry('\u2550\u2550\u2550 Act 1 begins \u2550\u2550\u2550');
     showNotification('Act 1 Begins \u2014 Choose wisely.', 'act');
 
+    // Announce the Act-1 seat \u2014 every table hears who leads and why the
+    // order is what it is. The chip/rail badges re-render with the state.
+    const holderName = game.emblemHolder === 0 ? 'You' : game.players[game.emblemHolder].name;
+    showNotification(
+        holderName === 'You' ? 'You hold the Emblem \u2014 you act first.'
+            : `${holderName} holds the Emblem and acts first.`, 'act');
+    addLogEntry(holderName === 'You' ? 'You hold the Emblem \u2014 you act first'
+        : `${holderName} holds the Emblem and acts first`);
+
     // If Prompt Test is checked, replay the tutorial prompts this game.
     if (typeof coachApplyPromptTest === 'function') coachApplyPromptTest();
 
     showGameScreen();
+
+    // \u2500\u2500 Deliver the rank-1 boon on the freshly-set stage \u2500\u2500
+    if (boonSeat === 0) {
+        await showBoonPicker();
+    } else if (boonSeat > 0) {
+        const gp = game.players[boonSeat];
+        // Heuristic: grow the weaker of its signature skills right now.
+        const skill = gp._personaAI.strong.slice()
+            .sort((a, b) => (gp.skills[a] || 0) - (gp.skills[b] || 0))[0];
+        applyRankOneBoon(boonSeat, skill);
+        const capSkill = skill.charAt(0).toUpperCase() + skill.slice(1);
+        showNotification(
+            `${gp.name} \u2014 the realm's #1 \u2014 receives the Queen's boon: +1 ${capSkill}`, 'act');
+        addLogEntry(`${gp.name}, the realm's #1, gains the Queen's boon: +1 ${capSkill} all game`);
+        renderGameState();
+    }
+}
+
+// The boon lands in bonusSkills \u2014 the same ledger mission skill rewards
+// live in, so it survives every slider recalc for the whole game.
+function applyRankOneBoon(seat, skill) {
+    const p = game.players[seat];
+    p.bonusSkills = p.bonusSkills || {};
+    p.bonusSkills[skill] = (p.bonusSkills[skill] || 0) + 1;
+    game.applySlotSkills(p);
+}
+
+// \u2550\u2550\u2550 RANK-1 BOON \u2014 the realm's #1 chooses a skill \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+// Six icon tiles on the pp overlay; royal copy; NO dismiss-without-pick
+// (the Queen does not offer twice). Applies +1 of the chosen skill via
+// bonusSkills and resolves once confirmed.
+const BOON_SKILLS = ['survival', 'charisma', 'alchemy', 'prospecting', 'power', 'knowledge'];
+
+function showBoonPicker() {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        if (!ov) { resolve(); return; }
+        const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+        let chosen = null;
+        const render = () => {
+            const tiles = BOON_SKILLS.map(s => `
+                <div class="boon-tile${chosen === s ? ' chosen' : ''}" data-skill="${s}">
+                    <img src="assets/icons/${s}.png" alt="${cap(s)}">
+                    <span>${cap(s)}</span>
+                </div>`).join('');
+            ov.innerHTML = `
+                <div class="pp-inner boon">
+                    <div class="pp-title">The Realm's Favorite</div>
+                    <div class="pp-sub">You sit first upon the all-time board \u2014 the Queen grants <b>+1 of one skill</b>, yours for the whole game</div>
+                    <div class="boon-tiles">${tiles}</div>
+                    <div class="pp-actions">
+                        <button class="btn-royal primary" id="boonConfirm" ${chosen ? '' : 'disabled style="opacity:.35"'}>
+                            <span>${chosen ? `Claim +1 ${cap(chosen)}` : 'Choose a skill'}</span>
+                        </button>
+                    </div>
+                </div>`;
+            ov.querySelectorAll('.boon-tile').forEach(el => {
+                el.onclick = () => { chosen = el.dataset.skill; render(); };
+            });
+            ov.querySelector('#boonConfirm').onclick = () => {
+                if (!chosen) return;
+                applyRankOneBoon(0, chosen);
+                showNotification(`The Queen favors you \u2014 +1 ${cap(chosen)} all game`, 'act');
+                addLogEntry(`The Realm's Favorite: you gain +1 ${cap(chosen)} for the whole game`);
+                ov.classList.remove('active');
+                renderGameState();
+                resolve();
+            };
+        };
+        render();
+        ov.classList.add('active');
+    });
 }
 
 // ─── GAME SCREEN ───────────────────────────────────────────
@@ -3291,14 +3483,56 @@ function selectMission(index) {
 
 // ─── AI ────────────────────────────────────────────────────
 
-// AI picks the best available mission (highest favor value)
+// Unmet skill units across a player's HELD missions — what its next card
+// should feed. Pure math via unmetSkillReqs; NEVER checkMissionRequirements
+// here (that consumes Life Essence). Mind's Eye / Philosopher's Stone gaps
+// aren't card-feedable, so they stay out of the map.
+function personaMissionNeeds(playerIndex) {
+    const needs = {};
+    const p = game.players[playerIndex];
+    (p.missions || []).forEach(m => {
+        const reqCounts = {};
+        (m.requirements || []).forEach(r => {
+            if (r !== 'minds_eye' && r !== 'philosopher_stone') {
+                reqCounts[r] = (reqCounts[r] || 0) + 1;
+            }
+        });
+        const unmet = game.unmetSkillReqs(playerIndex, reqCounts);
+        Object.entries(unmet).forEach(([s, n]) => {
+            needs[s] = Math.max(needs[s] || 0, n);
+        });
+    });
+    return needs;
+}
+
+// AI picks the best available mission (highest favor value). Personas
+// judge worth × feasibility instead: live favor estimate, minus how many
+// skill units they're still short (the boon and mission rewards already
+// flow through bonusSkills → skills, so feasibility sees them), plus a
+// nudge toward their signature skills.
 function aiBestMission(playerIndex) {
+    const p = game.players[playerIndex];
+    const persona = p && p._personaAI;
     let bestIdx = 0;
-    let bestFavor = -1;
+    let bestScore = -Infinity;
     game.visibleMissions.forEach((m, i) => {
-        const favor = m.favor || m.successReward?.favor || 0;
-        if (favor > bestFavor) {
-            bestFavor = favor;
+        let score;
+        if (persona) {
+            score = game.missionFavorEstimate(playerIndex, m);
+            const reqCounts = {};
+            (m.requirements || []).forEach(r => {
+                if (r !== 'minds_eye' && r !== 'philosopher_stone') {
+                    reqCounts[r] = (reqCounts[r] || 0) + 1;
+                }
+            });
+            const unmet = game.unmetSkillReqs(playerIndex, reqCounts);
+            score -= 4 * Object.values(unmet).reduce((a, b) => a + b, 0);
+            if ((m.requirements || []).some(r => persona.strong.includes(r))) score += 3;
+        } else {
+            score = m.favor || m.successReward?.favor || 0;
+        }
+        if (score > bestScore) {
+            bestScore = score;
             bestIdx = i;
         }
     });
@@ -3308,6 +3542,13 @@ function aiBestMission(playerIndex) {
 function aiPickCard(playerIndex) {
     const player = game.players[playerIndex];
     if (!player.hand || player.hand.length === 0) return;
+
+    // Persona layer: the permanent leaderboard rivals read the table
+    // harder — cards feeding a held mission or their signature skills
+    // outrank generic point salad, and Favor weighs like the win metric
+    // it is. Sharper judgment only, never stat cheating.
+    const persona = player._personaAI || null;
+    const needs = persona ? personaMissionNeeds(playerIndex) : null;
 
     let bestIndex = 0;
     let bestScore = -1;
@@ -3325,6 +3566,15 @@ function aiPickCard(playerIndex) {
 
         const { canPlay } = game.checkRequirements(playerIndex, card);
         if (canPlay) score += 5;
+
+        if (persona) {
+            (card.skills || []).forEach(s => {
+                if (needs[s] > 0) score += 6;
+                if (persona.strong.includes(s)) score += 2;
+            });
+            if ((card.favor || 0) > 0) score += Math.min(card.favor, 12) / 2;
+            if (card.rewards && card.rewards.scorn) score -= card.rewards.scorn;
+        }
 
         if (score > bestScore) {
             bestScore = score;
@@ -3395,6 +3645,11 @@ function endActPhases() {
             } else {
                 addLogEntry(`\u2550\u2550\u2550 Act ${game.currentAct} begins \u2550\u2550\u2550`);
                 showNotification(`Act ${game.currentAct} Begins!`, 'act');
+                // The act boundary passed the Emblem one seat clockwise
+                // (engine startAct) \u2014 say so, the whole order just shifted.
+                const hn = game.emblemHolder === 0 ? 'you' : game.players[game.emblemHolder].name;
+                showNotification(`The Emblem passes to ${hn}${hn === 'you' ? ' \u2014 you act first' : ''}.`, 'act');
+                addLogEntry(`The Emblem passes to ${hn}`);
                 renderGameState();
             }
         };
@@ -3817,8 +4072,13 @@ function showScoring() {
 
     // Post YOUR result to the leaderboard the moment scoring resolves —
     // rating points vs the table + best-Favor for today's daily board.
-    // Rivals present as people but never post (real players only).
-    if (window.FLB) FLB.postGameResult(scores);
+    // Seated persona rivals post rating-only placements to their permanent
+    // rows; generic bots present as people but never post.
+    const personaPlaces = scores.map((s, i) => {
+        const gp = game.players[s.playerIndex];
+        return gp && gp._personaUid ? { uid: gp._personaUid, name: gp.name, place: i } : null;
+    }).filter(Boolean);
+    if (window.FLB) FLB.postGameResult(scores, personaPlaces);
 
     document.getElementById('game-screen').classList.remove('active');
     document.getElementById('scoring-screen').classList.add('active');

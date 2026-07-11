@@ -604,6 +604,65 @@ console.log('── Mission borrowing: optional rescue at mission time, 2g/skill
   g7.currentAct = 1;
   g7.resolveMissions();
   ok(ai7.failedMissions.length === 1 && ai7.gold === 10, 'AI refuses when 3 favor < 2× the fee');
+
+  // Persona judgment: the same 3-favor mission clears a persona's 1× bar
+  // (fee 2g) — sharper trades, zero stat cheating.
+  const g8 = newGame();
+  const ai8 = g8.players[1];
+  ai8._personaAI = { key: 'test', strong: [] };
+  ai8.missions = [{ ...missionByName('A Day With the Birds'), favorValue: 3 }];
+  ai8.skills.knowledge = 2;
+  ai8.gold = 10;
+  g8.players[0].playedCards.push({ ...kCard });
+  g8.currentAct = 1;
+  g8.resolveMissions();
+  ok(ai8.completedMissions.length === 1 && ai8.gold === 8,
+    `persona borrows when favor ≥ 1× fee (gold → ${ai8.gold})`);
+}
+
+console.log('── Emblem: rated seat + act-boundary clockwise pass');
+{
+  const g = newGame();
+  ok(g.emblemHolder === 0, 'constructor default: seat 0');
+  g.setEmblemHolder(2);
+  ok(g.emblemHolder === 2, 'setEmblemHolder seats the token');
+  g.setEmblemHolder(7);
+  ok(g.emblemHolder === 0, 'out-of-table seat clamps to 0');
+  g.setEmblemHolder(-1);
+  ok(g.emblemHolder === 0, 'negative seat clamps to 0');
+
+  g.setEmblemHolder(2);
+  g.startAct(1);
+  ok(g.emblemHolder === 2, 'Act 1 never rotates the Emblem');
+  g.startAct(2);
+  ok(g.emblemHolder === 0, 'act boundary passes clockwise (+1, wraps 2→0 at 3p)');
+  g.startAct(3);
+  ok(g.emblemHolder === 1, 'next boundary passes again (0→1)');
+
+  // Activation order derives from the holder — passHands starts there.
+  g.pendingActivations = [null, null, null];
+  g.passHands();
+  ok(g.activePlayerIndex === 1, 'activation begins at the new holder');
+}
+
+console.log('── Rank-1 boon: +1 bonusSkill survives recalc, flips a mission check');
+{
+  const g = newGame();
+  const p = g.players[0];
+  // Mission rewards earned earlier this game live in bonusSkills too —
+  // the boon stacks on the same ledger.
+  p.bonusSkills = { knowledge: 2 };
+  g.applySlotSkills(p);
+  const m = { ...missionByName('A Day With the Birds') };   // needs 3 Knowledge
+  ok(g.checkMissionRequirements(0, m).success === false, '2 Knowledge < 3 → still short');
+  // The boon lands: +1 chosen skill via the same path the UI uses.
+  p.bonusSkills.knowledge += 1;
+  g.applySlotSkills(p);
+  ok(p.skills.knowledge === 3, `boon +1 shows in the sum (${p.skills.knowledge})`);
+  ok(g.checkMissionRequirements(0, m).success === true, 'the boon flips the mission to a pass');
+  // Slider recalcs must never eat it.
+  g.applySlotSkills(p);
+  ok(p.skills.knowledge === 3, 'recalc keeps the boon');
 }
 
 // ═══ probeMissionRequirements: PURE — browsing must never mutate state ═══

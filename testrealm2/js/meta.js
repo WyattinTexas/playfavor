@@ -6,6 +6,9 @@
 //   favor/players/{uid}   { name, rating, stars, champs{gold,silver,bronze},
 //                           msgQueue{pushId:{type,dateKey,place,stars}},
 //                           created, lastSeen }
+//   favor/players/persona_*  the five PERMANENT persona rivals (see
+//                            PERSONAS below) — rating-only citizens,
+//                            seeded once, NEVER deleted.
 //   favor/daily/{dateKey}/scores/{uid}   { name, best, at }
 //   favor/settled/{dateKey}              { at, by, podium[] }
 //
@@ -54,6 +57,22 @@
         if (place === 2) return 4;
         return 2;
     }
+
+    // ── Persona rivals (defaults for Wyatt to veto) ──────────────────
+    // Five PERMANENT leaderboard citizens — real favor/players rows with
+    // fixed persona_* uids, seeded ONCE at staggered ratings and NEVER
+    // deleted (their history is the board's history). They sit at ~2 in 3
+    // tables, play sharper than the generic bots, and post real rating
+    // deltas per game — but never touch the daily board or Stars: the
+    // nightly crowns stay a human race. Names deliberately avoid the
+    // royal-anon generator's Title×Noun space so no player collides.
+    const PERSONAS = [
+        { key: 'ashcroft',   uid: 'persona_ashcroft',   name: 'Lord Ashcroft',   hero: 'knight',    seedRating: 240, strong: ['power', 'survival'] },
+        { key: 'balthazar',  uid: 'persona_balthazar',  name: 'Count Balthazar', hero: 'scientist', seedRating: 185, strong: ['alchemy', 'knowledge'] },
+        { key: 'vespertine', uid: 'persona_vespertine', name: 'Lady Vespertine', hero: 'duchess',   seedRating: 140, strong: ['knowledge', 'prospecting'] },
+        { key: 'rosalind',   uid: 'persona_rosalind',   name: 'Dame Rosalind',   hero: 'fisherman', seedRating: 95,  strong: ['survival', 'knowledge'] },
+        { key: 'thorne',     uid: 'persona_thorne',     name: 'Baron Thorne',    hero: 'bandit',    seedRating: 60,  strong: ['power', 'prospecting'] },
+    ];
 
     // Small gold crown — inline SVG so the champion mark is OURS (royal,
     // never an emoji from somebody else's set).
@@ -222,11 +241,51 @@
         return true;
     }
 
-    // ═══ Posting a finished game ═════════════════════════════════════
-    // Called from showScoring() with the sorted score rows. Only YOUR
-    // result posts — the bots present as people but stay off the board.
+    // ═══ Table seed — one leaderboard read for game start ════════════
+    // Powers the rated Emblem start, persona seating, and the rank-1 boon.
+    // Kicked off at boot so confirmCharacter's await is usually instant;
+    // the game start races it against 1200ms and falls back to the classic
+    // seat-0 start when offline or slow. Refreshed after each posted game
+    // so a player who just took #1 gets tomorrow's dues today.
 
-    async function postGameResult(scores) {
+    let _tableSeedP = null;
+
+    function tableSeed() {
+        if (_tableSeedP) return _tableSeedP;
+        _tableSeedP = (async () => {
+            // boot() may still be racing the wire — give it a beat before
+            // declaring LOCAL (connect() itself times out at 6s; the game
+            // start's own 1200ms race caps what anyone actually waits).
+            for (let i = 0; i < 20 && mode === 'connecting'; i++) {
+                await new Promise(r => setTimeout(r, 100));
+            }
+            if (mode !== 'firebase') return null;
+            const players = await dbGet('players') || {};
+            // EXACTLY the list the all-time tab renders — rows[0] is the
+            // boon's rank 1, nothing else ever is.
+            const rows = Object.entries(players)
+                .filter(([, p]) => p && p.name)
+                .map(([u, p]) => ({ uid: u, name: p.name, score: p.rating || 0 }))
+                .sort((a, b) => b.score - a.score);
+            const me = players[uid()] || null;
+            return {
+                myRow: me ? { uid: uid(), rating: me.rating || 0 } : null,
+                topRow: rows[0] || null,
+                personas: PERSONAS.map(p => ({
+                    ...p,
+                    rating: players[p.uid] ? (players[p.uid].rating || 0) : p.seedRating,
+                })),
+            };
+        })().catch(() => null);
+        return _tableSeedP;
+    }
+
+    // ═══ Posting a finished game ═════════════════════════════════════
+    // Called from showScoring() with the sorted score rows. YOUR result
+    // posts in full; seated persona rivals post rating-only deltas to
+    // their permanent rows. Generic bots stay off the board entirely.
+
+    async function postGameResult(scores, personaPlaces) {
         try {
             const place = scores.findIndex(s => s.name === 'You');
             if (place < 0) return;
@@ -251,6 +310,25 @@
             renderProfileChip();
         } catch (e) {
             console.warn('[FAVOR meta] post failed:', e.message);
+        } finally {
+            // Seated personas: their placements are as real as yours —
+            // rating txn on their PERMANENT rows (never delete). No daily
+            // post, no Stars: the nightly crowns stay a human race. A row
+            // missing its rating starts from the persona's seed value.
+            for (const pp of (personaPlaces || [])) {
+                try {
+                    const seedR = (PERSONAS.find(x => x.uid === pp.uid) || {}).seedRating || 0;
+                    const pDelta = ratingDelta(pp.place, scores.length);
+                    await dbTxn(`players/${pp.uid}/rating`,
+                        r => Math.max(0, (r == null ? seedR : r) + pDelta));
+                    await dbUpdate(`players/${pp.uid}`,
+                        { name: pp.name, lastSeen: Date.now(), persona: true });
+                } catch (e) {
+                    console.warn('[FAVOR meta] persona post failed:', e.message);
+                }
+            }
+            // Ratings moved — the NEXT game reads a fresh seed.
+            _tableSeedP = null;
         }
     }
 
@@ -666,6 +744,7 @@
         // A store opened during the 'connecting' window painted browse-only
         // — repaint now that the backend verdict is in.
         renderStore();
+        tableSeed();           // prefetch the game-start seed (emblem/personas/boon)
         await settleDue();     // pay out any boundary that passed while we were away
         await drainMsgs();     // then deliver congratulations
     }
@@ -679,7 +758,7 @@
     // Public surface
     window.FLB = {
         postGameResult, openLeaderboard, closeLeaderboard, openProfile, closeProfile,
-        queueSize, rename, renderProfileChip, snapshot,
+        queueSize, rename, renderProfileChip, snapshot, tableSeed,
         settleDue, drainMsgs, currentDateKey, ratingDelta, generateName,
         gameStars, ownedIds, buyCharacter, openStore, closeStore, askBuy, confirmBuy,
         inspectChar, closeInspect,
