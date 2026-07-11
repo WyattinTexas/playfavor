@@ -535,12 +535,12 @@
 .ms-coin-face {
     position: absolute; inset: 0; border-radius: 50%;
     -webkit-backface-visibility: hidden; backface-visibility: hidden;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 22px; font-weight: 900;
-    box-shadow: 0 3px 8px rgba(0,0,0,0.55), inset 0 0 0 2px rgba(255,244,210,0.5);
+    background-size: cover; background-position: center;
+    filter: drop-shadow(0 3px 6px rgba(0,0,0,0.55));
 }
-.ms-coin-face.heads { background: radial-gradient(circle at 38% 32%, #fff4d2, #c9a84c 75%); color: #6b4a1e; }
-.ms-coin-face.tails { background: radial-gradient(circle at 38% 32%, #d9c07a, #7a5a12 75%); color: #3a2410; transform: rotateY(180deg); }
+/* painted coin art: radiant crown = heads (+4), ashen shattered crown = tails (0) */
+.ms-coin-face.heads { background-image: url('../assets/ui/coin-heads.png'); }
+.ms-coin-face.tails { background-image: url('../assets/ui/coin-tails.png'); transform: rotateY(180deg); }
 .ms-coin.flip-heads { animation: msCoinH 1.6s linear forwards; }
 .ms-coin.flip-tails { animation: msCoinT 1.6s linear forwards; }
 /* Fast spin on the way up, hang at the top, decelerating spin down, bounce.
@@ -645,7 +645,6 @@
     left: -28px; top: -28px; bottom: auto; margin-left: 0;
     width: 56px; height: 56px;
 }
-.ms-feature .ms-coin-face { font-size: 28px; }
 
 /* ── The card row — a fighter's power contributors laid on the table ──
    Cards (and power missions) deal in one at a time and STAY, readable, until

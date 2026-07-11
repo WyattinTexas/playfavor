@@ -405,7 +405,7 @@
       const flipCoin = (hostEl, won) => {
         const coin = document.createElement('div');
         coin.className = 'ms-coin';
-        coin.innerHTML = '<div class="ms-coin-face heads">★</div><div class="ms-coin-face tails">✕</div>';
+        coin.innerHTML = '<div class="ms-coin-face heads"></div><div class="ms-coin-face tails"></div>';
         hostEl.appendChild(coin);
         void coin.offsetWidth;
         coin.classList.add(won ? 'flip-heads' : 'flip-tails');
