@@ -738,36 +738,95 @@ console.log('── Rank-1 boon: +1 bonusSkill survives recalc, flips a mission 
 
 // ═══ probeMissionRequirements: PURE — browsing must never mutate state ═══
 {
-  // A held Life Essence answers "success" to the probe WITHOUT being
-  // consumed (the old label path burned it just for opening the lightbox).
+  // A Life-Essence-blessed mission answers "success" to the probe forever —
+  // the waiver lives ON the mission and nothing consumes it.
   const g = newGame();
   const p = g.players[0];
   p.missions = [{ ...missionByName('A Day With the Birds') }]; // needs 3 Knowledge
   p.skills.knowledge = 0;                                      // unmet on merits
-  p.removeMissionRequirements = true;                          // Life Essence held
+  p.missions[0]._reqWaived = true;                             // Life Essence blessing
   const snap = () => JSON.stringify({ ...p, character: undefined });
   const before = snap();
   const r1 = g.probeMissionRequirements(0, p.missions[0]);
   const r2 = g.probeMissionRequirements(0, p.missions[0]);
-  ok(r1.success === true && r2.success === true, 'probe: Life Essence answers success every time');
-  ok(p.removeMissionRequirements === true, 'probe does NOT consume the Life Essence');
-  ok(snap() === before, 'probe leaves the player byte-identical (essence held)');
+  ok(r1.success === true && r2.success === true, 'probe: blessed mission answers success every time');
+  ok(p.missions[0]._reqWaived === true, 'the blessing is never consumed');
+  ok(snap() === before, 'probe leaves the player byte-identical (blessed)');
 
-  // Without essence: probe agrees with the real check, still byte-pure.
-  p.removeMissionRequirements = false;
+  // Without the blessing: probe reports the unmet requirement, still byte-pure.
+  delete p.missions[0]._reqWaived;
   const before2 = snap();
   const rMiss = g.probeMissionRequirements(0, p.missions[0]);
   ok(rMiss.success === false && rMiss.details.missing.length > 0, 'probe reports unmet requirements');
-  ok(snap() === before2, 'probe leaves the player byte-identical (no essence)');
+  ok(snap() === before2, 'probe leaves the player byte-identical (no blessing)');
   p.skills.knowledge = 3;
   ok(g.probeMissionRequirements(0, p.missions[0]).success === true, 'probe: met requirements read as success');
 
-  // The real check still consumes — turn-in behavior unchanged.
+  // The real check agrees — and is pure now too (nothing left to consume).
   p.skills.knowledge = 0;
-  p.removeMissionRequirements = true;
+  p.missions[0]._reqWaived = true;
   const rReal = g.checkMissionRequirements(0, p.missions[0]);
-  ok(rReal.success === true && p.removeMissionRequirements === false,
-    'checkMissionRequirements still consumes the essence on the real path');
+  ok(rReal.success === true && p.missions[0]._reqWaived === true,
+    'checkMissionRequirements honors the blessing without consuming anything');
+}
+
+console.log('── Life Essence: choose an active mission, its requirement is gone');
+{
+  // AI path: playing Life Essence waives the mission it is least likely to
+  // meet; that mission then reads as a success with zero skills.
+  const g = newGame();
+  const ai = g.players[1];
+  ai.missions = [{ ...missionByName('A Day With the Birds') }]; // 3 Knowledge, unmet
+  ai.skills.knowledge = 0;
+  g.resolveSpecial(1, { ...cardByName('Life Essence') });
+  ok(ai.missions[0]._reqWaived === true, 'AI Life Essence blesses its failing mission');
+  ok(g.checkMissionRequirements(1, ai.missions[0]).success === true, 'blessed mission succeeds with zero skills');
+
+  // Human path: the pick is deferred to the picker via the pause flag.
+  const p = g.players[0];
+  p.missions = [{ ...missionByName('A Day With the Birds') }];
+  g.resolveSpecial(0, { ...cardByName('Life Essence') });
+  ok(p._pendingLifeEssencePick === true, 'human Life Essence pauses for the mission picker');
+
+  // No active missions: the potion just rests (no crash, no flag).
+  const g2 = newGame();
+  g2.players[0].missions = [];
+  g2.resolveSpecial(0, { ...cardByName('Life Essence') });
+  ok(!g2.players[0]._pendingLifeEssencePick, 'no active missions — the essence rests');
+}
+
+console.log('── Great North Connection plays as printed: 1 Charisma & 1 Power');
+{
+  const g = newGame();
+  const p = g.players[0];
+  const gnc = { ...cardByName('Great North Connection') };
+  p.hand = [gnc];
+  p.skills.charisma = 1; p.skills.power = 1;
+  const { canPlay } = g.checkRequirements(0, gnc);
+  ok(canPlay === true, 'GNC playable with exactly 1 Charisma + 1 Power');
+  ok((gnc.favor || 0) === 5, `GNC favor is 5 as printed (got ${gnc.favor})`);
+
+  // The flex unit (Mining Guild) covers the Charisma half on its own.
+  const g2 = newGame();
+  const p2 = g2.players[0];
+  const gnc2 = { ...cardByName('Great North Connection') };
+  p2.skills.charisma = 0; p2.skills.power = 1;
+  p2.flexSkills = [['charisma', 'prospecting']];
+  ok(g2.checkRequirements(0, gnc2).canPlay === true, 'Mining Guild flex covers the Charisma requirement');
+}
+
+console.log('── Score sheet split: adventures + artifacts + other = card favor');
+{
+  const g = newGame();
+  const p = g.players[0];
+  p.playedCards = [
+    { ...cardByName('Great North Connection') },   // adventure, 5 favor
+    { ...cardByName("Philosopher's Scepter") },    // artifact
+  ];
+  const s = g.calculateFinalScores().find(x => x.playerIndex === 0);
+  ok(s.advFavor + s.artFavor + s.otherCardFavor === s.cardFavor,
+    `family split sums to cardFavor (${s.advFavor}+${s.artFavor}+${s.otherCardFavor}=${s.cardFavor})`);
+  ok(s.advFavor >= 5, `GNC favor lands under Adventures (${s.advFavor})`);
 }
 
 console.log('── Paid slide: one direction per turn (5g a space, repeatable)');

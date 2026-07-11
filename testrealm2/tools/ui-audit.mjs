@@ -634,6 +634,33 @@ console.log('── Juicy stats: phone purse/rail two-column, desktop panel + st
   }
 }
 
+// ═══ DESKTOP: played cards stack by FAMILY (card color) — potions show ═══
+console.log('── Desktop: stacks group by card family — a played potion is on the field');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('stacks: ' + m.text()); });
+  await page.setViewport({ width: 1420, height: 800 });
+  await startGame(page);
+  await page.evaluate(() => {
+    const p = game.players[0];
+    const pick = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    p.playedCards = [pick('Great North Connection'), pick('Concoction'),
+                     pick('Mining Guild'), pick("Philosopher's Stone")];
+    renderGameState();
+  });
+  await sleep(400);
+  const st = await page.evaluate(() => ({
+    labels: [...document.querySelectorAll('#cardStacks .stack-label')].map(l => l.textContent),
+    colored: [...document.querySelectorAll('#cardStacks .card-stack')]
+      .every(s => (s.getAttribute('style') || '').includes('--typeC')),
+  }));
+  ok(st.labels.join('|') === 'Adventures|Artifacts|Endeavors|Potions',
+    `stacks read by family, the potion is on the field (${st.labels.join(', ')})`);
+  ok(st.colored, 'every family label wears its color');
+  await page.screenshot({ path: join(SHOTS, 'stacks-by-family.png') });
+  await page.close();
+}
+
 // ═══ DESKTOP: final card keeps its choices ═══
 console.log('── Desktop: last two cards — player chooses BOTH fates');
 {
@@ -671,6 +698,16 @@ console.log('── Desktop: last two cards — player chooses BOTH fates');
   } catch (e) {}
   await page.screenshot({ path: join(SHOTS, 'final-card-choice.png') });
   ok(choiceShown, 'final card shows its own action panel');
+
+  // The chooser must SHOW the card — it lives in pending, nothing blooms
+  // beside the panel, so the panel itself carries the art (Wyatt, 7/11).
+  const art = await page.evaluate(() => {
+    const panel = document.querySelector('.action-panel');
+    const img = panel && panel.querySelector('.action-card-img');
+    const r = img ? img.getBoundingClientRect() : { width: 0 };
+    return { final: !!(panel && panel.classList.contains('final-choice')), w: r.width };
+  });
+  ok(art.final && art.w > 80, `final chooser shows the card art (${Math.round(art.w)}px wide)`);
 
   if (choiceShown) {
     const acted = await page.evaluate(() => {
@@ -1002,11 +1039,11 @@ console.log('── Mission browser: full set, focus browsing, Life Essence stay
   await sleep(200);
 
   // From YOUR pip: current + completed; Turn In only on the held one —
-  // and a held LIFE ESSENCE survives the whole browse (the old lightbox
-  // consumed it just to label the button).
+  // and a Life Essence BLESSING on the held mission survives the whole
+  // browse (the old design consumed the essence just to label the button).
   const mine = await page.evaluate(() => {
     const p = game.players[0];
-    p.removeMissionRequirements = true;   // Life Essence held
+    p.missions[0]._reqWaived = true;   // Life Essence blessing on the held mission
     const goldBefore = p.gold;
     document.querySelector('.mission-pip.active').click();
     return { goldBefore, held: p.missions[0].name, done: p.completedMissions[0].name };
@@ -1017,25 +1054,25 @@ console.log('── Mission browser: full set, focus browsing, Life Essence stay
     cards: document.querySelectorAll('#mbTrack .mb-card').length,
     focusLabel: document.getElementById('missionLBLabel').textContent,
     turnIn: !!document.getElementById('missionTurnIn'),
-    essence: game.players[0].removeMissionRequirements,
+    essence: !!(game.players[0].missions[0] && game.players[0].missions[0]._reqWaived),
   }));
   ok(mineView.title === 'Your Missions', 'your pip opens YOUR set');
   ok(mineView.cards === 2, `current + completed laid out (${mineView.cards})`);
   ok(mineView.focusLabel === mine.held && mineView.turnIn, 'held mission focused with Turn In attached');
-  ok(mineView.essence === true, 'opening the browser did NOT consume the Life Essence');
+  ok(mineView.essence === true, 'browsing leaves the Life Essence blessing intact');
   await page.evaluate(() => mbStep(1));
   await sleep(500);
   const doneView = await page.evaluate(() => ({
     label: document.getElementById('missionLBLabel').textContent,
     turnIn: !!document.getElementById('missionTurnIn'),
-    essence: game.players[0].removeMissionRequirements,
+    essence: !!(game.players[0].missions[0] && game.players[0].missions[0]._reqWaived),
     gold: game.players[0].gold,
   }));
   ok(/completed/.test(doneView.label) && !doneView.turnIn, 'completed mission shows no Turn In');
   ok(doneView.essence === true && doneView.gold === mine.goldBefore,
-    'browsing every card moved nothing (essence held, gold unchanged)');
+    'browsing every card moved nothing (blessing held, gold unchanged)');
   await page.screenshot({ path: join(SHOTS, 'mission-browser-mine.png') });
-  await page.evaluate(() => { game.players[0].removeMissionRequirements = false; closeMissionLB(); });
+  await page.evaluate(() => { delete game.players[0].missions[0]._reqWaived; closeMissionLB(); });
   await sleep(250);
 
   // Desktop entry: the strip's Journal button opens the same ledger.
@@ -1178,6 +1215,54 @@ console.log('── Desktop: Chemical Y presents the choose-one picker');
   await page.close();
 }
 
+// ═══ LIFE ESSENCE PICKER: choose ONE active mission, requirement gone ═══
+console.log('── Life Essence picker: bless one active mission, it probes free');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('lepick: ' + m.text()); });
+  await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+
+  // Two known active missions, no skills — then fire the picker exactly
+  // as the post-activation hook does (fire-and-flag, never awaited here).
+  await page.evaluate(() => {
+    const p = game.players[0];
+    const pool = FAVOR_DATA.missions;
+    p.missions = [{ ...pool[0] }, { ...pool[6] }];
+    p.skills.knowledge = 0;
+    renderGameState();
+    window._leDone = false;
+    showLifeEssencePicker().then(() => { window._leDone = true; });
+  });
+  await page.waitForFunction(() =>
+    document.getElementById('promisePicker').classList.contains('active') &&
+    /Life Essence/i.test(document.getElementById('promisePicker').textContent), { timeout: 6000 });
+  const view = await page.evaluate(() => ({
+    cards: document.querySelectorAll('#promisePicker .pp-card').length,
+    missionArt: [...document.querySelectorAll('#promisePicker .pp-card img')]
+      .every(i => /assets\/cards\/missions\//.test(i.getAttribute('src'))),
+    confirm: (document.getElementById('leConfirm') || {}).textContent || '',
+  }));
+  ok(view.cards === 2, `both active missions offered (${view.cards})`);
+  ok(view.missionArt, 'the choices are the mission cards themselves');
+  ok(/no requirement/i.test(view.confirm), `confirm says what it does (${view.confirm.trim()})`);
+  await page.screenshot({ path: join(SHOTS, 'life-essence-picker.png') });
+
+  await page.evaluate(() => { document.querySelector('#promisePicker .pp-card[data-i="1"]').click(); });
+  await sleep(200);
+  await page.evaluate(() => { document.getElementById('leConfirm').click(); });
+  await page.waitForFunction(() => window._leDone, { timeout: 6000 });
+  const after = await page.evaluate(() => ({
+    waived: game.players[0].missions.map(m => !!m._reqWaived).join(','),
+    overlay: document.getElementById('promisePicker').classList.contains('active'),
+    probe: game.probeMissionRequirements(0, game.players[0].missions[1]).success,
+  }));
+  ok(after.waived === 'false,true', `exactly the chosen mission is blessed (${after.waived})`);
+  ok(after.probe === true, 'blessed mission probes success with zero skills');
+  ok(!after.overlay, 'picker closes on confirm');
+  await page.close();
+}
+
 // ═══ DOUBLE MISSION LETTER FINALE (Wyatt's 7/5 freeze) ═══
 // Final 2 cards BOTH letters, 1 gold: play #1 through the real panel, take a
 // mission, then letter #2's chooser must appear, SURVIVE stray clicks, and
@@ -1236,7 +1321,14 @@ async function doubleLetterFlow(mode) {
     // The freeze reproducer: stray clicks outside the chooser must NOT dismiss it.
     await page.evaluate(() => document.body.click());
     if (mode === 'phone') { await page.touchscreen.touchStart(420, 60); await page.touchscreen.touchEnd(); }
-    else await page.mouse.click(850, 500);
+    else {
+      // Dead table space LEFT of the chooser — the panel is wider now that
+      // it carries the card art, so the old fixed point (850,500) lands ON
+      // its buttons and "dismisses" it by pressing one.
+      const left = await page.evaluate(() =>
+        document.querySelector('.action-panel').getBoundingClientRect().left);
+      await page.mouse.click(Math.max(300, Math.round(left) - 45), 500);
+    }
     await sleep(350);
     const after = await page.evaluate(() => {
       const p = document.querySelector('.action-panel');
@@ -2430,74 +2522,71 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
   // ── WIN ──
   await rigScoring(page, 100, 10, 5);
   await sleep(300);
-  const win = await page.evaluate(() => ({
-    headline: (document.querySelector('.vs-headline') || {}).textContent,
-    personal: (document.querySelector('.vs-personal') || {}).textContent,
-    rays: !!document.querySelector('.vs-head.win .champ-rays'),
-    oldH1: !!document.querySelector('#scoring-screen .select-title'),
-    places: [...document.querySelectorAll('.vs-place')].map(el => ({
-      cls: el.className, trophy: !!el.querySelector('svg.vs-trophy'),
-      name: el.querySelector('.vs-name').textContent,
-    })),
-    ratingDelta: (document.querySelector('.vs-delta.rating b') || {}).textContent,
-    ratingNew: (document.querySelector('.vs-delta.rating .vs-d-new') || { dataset: {} }).dataset.total,
-    starDelta: (document.querySelector('.vs-delta.stars b') || {}).textContent,
-    starNew: (document.querySelector('.vs-delta.stars .vs-d-new') || { dataset: {} }).dataset.total,
-    tableCls: [...document.querySelectorAll('.scoring-table tr')].slice(1).map(r => r.className),
-    playAgain: !!([...document.querySelectorAll('.scoring-actions .btn-royal')].find(b => /play again/i.test(b.textContent))),
-    hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
-  }));
+  const win = await page.evaluate(() => {
+    const g = document.querySelector('.vs-grid');
+    const cells = g ? [...g.querySelectorAll('.vsg-cell')] : [];
+    return {
+      headline: (document.querySelector('.vs-headline') || {}).textContent,
+      personal: (document.querySelector('.vs-personal') || {}).textContent,
+      rays: !!document.querySelector('.vs-head.win .champ-rays'),
+      oldH1: !!document.querySelector('#scoring-screen .select-title'),
+      rowLabels: g ? [...g.querySelectorAll('.vsg-label span')].map(s => s.textContent) : [],
+      heads: g ? [...g.querySelectorAll('.vsg-head')].map(h => ({
+        cls: h.className,
+        name: (h.querySelector('.vsg-hname') || {}).textContent,
+        face: !!h.querySelector('.vsg-face'),
+        trophy: !!h.querySelector('svg.vs-trophy'),
+      })) : [],
+      cells: cells.length,
+      charYou: cells[9] ? cells[9].textContent : null,       // Character row × your column
+      scornYou: cells[15] ? { t: cells[15].textContent, bad: cells[15].classList.contains('bad') } : {},
+      totals: g ? [...g.querySelectorAll('.vsg-cell.total b')].map(b => b.dataset.total) : [],
+      noGoldCol: g ? !/tiebreak/i.test(g.textContent) : false,
+      ratingDelta: (document.querySelector('.vs-delta.rating b') || {}).textContent,
+      ratingNew: (document.querySelector('.vs-delta.rating .vs-d-new') || { dataset: {} }).dataset.total,
+      starDelta: (document.querySelector('.vs-delta.stars b') || {}).textContent,
+      starNew: (document.querySelector('.vs-delta.stars .vs-d-new') || { dataset: {} }).dataset.total,
+      playAgain: !!([...document.querySelectorAll('.scoring-actions .btn-royal')].find(b => /play again/i.test(b.textContent))),
+      hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
+    };
+  });
   ok(win.headline === 'You Are Victorious!', `win headline (${win.headline})`);
   ok(win.rays, 'gold rays crown a human win');
   ok(win.personal === 'The realm bows before its new sovereign.', `win personal line (${win.personal})`);
   ok(!win.oldH1, '"The Queen Has Decided" h1 is gone');
-  ok(win.places.length === 3, `placement ladder rows = table size (${win.places.length})`);
-  ok(/\bp1\b/.test(win.places[0].cls) && win.places[0].trophy && win.places[0].name === 'You',
-    '1st row: gold class + trophy + You');
-  ok(/\bp2\b/.test(win.places[1].cls) && win.places[1].trophy, '2nd row: silver class + trophy');
-  ok(/\bp3\b/.test(win.places[2].cls) && win.places[2].trophy, '3rd row: bronze class + trophy');
+  ok(win.rowLabels.join('|') === 'Missions|Adventures|Artifacts|Character|Prestige|Scorn|Total',
+    `score sheet rows as printed (${win.rowLabels.join(', ')})`);
+  ok(win.heads.length === 3 && win.heads[0].name === 'You' && /\bwin\b/.test(win.heads[0].cls)
+    && win.heads[0].trophy && win.heads[0].face,
+    '1st column: You — portrait, trophy, champion glow');
+  ok(win.heads.every(h => h.face), 'every heir wears their portrait');
+  ok(win.cells === 21, `7 rows × 3 heirs of cells (${win.cells})`);
+  ok(win.charYou === '100', `rigged favor lands in the Character row (${win.charYou})`);
+  ok(win.scornYou.t === '−2' && win.scornYou.bad, `scorn reads −2 in red (${win.scornYou.t})`);
+  ok(win.totals.join(',') === '105,10,5', `totals = favor + prestige − scorn (${win.totals.join(',')})`);
+  ok(win.noGoldCol, 'no gold tiebreaker column');
   ok(win.ratingDelta === '+25', `rating delta reads +25 (${win.ratingDelta})`);
   ok(win.ratingNew === '25', `fresh player's new rating target = 25 (${win.ratingNew})`);
   ok(win.starDelta === '+10', `win pays +10 Stars (${win.starDelta})`);
   ok(win.starNew === '10', `fresh player's star target = 10 (${win.starNew})`);
-  ok(win.tableCls.every((c, i) => c.includes(['vs-p1', 'vs-p2', 'vs-p3'][i])),
-    `breakdown rows wear placement colors (${win.tableCls.join(' · ')})`);
   ok(win.playAgain, 'Play Again survives');
   ok(!win.hscroll, 'no horizontal scroll');
 
-  // Final holdings — Wyatt: "show player resource variables, that's what
-  // people want to see." Every heir's row carries purse + all six skills.
-  const hold = await page.evaluate(() => {
-    const strips = [...document.querySelectorAll('.vs-place .vs-holdings')];
-    const mine = document.querySelector('.vs-place.me .vs-holdings');
-    const chipVal = (cls) => {
-      const c = mine.querySelector(`.vsh-chip.${cls} b`);
-      return c ? c.textContent : null;
-    };
-    const skillVals = [...mine.querySelectorAll('.vsh-chip.skill b')].map(b => b.textContent);
+  // The prestige row carries the rigged 7 — sheet cells are engine truth.
+  const presYou = await page.evaluate(() =>
+    [...document.querySelectorAll('.vs-grid .vsg-cell')][12].textContent);
+  ok(presYou === '7', `prestige row reads the rigged 7 (${presYou})`);
+
+  // Count-up actually lands on the totals (grid totals start ~1150ms in).
+  await sleep(2400);
+  const landed = await page.evaluate(() => {
+    const b = document.querySelector('.vs-grid .vsg-cell.total b');
     return {
-      strips: strips.length,
-      chipsEach: strips.map(s => s.querySelectorAll('.vsh-chip').length),
-      gold: chipVal('gold'), prestige: chipVal('prestige'), scorn: chipVal('scorn'),
-      skillVals,
-      allVisible: strips.every(s => s.getBoundingClientRect().height > 8),
+      top: b ? b.textContent : null,
+      target: b ? b.dataset.total : null,
+      rating: (document.querySelector('.vs-delta.rating .vs-d-new') || {}).textContent,
     };
   });
-  ok(hold.strips === 3 && hold.chipsEach.every(n => n === 10),
-    `every heir shows final holdings (${hold.strips} strips × ${hold.chipsEach[0]} chips)`);
-  ok(hold.gold === '12' && hold.prestige === '7' && hold.scorn === '2',
-    `purse reads the rigged truth (gold ${hold.gold}, prestige ${hold.prestige}, scorn ${hold.scorn})`);
-  ok(hold.skillVals.includes('3') && hold.skillVals.includes('2'),
-    `skill chips carry the summed values (${hold.skillVals.join(',')})`);
-  ok(hold.allVisible, 'holdings strips render visibly on every row');
-
-  // Count-up actually lands on the totals.
-  await sleep(1500);
-  const landed = await page.evaluate(() => ({
-    top: (document.querySelector('.vs-place.p1 .vs-total') || {}).textContent,
-    target: (document.querySelector('.vs-place.p1 .vs-total') || { dataset: {} }).dataset.total,
-    rating: (document.querySelector('.vs-delta.rating .vs-d-new') || {}).textContent,
-  }));
   ok(landed.top === landed.target && landed.rating === '25',
     `count-up lands (score ${landed.top}/${landed.target}, rating ${landed.rating})`);
   await page.screenshot({ path: join(SHOTS, 'vs-desktop-win.png') });
@@ -2511,14 +2600,14 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
     headline: (document.querySelector('.vs-headline') || {}).textContent,
     rays: !!document.querySelector('.vs-head .champ-rays'),
     personal: (document.querySelector('.vs-personal') || {}).textContent,
-    myRow: ((document.querySelector('.vs-place.me') || {}).className || ''),
+    myColIdx: [...document.querySelectorAll('.vs-grid .vsg-head')].findIndex(h => h.classList.contains('me')),
     ratingDelta: (document.querySelector('.vs-delta.rating b') || {}).textContent,
   }));
   ok(/Claims the Throne$/.test(loss.headline) && !/You/.test(loss.headline),
     `rival win headline (${loss.headline})`);
   ok(!loss.rays, 'no rays when a rival takes the throne');
   ok(loss.personal === 'You finished 3rd.', `personal line (${loss.personal})`);
-  ok(/\bp3\b/.test(loss.myRow), 'your row wears bronze in 3rd');
+  ok(loss.myColIdx === 2, `your column stands 3rd on the sheet (idx ${loss.myColIdx})`);
   ok(loss.ratingDelta === '−10', `last place reads −10 (${loss.ratingDelta})`);
   await page.screenshot({ path: join(SHOTS, 'vs-desktop-loss.png') });
 
@@ -2576,12 +2665,14 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
     return {
       headline: vis(document.querySelector('.vs-headline')),
       deltas: vis(document.querySelector('.vs-delta.rating')),
+      grid: vis(document.querySelector('.vs-grid')),
       hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
       btnReachable: vis(btn),
       screenScrolls: document.getElementById('scoring-screen').scrollHeight >= document.getElementById('scoring-screen').clientHeight,
     };
   });
   ok(pfit.headline && pfit.deltas, 'phone: headline + rating delta visible');
+  ok(pfit.grid, 'phone: the score sheet is on stage');
   ok(pfit.btnReachable, 'phone: Play Again reachable (scrolls into view)');
   ok(!pfit.hscroll, 'phone: no horizontal scroll');
   await phone.screenshot({ path: join(SHOTS, 'vs-phone.png') });
@@ -2996,13 +3087,14 @@ console.log('── Opponent view: inspect panel/chips sum their spread; spotlig
       skills: [...el.querySelectorAll('.skill-row:not(.flex-skill):not(.special-ability) .skill-value')]
         .map(x => x.textContent.trim()).join(','),
       flex: !!el.querySelector('.skill-row.flex-skill'),
-      phil: (el.querySelectorAll('.skill-row.special-ability')[0] || { textContent: '' }).textContent.includes('2:1'),
+      phil: (el.querySelectorAll('.skill-row.special-ability')[0] || { textContent: '' }).textContent.replace(/\s+/g, ' ').trim(),
       emblem: !!el.querySelector('.emblem-tag'),
     };
   });
   ok(panel.tokens === '14,6,3', `token totem = their purse (${panel.tokens})`);
   ok(panel.skills === '4,2,3,1,2,5', `six skills summed exactly (${panel.skills})`);
-  ok(panel.flex && panel.phil && panel.emblem, 'flex pair, Phil. Stone 2:1 and Emblem Holder all present');
+  ok(panel.flex && /Philosopher's Stone/.test(panel.phil) && /\b2\b/.test(panel.phil) && panel.emblem,
+    `flex pair, full "Philosopher's Stone" ×2 and Emblem Holder all present (${panel.phil})`);
   await page.screenshot({ path: join(SHOTS, 'opp-inspect-desktop.png') });
   await page.evaluate(() => closeOppOverlay());
   await sleep(300);
@@ -3379,6 +3471,12 @@ async function startSeeded(page, seedRig) {
   const mode = await page.evaluate(() => FLB.mode);
   ok(mode === 'firebase', `live board reachable for the persona-post beat (${mode})`);
 
+  // The REAL persona row moves with real play (Wyatt's games pay Ashcroft
+  // his placements) — capture the live value now and assert the AUDIT run
+  // leaves it exactly where it stood, whatever that is today.
+  const realBefore = await page.evaluate(async () =>
+    (await firebase.database().ref('favor/players/persona_ashcroft/rating').get()).val());
+
   const start = await page.evaluate(() => ({
     emblem: game.emblemHolder,
     p1name: game.players[1].name,
@@ -3458,7 +3556,7 @@ async function startSeeded(page, seedRig) {
     return { verdict, real };
   }, [AUDIT_UID, P_UID]);
   ok(scrub.verdict === 'clean', `audit rows scrubbed from favor/* (${scrub.verdict})`);
-  ok(scrub.real === 240, `REAL persona_ashcroft row untouched (rating ${scrub.real})`);
+  ok(scrub.real === realBefore, `REAL persona_ashcroft row untouched (rating ${scrub.real}, was ${realBefore})`);
   await page.close();
 }
 

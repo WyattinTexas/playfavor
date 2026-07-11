@@ -1299,6 +1299,9 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
     text-transform: uppercase;
     flex: 1;
 }
+/* The full "Philosopher's Stone" fits its row at a smaller size (Wyatt:
+   no more "PHIL. STONE"). */
+.skill-label.phil-label { font-size: 9.5px; letter-spacing: 0.6px; }
 
 .skill-value {
     font-family: 'Cinzel', serif;
@@ -1496,12 +1499,13 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
 .card-stack .stack-label {
     font-family: 'Cinzel', serif;
     font-size: 7px;
-    color: var(--gold-dark);
+    color: var(--typeC, var(--gold-dark));
     letter-spacing: 2px;
     text-transform: uppercase;
     text-align: center;
     margin-bottom: 5px;
-    opacity: 0.6;
+    opacity: 0.95;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
 .card-stack .stack-card {
@@ -2796,115 +2800,96 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
 .vs-d-what { color: var(--gold); letter-spacing: 1px; }
 .vs-d-arrow { color: var(--parchment-dark); opacity: 0.8; }
 
-.vs-places {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 16px;
-    width: min(560px, 94vw);
-}
-.vs-place {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    padding: 8px 18px 9px;
-    border-radius: 10px;
-    border: 1px solid transparent;
-    font-family: 'Cinzel', serif;
-    letter-spacing: 1px;
-}
-.vs-place-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-.vs-place .vs-ord { width: 34px; text-align: right; font-size: 13px; opacity: 0.85; }
+/* ── The Score Sheet — the box's tally grid recreated: heirs across,
+   color-coded categories down, chunky numbers, one glance tells all. ── */
 .vs-trophy { width: 22px; height: 22px; flex: 0 0 22px; }
-.vs-trophy.none { display: inline-block; }
-.vs-place .vs-name { flex: 1; }
-.vs-place .vs-total { font-size: 21px; }
 
-/* Final holdings — what each heir ended the game holding: full purse +
-   all six skills in real token art. The table talk of the ending. */
-.vs-holdings {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 6px;
-    padding-left: 46px;   /* clear of the ord + trophy gutter */
-}
-.vsh-chip {
-    display: inline-flex;
-    align-items: center;
+.vs-grid {
+    display: grid;
+    grid-template-columns: minmax(96px, auto) repeat(var(--vsgCols, 5), minmax(64px, 1fr));
     gap: 4px;
-    padding: 2px 8px 2px 4px;
-    border-radius: 999px;
-    background: rgba(12, 7, 3, 0.55);
-    border: 1px solid rgba(201, 168, 76, 0.22);
-}
-.vsh-chip img, .vsh-chip .skill-svg {
-    width: 17px; height: 17px; object-fit: contain; display: block;
-}
-.vsh-chip b {
+    margin: 18px auto 4px;
+    width: min(720px, 94vw);
     font-family: 'Cinzel', serif;
-    font-size: 12px;
-    color: #e8d9bf;
+}
+.vsg-head {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 4px 4px 6px; min-width: 0;
+}
+.vsg-face {
+    width: 40px; height: 40px; border-radius: 50%; object-fit: cover;
+    object-position: top; border: 2px solid rgba(201, 168, 76, 0.45);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.vsg-head.win .vsg-face { border-color: #e8c34b; box-shadow: 0 0 14px rgba(232, 195, 75, 0.5); }
+.vsg-ord {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 10px; font-weight: 700; letter-spacing: 1px; color: #8d8578;
+}
+.vsg-ord .vs-trophy { width: 13px; height: 13px; flex: 0 0 13px; }
+.vsg-hname {
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 11px; letter-spacing: 0.5px; color: #e8dcc0;
+}
+.vsg-head.me .vsg-hname { color: #ffe9a8; font-weight: 700; }
+.vsg-label {
+    display: flex; align-items: center; gap: 7px;
+    background: var(--rowC);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--rowC) 86%, #fff), var(--rowC));
+    color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    padding: 5px 10px; border-radius: 7px;
+    border: 1px solid rgba(0, 0, 0, 0.35);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 2px 5px rgba(0, 0, 0, 0.35);
+    font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+}
+.vsg-label img { width: 20px; height: 20px; object-fit: contain; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45)); }
+.vsg-label.total { color: #3a3325; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4); }
+.vsg-cell {
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(26, 17, 9, 0.72);
+    background: color-mix(in srgb, var(--rowC, #c9a84c) 16%, rgba(26, 17, 9, 0.72));
+    border: 1px solid rgba(201, 168, 76, 0.18);
+    border-color: color-mix(in srgb, var(--rowC, #c9a84c) 32%, transparent);
+    border-radius: 7px; padding: 4px;
+    color: #f3e9d2; font-size: 16px; font-weight: 700;
     font-variant-numeric: tabular-nums;
 }
-.vsh-chip.gold b { color: #ffdf8e; }
-.vsh-chip.favor b { color: #8fd4ff; }
-.vsh-chip.scorn b { color: #ff8f84; }
-.vsh-chip.skill.zero { opacity: 0.38; }
-.vs-place.p1 {
-    color: #f4dd8f;
-    border-color: rgba(232, 195, 75, 0.75);
-    background: linear-gradient(90deg, rgba(232, 195, 75, 0.16), rgba(232, 195, 75, 0.05));
-    box-shadow: 0 0 22px rgba(232, 195, 75, 0.15);
+.vsg-cell.bad { color: #ff9d8a; }
+.vsg-cell.win { box-shadow: inset 0 0 0 1px rgba(232, 195, 75, 0.4), 0 0 10px rgba(232, 195, 75, 0.12); }
+.vsg-cell.total {
+    background: rgba(239, 230, 207, 0.14);
+    border-color: rgba(239, 230, 207, 0.45);
+    font-size: 20px; color: #fff;
 }
-.vs-place.p2 {
-    color: #d8dde4;
-    border-color: rgba(198, 204, 214, 0.5);
-    background: linear-gradient(90deg, rgba(198, 204, 214, 0.11), rgba(198, 204, 214, 0.03));
+.vsg-cell.total.win { color: #f4dd8f; }
+@keyframes vsgIn {
+    from { opacity: 0; transform: translateY(9px); }
+    to { opacity: 1; transform: none; }
 }
-.vs-place.p3 {
-    color: #e0a877;
-    border-color: rgba(205, 138, 75, 0.5);
-    background: linear-gradient(90deg, rgba(205, 138, 75, 0.12), rgba(205, 138, 75, 0.03));
-}
-.vs-place.pn { color: #9b8f7e; opacity: 0.75; }
-.vs-place.me .vs-name { font-weight: 700; }
-
-/* Breakdown rows wear the same placement colors. */
-.scoring-table tr.vs-p1 td { color: #f4dd8f; background: rgba(232, 195, 75, 0.10); }
-.scoring-table tr.vs-p2 td { color: #d8dde4; background: rgba(198, 204, 214, 0.06); }
-.scoring-table tr.vs-p3 td { color: #e0a877; background: rgba(205, 138, 75, 0.06); }
-.scoring-table tr.vs-pn td { color: #9b8f7e; }
+.vs-grid > * { animation: vsgIn 0.45s both; animation-delay: calc(var(--ri, 0) * 90ms + 250ms); }
 
 .scoring-scroll { max-width: 96vw; overflow-x: auto; }
 
-.scoring-actions { margin: 40px 0 12px; }
+.scoring-actions { margin: 26px 0 12px; }
 
-.scoring-table {
-    border-collapse: collapse;
-    margin-top: 30px;
-    font-family: 'EB Garamond', serif;
+/* Narrow portrait: tighter sheet, scroll inside .scoring-scroll if needed. */
+@media (max-width: 480px) {
+    .vs-grid { grid-template-columns: minmax(78px, auto) repeat(var(--vsgCols, 5), minmax(52px, 1fr)); gap: 3px; }
+    .vsg-cell { font-size: 13px; }
+    .vsg-label { font-size: 9px; padding: 4px 7px; letter-spacing: 1px; gap: 5px; }
+    .vsg-label img { width: 15px; height: 15px; }
 }
 
-.scoring-table th, .scoring-table td {
-    padding: 10px 20px;
-    border: 1px solid rgba(201, 168, 76, 0.2);
-    text-align: center;
-}
-
-.scoring-table th {
-    font-family: 'Cinzel', serif;
-    color: var(--gold);
-    background: rgba(201, 168, 76, 0.1);
-}
-
-.scoring-table .winner {
-    background: rgba(201, 168, 76, 0.15);
-    color: var(--gold-light);
+/* Phone landscape: the whole sheet fits 844×390 under the headline. */
+@media (max-height: 500px) {
+    .vs-grid { gap: 3px; width: min(640px, 96vw); margin-top: 10px; }
+    .vsg-face { width: 26px; height: 26px; }
+    .vsg-hname { font-size: 9px; }
+    .vsg-label { font-size: 9px; padding: 3px 7px; letter-spacing: 1px; gap: 5px; }
+    .vsg-label img { width: 14px; height: 14px; }
+    .vsg-cell { font-size: 12.5px; padding: 2px 3px; border-radius: 5px; }
+    .vsg-cell.total { font-size: 15px; }
+    .scoring-actions { margin: 12px 0 10px; }
 }
 
 /* ─── ANIMATIONS ───────────────────────────────────────── */
@@ -4161,9 +4146,10 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
         font-size: 6.5px;
         letter-spacing: 1.5px;
         text-transform: uppercase;
-        color: var(--gold-dark);
-        opacity: 0.75;
+        color: var(--typeC, var(--gold-dark));
+        opacity: 0.95;
         margin-top: 3px;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
     }
     .tv-stage-empty {
         font-family: 'EB Garamond', serif;
@@ -5268,6 +5254,23 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     align-items: center;
     gap: 10px;
     width: 100%;
+}
+
+/* Final-card chooser: the card lives in pending, not the hand, so nothing
+   blooms beside the panel — the panel itself shows the art (row layout).
+   Phones already show it via the landscape block. */
+.action-panel.final-choice {
+    flex-direction: row;
+    align-items: center;
+    gap: 18px;
+    max-width: min(640px, 94vw);
+}
+.action-panel.final-choice .action-card-img {
+    display: block;
+    height: min(310px, 38vh);
+    width: auto;
+    border-radius: 10px;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.6);
 }
 
 @keyframes tvGlowBreathe { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }

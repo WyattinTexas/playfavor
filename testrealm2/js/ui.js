@@ -30,7 +30,7 @@ const SPECIAL_DESCRIPTIONS = {
     "map_lost_north":                "Reveals a hidden path to the North.",
     "power_x2":                      "Doubles your Power for Melee!",
     "move_slider_any":               "Move your slider to any position!",
-    "double_adventure_favor":        "Doubles Favor from all Adventures!",
+    "double_adventure_favor":        "Choose one of your Adventures — its Favor doubles!",
     "minus_3_power_all_others":      "All opponents lose 3 Power!",
     "scorn_to_prestige":             "Converts all Scorn into Prestige!",
     "map_finding_lost_corridor":     "Unlocks the Finding the Lost Corridor adventure.",
@@ -39,7 +39,7 @@ const SPECIAL_DESCRIPTIONS = {
     "others_5_scorn":                "All opponents gain 5 Scorn!",
     "multiply_gold_x2":              "Doubles your Gold!",
     "coin_flip_4_power":             "Flip a coin: win = +4 Power!",
-    "remove_mission_requirements":   "Removes all mission requirements!",
+    "remove_mission_requirements":   "Choose an active Mission — it no longer has any Requirement!",
     "remove_13_scorn":               "Removes up to 13 Scorn!",
     "trade_route":                   "Opens a trade route for lasting profit.",
     "discard_opponent_weapon":       "Destroys one weapon from each opponent!",
@@ -1423,6 +1423,27 @@ async function mpActivateRemote(pi, card, cardIdx) {
             addLogEntry(`${p.name}'s Chemical Y doubles ${target.name}`);
         }
     }
+
+    // Life Essence resolved for a remote human — their mission pick, streamed.
+    if (p._pendingLifeEssencePick) {
+        p._pendingLifeEssencePick = false;
+        mpWaitShow(pi, 'choosing a mission to free of its requirement');
+        const pick = await FMP.waitFor(cs, 'lepick');
+        mpWaitHide();
+        const missions = (p.missions || []).filter(m => !m._reqWaived);
+        let target = pick && missions.find(m => m.id === pick.missionId);
+        if (!target && missions.length) {
+            // Booted / silent seat: the AI heuristic keeps every client identical.
+            const failing = missions.filter(m => !game.probeMissionRequirements(pi, m).success);
+            const pool = failing.length ? failing : missions;
+            target = pool.reduce((a, b) =>
+                (game.missionFavorEstimate(pi, b) > game.missionFavorEstimate(pi, a) ? b : a));
+        }
+        if (target) {
+            target._reqWaived = true;
+            addLogEntry(`${p.name}'s Life Essence blesses ${target.name} — no requirement`);
+        }
+    }
 }
 
 // \u2500\u2500 End-of-act stages, canonical order \u2014 every client applies every
@@ -1544,15 +1565,6 @@ function mpCheckSync(m) {
 
 // ─── SKILL GROUP MAPPING FOR CARD STACKS ─────────────────
 
-const SKILL_GROUPS = {
-    alchemy:     { label: 'Alchemy',     order: 0 },
-    survival:    { label: 'Survival',    order: 1 },
-    charisma:    { label: 'Charisma',    order: 2 },
-    prospecting: { label: 'Prospecting', order: 3 },
-    knowledge:   { label: 'Knowledge',   order: 4 },
-    power:       { label: 'Power',       order: 5 },
-};
-
 // True on phones/short viewports in landscape, where the left panels flow
 // in a flex rail (.left-rail) instead of the desktop JS-pinned absolute stack.
 function isCompactLandscape() {
@@ -1568,11 +1580,19 @@ window.addEventListener('resize', () => {
     }, 120);
 });
 
-function getCardSkillGroup(card) {
-    if (card.skills && card.skills.length > 0) {
-        return card.skills[0]; // Primary skill
-    }
-    return 'misc';
+// Card families — the color language of the physical game ("wisdom cards,
+// weapon cards, endeavor cards..."). Played cards stack by family, and the
+// label chip wears the family color.
+const TYPE_GROUPS = {
+    adventure: { label: 'Adventures', order: 0, color: '#3f8657' },
+    artifact:  { label: 'Artifacts',  order: 1, color: '#8a5fa8' },
+    weapon:    { label: 'Weapons',    order: 2, color: '#8d979f' },
+    wisdom:    { label: 'Wisdom',     order: 3, color: '#3f6fa8' },
+    endeavor:  { label: 'Endeavors',  order: 4, color: '#b58a3f' },
+    potion:    { label: 'Potions',    order: 5, color: '#8fae3c' },
+};
+function getCardTypeGroup(card) {
+    return TYPE_GROUPS[card.type] ? card.type : 'misc';
 }
 
 // ─── GAME SCREEN ───────────────────────────────────────────
@@ -1771,10 +1791,10 @@ function buildStatsPanelHtml(playerIndex, state) {
 
     if (hasPhilosopher) {
         skillsHtml += `
-            <div class="skill-row special-ability">
+            <div class="skill-row special-ability" title="Philosopher's Stone — converts your Gold to Favor at game end (×${gp.philosopherStone} per Gold)">
                 <span class="skill-icon">${SKILL_ICONS.philosopher}</span>
-                <span class="skill-label">Phil. Stone</span>
-                <span class="skill-value has-skill">${gp.philosopherStone}:1</span>
+                <span class="skill-label phil-label">Philosopher's Stone</span>
+                <span class="skill-value has-skill">${gp.philosopherStone}</span>
             </div>`;
     }
     if (mindsEyeCount > 0) {
@@ -1828,7 +1848,7 @@ function buildStatChipsHtml(playerIndex, state) {
 
     if (gp.philosopherStone && gp.philosopherStone > 0) {
         h += `<span class="tv-skill-chip special"
-                    onclick="tvChipTip(event, 'Philosopher\\'s Stone — ${gp.philosopherStone}:1')">
+                    onclick="tvChipTip(event, 'Philosopher\\'s Stone ×${gp.philosopherStone} — converts Gold to Favor at game end')">
                     ${SKILL_ICONS.philosopher}<b>${gp.philosopherStone}</b></span>`;
     }
     const mindsEye = game.getMindsEyeCount(playerIndex);
@@ -1937,27 +1957,28 @@ function renderCardStacks(state) {
         return;
     }
 
-    // Group cards by primary skill
+    // Group cards by family — the card's color, the physical game's language
     const groups = {};
     player.playedCards.forEach(card => {
-        const group = getCardSkillGroup(card);
+        const group = getCardTypeGroup(card);
         if (!groups[group]) groups[group] = [];
         groups[group].push(card);
     });
 
     // Sort groups by defined order
     const sortedKeys = Object.keys(groups).sort((a, b) => {
-        const oa = SKILL_GROUPS[a] ? SKILL_GROUPS[a].order : 99;
-        const ob = SKILL_GROUPS[b] ? SKILL_GROUPS[b].order : 99;
+        const oa = TYPE_GROUPS[a] ? TYPE_GROUPS[a].order : 99;
+        const ob = TYPE_GROUPS[b] ? TYPE_GROUPS[b].order : 99;
         return oa - ob;
     });
 
     let html = '';
     sortedKeys.forEach(key => {
-        const label = SKILL_GROUPS[key] ? SKILL_GROUPS[key].label : 'Other';
+        const g = TYPE_GROUPS[key];
+        const label = g ? g.label : 'Other';
         const cards = groups[key];
 
-        html += '<div class="card-stack">';
+        html += `<div class="card-stack"${g ? ` style="--typeC:${g.color}"` : ''}>`;
         html += `<div class="stack-label">${label}</div>`;
         cards.forEach(card => {
             const doubled = card._favorDoubled ? ' doubled' : '';
@@ -2174,7 +2195,7 @@ function renderTvSkills(state) {
     const mindsEye = game.getMindsEyeCount(0);
     if (hasPhil) {
         h += `<span class="tv-skill-chip special"
-                    onclick="tvChipTip(event, 'Philosopher\\'s Stone — ${gp.philosopherStone}:1')">
+                    onclick="tvChipTip(event, 'Philosopher\\'s Stone ×${gp.philosopherStone} — converts Gold to Favor at game end')">
                     ${SKILL_ICONS.philosopher}<b>${gp.philosopherStone}</b></span>`;
         rows++;
     }
@@ -2254,16 +2275,16 @@ function renderTvBoardThumb(state) {
     el.onclick = () => openBoardOverlay();
 }
 
-// Tucked skill-group stacks — shared by the center stage (your cards)
+// Tucked family stacks — shared by the center stage (your cards)
 // and the rival overlay (their cards read exactly like yours).
 function buildSkillStacks(cards) {
     const groups = {};
     cards.forEach(c => {
-        const g = getCardSkillGroup(c);
+        const g = getCardTypeGroup(c);
         (groups[g] = groups[g] || []).push(c);
     });
     const keys = Object.keys(groups).sort((x, y) =>
-        (SKILL_GROUPS[x] ? SKILL_GROUPS[x].order : 99) - (SKILL_GROUPS[y] ? SKILL_GROUPS[y].order : 99));
+        (TYPE_GROUPS[x] ? TYPE_GROUPS[x].order : 99) - (TYPE_GROUPS[y] ? TYPE_GROUPS[y].order : 99));
     let h = '';
     keys.forEach(k => {
         const list = groups[k];
@@ -2275,7 +2296,7 @@ function buildSkillStacks(cards) {
                        src="assets/cards/regular/${c.filename}" alt="${c.name}"
                        data-peek="assets/cards/regular/${c.filename}">`;
         });
-        h += `<span class="tv-stack-label">${SKILL_GROUPS[k] ? SKILL_GROUPS[k].label : 'Other'}</span></div>`;
+        h += `<span class="tv-stack-label"${TYPE_GROUPS[k] ? ` style="--typeC:${TYPE_GROUPS[k].color}"` : ''}>${TYPE_GROUPS[k] ? TYPE_GROUPS[k].label : 'Other'}</span></div>`;
     });
     return h;
 }
@@ -3016,7 +3037,7 @@ function openOppOverlay(playerIndex) {
             : '<div class="tv-stage-empty">No cards played yet</div>';
         // Fit-to-width: size the stacks so every skill group is visible at
         // once (floor 64px card height — past that the row scrolls).
-        const groups = Math.max(1, new Set(played.map(getCardSkillGroup)).size);
+        const groups = Math.max(1, new Set(played.map(getCardTypeGroup)).size);
         const avail = window.innerWidth * 0.40 - 4;          // tracks the CSS max-width: 40vw
         const per = (avail - (groups - 1) * 10) / groups;    // 10px stack gap
         const fitH = Math.max(64, Math.min(Math.round(per / 0.666), Math.round(window.innerHeight * 0.28)));
@@ -3418,7 +3439,7 @@ function hideActionPanel() {
     // Dismissing it (outside click, etc.) would strand that await and freeze
     // the round — so while it's pending the panel refuses to hide.
     if (window._finalChoicePending) return;
-    document.getElementById('actionPanel').classList.remove('active');
+    document.getElementById('actionPanel').classList.remove('active', 'final-choice');
     selectedHandCard = null;
     // Nothing re-renders the hand here, so the .selected card (z 31)
     // would linger and paint OVER a neighbor's hover-bloom (Wyatt's
@@ -3478,7 +3499,9 @@ function showFinalCardChoice(card) {
         html += '</div></div>';
 
         panel.innerHTML = html;
-        panel.classList.add('active');
+        // final-choice: the card lives in pending (not the hand), so nothing
+        // blooms beside the panel — the panel itself must show the art.
+        panel.classList.add('active', 'final-choice');
         setTargetHighlights(card);
         if (typeof coachTick === 'function') coachTick();
 
@@ -3490,7 +3513,7 @@ function showFinalCardChoice(card) {
                 if (b.dataset.act === 'discard_slide_pick') {
                     openSlidePickerFinal((direction) => {
                         window._finalChoicePending = false;
-                        panel.classList.remove('active');
+                        panel.classList.remove('active', 'final-choice');
                         clearTargetHighlights();
                         resolve(direction < 0 ? 'discard_slide_left' : 'discard_slide_right');
                     });
@@ -3505,13 +3528,14 @@ function showFinalCardChoice(card) {
                         if (!chosen) { panel.classList.add('active'); return; }
                         window._finalBorrowChoice = chosen;
                         window._finalChoicePending = false;
+                        panel.classList.remove('final-choice');
                         clearTargetHighlights();
                         resolve('borrow_play');
                     });
                     return;
                 }
                 window._finalChoicePending = false;
-                panel.classList.remove('active');
+                panel.classList.remove('active', 'final-choice');
                 clearTargetHighlights();
                 resolve(b.dataset.act);
             };
@@ -3902,6 +3926,14 @@ async function activateAllCards(humanAction) {
                 game.players[0]._pendingChemYPick = false;
                 renderGameState();
                 await showChemYPicker();
+            }
+
+            // Life Essence likewise: choose which active mission is freed
+            // of its requirement, right where every client applies it.
+            if (pi === 0 && game.players[0]._pendingLifeEssencePick) {
+                game.players[0]._pendingLifeEssencePick = false;
+                renderGameState();
+                await showLifeEssencePicker();
             }
 
             if (pi !== 0 && game.players[pi]._remoteHuman) {
@@ -4608,6 +4640,54 @@ function showChemYPicker() {
     });
 }
 
+// ═══ LIFE ESSENCE — choose ONE active mission, its requirement is gone ══
+// Faithful to the card: "Choose One of Your Active Missions — This Mission
+// no longer has any Requirement." The blessing is marked on the mission
+// itself and holds for good; completed missions are out of reach.
+function showLifeEssencePicker() {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        const player = game.players[0];
+        const missions = (player.missions || []).filter(m => !m._reqWaived);
+        if (!ov || !missions.length) { resolve(); return; }
+
+        let chosen = 0;
+        const render = () => {
+            const cards = missions.map((m, i) => `
+                <div class="pp-card${chosen === i ? ' chosen' : ''}" data-i="${i}">
+                    <img src="assets/cards/missions/${m.filename}" alt="${m.name}">
+                </div>`).join('');
+            const pick = missions[chosen];
+            ov.innerHTML = `
+                <div class="pp-inner chemy">
+                    <div class="pp-title">Life Essence</div>
+                    <div class="pp-sub">Choose one of your <b>active missions</b> — it will no longer have any requirement</div>
+                    <div class="pp-cards">${cards}</div>
+                    <div class="pp-actions">
+                        <button class="btn-royal primary" id="leConfirm">
+                            <span>Bless ${pick.name} — no requirement</span>
+                        </button>
+                    </div>
+                </div>`;
+            ov.querySelectorAll('.pp-card').forEach(el => {
+                el.onclick = () => { chosen = parseInt(el.dataset.i, 10); render(); };
+            });
+            ov.querySelector('#leConfirm').onclick = () => {
+                const m = missions[chosen];
+                mpPub('lepick', { missionId: m.id });
+                m._reqWaived = true;
+                addLogEntry(`Life Essence blesses ${m.name} — it no longer has any requirement`);
+                showNotification(`${m.name} no longer has any requirement`, 'play');
+                ov.classList.remove('active');
+                renderGameState();
+                resolve();
+            };
+        };
+        render();
+        ov.classList.add('active');
+    });
+}
+
 // ─── SCORING — the victory ceremony ─────────────────────────
 
 // Placement colors: 1st gold, 2nd silver, 3rd bronze, the rest muted.
@@ -4692,37 +4772,45 @@ function showScoring() {
         }
     }
 
-    // What everyone ENDED with — the table talk of the physical game
-    // ("show me your board!"). Purse + all six skills, real token art.
-    const vsHoldings = (pi) => {
-        const gp = game.players[pi];
-        const chip = (img, val, label, cls = '') =>
-            `<span class="vsh-chip ${cls}" title="${label}"><img src="${img}" alt="${label}"><b>${val}</b></span>`;
-        let h = chip(PURSE_ICONS.gold, gp.gold, 'Gold', 'gold')
-            + chip(TOKEN_IMG.prestige, gp.prestige, 'Prestige', 'prestige')
-            + chip(PURSE_ICONS.favor, gp.favor || 0, 'Favor', 'favor')
-            + chip(PURSE_ICONS.scorn, gp.scorn, 'Scorn', 'scorn');
-        ['survival', 'charisma', 'alchemy', 'prospecting', 'knowledge', 'power'].forEach(k => {
-            const v = gp.skills[k] || 0;
-            h += `<span class="vsh-chip skill${v ? '' : ' zero'}" title="${k.charAt(0).toUpperCase() + k.slice(1)}">${SKILL_ICONS[k]}<b>${v}</b></span>`;
-        });
-        return `<div class="vs-holdings">${h}</div>`;
-    };
-
-    // Placement ladder — color-coded, trophies for the podium, totals roll,
-    // and each heir's final holdings laid out beneath their name.
-    const rows = scores.map((s, i) => {
+    // The score sheet from the box — one color-coded grid, heirs across,
+    // categories down, tallied the way the table does it after a real game
+    // (Missions / Adventures / Artifacts / Character / Prestige / Scorn).
+    // Artifacts carries every non-adventure card's favor plus the
+    // Philosopher's Stone gold conversion, so the columns sum to the total.
+    const artAll = (s) => (s.artFavor || 0) + (s.otherCardFavor || 0) + (s.stoneFavor || 0);
+    const SHEET_ROWS = [
+        { label: 'Missions',   icon: 'assets/icons/mission.png',  c: '#c2a14d', v: s => s.missionFavor || 0 },
+        { label: 'Adventures', icon: 'assets/icons/maps.png',     c: '#4c8a63', v: s => s.advFavor || 0 },
+        { label: 'Artifacts',  icon: 'assets/icons/philosopher.png', c: '#8a63a8', v: s => artAll(s) },
+        { label: 'Character',  icon: 'assets/icons/favor.png',    c: '#75695a', v: s => s.characterFavor || 0 },
+        { label: 'Prestige',   icon: 'assets/icons/prestige.png', c: '#3f9fd0', v: s => s.prestige || 0 },
+        { label: 'Scorn',      icon: 'assets/icons/scorn.png',    c: '#c0463e', v: s => s.scorn || 0, neg: true },
+    ];
+    const heads = scores.map((s, i) => {
+        const ch = game.players[s.playerIndex].character;
         const p = VS_PLACES[i];
-        return `<div class="vs-place ${p ? p.cls : 'pn'}${s.playerIndex === 0 ? ' me' : ''}">
-            <div class="vs-place-row">
-                <span class="vs-ord">${VS_ORDINAL[i] || (i + 1) + 'th'}</span>
-                ${p ? vsTrophy(p.color) : '<span class="vs-trophy none"></span>'}
-                <span class="vs-name">${s.name}</span>
-                <b class="vs-total" data-total="${s.finalScore}">0</b>
-            </div>
-            ${vsHoldings(s.playerIndex)}
+        return `<div class="vsg-head${s.playerIndex === 0 ? ' me' : ''}${i === 0 ? ' win' : ''}" style="--ri:0">
+            ${ch && ch.filename ? `<img class="vsg-face" src="assets/characters/${ch.filename}" alt="">` : ''}
+            <span class="vsg-ord"${p ? ` style="color:${p.color}"` : ''}>${p ? vsTrophy(p.color) : ''}${VS_ORDINAL[i] || (i + 1) + 'th'}</span>
+            <span class="vsg-hname">${s.name}</span>
         </div>`;
     }).join('');
+    const bodyRows = SHEET_ROWS.map((r, ri) => {
+        const cells = scores.map((s, i) => {
+            const raw = r.v(s);
+            const txt = r.neg && raw > 0 ? `−${raw}` : `${raw}`;
+            return `<div class="vsg-cell${s.playerIndex === 0 ? ' me' : ''}${i === 0 ? ' win' : ''}${r.neg && raw > 0 ? ' bad' : ''}" style="--rowC:${r.c};--ri:${ri + 1}">${txt}</div>`;
+        }).join('');
+        return `<div class="vsg-label" style="--rowC:${r.c};--ri:${ri + 1}">${r.icon ? `<img src="${r.icon}" alt="">` : ''}<span>${r.label}</span></div>${cells}`;
+    }).join('');
+    const totalCells = scores.map((s, i) =>
+        `<div class="vsg-cell total${s.playerIndex === 0 ? ' me' : ''}${i === 0 ? ' win' : ''}" style="--ri:7"><b data-total="${s.finalScore}" data-cd="1150">0</b></div>`).join('');
+    const grid = `
+        <div class="vs-grid" style="--vsgCols:${scores.length}">
+            <div class="vsg-corner" style="--ri:0"></div>${heads}
+            ${bodyRows}
+            <div class="vsg-label total" style="--rowC:#efe6cf;--ri:7"><img src="${PURSE_ICONS.favor}" alt=""><span>Total</span></div>${totalCells}
+        </div>`;
 
     content.innerHTML = `
         <div class="vs-head${youWon ? ' win' : ''}">
@@ -4731,33 +4819,7 @@ function showScoring() {
             <div class="vs-personal">${personal}</div>
         </div>
         ${deltas ? `<div class="vs-deltas">${deltas}</div>` : ''}
-        <div class="vs-places">${rows}</div>
-        <div class="scoring-scroll">
-            <table class="scoring-table">
-                <tr>
-                    <th>Heir</th>
-                    <th>Mission Favor</th>
-                    <th>Card Favor</th>
-                    <th>Character Favor</th>
-                    <th>Prestige</th>
-                    <th>Scorn</th>
-                    <th>Total</th>
-                    <th>Gold (Tiebreaker)</th>
-                </tr>
-                ${scores.map((s, i) => `
-                    <tr class="vs-${VS_PLACES[i] ? VS_PLACES[i].cls : 'pn'}${i === 0 ? ' winner' : ''}">
-                        <td>${s.name}</td>
-                        <td>${s.missionFavor}</td>
-                        <td>${s.cardFavor}</td>
-                        <td>${s.characterFavor}</td>
-                        <td>${s.prestige}</td>
-                        <td>${s.scorn ? '−' + s.scorn : 0}</td>
-                        <td><strong>${s.finalScore}</strong></td>
-                        <td>${s.gold}</td>
-                    </tr>
-                `).join('')}
-            </table>
-        </div>
+        <div class="scoring-scroll">${grid}</div>
         <div class="scoring-actions">
             <button class="btn-royal primary" onclick="location.reload()">
                 <span>Play Again</span>
@@ -4776,7 +4838,7 @@ function showScoring() {
             b.textContent = Math.round(target * (1 - Math.pow(1 - k, 3)));
             if (k < 1) requestAnimationFrame(tick);
         };
-        setTimeout(() => requestAnimationFrame(tick), 350);
+        setTimeout(() => requestAnimationFrame(tick), parseInt(b.dataset.cd, 10) || 350);
     });
 }
 

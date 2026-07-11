@@ -38,6 +38,11 @@
 
     const NS = 'favor/mp';
 
+    // Lockstep build version — bump whenever engine RULES or the move
+    // stream change shape (both clients must simulate identically). Queue
+    // entries and game records carry it; mismatched builds never pair.
+    const MPV = 2;
+
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.
     const T = {
@@ -88,6 +93,7 @@
             hero: hero || null,
             at: firebase.database.ServerValue.TIMESTAMP,
             hb: firebase.database.ServerValue.TIMESTAMP,
+            ver: MPV,
         };
         // Rating rides the entry so the host can seat the Emblem honestly.
         try {
@@ -132,7 +138,7 @@
                     return;
                 }
                 const live = Object.entries(pool)
-                    .filter(([, e]) => e && !e.gameId
+                    .filter(([, e]) => e && !e.gameId && e.ver === MPV
                         && (typeof e.hb !== 'number' || now() - e.hb < T.fresh))
                     .sort((a, b) => (a[1].at - b[1].at) || (a[0] < b[0] ? -1 : 1));
                 if (onState) onState('searching', { others: Math.max(0, live.length - 1) });
@@ -239,7 +245,7 @@
         }
 
         const rec = {
-            created: now(), size, status: 'live',
+            created: now(), size, status: 'live', ver: MPV,
             seed: Math.floor(Math.random() * 0x7fffffff) || 1,
             hostUid: uid(), roster, emblemSeat, boonSeat,
         };
@@ -258,7 +264,10 @@
     async function joinGame(gid) {
         const snap = await fdb().ref(`${NS}/games/${gid}`).get();
         const rec = snap.val();
-        if (!rec || rec.status !== 'live') return null;
+        // A stale-build host (no ver / old ver) simulates different rules —
+        // refuse the seat; our solo-window timer still lands us a table,
+        // and their side AFK-boots the ghost seat to AI.
+        if (!rec || rec.status !== 'live' || rec.ver !== MPV) return null;
         return attachGame(gid, rec);
     }
 

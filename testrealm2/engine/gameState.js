@@ -1031,15 +1031,15 @@ class FavorGame {
                 break;
 
             case 'coin_flip_4_power':
-                // Liquid Courage: 50% chance to gain 4 power for melee
+                // Shot of Courage: next Melee, flip a coin — heads = +4 Power
                 {
                     const won = this._rand() < 0.5;
                     if (won) {
                         if (!player.powerBonuses) player.powerBonuses = [];
                         player.powerBonuses.push({ amount: 4, act: this.currentAct, source: card.name });
-                        this.addLog(`${player.name}'s Liquid Courage: HEADS! +4 Power for melee`);
+                        this.addLog(`${player.name}'s ${card.name}: HEADS! +4 Power for melee`);
                     } else {
-                        this.addLog(`${player.name}'s Liquid Courage: TAILS! No bonus`);
+                        this.addLog(`${player.name}'s ${card.name}: TAILS! No bonus`);
                     }
                 }
                 break;
@@ -1181,9 +1181,34 @@ class FavorGame {
                 break;
 
             case 'remove_mission_requirements':
-                // Life Essence: next mission auto-succeeds
-                player.removeMissionRequirements = true;
-                this.addLog(`${player.name}'s Life Essence: next mission ignores requirements`);
+                // Life Essence, per the card: "Choose One of Your Active
+                // Missions — This Mission no longer has any Requirement."
+                // ONE active (not yet resolved) mission is chosen and marked
+                // _reqWaived for good. With no active missions the potion
+                // simply rests on the field (cards that count potions still
+                // see it).
+                {
+                    const active = (player.missions || []).filter(m => !m._reqWaived);
+                    if (!active.length) {
+                        this.addLog(`${player.name}'s Life Essence: no active missions — the essence rests`);
+                        break;
+                    }
+                    if (playerIndex === 0 || player._remoteHuman) {
+                        // Human (local or remote) chooses via picker/stream
+                        // right after this activation resolves.
+                        player._pendingLifeEssencePick = true;
+                    } else {
+                        // AI: waive the mission it is least likely to meet —
+                        // the highest-value one that currently fails; if all
+                        // pass today, protect the most valuable anyway.
+                        const failing = active.filter(m => !this.probeMissionRequirements(playerIndex, m).success);
+                        const pool = failing.length ? failing : active;
+                        const best = pool.reduce((a, b) =>
+                            (this.missionFavorEstimate(playerIndex, b) > this.missionFavorEstimate(playerIndex, a) ? b : a));
+                        best._reqWaived = true;
+                        this.addLog(`${player.name}'s Life Essence: ${best.name} no longer has any requirement`);
+                    }
+                }
                 break;
 
             case 'remove_13_scorn':
@@ -1458,12 +1483,11 @@ class FavorGame {
      * exactly like card borrows (2g per unit, paid to the lender), or null
      * when it can't: any Mind's Eye / Philosopher's Stone / Gold / Favor gap
      * is unborrowable, and gold must cover the fee WITHOUT breaking a
-     * hold-N-gold requirement. Pure analysis — no side effects (never calls
-     * checkMissionRequirements, which consumes Life Essence).
+     * hold-N-gold requirement. Pure analysis — no side effects.
      */
     missionBorrowPlan(playerIndex, mission) {
         const player = this.players[playerIndex];
-        if (player.removeMissionRequirements) return null; // succeeds on its own
+        if (mission._reqWaived) return null; // Life Essence: succeeds on its own
 
         const reqCounts = {};
         (mission.requirements || []).forEach(req => { reqCounts[req] = (reqCounts[req] || 0) + 1; });
@@ -1659,21 +1683,9 @@ class FavorGame {
     }
 
     checkMissionRequirements(playerIndex, mission) {
-        const player = this.players[playerIndex];
-
-        // Life Essence: next mission auto-succeeds, ignore requirements.
-        // THIS CONSUMES IT — only a real turn-in/resolve may call this.
-        // Anything that just wants a verdict (button labels, the mission
-        // browser) must use probeMissionRequirements below.
-        if (player.removeMissionRequirements) {
-            player.removeMissionRequirements = false; // Consumed
-            this.addLog(`${player.name}'s Life Essence: mission requirements bypassed!`);
-            return {
-                success: true,
-                details: { missing: [], canBorrow: {}, lifeEssenceUsed: true }
-            };
-        }
-
+        // Pure since the Life Essence rework: the waiver is chosen at play
+        // time and lives ON the mission (_reqWaived), so checking is safe
+        // from anywhere. Kept as the resolve-time entry point.
         return this.probeMissionRequirements(playerIndex, mission);
     }
 
@@ -1686,10 +1698,11 @@ class FavorGame {
     probeMissionRequirements(playerIndex, mission) {
         const player = this.players[playerIndex];
 
-        if (player.removeMissionRequirements) {
+        // Life Essence already blessed this mission — no requirement at all.
+        if (mission._reqWaived) {
             return {
                 success: true,
-                details: { missing: [], canBorrow: {}, lifeEssenceWould: true }
+                details: { missing: [], canBorrow: {}, reqWaived: true }
             };
         }
 
@@ -2172,13 +2185,18 @@ class FavorGame {
                 if (m.favorValue) missionFavor += m.favorValue;
             });
 
-            // Favor from adventure and artifact cards (static + dynamic).
+            // Favor from played cards (static + dynamic), split by family
+            // for the score sheet: Adventures / Artifacts / everything else.
             // Chemical Y's chosen adventure counts double (_favorDoubled).
-            let cardFavor = 0;
+            let advFavor = 0, artFavor = 0, otherCardFavor = 0;
             p.playedCards.forEach(card => {
-                if (card.favor) cardFavor += card.favor * (card._favorDoubled ? 2 : 1);
-                cardFavor += this.dynamicCardFavor(i, card);
+                const f = (card.favor ? card.favor * (card._favorDoubled ? 2 : 1) : 0)
+                        + this.dynamicCardFavor(i, card);
+                if (card.type === 'adventure') advFavor += f;
+                else if (card.type === 'artifact') artFavor += f;
+                else otherCardFavor += f;
             });
+            const cardFavor = advFavor + artFavor + otherCardFavor;
 
             // Character favor from current slider position
             let characterFavor = p.favor;
@@ -2207,6 +2225,9 @@ class FavorGame {
                 name: p.name,
                 missionFavor,
                 cardFavor,
+                advFavor,
+                artFavor,
+                otherCardFavor,
                 characterFavor,
                 stoneFavor,
                 totalFavor,

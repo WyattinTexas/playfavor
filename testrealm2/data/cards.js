@@ -151,13 +151,13 @@ window.FAVOR_DATA.cards = [
     cost: null, skills: [], requirements: ["alchemy", "alchemy", "alchemy", "philosopher_stone"], rewards: {},
     special: "multiply_gold_x2" },
 
-  { id: cid(), name: "Shot of Courage", audit: "Pick one of your missions to no longer have a requirement to succeed, Req: 4 Alchemy & 1 Minds Eye, Act 3", filename: "Liquid Wind Card.jpg", act: 3, type: "potion",
+  { id: cid(), name: "Shot of Courage", audit: "Next Melee Flip a coin if the result is heads gain +4 Power, Req: 3 Alchemy & 3 Prospecting, Act 3", filename: "Liquid Wind Card.jpg", act: 3, type: "potion",
     cost: null, skills: [],
-    requirements: ["alchemy", "alchemy", "alchemy", "alchemy", "minds_eye"],
+    requirements: ["alchemy", "alchemy", "alchemy", "prospecting", "prospecting", "prospecting"],
     rewards: {}, special: "coin_flip_4_power" },
 
-  { id: cid(), name: "Life Essence", audit: "Next Melee Flip a coin if the result is heads gain +5 Power, Req: 3 Alchemy & 3 Prospecting, Act 3", filename: "Stream of Life Card.jpg", act: 3, type: "potion",
-    cost: null, skills: [], requirements: ["alchemy", "alchemy", "alchemy", "prospecting", "prospecting", "prospecting"], rewards: {},
+  { id: cid(), name: "Life Essence", audit: "Choose one of your Active Missions: this Mission no longer has any Requirement, Req: 4 Alchemy & 1 Minds Eye, Act 3", filename: "Stream of Life Card.jpg", act: 3, type: "potion",
+    cost: null, skills: [], requirements: ["alchemy", "alchemy", "alchemy", "alchemy", "minds_eye"], rewards: {},
     special: "remove_mission_requirements" },
 
   { id: cid(), name: "Mind Eraser", audit: "Remove 15 Scorn, Req: 1 Prospecting & 1 Alchemy, Act 3", filename: "Trouble Brew Card.jpg", act: 2, type: "potion",
@@ -198,8 +198,8 @@ window.FAVOR_DATA.cards = [
     requirements: ["knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "minds_eye", "philosopher_stone"],
     rewards: {}, favor: 22, combo: "Finding the Lost Corridor" },
 
-  { id: cid(), name: "Great North Connection", grantsMap: "Market Trade Exchange", reqMaps: ["Helping the Merchant"], audit: "You may borrow Survival/Alchemy/Charisma/Prospecting from any player & 10 Favor & Market Trade Exchange Map, Req: 3 Charisma & 3 Power OR Helping the Merchant Map, Act 2", filename: "The Great Nort Connection Card.jpg", act: 2, type: "adventure",
-    cost: null, skills: [], requirements: ["charisma", "charisma", "charisma", "power", "power", "power"], rewards: {}, favor: 10,
+  { id: cid(), name: "Great North Connection", grantsMap: "Market Trade Exchange", reqMaps: ["Helping the Merchant"], audit: "You may borrow Survival/Alchemy/Charisma/Prospecting from any player & 5 Favor & Market Trade Exchange Map, Req: 1 Charisma & 1 Power OR Helping the Merchant Map, Act 2", filename: "The Great Nort Connection Card.jpg", act: 2, type: "adventure",
+    cost: null, skills: [], requirements: ["charisma", "power"], rewards: {}, favor: 5,
     special: "trade_route" },
 
   { id: cid(), name: "The Alchemist's Daughter", audit: "1 Alchemy & 1 Mind's Eye & 18 Favor, Req: 5 Charisma, 5 Alchemy, 5 Power, Act 3", filename: "The Great Eagle Rider Card.jpg", act: 3, type: "adventure",
