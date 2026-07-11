@@ -409,7 +409,22 @@
         hostEl.appendChild(coin);
         void coin.offsetWidth;
         coin.classList.add(won ? 'flip-heads' : 'flip-tails');
-        setTimeout(() => coin.remove(), 2200 * speed);
+        // lands at ~1600ms, then HOLDS 2s so the result face can be read
+        setTimeout(() => coin.remove(), 3900 * speed);
+      };
+
+      // The coin's verdict floats up from where it landed: power token +N on
+      // heads, the token crossed out in red on tails.
+      const coinResultFloat = (hostEl, won, amt) => {
+        const fl = document.createElement('div');
+        fl.className = 'ms-coinres';
+        fl.innerHTML = won
+          ? `<img src="${powerIcon}" alt=""><b>+${amt}</b>`
+          : `<span class="ms-coinres-tok"><img src="${powerIcon}" alt=""><i>✕</i></span>`;
+        hostEl.appendChild(fl);
+        void fl.offsetWidth;
+        fl.classList.add('go');
+        setTimeout(() => fl.remove(), 2400 * speed);
       };
 
       // A red bolt from one fighter to another (Fuzzy Head's strike).
@@ -549,20 +564,21 @@
             } else {
               flipCoin(calloutHost, step.won);
             }
-            await delay(1750); if (run.killed) { if (feat) feat.remove(); return; }
-            if (feat) {
-              await delay(500); if (run.killed) { feat.remove(); return; }
-              await featureHide(feat); if (run.killed) return;
-            }
+            // coin lands at ~1600ms; the verdict floats from it and the landed
+            // face HOLDS 2s so the result is actually readable before the card
+            // leaves the stage. The float replaces the old +4/Tails callouts.
+            const coinHost = feat ? feat.querySelector('.ms-feature-coinslot') : calloutHost;
+            await delay(1650); if (run.killed) { if (feat) feat.remove(); return; }
+            coinResultFloat(coinHost, step.won, step.amount);
+            await delay(2000); if (run.killed) { if (feat) feat.remove(); return; }
+            if (feat) { await featureHide(feat); if (run.killed) return; }
             if (step.won) {
               dispBase[pi] += step.amount;
               refreshCount(pi, 380);
-              showCallout(calloutHost, { kind: 'coin', label: step.label, amount: step.amount });
               if (cu) dealRowItem(cu, '+' + step.amount, 'mod');
               bump(el);
               sparkBurst(el, 6, 0.2);
             } else {
-              showCallout(calloutHost, { kind: 'miss', label: step.label }, 'Tails');
               if (cu) dealRowItem(cu, '0', 'mod');
             }
             await delay(700); if (run.killed) return;

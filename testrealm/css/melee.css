@@ -543,6 +543,33 @@
 .ms-coin-face.tails { background-image: url('../assets/ui/coin-tails.png'); transform: rotateY(180deg); }
 .ms-coin.flip-heads { animation: msCoinH 1.6s linear forwards; }
 .ms-coin.flip-tails { animation: msCoinT 1.6s linear forwards; }
+/* Coin verdict — floats up from the landed coin: power token +N on heads,
+   the token crossed out in red on tails. */
+.ms-coinres {
+    position: absolute; left: 50%; bottom: -12px; z-index: 12;
+    display: flex; align-items: center; gap: 5px;
+    font-family: 'Cinzel', serif; font-weight: 900;
+    font-size: clamp(20px, 3.2dvh, 28px);
+    color: #8fe6a0; text-shadow: 0 0 12px rgba(120,230,150,0.65), 0 2px 4px rgba(0,0,0,0.9);
+    opacity: 0; pointer-events: none; white-space: nowrap;
+}
+.ms-coinres img { width: clamp(22px, 3.6dvh, 30px); height: auto; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.6)); }
+.ms-coinres-tok { position: relative; display: block; }
+.ms-coinres-tok i {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-style: normal; color: #ff5f4d; font-size: 1.25em;
+    text-shadow: 0 0 10px rgba(255,90,70,0.8), 0 2px 4px rgba(0,0,0,0.9);
+}
+.ms-coinres.go { animation: msCoinRes 2.2s ease-out forwards; }
+@keyframes msCoinRes {
+    0%   { opacity: 0; transform: translate(-50%, 10px) scale(0.6); }
+    14%  { opacity: 1; transform: translate(-50%, -8px) scale(1.15); }
+    26%  { transform: translate(-50%, -14px) scale(1); }
+    80%  { opacity: 1; transform: translate(-50%, -46px); }
+    100% { opacity: 0; transform: translate(-50%, -78px); }
+}
+/* over the featured card: rise from the coin (coinslot anchor is 0×0) */
+.ms-feature .ms-coinres { bottom: auto; top: -34px; }
 /* Fast spin on the way up, hang at the top, decelerating spin down, bounce.
    Heads ends at a multiple of 360°; tails at +180°. */
 @keyframes msCoinH {
