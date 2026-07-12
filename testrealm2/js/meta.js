@@ -869,6 +869,12 @@
     const PAYPAL_BUSINESS = 'gablewyatt@gmail.com';
     const IPN_NOTIFY_URL = 'https://nationgame.live/api/favor/paypal/ipn';
 
+    // The iOS shell (WKWebView, UA carries "FavorShell-iOS") must not show
+    // an external purchase rail — Apple 3.1.1. The Mint simply doesn't
+    // exist there; Stars still arrive from play, daily crowns, and any
+    // purchase made on the web (same favorUid account).
+    const IOS_SHELL = /FavorShell-iOS/.test(navigator.userAgent);
+
     let _confirmingPack = null;
     let _starsWatch = null;    // { baseline } while a PayPal tab may be paying
 
@@ -893,6 +899,7 @@
     }
 
     function askBuyStars(packId) {
+        if (IOS_SHELL) return;                // no purchase rail on iOS (3.1.1)
         if (mode !== 'firebase') return;      // Mint is closed offline
         _confirmingPack = packId;
         renderStore();
@@ -900,7 +907,7 @@
 
     function buyStars(packId) {
         const pack = STAR_PACKS.find(p => p.id === packId);
-        if (!pack || mode !== 'firebase') return;
+        if (!pack || IOS_SHELL || mode !== 'firebase') return;
         _confirmingPack = null;
         localStorage.setItem('favorPendingStars', JSON.stringify({
             packId, stars: pack.stars, at: Date.now(),
@@ -961,6 +968,7 @@
     function renderStorePacks() {
         const row = document.getElementById('storePacks');
         if (!row) return;
+        if (IOS_SHELL) { row.innerHTML = ''; return; }
         const online = mode === 'firebase';
         row.innerHTML = STAR_PACKS.map(p => {
             const confirming = _confirmingPack === p.id;
@@ -1009,6 +1017,7 @@
     // ── Boot ─────────────────────────────────────────────────────────
 
     async function boot() {
+        if (IOS_SHELL) document.body.classList.add('ios-shell');
         bindQueuePicker();
         await connect();
         await readPlayer();

@@ -209,6 +209,8 @@ html, body {
 .menu-link:hover { color: var(--gold-light); }
 .menu-link.mint-link { color: #ffd97a; text-shadow: 0 0 8px rgba(240, 200, 110, 0.35); }
 .menu-link.mint-link:hover { color: #ffe9ad; }
+/* iOS shell: no external purchase rail anywhere (Apple 3.1.1) */
+.ios-shell .mint-link, .ios-shell .st-mint { display: none !important; }
 
 /* Portrait / narrow: the stage stacks — art above, column below. */
 @media (orientation: portrait), (max-width: 640px) {
