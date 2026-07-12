@@ -4975,126 +4975,6 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     animation: peekIn 0.14s cubic-bezier(0.2, 1.3, 0.3, 1);
 }
 
-/* ═══ MELEE SPLASH — end-of-act tournament moment ═══════════════════ */
-
-#meleeSplash {
-    position: fixed;
-    inset: 0;
-    z-index: 10600; /* the act's big moment — nothing sits on top of the Melee */
-    display: none;
-    align-items: center;
-    justify-content: center;
-    background: radial-gradient(ellipse at center, rgba(30,14,6,0.88), rgba(8,4,2,0.96));
-    backdrop-filter: blur(3px);
-    cursor: pointer;
-}
-#meleeSplash.active { display: flex; animation: msFade 0.3s ease; }
-
-.ms-inner {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    max-width: 94vw;
-    max-height: 96dvh;
-}
-.ms-banner {
-    font-family: 'Cinzel', serif;
-    font-weight: 900;
-    letter-spacing: 8px;
-    font-size: clamp(20px, 7dvh, 36px);
-    color: var(--gold-light);
-    text-transform: uppercase;
-    text-shadow: 0 0 24px rgba(201,168,76,0.55), 0 3px 6px rgba(0,0,0,0.8);
-    display: flex;
-    align-items: baseline;
-    gap: 14px;
-    animation: msBanner 0.5s cubic-bezier(0.2, 1.4, 0.3, 1);
-}
-.ms-act {
-    font-size: 0.45em;
-    letter-spacing: 4px;
-    color: var(--gold-dark);
-}
-.ms-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: min(500px, 92vw);
-    overflow-y: auto;
-    overflow-x: hidden;   /* rows slide in from ±46px — no scrollbar flash */
-    padding: 4px;
-}
-.ms-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 5px 14px;
-    border: 1px solid rgba(201,168,76,0.25);
-    border-radius: 10px;
-    background: linear-gradient(90deg, rgba(46,26,12,0.88), rgba(24,12,5,0.92));
-    opacity: 0;
-    transform: translateX(-46px);
-    animation: msRow 0.45s cubic-bezier(0.2, 1.2, 0.3, 1) forwards;
-}
-.ms-row:nth-child(even) { transform: translateX(46px); }
-.ms-row.winner {
-    border-color: var(--gold-light);
-    box-shadow: 0 0 20px rgba(201,168,76,0.45);
-}
-.ms-place {
-    font-family: 'Cinzel', serif;
-    font-size: 11px;
-    color: var(--gold-dark);
-    width: 30px;
-    flex-shrink: 0;
-}
-.ms-row.winner .ms-place { color: var(--gold-light); }
-.ms-portrait {
-    width: 34px; height: 34px;
-    border-radius: 6px;
-    object-fit: cover;
-    border: 1px solid rgba(201,168,76,0.4);
-    flex-shrink: 0;
-}
-.ms-name {
-    font-family: 'Cinzel', serif;
-    font-size: 13px;
-    color: var(--gold);
-    flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.ms-row.winner .ms-name { color: #ffe9ad; }
-.ms-power { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
-.ms-power img { width: 18px; height: 18px; }
-.ms-power b {
-    font-family: 'Cinzel', serif;
-    font-size: 16px;
-    color: #ffd97a;
-    min-width: 26px;
-    text-align: right;
-}
-.ms-prestige {
-    font-family: 'Cinzel', serif;
-    font-size: 10px;
-    color: #8fd4ff;
-    width: 88px;
-    text-align: right;
-    flex-shrink: 0;
-}
-.ms-hint {
-    font-family: 'Cinzel', serif;
-    font-size: 10px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: var(--gold-dark);
-    opacity: 0.7;
-}
-@keyframes msRow { to { opacity: 1; transform: none; } }
-@keyframes msBanner { from { opacity: 0; transform: scale(1.35); } }
-@keyframes msFade { from { opacity: 0; } }
 
 /* ═══ MISSION CEREMONY — the missions phase, player by player ═══════ */
 
@@ -5119,7 +4999,38 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     max-height: 100dvh;
     padding: 3vh 4vw;
 }
-.mc-inner .ms-banner { animation: msBanner 0.45s cubic-bezier(0.16, 1, 0.3, 1); }
+/* The ceremony borrows the old splash's banner/act/hint classes — their
+   rules live HERE now (the melee splash moved to css/melee.css, whose
+   bare .ms-* rules must not restyle the ceremony). */
+.mc-inner .ms-banner {
+    font-family: 'Cinzel', serif;
+    font-weight: 900;
+    letter-spacing: 8px;
+    font-size: clamp(20px, 7dvh, 36px);
+    color: var(--gold-light);
+    text-transform: uppercase;
+    text-shadow: 0 0 24px rgba(201,168,76,0.55), 0 3px 6px rgba(0,0,0,0.8);
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    animation: msBanner 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mc-inner .ms-act {
+    font-size: 0.45em;
+    letter-spacing: 4px;
+    color: var(--gold-dark);
+}
+.mc-inner .ms-hint {
+    position: static;
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--gold-dark);
+    opacity: 0.7;
+    animation: none;
+}
+@keyframes msBanner { from { opacity: 0; transform: scale(1.35); } }
 .mc-banner-icon {
     width: 30px; height: 30px;
     object-fit: contain;

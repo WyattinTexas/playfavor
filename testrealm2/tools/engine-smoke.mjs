@@ -815,6 +815,60 @@ console.log('── Great North Connection plays as printed: 1 Charisma & 1 Powe
   ok(g2.checkRequirements(0, gnc2).canPlay === true, 'Mining Guild flex covers the Charisma requirement');
 }
 
+console.log('── powerBreakdown: the Melee forge arithmetic is engine truth');
+{
+  const g = newGame();
+  g.currentAct = 1;                          // melee rewards are per-act
+  const [p0, p1, p2] = g.players;
+  // p0: board+cards 6 own, casts Fuzzy Head, ×2 (legacy flag — no card sets
+  // it in current data, the fallback label covers it).
+  p0.skills.power = 6;
+  p0.playedCards = [{ ...cardByName('Reckless Training') }, { ...cardByName('Fuzzy Head') }];
+  p0.powerX2 = g.currentAct;
+  // p1: 6 power, a WON coin (+4), Guardian absorbs the incoming bolt.
+  p1.skills.power = 6;
+  p1.playedCards = [{ ...cardByName('Shot of Courage') }, { ...cardByName('Guardian') }];
+  p1.defendTheThrone = true;
+  g._rand = () => 0.2;                       // heads
+  g.resolveSpecial(1, p1.playedCards[0]);
+  // p2: 2 power, a LOST coin.
+  p2.skills.power = 2;
+  p2.playedCards = [{ ...cardByName('Shot of Courage') }];
+  g._rand = () => 0.9;                       // tails
+  g.resolveSpecial(2, p2.playedCards[0]);
+  // Fuzzy Head wounds land on p1 and p2, tagged with the caster.
+  g.resolveSpecial(0, p0.playedCards[1]);
+
+  const results = g.resolveMelee();          // consumes the Guardian, records it
+  for (const r of results) {
+    const bd = g.powerBreakdown(r.playerIndex);
+    ok(bd.computedTotal === r.power,
+      `p${r.playerIndex}: breakdown total = melee tally (${bd.computedTotal}/${r.power})`);
+    const wounds = (g.players[r.playerIndex].powerDebuffs || [])
+      .filter(d => d.act === g.currentAct).reduce((a, d) => a + d.amount, 0);
+    ok(bd.ownRawTotal + wounds === bd.rawTotal, `p${r.playerIndex}: own + wounds = raw`);
+    ok(bd.baseOther + bd.baseCards.reduce((a, c) => a + c.amount, 0) === bd.base,
+      `p${r.playerIndex}: base fully attributed`);
+  }
+  const bd0 = g.powerBreakdown(0), bd1 = g.powerBreakdown(1), bd2 = g.powerBreakdown(2);
+  const atk = bd0.steps.find(s => s.kind === 'attack');
+  ok(!!atk && atk.hits.length === 2 && atk.hits.every(h => h.delta === -3),
+    'caster carries the attack step with both bolts');
+  ok(bd0.steps.some(s => s.kind === 'mult' && s.amount === 2), 'the ×2 rides as a mult step');
+  ok(bd0.baseCards.some(c => c.name === 'Reckless Training' && c.amount === 2),
+    'power cards attributed in the base');
+  ok(bd1.steps.some(s => s.kind === 'coinflip' && s.won === true), 'won coin revealed as a live toss');
+  ok(!bd1.steps.some(s => s.kind === 'bonus' && /Shot of Courage/.test(s.label)),
+    'won coin is NOT double-shown as a bonus');
+  ok(bd1.steps.some(s => /Guardian/.test(s.label) && s.amount === 3),
+    "Guardian's negation gives the bolt back");
+  ok(bd2.steps.some(s => s.kind === 'coinflip' && s.won === false), 'lost coin still shows its toss');
+  const snap = JSON.stringify(g.players.map(p => ({ ...p, character: undefined })));
+  g.powerBreakdown(0); g.powerBreakdown(1); g.powerBreakdown(2);
+  ok(JSON.stringify(g.players.map(p => ({ ...p, character: undefined }))) === snap,
+    'powerBreakdown is pure — reading it moves nothing');
+}
+
 console.log('── Score sheet split: adventures + artifacts + other = card favor');
 {
   const g = newGame();

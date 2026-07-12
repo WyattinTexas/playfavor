@@ -5391,61 +5391,36 @@ function showMissionCeremony(missionResults, actNum) {
     });
 }
 
+// ═══ MELEE — end-of-act battle & coronation cinematic ═════════════════
+// The reveal itself lives in js/melee.js (Skylar's system — self-contained,
+// it also drives testrealm/tools/melee-preview.html). Here we just hand it
+// the results, the portraits and the engine's power arithmetic, and await
+// the promise so the act flow waits for the moment. Unattended it advances
+// on its own (per-fighter fallback + autoClose), so MP never stalls on a seat.
 function showMeleeSplash(results, actNum) {
-    return new Promise((resolve) => {
-        const el = document.getElementById('meleeSplash');
-        if (!el || !results || !results.length) { resolve(); return; }
-        const acts = ['I', 'II', 'III'];
-
-        const rows = results.map((r, idx) => {
-            const pi = (r.playerIndex != null) ? r.playerIndex : game.players.findIndex(p => p.name === r.name);
-            const char = pi >= 0 && game.players[pi] && game.players[pi].character ? game.players[pi].character : null;
-            const img = char ? `assets/characters/${char.filename}` : 'assets/ui/cover.jpg';
-            return `<div class="ms-row${idx === 0 ? ' winner' : ''}" style="animation-delay:${0.25 + idx * 0.14}s">
-                <span class="ms-place">${['1st','2nd','3rd','4th','5th'][r.placement - 1] || r.placement + 'th'}</span>
-                <img class="ms-portrait" src="${img}" alt="">
-                <span class="ms-name">${r.name}</span>
-                <span class="ms-power"><img src="assets/icons/power.png" alt=""><b data-power="${r.power}">0</b></span>
-                <span class="ms-prestige">${r.prestige ? `+${r.prestige} Prestige` : ''}</span>
-            </div>`;
-        }).join('');
-
-        el.innerHTML = `
-            <div class="ms-inner">
-                <div class="ms-banner">⚔ &nbsp;Melee&nbsp; ⚔<span class="ms-act">Act ${acts[actNum - 1] || actNum}</span></div>
-                <div class="ms-rows">${rows}</div>
-                <div class="ms-hint">tap to continue</div>
-            </div>`;
-        el.classList.add('active');
-
-        // Roll every Power count up from 0 (ease-out).
-        el.querySelectorAll('.ms-power b').forEach(b => {
-            const target = parseInt(b.dataset.power, 10) || 0;
-            const dur = 750;
-            let t0 = null;
-            const tick = (t) => {
-                if (!el.classList.contains('active')) return;
-                if (t0 === null) t0 = t;
-                const k = Math.min(1, (t - t0) / dur);
-                b.textContent = Math.round(target * (1 - Math.pow(1 - k, 3)));
-                if (k < 1) requestAnimationFrame(tick);
-            };
-            setTimeout(() => requestAnimationFrame(tick), 420);
-        });
-
-        let closed = false;
-        const close = () => {
-            if (closed) return;
-            closed = true;
-            el.classList.remove('active');
-            el.onclick = null;
-            setTimeout(resolve, 260);
-        };
-        el.onclick = close;
-        const hold = (2100 + results.length * 500) * (window.CINEMATIC_SPEED || 1);
-        setTimeout(close, hold);
+    const el = document.getElementById('meleeSplash');
+    if (!el || !results || !results.length || typeof playMeleeCinematic !== 'function') {
+        return Promise.resolve();
+    }
+    const musicBtn = document.getElementById('musicBtn');
+    return playMeleeCinematic(el, results, actNum, {
+        speed: window.CINEMATIC_SPEED || 1,
+        sound: !(musicBtn && musicBtn.classList.contains('muted')),
+        powerIcon: 'assets/icons/power.png',
+        portraitFor: (pi) => {
+            const p = (pi != null && game.players[pi]) ? game.players[pi] : null;
+            return p && p.character ? `assets/characters/${p.character.filename}` : 'assets/ui/cover.jpg';
+        },
+        breakdownFor: (pi) => (typeof game.powerBreakdown === 'function' ? game.powerBreakdown(pi) : null),
+        // Mission cards live in their own art folder.
+        cardImgFor: (filename, mission) => (filename ? `assets/cards/${mission ? 'missions' : 'regular'}/${filename}` : null),
+        // Physical prestige token art by denomination (25 lacks the "Copy of" prefix).
+        prestigeTokenFor: (d) => (d === 25
+            ? 'assets/tokens/Tokens_Design_v1_Prestige_25_v1.jpg'
+            : `assets/tokens/Copy of Tokens_Design_v1_Prestige_${d}_v1.jpg`)
     });
 }
+
 
 // ─── CARD ZOOM ─────────────────────────────────────────────
 

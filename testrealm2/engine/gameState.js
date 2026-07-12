@@ -1024,19 +1024,26 @@ class FavorGame {
                 for (let i = 0; i < this.playerCount; i++) {
                     if (i !== playerIndex) {
                         if (!this.players[i].powerDebuffs) this.players[i].powerDebuffs = [];
-                        this.players[i].powerDebuffs.push({ amount: -3, act: this.currentAct, source: card.name });
+                        // `from` records the caster so the Melee can fire its bolts.
+                        this.players[i].powerDebuffs.push({ amount: -3, act: this.currentAct, source: card.name, from: playerIndex });
                         this.addLog(`${this.players[i].name} receives -3 power from ${player.name}'s Fuzzy Head`);
                     }
                 }
                 break;
 
             case 'coin_flip_4_power':
-                // Shot of Courage: next Melee, flip a coin — heads = +4 Power
+                // Shot of Courage: next Melee, flip a coin — heads = +4 Power.
+                // The outcome is decided HERE (seeded — MP lockstep) but
+                // recorded on coinFlips win OR lose, so the Melee can reveal
+                // it as a live toss. `coin` tags the won bonus so
+                // powerBreakdown shows ONE coin step, not a bonus + a toss.
                 {
                     const won = this._rand() < 0.5;
+                    if (!player.coinFlips) player.coinFlips = [];
+                    player.coinFlips.push({ source: card.name, act: this.currentAct, won: won, amount: 4 });
                     if (won) {
                         if (!player.powerBonuses) player.powerBonuses = [];
-                        player.powerBonuses.push({ amount: 4, act: this.currentAct, source: card.name });
+                        player.powerBonuses.push({ amount: 4, act: this.currentAct, source: card.name, coin: true });
                         this.addLog(`${player.name}'s ${card.name}: HEADS! +4 Power for melee`);
                     } else {
                         this.addLog(`${player.name}'s ${card.name}: TAILS! No bonus`);
@@ -2110,8 +2117,11 @@ class FavorGame {
             // Defend the Throne: negate the first power reduction
             if (totalDebuff < 0 && player.defendTheThrone) {
                 // Negate the first -3 debuff (absorb one instance)
+                const absorbed = Math.min(3, -totalDebuff);
                 totalDebuff = Math.min(0, totalDebuff + 3);
                 player.defendTheThrone = false; // Used up
+                // Recorded so powerBreakdown can SHOW the negation truthfully.
+                player._throneDefended = { act: this.currentAct, amount: absorbed };
             }
 
             power += totalDebuff;
@@ -2124,6 +2134,132 @@ class FavorGame {
 
         // Power cannot go below 0
         return Math.max(0, power);
+    }
+
+    /**
+     * The Melee cinematic's arithmetic — calculatePower, ATTRIBUTED. Pure
+     * (no defendTheThrone consumption; it reads what calculatePower already
+     * recorded). Contract (js/melee.js): { base, baseOther, baseCards,
+     * steps, ownRawTotal, rawTotal, sliderPosition, computedTotal } where
+     *   · baseCards = every power-granting played card / completed mission
+     *   · steps: bonus / coinflip (won) / attack (hits[] — wounds I DEAL;
+     *     wounds I take arrive via the attacker's hits, no step of my own)
+     *     / mult (×2, engine applies it last)
+     *   · ownRawTotal + wounds-I-take === rawTotal; max(0, rawTotal) ===
+     *     computedTotal === calculatePower. The meters lock to these, so
+     *     the reveal can never drift from the engine's tally.
+     */
+    powerBreakdown(playerIndex) {
+        const player = this.players[playerIndex];
+        const act = this.currentAct;
+        const steps = [];
+        const base = player.skills.power || 0;
+        const artOf = (name) => {
+            const c = player.playedCards.find(x => x.name === name);
+            return c ? (c.filename || null) : null;
+        };
+
+        // Attribute the base: every power-granting played card, every
+        // completed mission whose success reward paid power, and
+        // baseOther = whatever remains (the character board's slot).
+        const baseCards = [];
+        player.playedCards.forEach(c => {
+            const n = (c.skills || []).filter(s => s === 'power').length;
+            if (n > 0) baseCards.push({ name: c.name, filename: c.filename || null, amount: n, mission: false });
+        });
+        (player.completedMissions || []).forEach(m => {
+            const n = (m.successRewards && m.successRewards.skills && m.successRewards.skills.power) || 0;
+            if (n > 0) baseCards.push({ name: m.name, filename: m.filename || null, amount: n, mission: true });
+        });
+        const baseOther = Math.max(0, base - baseCards.reduce((a, c) => a + c.amount, 0));
+
+        let own = base;
+
+        // Blind Faith pairings (+6 each for Heaven's Blade / Archeus)
+        if (player.playedCards.some(c => c.name === 'Blind Faith')) {
+            player.playedCards.forEach(c => {
+                if (c.special === 'power_6_if_blind_faith' || c.name === 'Archeus') {
+                    own += 6;
+                    steps.push({ kind: 'bonus', label: c.name + ' + Blind Faith', amount: 6, filename: c.filename || null });
+                }
+            });
+        }
+
+        // Power bonuses — King of the Sky only if it actually pays (same
+        // tie rule as calculatePower). Coin winners are counted here but
+        // SHOWN as the live toss below (`coin` tags them out of the steps).
+        (player.powerBonuses || []).forEach(bonus => {
+            if (bonus.act !== act) return;
+            if (bonus.conditional === 'most_survival') {
+                const mine = player.skills.survival || 0;
+                let hasMost = true;
+                for (let i = 0; i < this.playerCount; i++) {
+                    if (i !== playerIndex && (this.players[i].skills.survival || 0) >= mine) { hasMost = false; break; }
+                }
+                if (hasMost && mine > 0) {
+                    own += bonus.amount;
+                    steps.push({ kind: 'bonus', label: bonus.source || 'Bonus', amount: bonus.amount, filename: artOf(bonus.source) });
+                }
+            } else {
+                own += bonus.amount;
+                if (!bonus.coin) steps.push({ kind: 'bonus', label: bonus.source || 'Bonus', amount: bonus.amount, filename: artOf(bonus.source) });
+            }
+        });
+
+        // Coin flips (Shot of Courage) — a live toss that lands on its real,
+        // play-time-decided result. Won flips already added their +4 above.
+        (player.coinFlips || []).forEach(flip => {
+            if (flip.act !== act) return;
+            steps.push({ kind: 'coinflip', label: flip.source || 'Shot of Courage', amount: flip.amount || 4, won: !!flip.won, filename: artOf(flip.source) });
+        });
+
+        // Guardian's absorbed strike (recorded by calculatePower at resolve):
+        // the wound still flies in full below — this step gives it back.
+        if (player._throneDefended && player._throneDefended.act === act && player._throneDefended.amount > 0) {
+            own += player._throneDefended.amount;
+            steps.push({ kind: 'bonus', label: 'Guardian — negates the strike', amount: player._throneDefended.amount, filename: artOf('Guardian') });
+        }
+
+        // Wounds I take (they arrive as the attackers' bolts, not my steps).
+        const woundsTaken = (player.powerDebuffs || [])
+            .filter(d => d.act === act)
+            .reduce((a, d) => a + d.amount, 0);
+
+        // Wounds I DEAL — my attack step fires its bolts at every victim.
+        const myAttacks = {};
+        for (let i = 0; i < this.playerCount; i++) {
+            if (i === playerIndex) continue;
+            (this.players[i].powerDebuffs || []).forEach(d => {
+                if (d.act !== act || d.from !== playerIndex) return;
+                const key = d.source || 'Attack';
+                const a = (myAttacks[key] = myAttacks[key] || { label: key, amount: d.amount, hits: [] });
+                a.hits.push({ playerIndex: i, delta: d.amount });
+            });
+        }
+        Object.values(myAttacks).forEach(a => {
+            steps.push({ kind: 'attack', label: a.label, amount: a.amount, filename: artOf(a.label), hits: a.hits });
+        });
+
+        // Power ×2 — the engine applies it LAST (after wounds), so the
+        // doubled total is engine truth even for a wounded fighter. The
+        // label/art come from whichever played card set the flag.
+        const mult = (player.powerX2 === act);
+        if (mult) {
+            const mc = player.playedCards.find(c => c.special === 'power_x2');
+            steps.push({ kind: 'mult', label: mc ? mc.name : 'Power ×2', amount: 2, filename: mc ? (mc.filename || null) : null });
+        }
+
+        const rawTotal = (own + woundsTaken) * (mult ? 2 : 1);
+        // The lock value: what the fighter's own forge sums to, defined so
+        // that ownRawTotal + wounds-shown === rawTotal exactly.
+        const ownRawTotal = rawTotal - woundsTaken;
+
+        return {
+            base, baseOther, baseCards, steps,
+            ownRawTotal, rawTotal,
+            sliderPosition: player.sliderPosition,
+            computedTotal: Math.max(0, rawTotal)
+        };
     }
 
     // ─── ACT TRANSITIONS ───────────────────────────────────────

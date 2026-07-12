@@ -3057,6 +3057,95 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
   await phone.close();
 }
 
+// ═══ MELEE CINEMATIC (Skylar's system): forge rows → clash → podium ═══
+console.log('── Melee cinematic: forge rows, live coin, podium + prestige tokens');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('melee: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('melee pageerror: ' + e.message));
+  await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+
+  // A juicy field: power cards, a Fuzzy Head strike, a WON coin — then the
+  // cinematic driven exactly as the act flow drives it (fire-and-flag).
+  await page.evaluate(() => {
+    window.CINEMATIC_SPEED = 0.15;            // paced but audit-fast
+    const pick = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    const [p0, p1, p2] = game.players;
+    p0.skills.power = 6; p0.playedCards = [pick('Reckless Training'), pick('Fuzzy Head')];
+    game.resolveSpecial(0, p0.playedCards[1]);
+    p1.skills.power = 6; p1.playedCards = [pick('Shot of Courage')];
+    game._rand = () => 0.2;                   // heads
+    game.resolveSpecial(1, p1.playedCards[0]);
+    p2.skills.power = 2;
+    const results = game.resolveMelee();
+    window._meleeDone = false;
+    showMeleeSplash(results, 1).then(() => { window._meleeDone = true; });
+  });
+  await page.waitForFunction(() => document.getElementById('meleeSplash').classList.contains('active'), { timeout: 8000 });
+  const arena = await page.evaluate(() => ({
+    combatants: document.querySelectorAll('.ms-combatant').length,
+    rings: document.querySelectorAll('.ms-combatant .ms-ring').length,
+    skip: !!document.querySelector('.ms-skip'),
+  }));
+  ok(arena.combatants === 3, `all heirs enter the arena (${arena.combatants})`);
+  ok(arena.rings === 3, 'every board wears its slider ring');
+  ok(arena.skip, 'Skip chip offered');
+
+  // Forge: the first fighter's contributors deal into the card row.
+  await page.waitForFunction(() => document.querySelectorAll('.ms-cardrow .ms-rowitem').length >= 1, { timeout: 12000 });
+  await page.screenshot({ path: join(SHOTS, 'melee-forge.png') });
+
+  // Skip ▸▸ jumps to the coronation; tokens + crown must be on stage.
+  await page.evaluate(() => document.querySelector('.ms-skip').click());
+  await sleep(700);
+  const podium = await page.evaluate(() => {
+    const champ = document.querySelector('.ms-tier.champ');
+    return {
+      tiers: document.querySelectorAll('.ms-tier.show').length,
+      champ: !!champ,
+      crown: !!(champ && champ.querySelector('.ms-crown')),
+      tokens: document.querySelectorAll('.ms-ptoken').length,
+      hint: document.querySelector('.ms-hint').classList.contains('show'),
+    };
+  });
+  ok(podium.tiers >= 2 && podium.champ && podium.crown, 'podium revealed, champion crowned');
+  ok(podium.tokens >= 1, 'prestige paid in physical token art');
+  ok(podium.hint, 'tap-to-continue hint shows');
+  await page.screenshot({ path: join(SHOTS, 'melee-podium.png') });
+
+  // A tap on the result closes it and the awaited promise resolves —
+  // that promise is what lets the act advance in the real flow.
+  await page.evaluate(() => document.getElementById('meleeSplash').click());
+  await page.waitForFunction(() => window._meleeDone === true, { timeout: 6000 });
+  const closed = await page.evaluate(() => !document.getElementById('meleeSplash').classList.contains('active'));
+  ok(closed, 'tap on the result closes the cinematic (promise resolves)');
+  await page.close();
+
+  // Phone: skip straight to the podium — the coronation fits 844×390.
+  const phone = await browser.newPage();
+  phone.on('console', m => { if (m.type() === 'error') consoleErrors.push('melee-phone: ' + m.text()); });
+  await phone.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  await startGame(phone);
+  await phone.evaluate(() => {
+    window.CINEMATIC_SPEED = 0.15;
+    game.players[0].skills.power = 9; game.players[1].skills.power = 5; game.players[2].skills.power = 2;
+    showMeleeSplash(game.resolveMelee(), 1);
+  });
+  await phone.waitForFunction(() => document.getElementById('meleeSplash').classList.contains('active'), { timeout: 8000 });
+  await phone.evaluate(() => document.querySelector('.ms-skip').click());
+  await sleep(700);
+  const pfitm = await phone.evaluate(() => ({
+    champ: !!document.querySelector('.ms-tier.champ.show'),
+    hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
+    onStage: (() => { const r = document.querySelector('.ms-podium').getBoundingClientRect(); return r.top >= 0 && r.bottom <= window.innerHeight + 2; })(),
+  }));
+  ok(pfitm.champ && !pfitm.hscroll && pfitm.onStage,
+    `phone: coronation fits 844×390 (champ ${pfitm.champ}, hscroll ${pfitm.hscroll}, onStage ${pfitm.onStage})`);
+  await phone.screenshot({ path: join(SHOTS, 'melee-phone.png') });
+  await phone.close();
+}
+
 // ═══ OPPONENT VIEW: summed stats in the inspect overlay + the play spotlight ═══
 console.log('── Opponent view: inspect panel/chips sum their spread; spotlight = who + BIG card + chips');
 {
