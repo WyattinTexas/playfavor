@@ -871,9 +871,10 @@
 
     // The iOS shell (WKWebView, UA carries "FavorShell-iOS") must not show
     // an external purchase rail — Apple 3.1.1. The Mint simply doesn't
-    // exist there; Stars still arrive from play, daily crowns, and any
+    // exist there (nor in the Steam shell — Valve routes MTX through its
+    // own wallet); Stars still arrive from play, daily crowns, and any
     // purchase made on the web (same favorUid account).
-    const IOS_SHELL = /FavorShell-iOS/.test(navigator.userAgent);
+    const IOS_SHELL = /FavorShell-(iOS|Steam)/.test(navigator.userAgent);
 
     let _confirmingPack = null;
     let _starsWatch = null;    // { baseline } while a PayPal tab may be paying

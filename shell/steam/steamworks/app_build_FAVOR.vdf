@@ -1,0 +1,42 @@
+"AppBuild"
+{
+	// ⚠ REPLACE APPID/DEPOTS after Wyatt pays the Steam Direct Fee and the
+	// FAVOR app exists in Steamworks. Depot ids are always appid+1 (Win)
+	// and appid+2 or as assigned — check Steamworks → FAVOR → Depots.
+	"AppID" "FAVOR_APPID"
+	"Desc" "FAVOR 1.0 — Electron shell over playfavor.net"
+
+	// SetLive EMPTY on purpose: steamcmd blocks setting builds live
+	// (accidental-publish guard, learned on Nation) — commit unattached,
+	// then Set Build Live on 'beta' in the Steamworks web UI.
+	"SetLive" ""
+
+	"ContentRoot" "/Users/drbango/playfavor/shell/steam/dist/"
+	"BuildOutput" "/Users/drbango/playfavor/shell/steam/steamworks/output/"
+
+	"Depots"
+	{
+		// Windows depot
+		"FAVOR_DEPOT_WIN"
+		{
+			"FileMapping"
+			{
+				"LocalPath" "FAVOR-win32-x64/*"
+				"DepotPath" "."
+				"recursive" "1"
+			}
+			"FileExclusion" "*.pdb"
+		}
+
+		// macOS depot
+		"FAVOR_DEPOT_MAC"
+		{
+			"FileMapping"
+			{
+				"LocalPath" "FAVOR-darwin-universal/*"
+				"DepotPath" "."
+				"recursive" "1"
+			}
+		}
+	}
+}

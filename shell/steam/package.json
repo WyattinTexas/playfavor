@@ -1,0 +1,16 @@
+{
+  "name": "favor-steam",
+  "productName": "FAVOR",
+  "version": "1.0.0",
+  "description": "FAVOR — A Game of Royal Succession",
+  "main": "main.js",
+  "author": "Corkscrew Games",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "@electron/packager": "^18.3.6"
+  }
+}
