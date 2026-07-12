@@ -1,39 +1,32 @@
-# FAVOR → Steam: what's ready and the ONE thing only you can do
+# FAVOR on Steam — status & what's left
 
-Everything is built and tested. The blocker is money: creating a new app
-on Steam costs the **$100 Steam Direct Fee**, and only you can pay it.
+**FAVOR is on Steam and installable.** App **4959630**, build **24172492**
+is LIVE on the `default` branch (win + mac). Everything technical is done;
+what remains is the store-presence + review phase, which is your content
+and business calls.
 
-## Your 3 steps (~10 minutes)
+## Done (2026-07-12)
+- App created (paid Direct Fee → app credit redeemed → AppID **4959630**).
+- Electron shell (win32-x64 + darwin-universal) built from `shell/steam/`,
+  boot-verified against live playfavor.net. Loads the always-current web
+  game; FavorShell-Steam UA hides the PayPal Mint (Valve wallet rules).
+- Build **24172492** uploaded to depot **4959631** and **set live on the
+  `default` branch**. Launch options published: Windows →
+  `FAVOR-win32-x64\FAVOR.exe`, macOS → `FAVOR-darwin-universal/FAVOR.app`
+  (both OS-restricted so each platform gets its own launcher).
+- You can install FAVOR now from your Steam client (it's a dev build; the
+  app isn't on the public store yet).
 
-1. **Pay the fee** — you're already logged into Steamworks in Chrome:
-   https://partner.steamgames.com/apps/ → green **"Pay Steam Direct Fee"**
-   button (right side). Steam names the new app placeholder-style; call it
-   **FAVOR** when asked. When it's done you'll have a new **App ID**
-   (Nation's is 3727980 — yours will be a similar 7-digit number).
+## What's left — your calls (the store launch)
+1. **Store page** — description, capsule/header art, screenshots, trailer,
+   tags, short blurb. (I can draft copy + generate capsule art from the box
+   cover if you want — just say so.)
+2. **Pricing** — set $4.99 (per the plan) in Steamworks → Store → Pricing.
+3. **Age rating** questionnaire.
+4. **"Coming Soon" / release review** — submit for Valve review (3–5
+   business days, same as Nation). Then pick a release date and hit release.
 
-2. **Tell Claude the App ID** (or edit yourself): in
-   `shell/steam/steamworks/app_build_FAVOR.vdf`, replace
-   - `FAVOR_APPID` → the new app id
-   - `FAVOR_DEPOT_WIN` / `FAVOR_DEPOT_MAC` → the two depot ids Steam
-     auto-creates (Steamworks → FAVOR → SteamPipe → Depots; usually
-     appid+1 and appid+2)
-
-3. **Run the upload** (no Steam Guard needed — login is cached):
-   `~/playfavor/shell/steam/steamworks/upload_build.sh`
-
-Then in Steamworks: Builds → set live on **beta** branch → install via
-Steam client to sanity-check → fill the store page ($4.99 per the plan)
-→ submit for Valve review (3-5 business days, same as Nation).
-
-## What's already done
-
-- **Electron shell** (`shell/steam/`): loads playfavor.net (always the
-  latest game), FavorShell-Steam UA → the site hides the PayPal Mint
-  (Valve MTX rules; same posture as Nation's Steam build), external links
-  open in the system browser, offline retry screen, F11 fullscreen,
-  persistent profile (your favorUid/crests survive updates).
-- **Packaged builds** in `shell/steam/dist/`: `FAVOR-win32-x64/` and
-  `FAVOR-darwin-universal/` (Intel+Apple Silicon).
-- **Boot-verified** on this Mac: shell → live playfavor.net → menu loads,
-  identity minted, correct UA.
-- steamcmd login cached (the Nation Key Ceremony sentry survives).
+## Re-uploading a new build later
+steamcmd login is cached (no Steam Guard). From `shell/steam/`:
+`npx electron-packager` (win + mac) → `steamworks/upload_build.sh` →
+set the new build live on `default` in Steamworks → Builds.

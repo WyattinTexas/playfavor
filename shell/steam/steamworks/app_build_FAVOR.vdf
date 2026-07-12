@@ -1,10 +1,7 @@
 "AppBuild"
 {
-	// ⚠ REPLACE APPID/DEPOTS after Wyatt pays the Steam Direct Fee and the
-	// FAVOR app exists in Steamworks. Depot ids are always appid+1 (Win)
-	// and appid+2 or as assigned — check Steamworks → FAVOR → Depots.
-	"AppID" "FAVOR_APPID"
-	"Desc" "FAVOR 1.0 — Electron shell over playfavor.net"
+	"AppID" "4959630"
+	"Desc" "FAVOR 1.0 — Electron shell over playfavor.net (win+mac)"
 
 	// SetLive EMPTY on purpose: steamcmd blocks setting builds live
 	// (accidental-publish guard, learned on Nation) — commit unattached,
@@ -16,27 +13,20 @@
 
 	"Depots"
 	{
-		// Windows depot
-		"FAVOR_DEPOT_WIN"
+		// Single content depot 4959631 (auto-created, already attached to
+		// all 3 packages). Both platform folders live here; the game's
+		// per-OS Launch Options pick the right executable, so a Windows
+		// player runs FAVOR-win32-x64\FAVOR.exe and a Mac player runs
+		// FAVOR-darwin-universal/FAVOR.app.
+		"4959631"
 		{
 			"FileMapping"
 			{
-				"LocalPath" "FAVOR-win32-x64/*"
+				"LocalPath" "*"
 				"DepotPath" "."
 				"recursive" "1"
 			}
 			"FileExclusion" "*.pdb"
-		}
-
-		// macOS depot
-		"FAVOR_DEPOT_MAC"
-		{
-			"FileMapping"
-			{
-				"LocalPath" "FAVOR-darwin-universal/*"
-				"DepotPath" "."
-				"recursive" "1"
-			}
 		}
 	}
 }
