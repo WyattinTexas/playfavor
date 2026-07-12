@@ -727,6 +727,53 @@ console.log('── Desktop: last two cards — player chooses BOTH fates');
   await page.close();
 }
 
+// ═══ LAST-TWO RULE: each player's pair activates back-to-back ═══
+console.log('── Final round order: last two cards play in a row, never interleaved');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('lasttwo: ' + m.text()); });
+  await page.setViewport({ width: 1420, height: 800 });
+  await startGame(page);
+
+  // Rig the FINAL round — everyone holds their last two (inert) cards —
+  // and trace the true activation order off the engine call itself.
+  await page.evaluate(() => {
+    window.CINEMATIC_SPEED = 0.05;
+    const fa = FAVOR_DATA.cards.find(c => c.name === 'First Aid');
+    game.players.forEach((p, i) => {
+      p.hand = [{ ...fa, id: `lt_a_${i}` }, { ...fa, id: `lt_b_${i}` }];
+    });
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    game.phase = 'gameplay';
+    window._trace = [];
+    const real = game.activateCard.bind(game);
+    game.activateCard = (pi, cardId, mode, extra) => {
+      window._trace.push(pi);
+      return real(pi, cardId, mode, extra);
+    };
+    renderGameState();
+  });
+  await sleep(300);
+  await page.evaluate(() => playSelectedCard(0));
+
+  // Your leftover's chooser must open before ANY rival has activated.
+  await page.waitForFunction(() => window._finalChoicePending === true, { timeout: 12000 });
+  const beforeRivals = await page.evaluate(() => window._trace.every(pi => pi === 0));
+  ok(beforeRivals, 'your second card presents its chooser before any rival plays');
+
+  await page.evaluate(() => {
+    const b = document.querySelector('#actionPanel [data-act="play"]') ||
+              document.querySelector('#actionPanel [data-act="discard"]');
+    b.click();
+  });
+  await page.waitForFunction(() => window._trace && window._trace.length >= 6, { timeout: 30000 });
+  const seats = await page.evaluate(() => window._trace.slice(0, 6));
+  ok(seats[0] === 0 && seats[1] === 0 && seats[2] === seats[3] &&
+     seats[4] === seats[5] && seats[2] !== seats[4],
+    `pairs contiguous — order ${seats.join(',')} (both last cards in a row, no one in between)`);
+  await page.close();
+}
+
 // ═══ HERO SELECT: three choices, picking auto-scrolls to Begin ═══
 console.log('── Hero select: 3 random heroes, bots draw from the leftovers, scroll to Begin');
 {
@@ -3447,14 +3494,44 @@ console.log('── Stat floats: +N rises off the grown stat (desktop rail + pho
   ok(!desk.anyBad, 'no scorn styling on plain gains');
   ok(desk.onBody, 'floats live on document.body (re-render-proof)');
   // Pacing: the activation loop must wait the "+N" beat out before the
-  // next player's spotlight (floats were playing under rival turns).
+  // next player's spotlight (floats were playing under rival turns), and
+  // then hold a breath of CLEAR table before the rival's full-screen
+  // takeover (Wyatt: the popup was buried under the other players' plays).
   ok(await page.evaluate(() =>
     typeof statFloatWait === 'function' && /statFloatWait\(\)/.test(String(activateAllCards))),
     'activation loop awaits the +N beat before the next spotlight');
+  ok(await page.evaluate(() => /hadFloats/.test(String(activateAllCards)) &&
+    /350\s*\*\s*window\.CINEMATIC_SPEED/.test(String(activateAllCards))),
+    'a clear-air breather separates your payoff from the next player’s takeover');
   await page.screenshot({ path: join(SHOTS, 'stat-float-desktop.png') });
-  await sleep(1800);
+  await sleep(2400);   // floats live 1750ms + up to 260ms stagger
   ok(await page.evaluate(() => document.querySelectorAll('.stat-float').length === 0),
     'floats clean themselves up');
+
+  // The payoff is ONE beat: play a real card through the pipeline and the
+  // "+N" floats must be on stage WHILE your card banner shows (they used
+  // to fire after it, half-faded by the time the eye arrived).
+  await page.evaluate(() => {
+    window.CINEMATIC_SPEED = 1;
+    const p = game.players[0];
+    const gainer = FAVOR_DATA.cards.find(c => (c.skills || []).length >= 2 &&
+      !(c.requirements && Object.keys(c.requirements).length) && !c.special);
+    p.hand = [{ ...(gainer || FAVOR_DATA.cards.find(c => c.name === 'First Aid')), id: 'float_rig' }];
+    p.hand.push({ ...FAVOR_DATA.cards.find(c => c.name === 'First Aid'), id: 'float_pad' });
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    game.phase = 'gameplay';
+    renderGameState();
+  });
+  await sleep(250);
+  await page.evaluate(() => playSelectedCard(0));
+  let overlap = false;
+  for (let t = 0; t < 30 && !overlap; t++) {
+    overlap = await page.evaluate(() =>
+      document.querySelector('.mini-spotlight') && document.querySelectorAll('.stat-float').length > 0);
+    await sleep(100);
+  }
+  ok(overlap, 'banner and "+N" floats share the stage — one payoff beat');
+  await page.evaluate(() => { window._finalChoicePending = false; hideActionPanel(); });
   await page.close();
 
   // Phone: skill gain floats on the rail chip; purse gains keep their

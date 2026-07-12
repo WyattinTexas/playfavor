@@ -968,5 +968,34 @@ console.log('── Borrow & Play: the CHOSEN lender is the one who gets paid');
   ok(g.players[1].gold === before[1], 'the other neighbor gets nothing');
 }
 
+console.log('── Last two cards: the pair stays with its player and plays back-to-back');
+{
+  const g = newGame();
+  const fa = cardByName('First Aid');
+  // Final round of an act: every hand holds exactly TWO cards.
+  g.players.forEach((p, i) => {
+    p.hand = [{ ...fa, id: `lt_a_${i}` }, { ...fa, id: `lt_b_${i}` }];
+  });
+  g.pendingActivations = [null, null, null];
+  // Each player picks ONE — the engine must stage the leftover WITH it,
+  // so both cards resolve in that player's own activation, never split
+  // across the table (printed rule: play both in a row).
+  g.players.forEach((_, i) => g.pickCard(i, 0));
+  g.players.forEach((p, i) => {
+    const pending = g.pendingActivations[i];
+    ok(Array.isArray(pending) && pending.length === 2, `P${i} stages BOTH last cards together`);
+    ok(pending && pending[0] && pending[0].id === `lt_a_${i}` && pending[1] && pending[1].id === `lt_b_${i}`,
+      `P${i} pair is their own (picked first, leftover second)`);
+    ok(p.hand.length === 0, `P${i} hand empty — nothing passes on`);
+  });
+  ok(g.allPlayersPicked(), 'table ready — every pair activates per-seat, contiguously');
+  g.passHands();
+  const r1 = g.activateCard(0, 'lt_a_0', 'play');
+  const r2 = g.activateCard(0, 'lt_b_0', 'play');
+  ok(r1.success === true && r2.success === true, 'both cards of the pair activate back-to-back');
+  const played = g.players[0].playedCards.map(c => c.id);
+  ok(played.includes('lt_a_0') && played.includes('lt_b_0'), 'both land on the field for their owner');
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);

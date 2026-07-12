@@ -2513,10 +2513,10 @@ function statFloatFx(anchor, key, amount, idx) {
     el.textContent = `+${amount}`;
     el.style.left = `${baseX + fan}px`;
     el.style.top = `${r.top + r.height / 2}px`;
-    el.style.animationDuration = `${1.15 * window.CINEMATIC_SPEED}s`;
+    el.style.animationDuration = `${1.55 * window.CINEMATIC_SPEED}s`;
     el.style.animationDelay = `${(idx || 0) * 130}ms`;
     document.body.appendChild(el);
-    const life = 1300 * window.CINEMATIC_SPEED + (idx || 0) * 130;
+    const life = 1750 * window.CINEMATIC_SPEED + (idx || 0) * 130;
     // The activation loop waits for this before the next spotlight takes
     // the stage — otherwise your "+N" payoff plays under the rival's turn.
     _statFloatUntil = Math.max(_statFloatUntil, Date.now() + life);
@@ -3562,11 +3562,16 @@ async function resolveFinalCardChoice(card) {
         mpPub('final', data);
     }
 
-    await showMiniSpotlight(card, act === 'play' || act === 'borrow_play' || act === 'mission_letter' ? 'play' : 'discard');
+    // Payoff-first beat (Wyatt): the engine resolves, the "+N" floats rise
+    // off the fresh render, and the banner shows WITH them — then any
+    // follow-up overlay (mission select) takes the stage.
+    let bannerAction = 'discard';
+    let pendingSelect = null;
 
     if (act === 'play') {
         game.activateCard(0, card.id, 'play');
         addLogEntry(`You also play ${card.name}`);
+        bannerAction = 'play';
     } else if (act === 'borrow_play') {
         const chosen = window._finalBorrowChoice;
         window._finalBorrowChoice = null;
@@ -3579,26 +3584,32 @@ async function resolveFinalCardChoice(card) {
             const lenders = [...new Set(borrowFrom.map(b => game.players[b.neighborIndex].name))].join(' & ');
             game.activateCard(0, card.id, 'play', borrowFrom);
             addLogEntry(`You borrow from ${lenders} and play ${card.name}`);
+            bannerAction = 'play';
         }
     } else if (act === 'mission_letter') {
         const result = game.activateCard(0, card.id, 'mission_letter');
-        if (result && result.chooseMission) {
-            renderGameState();
-            if (mpActive()) window._mpMissionCtx = 'mission_pick';
-            await showMissionSelectAsync();
-        }
+        bannerAction = 'play';
+        if (result && result.chooseMission) pendingSelect = 'mission_pick';
     } else if (act === 'discard_slide_left' || act === 'discard_slide_right') {
         game.activateCard(0, card.id, 'discard_slide', act === 'discard_slide_left' ? -1 : 1);
         addLogEntry(`You discard ${card.name} to slide your ring`);
+        bannerAction = 'discard_slide';
         if (game.players[0]._pendingSlotMission) {
             game.players[0]._pendingSlotMission = false;
-            renderGameState();
-            if (mpActive()) window._mpMissionCtx = 'slot_mission';
-            await showMissionSelectAsync();
+            pendingSelect = 'slot_mission';
         }
     } else {
         game.activateCard(0, card.id, 'discard');
         addLogEntry(`You discard ${card.name} (+3 Gold)`);
+    }
+
+    renderGameState();
+    await showMiniSpotlight(card, bannerAction);
+
+    if (pendingSelect) {
+        renderGameState();
+        if (mpActive()) window._mpMissionCtx = pendingSelect;
+        await showMissionSelectAsync();
     }
 }
 
@@ -3848,11 +3859,14 @@ async function activateAllCards(humanAction) {
             if (pi === 0) {
                 // Human player — quick mini-spotlight (you already know what you picked)
                 if (humanAction === 'discard_slide' && cardIdx === 0 && game.players[0]._discardSlideNext !== undefined) {
-                    await showMiniSpotlight(card, 'discard_slide');
-
+                    // Payoff-first beat (Wyatt): activate, let the "+N" floats
+                    // rise off the fresh render, and show the banner WITH
+                    // them — one clear beat instead of banner-then-blink.
                     const direction = game.players[0]._discardSlideNext;
                     game.activateCard(0, card.id, 'discard_slide', direction);
                     game.players[0]._discardSlideNext = undefined;
+                    renderGameState();
+                    await showMiniSpotlight(card, 'discard_slide');
 
                     // Magician slot 2: choose_mission triggered by slider move
                     if (game.players[0]._pendingSlotMission) {
@@ -3862,13 +3876,11 @@ async function activateAllCards(humanAction) {
                         await showMissionSelectAsync();
                     }
                 } else if (humanAction === 'discard' && cardIdx === 0 && game.players[0]._discardNext) {
-                    await showMiniSpotlight(card, 'discard');
-
                     game.activateCard(0, card.id, 'discard');
                     game.players[0]._discardNext = false;
+                    renderGameState();
+                    await showMiniSpotlight(card, 'discard');
                 } else if (humanAction === 'borrow_play' && cardIdx === 0 && game.players[0]._borrowNext) {
-                    await showMiniSpotlight(card, 'play');
-
                     // The lender was CHOSEN in the borrow chooser at pick time;
                     // resolveBorrowPlan re-validates it against the table now.
                     const { borrowFrom, uncovered } = resolveBorrowPlan(card, game.players[0]._borrowNext);
@@ -3880,6 +3892,8 @@ async function activateAllCards(humanAction) {
                         game.activateCard(0, card.id, 'play', borrowFrom);
                     }
                     game.players[0]._borrowNext = false;
+                    renderGameState();
+                    await showMiniSpotlight(card, uncovered ? 'discard' : 'play');
                 } else if (humanAction === 'mission_letter' && cardIdx === 0 && game.players[0]._letterNext) {
                     // MP-staged Mission Letter: it resolves HERE, in seat
                     // order, exactly where every other client applies it.
@@ -3904,18 +3918,15 @@ async function activateAllCards(humanAction) {
 
                     if (isMissionLetter) {
                         // Mission letters can't be "played" — auto-discard if no choice given
-                        await showMiniSpotlight(card, 'discard');
                         game.activateCard(0, card.id, 'discard');
                         addLogEntry(`${card.name} auto-discarded (mission letter)`);
+                        renderGameState();
+                        await showMiniSpotlight(card, 'discard');
                     } else {
                         const { canPlay } = game.checkRequirements(0, card);
-                        if (canPlay) {
-                            await showMiniSpotlight(card, 'play');
-                            game.activateCard(0, card.id, 'play');
-                        } else {
-                            await showMiniSpotlight(card, 'discard');
-                            game.activateCard(0, card.id, 'discard');
-                        }
+                        game.activateCard(0, card.id, canPlay ? 'play' : 'discard');
+                        renderGameState();
+                        await showMiniSpotlight(card, canPlay ? 'play' : 'discard');
                     }
                 }
             }
@@ -3981,7 +3992,15 @@ async function activateAllCards(humanAction) {
             // YOUR payoff gets its beat: if "+N" floats just fired off your
             // stats, let them land before the next player's spotlight takes
             // the stage (Wyatt: the pluses were playing under rival turns).
+            const hadFloats = _statFloatUntil > Date.now();
             await statFloatWait();
+
+            // ...and when the NEXT beat is another player's full-screen
+            // takeover, hold a breath of clear table so the gains register
+            // (Wyatt: the popup was buried under the rivals' plays).
+            if (hadFloats && cardIdx === cards.length - 1 && round < game.playerCount - 1) {
+                await new Promise(r => setTimeout(r, 350 * window.CINEMATIC_SPEED));
+            }
 
             // Brief pause between cards from the same player
             if (cardIdx < cards.length - 1) {
