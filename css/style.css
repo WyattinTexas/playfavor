@@ -307,16 +307,97 @@ html, body {
 .lb-row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 8px 10px;
+    gap: 10px;
+    padding: 7px 10px;
     border-bottom: 1px solid rgba(201,168,76,0.08);
     font-family: 'Cinzel', serif;
+    animation: lbRowIn 0.28s cubic-bezier(0.16,1,0.3,1) both;
+    animation-delay: calc(min(var(--li, 0), 14) * 22ms);
 }
-.lb-row.me { background: rgba(201,168,76,0.1); border-radius: 8px; }
-.lb-rank { width: 26px; text-align: right; color: var(--gold-dark); font-weight: 900; }
-.lb-name { flex: 1; color: var(--parchment); font-size: 13px; display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+@keyframes lbRowIn {
+    from { opacity: 0; transform: translateX(-10px); }
+}
+.lb-row.me {
+    background: linear-gradient(90deg, rgba(201,168,76,0.16), rgba(201,168,76,0.05));
+    border: 1px solid rgba(201,168,76,0.4);
+    border-radius: 8px;
+}
+.lb-row.podium.p1 { background: linear-gradient(90deg, rgba(240,200,110,0.12), transparent 70%); }
+.lb-rank { width: 26px; text-align: center; color: var(--gold-dark); font-weight: 900; flex: none; }
+.lb-medal {
+    width: 26px; height: 26px; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    font-weight: 900; font-size: 13px; color: #2b1a06;
+    box-shadow: inset 0 1px 3px rgba(255,255,255,0.5), 0 1px 4px rgba(0,0,0,0.55);
+}
+.lb-medal.m1 { background: radial-gradient(circle at 32% 28%, #ffe9ad, #d4a944 68%, #9a7526); animation: medalShine 2.6s ease-in-out infinite; }
+.lb-medal.m2 { background: radial-gradient(circle at 32% 28%, #f2f2f4, #b9bcc4 68%, #82868f); }
+.lb-medal.m3 { background: radial-gradient(circle at 32% 28%, #ecc39c, #c08a52 68%, #8a5c30); }
+@keyframes medalShine {
+    50% { box-shadow: inset 0 1px 3px rgba(255,255,255,0.5), 0 0 12px rgba(255,220,130,0.55); }
+}
+.lb-name { flex: 1; color: var(--parchment); font-size: 13px; display: inline-flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lb-crowns { display: inline-flex; align-items: center; gap: 3px; color: #e8c34b; font-size: 12px; font-weight: 900; }
-.lb-score { color: var(--gold-light); font-size: 15px; }
+.lb-you {
+    font-size: 9px; letter-spacing: 1.5px; padding: 2px 7px 3px;
+    color: #2b1a06; background: linear-gradient(#f4d488, #c99f4b);
+    border-radius: 999px; font-weight: 900;
+}
+.lb-sub { color: rgba(240,230,211,0.42); font-size: 10.5px; letter-spacing: 0.5px; flex: none; }
+.lb-score { color: var(--gold-light); font-size: 15px; display: inline-flex; align-items: center; gap: 5px; flex: none; }
+.lb-ico { width: 17px; height: 17px; object-fit: contain; }
+.lb-gap { text-align: center; color: var(--gold-dark); letter-spacing: 6px; padding: 2px 0; }
+.lb-row.appendix { border-top: 1px solid rgba(201,168,76,0.25); border-bottom: none; }
+
+/* ── Avatar discs — the rival-rail round crop, reused everywhere ── */
+.av-disc {
+    width: 30px; height: 30px; flex: none;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 1.5px solid rgba(201,168,76,0.55);
+    box-shadow: 0 0 0 1.5px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.5);
+    display: inline-flex;
+    background: #1d1106;
+}
+.av-disc img { width: 100%; height: 100%; object-fit: cover; }
+.av-disc.av-empty img { object-fit: contain; padding: 4px; opacity: 0.7; }
+.av-disc.pc-av { width: 24px; height: 24px; }
+.av-disc.lb-av { width: 30px; height: 30px; }
+.av-disc.pf-av-current { width: 44px; height: 44px; }
+
+/* Profile — the crest picker grid */
+.pf-avatars {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 7px;
+    padding: 10px 2px 12px;
+    border-bottom: 1px solid rgba(201,168,76,0.14);
+}
+.pf-av {
+    padding: 0; border: 2px solid rgba(201,168,76,0.25);
+    border-radius: 50%; overflow: hidden; cursor: pointer;
+    aspect-ratio: 1; background: #1d1106;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.pf-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pf-av:hover { transform: scale(1.08); border-color: var(--gold); }
+.pf-av.on { border-color: #ffd97a; box-shadow: 0 0 12px rgba(255,217,122,0.5); }
+
+/* In-game identity — your crest + royal name ride the board thumb's
+   plate (a row on the stats panel broke its no-scroll fit). */
+.thumb-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.av-disc.thumb-crest { width: 17px; height: 17px; flex: none; }
+/* Human rivals across the wire wear their chosen crest by their name */
+.av-disc.opp-crest { width: 17px; height: 17px; vertical-align: -3px; margin-right: 4px; }
 .lb-foot, .lb-loading, .pf-note {
     font-family: 'EB Garamond', serif;
     font-style: italic;
@@ -545,8 +626,17 @@ html, body {
 .st-card.owned .st-frame { box-shadow: 0 0 20px rgba(232, 195, 75, 0.22), 0 7px 16px rgba(0, 0, 0, 0.6); }
 .st-plate {
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
     padding: 8px 4px 2px;
+}
+/* rulebook difficulty — a quiet star row under the plate */
+.st-diff {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #d9b968;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.7);
 }
 /* brass name plate under the painting */
 .st-name {
@@ -668,7 +758,7 @@ html, body {
 .st-insp-frame img {
     display: block;
     max-width: min(88vw, 1240px);
-    max-height: 72vh;
+    max-height: 64vh;   /* leaves honest room for the epithet row + Tip line */
     border-radius: 3px;
 }
 .st-insp-row {
@@ -677,6 +767,39 @@ html, body {
     gap: 14px;
 }
 .st-insp-row .st-name { font-size: 16px; }
+/* easel identity — name, italic epithet, DIFFICULTY row (rulebook style) */
+.st-insp-id {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    min-width: 0;
+}
+.st-epithet {
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: 13.5px;
+    color: #e6cf9d;
+    letter-spacing: 0.5px;
+}
+.st-insp-diff {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    letter-spacing: 2.5px;
+    color: rgba(240, 230, 211, 0.6);
+}
+.st-insp-diff b { color: #ffd97a; letter-spacing: 2px; margin-left: 4px; }
+.st-insp-tip {
+    font-family: 'EB Garamond', serif;
+    font-size: 13.5px;
+    color: rgba(240, 230, 211, 0.78);
+    padding: 8px 12px;
+    margin-top: 2px;
+    background: rgba(60, 38, 14, 0.5);
+    border-left: 2px solid rgba(201, 168, 76, 0.55);
+    border-radius: 0 6px 6px 0;
+}
+.st-insp-tip i { color: #ecd9ae; }
 /* inspect's price tag sits beside the plate, not hung off a shelf frame —
    no rope rigging (::before grommet, ::after string), no settle-swing */
 .st-insp-row .st-buy {
@@ -964,6 +1087,37 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
     padding: 0 20px;
 }
 
+/* The pledge ribbon — you committed at PLAY NOW; this is the honest
+   status line (queue narration + Withdraw) or the solo way home. */
+.queue-pledge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: -6px auto 14px;
+    padding: 6px 18px;
+    font-family: 'Cinzel', serif;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    color: #e6cf9d;
+    background: rgba(42, 24, 8, 0.6);
+    border: 1px solid rgba(201, 168, 76, 0.3);
+    border-radius: 999px;
+    width: fit-content;
+    max-width: 92vw;
+}
+.queue-pledge .menu-link { padding: 2px 6px; }
+.qp-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #ffd97a;
+    box-shadow: 0 0 8px rgba(255, 217, 122, 0.8);
+    animation: qpPulse 1.4s ease-in-out infinite;
+}
+@keyframes qpPulse {
+    50% { opacity: 0.35; }
+}
+
 .character-card {
     border: 2px solid rgba(201, 168, 76, 0.3);
     border-radius: 8px;
@@ -998,7 +1152,16 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
     font-family: 'Cinzel', serif;
     font-size: 18px;
     color: var(--gold);
-    margin-bottom: 4px;
+    margin-bottom: 2px;
+}
+
+/* the printed epithet — "Deadly Duelist", "The Wildcard" */
+.character-info .epithet {
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: 13.5px;
+    color: #e6cf9d;
+    margin-bottom: 3px;
 }
 
 .character-info .difficulty {
@@ -1214,6 +1377,7 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
     font-size: 10px;
     color: var(--gold-light);
     letter-spacing: 1px;
+    flex: 1 1 auto;      /* a long royal name truncates instead of… */
 }
 
 .board-thumb .thumb-hint {
@@ -1222,6 +1386,8 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
     color: var(--gold-dark);
     letter-spacing: 1px;
     text-transform: uppercase;
+    flex: none;          /* …squeezing the hint into a wrap */
+    white-space: nowrap;
 }
 
 /* ── Stats Panel — under board thumbnail ── */

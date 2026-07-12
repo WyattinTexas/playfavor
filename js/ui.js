@@ -426,11 +426,89 @@ document.addEventListener('click', function initMusic() {
 // ─── TITLE SCREEN ──────────────────────────────────────────
 
 function startGame() {
+    // PLAY NOW is the COMMIT (Wyatt): you pledge to the match BEFORE any
+    // hero is seen. The queue entry (with your 3-hero OFFER) is written
+    // here; hero select is post-pledge browsing — and the offer is sticky
+    // per commit, so backing out can never re-roll it.
+    const offer = rollStickyOffer();
+    window._mpConsumed = false;
+    window._mpQueueP = null;
+    if (window._pinEmblemSeed === undefined && !window._mpSkipQueue
+        && window.FMP && FMP.available()) {
+        const size = (window.FLB && FLB.queueSize()) || 3;
+        window._mpQueueSize = size;
+        window._mpQueueP = FMP.enterQueue({
+            size,
+            offer: offer.map(c => c.id),
+            onState: (kind, d) => mpQueueTicker(kind, d, size),
+        });
+        // A table can form WHILE you browse — real humans are waiting, so
+        // the match claims you: your entry's hero (or an offer draw) is
+        // already sealed in the record.
+        window._mpQueueP.then(res => {
+            if (!res || !res.game || res.cancelled) return;
+            if (window._confirmBusy || window._mpConsumed) return;   // Begin path owns it
+            window._mpConsumed = true;
+            localStorage.removeItem('favorOffer');
+            document.getElementById('character-select').classList.remove('active');
+            startMpGame(res);
+        });
+    }
     document.getElementById('title-screen').classList.add('hidden');
     setTimeout(() => {
         document.getElementById('title-screen').style.display = 'none';
-        showCharacterSelect();
+        if (!window._mpConsumed) showCharacterSelect(offer);
     }, 1200);
+}
+
+// One offer per pledge: rolled at Play Now, reused for 10 minutes (or
+// until a table actually forms) — withdrawing and retrying shows the SAME
+// three heroes, so there is nothing to re-roll for.
+function rollStickyOffer() {
+    const ownedIds = (window.FLB && typeof FLB.ownedIds === 'function')
+        ? FLB.ownedIds()
+        : window.FAVOR_DATA.characters.slice(0, 5).map(c => c.id);
+    const byId = (id) => window.FAVOR_DATA.characters.find(c => c.id === id);
+    try {
+        const s = JSON.parse(localStorage.getItem('favorOffer'));
+        if (s && Date.now() - s.at < 10 * 60 * 1000
+            && Array.isArray(s.ids) && s.ids.length === 3
+            && s.ids.every(id => ownedIds.includes(id))) {
+            return s.ids.map(byId);
+        }
+    } catch (e) { /* fresh roll */ }
+    const ownedChars = window.FAVOR_DATA.characters.filter(c => ownedIds.includes(c.id));
+    const offer = shuffleArray(ownedChars).slice(0, 3);
+    localStorage.setItem('favorOffer',
+        JSON.stringify({ ids: offer.map(c => c.id), at: Date.now() }));
+    return offer;
+}
+
+// Withdrawing the pledge (or solo Back) lands you home again.
+function backToMenu() {
+    if (window.FMP && FMP.cancelQueue) FMP.cancelQueue();
+    window._mpQueueP = null;
+    document.getElementById('character-select').classList.remove('active');
+    const t = document.getElementById('title-screen');
+    t.style.display = '';
+    requestAnimationFrame(() => t.classList.remove('hidden'));
+}
+
+// Queue narration — feeds the pledge ribbon on the select screen AND the
+// Searching overlay after Begin, whichever is on stage.
+function mpQueueTicker(kind, d, size) {
+    if (kind !== 'searching') return;
+    const line = d.others > 0
+        ? `<b>${d.others}</b> noble${d.others > 1 ? 's' : ''} in queue — forming the table…`
+        : 'searching the realm…';
+    const qp = document.getElementById('qpStatus');
+    if (qp) qp.innerHTML = line;
+    const sub = document.getElementById('mpqSub');
+    if (sub) {
+        sub.innerHTML = d.others > 0
+            ? `<b>${d.others}</b> noble${d.others > 1 ? 's' : ''} found — forming the table…`
+            : `Calling for challengers to a ${size}-player table…`;
+    }
 }
 
 // \u2550\u2550\u2550 HOW TO PLAY \u2014 card-deck tutorial (Prong 1) \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
@@ -777,7 +855,7 @@ function coachApplyPromptTest() {
 // draw from those leftovers in confirmCharacter.
 let _offeredHeroes = [];
 
-function showCharacterSelect() {
+function showCharacterSelect(offer) {
     const screen = document.getElementById('character-select');
     screen.classList.add('active');
 
@@ -789,26 +867,44 @@ function showCharacterSelect() {
         return;
     }
 
-    // The offer draws from the heroes YOU OWN (first five are everyone's;
-    // store purchases join the pool — FLB.ownedIds). Owned is always ≥5,
-    // so three offerings never starve. Bots still draw from all ten.
-    const ownedIds = (window.FLB && typeof FLB.ownedIds === 'function')
-        ? FLB.ownedIds()
-        : window.FAVOR_DATA.characters.slice(0, 5).map(c => c.id);
-    const ownedChars = window.FAVOR_DATA.characters.filter(c => ownedIds.includes(c.id));
-    _offeredHeroes = shuffleArray(ownedChars).slice(0, 3);
+    // The pledge ribbon: post-commit there is no Back — only an honest
+    // Withdraw (which keeps the sticky offer, so nothing re-rolls). Solo
+    // paths get a plain return home in the same slot.
+    let pledge = document.getElementById('queuePledge');
+    if (!pledge) {
+        pledge = document.createElement('div');
+        pledge.id = 'queuePledge';
+        pledge.className = 'queue-pledge';
+        screen.insertBefore(pledge, grid);
+    }
+    if (window._mpQueueP) {
+        pledge.innerHTML = `<span class="qp-dot"></span>
+            Pledged to a ${window._mpQueueSize || 3}-player match —
+            <span id="qpStatus">searching the realm…</span>
+            <button type="button" class="menu-link" id="qpWithdraw">Withdraw</button>`;
+        pledge.querySelector('#qpWithdraw').onclick = backToMenu;
+    } else {
+        pledge.innerHTML = `<button type="button" class="menu-link" id="qpBack">← Return to the Menu</button>`;
+        pledge.querySelector('#qpBack').onclick = backToMenu;
+    }
+
+    // The offer was rolled AT THE PLEDGE (sticky — see rollStickyOffer);
+    // it draws from the heroes YOU OWN (first five are everyone's; store
+    // purchases join the pool). Bots still draw from all ten.
+    _offeredHeroes = offer || rollStickyOffer();
     _offeredHeroes.forEach(char => {
         const card = document.createElement('div');
         card.className = 'character-card fade-in';
         card.dataset.id = char.id;
         card.onclick = () => selectCharacter(char.id, card);
 
-        const stars = '\u2605'.repeat(Math.floor(char.difficulty)) + (char.difficulty % 1 ? '\u00BD' : '');
+        const stars = '\u2605'.repeat(Math.floor(char.difficulty || 1));
 
         card.innerHTML = `
             <img src="assets/characters/${char.filename}" alt="${char.name}">
             <div class="character-info">
                 <h3>${char.name}</h3>
+                ${char.epithet ? `<div class="epithet">${char.epithet}</div>` : ''}
                 <div class="difficulty">Difficulty: ${stars}</div>
                 <div class="tip">${char.tip || ''}</div>
             </div>
@@ -819,9 +915,39 @@ function showCharacterSelect() {
 }
 
 function selectCharacter(id, cardEl) {
+    const grid = document.getElementById('characterGrid');
+    const cards = [...grid.querySelectorAll('.character-card')];
+    const center = cards[Math.floor(cards.length / 2)];
+
+    // The selection ring is a FIXTURE of the center slot (Wyatt: "ring
+    // stays fixed on center, characters move through it") — tapping a
+    // side hero glides them INTO the ring while the centered one steps
+    // aside (FLIP: measure, reorder, invert, release).
+    if (cardEl !== center && cards.length > 1) {
+        cards.forEach(c => c.classList.remove('fade-in'));   // appendChild replays animations
+        const firsts = new Map(cards.map(c => [c, c.getBoundingClientRect().left]));
+        const ci = cards.indexOf(center), ti = cards.indexOf(cardEl);
+        [cards[ci], cards[ti]] = [cards[ti], cards[ci]];
+        cards.forEach(c => grid.appendChild(c));
+        cards.forEach(c => {
+            const dx = firsts.get(c) - c.getBoundingClientRect().left;
+            if (!dx) return;
+            c.style.transition = 'none';
+            c.style.transform = `translateX(${dx}px)`;
+        });
+        void grid.offsetWidth;
+        cards.forEach(c => {
+            c.style.transition = 'transform 0.32s cubic-bezier(0.22, 1, 0.36, 1)';
+            c.style.transform = '';
+        });
+    }
+
     document.querySelectorAll('.character-card').forEach(c => c.classList.remove('selected'));
-    cardEl.classList.add('selected');
+    cardEl.classList.add('selected');   // cardEl now holds the center slot
     selectedCharacter = id;
+    // Already pledged: the live queue entry carries every (re-)pick, so a
+    // match that forms mid-browse seats you with your latest choice.
+    if (window.FMP && FMP.setQueueHero) FMP.setQueueHero(id);
     const btn = document.getElementById('confirmBtn');
     btn.style.display = 'inline-block';
     // Begin Your Journey sits below the fold on phones — picking a hero
@@ -864,26 +990,37 @@ function seatPersonas(seed, botCount) {
 
 async function confirmCharacter() {
     if (!selectedCharacter) return;
+    if (window._mpConsumed) return;   // a formed match already claimed this pledge
 
     // Table size = the queue you joined on the menu (persisted; the old
     // in-select dropdown moved there so Play Now can never skip past it).
     const playerCount = (window.FLB && FLB.queueSize()) || 3;
 
-    // MULTIPLAYER: confirming your hero queues you with it. A real match
-    // starts a lockstep table; the expired random window falls through to
-    // the classic game where the persona rivals present as people —
-    // indistinguishable from a slow lobby (Wyatt's spec).
-    if (window._pinEmblemSeed === undefined && !window._mpSkipQueue
-        && window.FMP && FMP.available()) {
+    // MULTIPLAYER: the pledge was made at PLAY NOW (commit before heroes —
+    // Wyatt); Begin just seals your pick on the live entry and waits out
+    // whatever remains of the window. A real match starts a lockstep
+    // table; the expired window falls through to the classic game where
+    // the persona rivals present as people (indistinguishable from a slow
+    // lobby — Wyatt's spec).
+    if (window._mpQueueP) {
         if (window._confirmBusy) return;
         window._confirmBusy = true;
+        if (window.FMP && FMP.setQueueHero) FMP.setQueueHero(selectedCharacter);
         let mpRes = null;
         try { mpRes = await mpSearch(playerCount); } catch (e) { mpRes = { solo: true }; }
         window._confirmBusy = false;
-        if (mpRes && mpRes.cancelled) return;             // back to hero select
-        if (mpRes && mpRes.game) { await startMpGame(mpRes); return; }
+        if (window._mpConsumed) return;                   // auto-start won the race
+        if (mpRes && mpRes.cancelled) { backToMenu(); return; }   // withdraw = pledge released
+        if (mpRes && mpRes.game) {
+            window._mpConsumed = true;
+            localStorage.removeItem('favorOffer');
+            await startMpGame(mpRes);
+            return;
+        }
+        window._mpQueueP = null;
         // window expired → the classic table below
     }
+    localStorage.removeItem('favorOffer');   // this pledge becomes a real table
 
     // One leaderboard read seeds the rated Emblem start, persona seating,
     // and the rank-1 boon. Prefetched at boot, raced against 1200ms here —
@@ -1098,55 +1235,52 @@ function showBoonPicker() {
 const mpActive = () => !!(window.FMP && FMP.active());
 const mpPub = (type, data) => { if (mpActive()) FMP.publish(type, data); };
 
-// \u2500\u2500 Searching the realm \u2014 the queue beat on the select screen \u2500\u2500
+// \u2500\u2500 Searching the realm \u2014 the post-Begin beat on the standing pledge \u2500\u2500
+// The queue entry was written at PLAY NOW; this overlay just waits out
+// whatever remains of the window. A short minimum hold keeps an already-
+// expired window from flashing a one-frame overlay.
 function mpSearch(size) {
     return new Promise((resolve) => {
         const ov = document.getElementById('promisePicker');
         let cancelled = false;
-        const paint = (others) => {
-            ov.innerHTML = `
-                <div class="pp-inner boon">
-                    <div class="pp-title">Searching the Realm</div>
-                    <div class="pp-sub" id="mpqSub">${others > 0
-                        ? `<b>${others}</b> noble${others > 1 ? 's' : ''} in the ${size}-player queue\u2026`
-                        : `Calling for challengers to a ${size}-player table\u2026`}</div>
-                    <div class="mpq-spin"></div>
-                    <div class="pp-actions">
-                        <button class="btn-royal" id="mpqCancel"><span>Withdraw</span></button>
-                    </div>
-                </div>`;
-            ov.querySelector('#mpqCancel').onclick = () => {
-                cancelled = true;
-                FMP.cancelQueue();
-                ov.classList.remove('active');
-                resolve({ cancelled: true });
-            };
-        };
-        paint(0);
-        ov.classList.add('active');
-        FMP.enterQueue({
-            size,
-            hero: selectedCharacter,
-            onState: (kind, d) => {
-                if (cancelled) return;
-                const sub = document.getElementById('mpqSub');
-                if (sub && kind === 'searching') {
-                    sub.innerHTML = d.others > 0
-                        ? `<b>${d.others}</b> noble${d.others > 1 ? 's' : ''} found \u2014 forming the table\u2026`
-                        : `Calling for challengers to a ${size}-player table\u2026`;
-                }
-            },
-        }).then((res) => {
-            if (cancelled) return;
+        ov.innerHTML = `
+            <div class="pp-inner boon">
+                <div class="pp-title">Searching the Realm</div>
+                <div class="pp-sub" id="mpqSub">Calling for challengers to a ${size}-player table\u2026</div>
+                <div class="mpq-spin"></div>
+                <div class="pp-actions">
+                    <button class="btn-royal" id="mpqCancel"><span>Withdraw</span></button>
+                </div>
+            </div>`;
+        ov.querySelector('#mpqCancel').onclick = () => {
+            cancelled = true;
+            FMP.cancelQueue();
             ov.classList.remove('active');
-            resolve(res);
-        });
+            resolve({ cancelled: true });
+        };
+        ov.classList.add('active');
+        const minHold = new Promise(r => setTimeout(r, 700));
+        Promise.all([window._mpQueueP || Promise.resolve({ solo: true }), minHold])
+            .then(([res]) => {
+                if (cancelled) return;
+                ov.classList.remove('active');
+                resolve(res);
+            });
     });
 }
 
 // \u2500\u2500 Build the table from the match record \u2500\u2500
 async function startMpGame({ game: rec, mySeat }) {
     const n = rec.size;
+
+    // The record is truth: if the table formed before your pick landed
+    // (mid-browse match, or the write raced the host), your seat carries
+    // an offer-drawn hero \u2014 say so instead of surprising silently.
+    const sealed = rec.roster[mySeat];
+    if (sealed && sealed.hero && selectedCharacter && sealed.hero !== selectedCharacter) {
+        const hc = window.FAVOR_DATA.characters.find(c => c.id === sealed.hero);
+        showNotification(`The match formed \u2014 ${hc ? hc.name : 'your hero'} answers the call.`, 'act');
+    }
     game = new FavorGame(n);
     game.setSeed(rec.seed);
     game.setDealOffset(mySeat);   // chunk k stays with canonical seat k
@@ -1164,7 +1298,7 @@ async function startMpGame({ game: rec, mySeat }) {
     for (let i = 1; i < n; i++) {
         const r = rec.roster[(mySeat + i) % n];
         const gp = game.players[i];
-        if (r.human) { gp._remoteHuman = true; gp._mpUid = r.uid; }
+        if (r.human) { gp._remoteHuman = true; gp._mpUid = r.uid; gp._mpAvatar = r.avatar || null; }
         if (r.persona) {
             gp._personaUid = r.personaUid;
             gp._personaAI = { key: r.persona, strong: (r.strong || []).slice() };
@@ -1690,6 +1824,11 @@ function renderBoardThumb(state) {
     // Rebuilt on every renderGameState, so slides stay in sync.
     const cur = (typeof game !== 'undefined' && game && game.players[0])
         ? game.players[0].sliderPosition : 2;
+    // The plate is YOUR seat's identity: chosen crest + royal name (the
+    // hero is the art right above). Falls back to the hero's name when
+    // no royal name is set yet.
+    const crest = (window.FLB && typeof FLB.myAvatar === 'function' && FLB.myAvatar())
+        ? FLB.avatarDisc(FLB.myAvatar(), 'thumb-crest') : '';
     el.innerHTML = `
         <div class="thumb-boardwrap">
             <img src="assets/characters/${char.filename}" alt="${char.name}">
@@ -1697,7 +1836,7 @@ function renderBoardThumb(state) {
                  style="left:${BOARD_OV_TRACK.lefts[cur]}%; top:${BOARD_OV_TRACK.top}%">
         </div>
         <div class="thumb-footer">
-            <span class="thumb-name">${char.name}</span>
+            <span class="thumb-name">${crest}${localStorage.getItem('favorName') || char.name}</span>
             <span class="thumb-hint">View board</span>
         </div>
     `;
@@ -1868,6 +2007,8 @@ function renderStatsPanel(state) {
     const panel = document.getElementById('statsPanel');
     // No act badge (the phase pill says it) and no ring-dot row (the board
     // thumb above wears the ring ON the art) -- the panel is tokens + skills.
+    // (Your crest + royal name live on the board thumb's plate — adding a
+    // row HERE broke the panel's hard-won no-scroll fit.)
     panel.innerHTML = buildStatsPanelHtml(0, state);
 
     // Position dynamically after board thumb loads (desktop only -- in compact
@@ -2009,13 +2150,16 @@ function renderSidebar(state) {
         const emblem = state.emblemHolder === i ? ' ' + emblemBadge() : '';
         const char = game.players[i].character;
         const avatarSrc = char ? `assets/characters/${char.filename}` : '';
+        // A real human across the wire wears THEIR chosen crest by the name.
+        const crest = (game.players[i]._mpAvatar && window.FLB)
+            ? FLB.avatarDisc(game.players[i]._mpAvatar, 'opp-crest') : '';
 
         html += `
             <div class="opp-entry${isActive ? ' active-turn' : ''}" data-pi="${i}"
                  onclick="openOppOverlay(${i})">
                 <img class="opp-avatar" src="${avatarSrc}">
                 <div class="opp-details">
-                    <span class="opp-name">${p.name}${emblem}</span>
+                    <span class="opp-name">${crest}${p.name}${emblem}</span>
                     <div class="opp-gold-row">
                         <img src="${PURSE_ICONS.gold}" alt="Gold"><b>${p.gold}</b>
                     </div>
@@ -4731,6 +4875,10 @@ function vsTrophy(color) {
 function showScoring() {
     const scores = game.getWinner();
 
+    // Each row carries its player's final Power — the lifetime-Power
+    // leaderboard accumulates it per game (calculatePower is a pure read).
+    scores.forEach(s => { s.power = game.calculatePower(s.playerIndex); });
+
     // Snapshot BEFORE posting — the deltas below say what THIS game did,
     // measured against where you stood when it began.
     const before = (window.FLB && typeof FLB.snapshot === 'function')
@@ -4745,7 +4893,9 @@ function showScoring() {
     const personaPlaces = (!mpActive() || FMP.isHost())
         ? scores.map((s, i) => {
             const gp = game.players[s.playerIndex];
-            return gp && gp._personaUid ? { uid: gp._personaUid, name: gp.name, place: i } : null;
+            return gp && gp._personaUid
+                ? { uid: gp._personaUid, name: gp.name, place: i, power: s.power || 0 }
+                : null;
         }).filter(Boolean)
         : [];
     if (window.FLB) FLB.postGameResult(scores, personaPlaces);

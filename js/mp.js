@@ -41,7 +41,7 @@
     // Lockstep build version — bump whenever engine RULES or the move
     // stream change shape (both clients must simulate identically). Queue
     // entries and game records carry it; mismatched builds never pair.
-    const MPV = 3;
+    const MPV = 4;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.
@@ -83,14 +83,21 @@
      *   { solo: true }                       — window expired, play the bots
      *   { game, gid, mySeat }                — matched into a live game
      * onState(kind, detail) narrates for the menu ('searching', 'found').
+     *
+     * COMMIT-FIRST (Wyatt): Play Now queues you BEFORE you see a hero —
+     * the entry carries your 3-hero OFFER; your pick lands later via
+     * setQueueHero. A match that forms before you confirm draws your
+     * seat's hero from that offer, so backing out can never re-roll.
      */
-    function enterQueue({ size, hero, onState }) {
+    function enterQueue({ size, offer, onState }) {
         if (q) cancelQueue();
         const me = uid();
         const entry = {
             name: (window.FLB && localStorage.getItem('favorName')) || 'A Noble',
             rating: 0,
-            hero: hero || null,
+            hero: null,
+            offer: Array.isArray(offer) && offer.length ? offer : null,
+            avatar: localStorage.getItem('favorAvatar') || null,
             at: firebase.database.ServerValue.TIMESTAMP,
             hb: firebase.database.ServerValue.TIMESTAMP,
             ver: MPV,
@@ -158,6 +165,14 @@
         });
     }
 
+    // The player picked (or re-picked) a hero while queued — the live
+    // entry carries it so the host seats them with their choice. No-op
+    // once matched/expired.
+    function setQueueHero(heroId) {
+        if (!q || q.done || !q.ref) return;
+        try { q.ref.child('hero').set(heroId || null); } catch (e) { /* best effort */ }
+    }
+
     function cancelQueue() {
         if (!q) return;
         try {
@@ -183,9 +198,16 @@
 
         for (const [huid, e] of takes) {
             let hero = e.hero;
-            if (!hero || takenHeroes.has(hero)) hero = null;   // collision → fill below
+            if (!hero || takenHeroes.has(hero)) hero = null;   // collision → offer/fill below
+            if (!hero && Array.isArray(e.offer)) {
+                // Still browsing (or their pick collided): seat them from
+                // their OWN offer — never a hero they don't own.
+                const fromOffer = e.offer.filter(h => !takenHeroes.has(h));
+                if (fromOffer.length) hero = fromOffer[Math.floor(Math.random() * fromOffer.length)];
+            }
             if (hero) takenHeroes.add(hero);
-            roster.push({ uid: huid, name: e.name || 'A Noble', hero, rating: e.rating || 0, human: true });
+            roster.push({ uid: huid, name: e.name || 'A Noble', hero, rating: e.rating || 0,
+                          avatar: e.avatar || null, human: true });
         }
 
         // Fill the rest of the table exactly like solo: persona rivals by
@@ -481,7 +503,7 @@
     // ── Public surface ───────────────────────────────────────────────
 
     window.FMP = {
-        available, enterQueue, cancelQueue,
+        available, enterQueue, cancelQueue, setQueueHero,
         active, mySeat, isHost, record, localIdx, canonSeat,
         publish, waitFor, onBroadcast, markBooted,
         leaveGame, gameOver,

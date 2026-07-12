@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — A Game of Royal Succession</title>
-    <link rel="stylesheet" href="css/style.css?v=20260712122027">
+    <link rel="stylesheet" href="css/style.css?v=20260712131357">
     <!-- Skylar's melee cinematic — loaded AFTER style.css so its .ms-* rules win. -->
-    <link rel="stylesheet" href="css/melee.css?v=20260712122027">
+    <link rel="stylesheet" href="css/melee.css?v=20260712131357">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
@@ -83,6 +83,7 @@
             <div class="lb-title">Leaderboard</div>
             <div class="lb-tabs">
                 <button class="lb-tab on" data-tab="alltime" onclick="FLB.openLeaderboard('alltime')">All-Time</button>
+                <button class="lb-tab" data-tab="power" onclick="FLB.openLeaderboard('power')">Power</button>
                 <button class="lb-tab" data-tab="daily" onclick="FLB.openLeaderboard('daily')">Daily</button>
             </div>
             <div class="lb-localnote" id="lbLocal" style="display:none">LOCAL STANDINGS — leaderboard offline</div>
@@ -388,13 +389,13 @@
          falls back to local standings if these can't reach the project) -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="data/cards.js?v=20260712122027"></script>
-    <script src="data/missions.js?v=20260712122027"></script>
-    <script src="data/characters.js?v=20260712122027"></script>
-    <script src="engine/gameState.js?v=20260712122027"></script>
-    <script src="js/melee.js?v=20260712122027"></script>
-    <script src="js/ui.js?v=20260712122027"></script>
-    <script src="js/meta.js?v=20260712122027"></script>
-    <script src="js/mp.js?v=20260712122027"></script>
+    <script src="data/cards.js?v=20260712131357"></script>
+    <script src="data/missions.js?v=20260712131357"></script>
+    <script src="data/characters.js?v=20260712131357"></script>
+    <script src="engine/gameState.js?v=20260712131357"></script>
+    <script src="js/melee.js?v=20260712131357"></script>
+    <script src="js/ui.js?v=20260712131357"></script>
+    <script src="js/meta.js?v=20260712131357"></script>
+    <script src="js/mp.js?v=20260712131357"></script>
 </body>
 </html>

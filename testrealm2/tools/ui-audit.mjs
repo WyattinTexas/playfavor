@@ -818,6 +818,17 @@ console.log('── Hero select: 3 random heroes, bots draw from the leftovers, 
   });
   ok(after.shown, 'Begin Your Journey appears on pick');
   ok(after.inView, `auto-scroll carries Begin into the viewport (${after.top}..${after.bottom} in ${after.vh})`);
+  // The ring is a fixture of the CENTER slot — the tapped hero glided in.
+  await sleep(400);   // FLIP swap settles
+  const ring = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.character-card')];
+    return {
+      selIdx: cards.findIndex(c => c.classList.contains('selected')),
+      epithets: cards.every(c => c.querySelector('.epithet')),
+    };
+  });
+  ok(ring.selIdx === 1, `the ring holds the center slot — tapped hero glided into it (idx ${ring.selIdx})`);
+  ok(ring.epithets, 'every offering wears its printed epithet');
   await page.screenshot({ path: join(SHOTS, 'hero-select-3.png') });
 
   // Begin works, and every bot drew from the seven NON-offered heroes.
@@ -2809,6 +2820,18 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
   ok(insp.big && insp.fits, 'board fills the stage and stays on-screen');
   ok(insp.name === 'Duchess' && /★ 100/.test(insp.buy),
     `easel carries name + price (${insp.name}, ${insp.buy})`);
+  // Rulebook flavor: italic epithet, DIFFICULTY star row, the printed Tip.
+  const flavor = await page.evaluate(() => ({
+    epithet: (document.querySelector('#storeInspect .st-epithet') || {}).textContent,
+    diff: (document.querySelector('#storeInspect .st-insp-diff') || {}).textContent || '',
+    tip: (document.querySelector('#storeInspect .st-insp-tip') || {}).textContent || '',
+    shelfStars: [...document.querySelectorAll('.st-card .st-diff')].length === 10 &&
+      [...document.querySelectorAll('.st-card .st-diff')].every(d => /★/.test(d.textContent)),
+  }));
+  ok(flavor.epithet === 'Philanthropist' && /DIFFICULTY/.test(flavor.diff) && /★★★/.test(flavor.diff),
+    `easel speaks rulebook — ${flavor.epithet}, ${flavor.diff.trim()}`);
+  ok(/Your Generosity will be Rewarded/.test(flavor.tip), 'the printed Tip rides the easel');
+  ok(flavor.shelfStars, 'every shelf plate wears its difficulty stars');
   await page.screenshot({ path: join(SHOTS, 'store-inspect.png') });
 
   // Broke tap from the easel: BOTH buttons say why (shared selector),
@@ -3125,6 +3148,162 @@ console.log('── Royal Mint: bundle plaques, honest checkout URL, IPN deliver
     return 'RESIDUE';
   }, AUDIT_UID);
   ok(scrub === 'clean', `mint audit player scrubbed from favor/* (${scrub})`);
+  await page.close();
+}
+
+// ═══ AVATARS + LEADERBOARD OVERHAUL: crests, medals, Power board ═══
+console.log('── Avatars + boards: crest picker, whole-row post, medals, Power, your row');
+{
+  const AUDIT_UID = 'uauditcrest' + Math.random().toString(36).slice(2, 8);
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('crest: ' + m.text()); });
+  await page.evaluateOnNewDocument((u) => {
+    localStorage.setItem('favorUid', u);
+    localStorage.setItem('favorName', 'Audit Herald');
+    // Start crestless ONCE — this hook re-runs on startGame's later
+    // navigation and must not wipe the crest we just picked.
+    if (!localStorage.getItem('__crestFlowSeeded')) {
+      localStorage.removeItem('favorAvatar');
+      localStorage.setItem('__crestFlowSeeded', '1');
+    }
+  }, AUDIT_UID);
+  await page.setViewport({ width: 1280, height: 800 });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+
+  // Personas' lifetime power must never feel an audit — capture to compare.
+  const ashPowerBefore = await page.evaluate(() =>
+    firebase.database().ref('favor/players/persona_ashcroft/power').get().then(s => s.val()));
+
+  // 1 · The crest picker: ten paintings, picking one dresses the chip.
+  await page.evaluate(() => FLB.openProfile());
+  await sleep(300);
+  ok(await page.evaluate(() => document.querySelectorAll('.pf-avatars .pf-av').length === 10),
+    'profile offers all ten crests');
+  await page.evaluate(() => document.querySelector('.pf-av[data-av="knight"]').click());
+  await sleep(600);
+  const crest = await page.evaluate(() => ({
+    picked: document.querySelector('.pf-av[data-av="knight"]').classList.contains('on'),
+    mirror: localStorage.getItem('favorAvatar'),
+    chip: !!document.querySelector('#profileChip .av-disc img[src*="Knight"], #profileChip .av-disc img[src*="knight"]'),
+  }));
+  ok(crest.picked && crest.mirror === 'knight', `crest picked + mirrored (${crest.mirror})`);
+  ok(crest.chip, 'the profile chip wears the crest');
+  await page.screenshot({ path: join(SHOTS, 'profile-crests.png') });
+  await page.evaluate(() => FLB.closeProfile());
+
+  // 2 · One finished game = ONE whole-row post: rating, stars, power,
+  // games/wins/streak land together (loss first, then a win).
+  await page.evaluate(async () => {
+    await FLB.postGameResult([
+      { name: 'Rival A', finalScore: 70, power: 20, playerIndex: 1 },
+      { name: 'You', finalScore: 60, power: 34, playerIndex: 0 },
+      { name: 'Rival B', finalScore: 50, power: 10, playerIndex: 2 },
+    ], []);
+    await FLB.postGameResult([
+      { name: 'You', finalScore: 80, power: 40, playerIndex: 0 },
+      { name: 'Rival A', finalScore: 45, power: 15, playerIndex: 1 },
+      { name: 'Rival B', finalScore: 30, power: 5, playerIndex: 2 },
+    ], []);
+  });
+  await sleep(400);
+  const row = await page.evaluate((u) =>
+    firebase.database().ref(`favor/players/${u}`).get().then(s => s.val()), AUDIT_UID);
+  ok(row && row.rating === 35 && row.stars === 16,
+    `rating 10+25=35, stars 6+10=16 in one row (${row && row.rating}/${row && row.stars})`);
+  ok(row && row.power === 74 && row.games === 2 && row.wins === 1 &&
+     row.streak === 1 && row.bestStreak === 1,
+    `power 74, 2 games, 1 win, streak 1 ride the same transaction`);
+  ok(row && row.avatar === 'knight', 'the crest rides the game post too');
+
+  // 3 · All-Time: medals on the podium, crest discs, your row glows.
+  await page.evaluate(() => FLB.openLeaderboard('alltime'));
+  await sleep(700);
+  const at = await page.evaluate((u) => {
+    const rows = [...document.querySelectorAll('.lb-row')];
+    const mine = rows.find(r => r.classList.contains('me'));
+    return {
+      medals: document.querySelectorAll('.lb-medal.m1, .lb-medal.m2, .lb-medal.m3').length,
+      discs: rows.every(r => r.querySelector('.av-disc')),
+      me: !!mine, you: mine ? /You/.test(mine.textContent) : false,
+      sub: mine ? /W · \d+ G/.test(mine.textContent) : false,
+    };
+  }, AUDIT_UID);
+  ok(at.medals === 3, `top three wear medals (${at.medals})`);
+  ok(at.discs, 'every row wears a crest disc');
+  ok(at.me && at.you, 'YOUR row is highlighted and tagged You');
+  ok(at.sub, `your record rides the row (wins · games)`);
+  await page.screenshot({ path: join(SHOTS, 'lb-alltime.png') });
+
+  // 4 · Power: lifetime ⚔ accumulates; seeded personas anchor the top.
+  await page.evaluate(() => FLB.openLeaderboard('power'));
+  await sleep(700);
+  const pw = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.lb-row')];
+    const scores = rows.map(r => parseInt(r.querySelector('.lb-score').textContent.replace(/[^\d]/g, ''), 10));
+    const mine = rows.find(r => r.classList.contains('me'));
+    return {
+      sorted: scores.every((s, i) => i === 0 || scores[i - 1] >= s),
+      top: rows[0] ? rows[0].textContent : '',
+      myScore: mine ? mine.querySelector('.lb-score').textContent : '',
+      icon: rows[0] ? !!rows[0].querySelector('.lb-ico') : false,
+    };
+  });
+  ok(pw.sorted, 'Power board sorts by lifetime power');
+  ok(/Ashcroft/.test(pw.top), `seeded persona anchors the top (${pw.top.slice(0, 40).trim()}…)`);
+  ok(/74/.test(pw.myScore) && pw.icon, `your two games total ⚔ 74 (${pw.myScore.trim()})`);
+  await page.screenshot({ path: join(SHOTS, 'lb-power.png') });
+
+  // 5 · Daily keeps the best single game, now with crests.
+  await page.evaluate(() => FLB.openLeaderboard('daily'));
+  await sleep(700);
+  const daily = await page.evaluate(() => {
+    const mine = [...document.querySelectorAll('.lb-row')].find(r => r.classList.contains('me'));
+    return mine ? mine.textContent : '';
+  });
+  ok(/80/.test(daily), `daily carries your best single-game Favor (80)`);
+  await page.evaluate(() => FLB.closeLeaderboard());
+
+  // 6 · The crest is home in-game: the board thumb's plate carries your
+  // crest + royal name (never the stats panel — its no-scroll fit is law).
+  await startGame(page);
+  const ident = await page.evaluate(() => {
+    const plate = document.querySelector('#boardThumb .thumb-name');
+    const img = plate && plate.querySelector('.av-disc:not(.av-empty) img');
+    const panel = document.getElementById('statsPanel');
+    return {
+      there: !!plate,
+      knight: img ? /knight/i.test(img.src) : false,
+      name: plate ? plate.textContent.trim() : '',
+      panelFits: panel ? panel.scrollHeight <= panel.clientHeight + 1 : false,
+    };
+  });
+  ok(ident.there && ident.knight && /Audit Herald/.test(ident.name),
+    `your crest + royal name ride the board plate (${ident.name})`);
+  ok(ident.panelFits, 'stats panel keeps its no-scroll fit');
+
+  // Leave no trace — player row, this window's daily rows, and the
+  // shared-profile crest keys (localStorage outlives this flow).
+  const scrub2 = await page.evaluate(async (u) => {
+    localStorage.removeItem('favorAvatar');
+    localStorage.removeItem('__crestFlowSeeded');
+    for (let i = 0; i < 6; i++) {
+      await firebase.database().ref(`favor/players/${u}`).remove();
+      const days = await firebase.database().ref('favor/daily').get().then(s => s.val() || {});
+      for (const k of Object.keys(days)) {
+        await firebase.database().ref(`favor/daily/${k}/scores/${u}`).remove();
+      }
+      await new Promise(r => setTimeout(r, 400));
+      const p = await firebase.database().ref(`favor/players/${u}`).get();
+      if (!p.exists()) return 'clean';
+    }
+    return 'RESIDUE';
+  }, AUDIT_UID);
+  ok(scrub2 === 'clean', `crest audit player scrubbed from favor/* (${scrub2})`);
+  const ashPowerAfter = await page.evaluate(() =>
+    firebase.database().ref('favor/players/persona_ashcroft/power').get().then(s => s.val()));
+  ok(ashPowerAfter === ashPowerBefore,
+    `REAL persona power untouched (${ashPowerAfter}, was ${ashPowerBefore})`);
   await page.close();
 }
 
@@ -3962,6 +4141,62 @@ async function startSeeded(page, seedRig) {
   await page.close();
 }
 
+// ═══ COMMIT-FIRST: pledge at Play Now, sticky offer, no re-roll ═══
+console.log('── Commit-first: Play pledges, the offer sticks, backing out re-rolls nothing');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('pledge: ' + m.text()); });
+  await page.setViewport({ width: 1280, height: 800 });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await page.evaluate(() => {
+    window._mpSkipQueue = true;             // this flow proves offer stickiness, not the wire
+    localStorage.removeItem('favorOffer');  // fresh pledge
+    localStorage.setItem('favorQueue', '3');
+    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+      .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
+    b.click();
+  });
+  await page.waitForFunction(() => document.querySelector('.character-card')?.offsetParent, { timeout: 20000 });
+  const first = await page.evaluate(() => ({
+    ids: [...document.querySelectorAll('.character-card')].map(c => c.dataset.id).sort().join(','),
+    back: !!document.getElementById('qpBack'),
+    stored: !!localStorage.getItem('favorOffer'),
+  }));
+  ok(first.back, 'solo path keeps a way home (Return to the Menu)');
+  ok(first.stored, 'the offer is written at the pledge');
+
+  // Back out, Play again — the SAME three heroes (nothing to re-roll for).
+  await page.evaluate(() => document.getElementById('qpBack').click());
+  await page.waitForFunction(() => {
+    const t = document.getElementById('title-screen');
+    return t && !t.classList.contains('hidden') && t.style.display !== 'none';
+  }, { timeout: 6000 });
+  ok(true, 'Return to the Menu lands back on the title screen');
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+      .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
+    b.click();
+  });
+  await page.waitForFunction(() => document.querySelector('.character-card')?.offsetParent, { timeout: 20000 });
+  const second = await page.evaluate(() =>
+    [...document.querySelectorAll('.character-card')].map(c => c.dataset.id).sort().join(','));
+  ok(second === first.ids, `the offer STUCK across the retry (${second})`);
+
+  // Beginning a real table consumes the pledge — the next Play re-rolls.
+  await page.evaluate(() => {
+    selectedCharacter = document.querySelector('.character-card').dataset.id;
+    document.querySelector('.character-card').classList.add('selected');
+    document.getElementById('confirmBtn').style.display = 'inline-block';
+    window._pinEmblemSeed = 0;   // fast classic table for the consume check
+  });
+  await page.evaluate(() => document.getElementById('confirmBtn').click());
+  await page.waitForFunction(() => typeof game !== 'undefined' && game && game.players[0].character, { timeout: 20000 });
+  ok(await page.evaluate(() => !localStorage.getItem('favorOffer')),
+    'starting the table consumes the sticky offer');
+  await page.close();
+}
+
 // ═══ MULTIPLAYER — queue window, real 2-client match, lockstep, AFK boot ═══
 // Two ISOLATED browser contexts play each other through the real Firebase
 // queue. Timers are shrunk via FMP._T so the whole story runs in seconds.
@@ -3985,12 +4220,24 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
     await page.evaluate(() => {
       window.shuffleArray = (a) => [...a];
       localStorage.setItem('favorQueue', '3');
-      FMP._T.windowMin = 1400; FMP._T.windowSpread = 1;   // fast solo window
+      // Window long enough for the pledge asserts below (entry is read
+      // ~1.3-2.5s after Play), short enough to expire into the solo table.
+      FMP._T.windowMin = 5000; FMP._T.windowSpread = 1;
       const b = [...document.querySelectorAll('#title-screen .btn-royal')]
         .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
       b.click();
     });
     await page.waitForFunction(() => document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent, { timeout: 20000 });
+    // COMMIT-FIRST: the pledge ribbon rides the select screen — you were
+    // queued at Play Now, before any hero was seen (Wyatt's re-roll fix).
+    const pledge = await page.evaluate(() => ({
+      queued: !!document.getElementById('qpWithdraw'),
+      dot: !!document.querySelector('#queuePledge .qp-dot'),
+    }));
+    ok(pledge.queued && pledge.dot, 'select screen shows the pledge (Withdraw + live dot)');
+    ok(await page.evaluate(async () =>
+      !!(await firebase.database().ref('favor/mp/queue/3').get()).val()),
+      'the queue entry was written AT Play Now — before any hero was seen');
     await page.evaluate(() => {
       selectedCharacter = FAVOR_DATA.characters[0].id;
       document.querySelector('.character-card').classList.add('selected');
@@ -4019,7 +4266,9 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
   }
 
   // ── Beats 2-4: a REAL match between two isolated clients. ──
-  {
+  // A crash here (Chrome bogging down 40 minutes in, Firebase latency)
+  // must cost ONE failed check, never the whole run's tally.
+  try {
     const mkContext = async () => (browser.createBrowserContext
       ? browser.createBrowserContext() : browser.createIncognitoBrowserContext());
     const ctxA = await mkContext();
@@ -4030,6 +4279,7 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
     const boot = async (ctx, uid, name, extra) => {
       const pg = await ctx.newPage();
       pg.on('console', m => { if (m.type() === 'error') consoleErrors.push(`mp-${name}: ` + m.text()); });
+      pg.on('pageerror', e => consoleErrors.push(`mp-${name} pageerror: ` + e.message));
       await pg.evaluateOnNewDocument((u, n) => {
         localStorage.setItem('favorUid', u);
         localStorage.setItem('favorName', n);
@@ -4048,13 +4298,34 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
           .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
         b.click();
       }, extra || {});
-      await pg.waitForFunction(() => document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent, { timeout: 20000 });
-      await pg.evaluate(() => {
-        selectedCharacter = FAVOR_DATA.characters[0].id;
-        document.querySelector('.character-card').classList.add('selected');
-        document.getElementById('confirmBtn').style.display = 'inline-block';
-      });
-      await pg.evaluate(() => document.getElementById('confirmBtn').click());
+      // 40 minutes into a run Chrome can swallow the first paint after the
+      // title fade — a formed match may ALSO have auto-consumed the select
+      // (commit-first). Accept either; re-tap Play once before giving up.
+      const selectOrGame = () => pg.waitForFunction(() =>
+        (document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent)
+        || (typeof game !== 'undefined' && game && game.players && game.players[0].character),
+        { timeout: 12000 });
+      try { await selectOrGame(); } catch (e) {
+        console.log(`   (mp-${name}: select slow — re-tapping Play)`);
+        await pg.evaluate(() => {
+          if (typeof game !== 'undefined' && game) return;
+          const t = document.getElementById('title-screen');
+          t.classList.remove('hidden'); t.style.display = '';
+          startGame();
+        });
+        await selectOrGame();
+      }
+      // If the table already formed (auto-start), there is nothing to pick.
+      const inSelect = await pg.evaluate(() =>
+        !!(document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent));
+      if (inSelect) {
+        await pg.evaluate(() => {
+          selectedCharacter = FAVOR_DATA.characters[0].id;
+          document.querySelector('.character-card').classList.add('selected');
+          document.getElementById('confirmBtn').style.display = 'inline-block';
+        });
+        await pg.evaluate(() => document.getElementById('confirmBtn').click());
+      }
       return pg;
     };
 
@@ -4146,6 +4417,8 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
     ok(!swept.stray, 'favor/mp swept clean of audit uids');
     await pA.close(); await pB.close();
     await ctxA.close(); await ctxB.close();
+  } catch (e) {
+    ok(false, 'MP match story crashed — treat as latency-first, rerun', e.message.slice(0, 160));
   }
 }
 

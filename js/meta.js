@@ -291,15 +291,32 @@
             if (place < 0) return;
             const mine = scores[place];
             const delta = ratingDelta(place, scores.length);
-
-            await dbTxn(`players/${uid()}/rating`, r => Math.max(0, (r || 0) + delta));
-            // Per-game Stars — every game pays something (store economy).
             const starsWon = gameStars(place, scores.length);
-            await dbTxn(`players/${uid()}/stars`, s => (s || 0) + starsWon);
-            // First result materializes the record (lazy join — see above).
-            // AWAITED: a trailing fire-and-forget here can land after a
-            // caller's subsequent reads/cleanup and resurrect the row.
-            await dbUpdate(`players/${uid()}`, { name: myName(), lastSeen: Date.now() });
+            const won = place === 0;
+            const myPower = Math.max(0, Math.round(mine.power || 0));
+
+            // ONE whole-row transaction: rating + Stars + lifetime Power +
+            // wins/games/streak + identity land together or retry together
+            // (the old three-txn chain could drop a leg on tab close, and
+            // a racing Mint delivery is safe — the txn re-runs on conflict).
+            // First result still materializes the record (lazy join).
+            await dbTxn(`players/${uid()}`, p => {
+                const cur = p || {};
+                const streak = won ? (cur.streak || 0) + 1 : 0;
+                return {
+                    ...cur,
+                    name: myName(),
+                    lastSeen: Date.now(),
+                    avatar: cur.avatar || myAvatar() || null,
+                    rating: Math.max(0, (cur.rating || 0) + delta),
+                    stars: (cur.stars || 0) + starsWon,
+                    power: (cur.power || 0) + myPower,
+                    games: (cur.games || 0) + 1,
+                    wins: (cur.wins || 0) + (won ? 1 : 0),
+                    streak,
+                    bestStreak: Math.max(cur.bestStreak || 0, streak),
+                };
+            });
 
             // Daily board: best single-game Favor score in this window.
             const key = currentDateKey();
@@ -312,17 +329,25 @@
             console.warn('[FAVOR meta] post failed:', e.message);
         } finally {
             // Seated personas: their placements are as real as yours —
-            // rating txn on their PERMANENT rows (never delete). No daily
-            // post, no Stars: the nightly crowns stay a human race. A row
-            // missing its rating starts from the persona's seed value.
+            // one whole-row txn each on their PERMANENT rows (never delete).
+            // No daily post, no Stars: the nightly crowns stay a human race.
+            // A row missing its rating starts from the persona's seed value.
             for (const pp of (personaPlaces || [])) {
                 try {
                     const seedR = (PERSONAS.find(x => x.uid === pp.uid) || {}).seedRating || 0;
                     const pDelta = ratingDelta(pp.place, scores.length);
-                    await dbTxn(`players/${pp.uid}/rating`,
-                        r => Math.max(0, (r == null ? seedR : r) + pDelta));
-                    await dbUpdate(`players/${pp.uid}`,
-                        { name: pp.name, lastSeen: Date.now(), persona: true });
+                    await dbTxn(`players/${pp.uid}`, p => {
+                        const cur = p || {};
+                        const base = cur.rating == null ? seedR : cur.rating;
+                        return {
+                            ...cur,
+                            name: pp.name, lastSeen: Date.now(), persona: true,
+                            rating: Math.max(0, base + pDelta),
+                            power: (cur.power || 0) + Math.max(0, Math.round(pp.power || 0)),
+                            games: (cur.games || 0) + 1,
+                            wins: (cur.wins || 0) + (pp.place === 0 ? 1 : 0),
+                        };
+                    });
                 } catch (e) {
                     console.warn('[FAVOR meta] persona post failed:', e.message);
                 }
@@ -426,12 +451,42 @@
         return { rating: p.rating || 0, stars: p.stars || 0 };
     }
 
+    // ── Avatars — a chosen crest that rides the chip, the boards and the
+    // table. Starter set = the ten character paintings (round-cropped like
+    // the rival rail); stored at players/{uid}/avatar + a local mirror so
+    // every surface paints instantly.
+    function myAvatar() {
+        return localStorage.getItem('favorAvatar') || (_me && _me.avatar) || null;
+    }
+    function avatarFile(id) {
+        const c = ((window.FAVOR_DATA || {}).characters || []).find(x => x.id === id);
+        return c ? `assets/characters/${c.filename}` : null;
+    }
+    function avatarDisc(id, cls) {
+        const f = avatarFile(id);
+        return f
+            ? `<span class="av-disc ${cls || ''}"><img src="${f}" alt=""></span>`
+            : `<span class="av-disc av-empty ${cls || ''}"><img src="assets/icons/favor.png" alt=""></span>`;
+    }
+    async function setAvatar(id) {
+        if (!avatarFile(id)) return;
+        localStorage.setItem('favorAvatar', id);
+        _me = { ...(_me || {}), avatar: id };
+        try { await dbUpdate(`players/${uid()}`, { avatar: id }); } catch (e) { /* mirror holds */ }
+        renderProfileChip();
+        if (document.getElementById('profilePanel').classList.contains('active')) openProfile();
+    }
+
     async function renderProfileChip() {
         const chip = document.getElementById('profileChip');
         if (!chip) return;
         _me = await dbGet(`players/${uid()}`) || _me;
+        if (_me && _me.avatar && !localStorage.getItem('favorAvatar')) {
+            localStorage.setItem('favorAvatar', _me.avatar);   // heal the mirror
+        }
         const gold = (_me && _me.champs && _me.champs.gold) || 0;
         chip.innerHTML = `
+            ${avatarDisc(myAvatar(), 'pc-av')}
             <span class="pc-name">${myName()}</span>
             <span class="pc-rating" title="Rating">${(_me && _me.rating) || 0}</span>
             ${gold > 0 ? `<span class="pc-crowns" title="Daily Championships">${CROWN_SVG}${gold}</span>` : ''}
@@ -441,13 +496,24 @@
     function openProfile() {
         const p = _me || { rating: 0, stars: 0, champs: {} };
         const ch = p.champs || {};
+        const chars = ((window.FAVOR_DATA || {}).characters || []);
         document.getElementById('profileBody').innerHTML = `
             <div class="pf-row pf-namerow">
+                ${avatarDisc(myAvatar(), 'pf-av-current')}
                 <input id="pfName" maxlength="24" value="${myName().replace(/"/g, '&quot;')}">
                 <button class="btn-royal" id="pfSave"><span>Save</span></button>
             </div>
+            <div class="pf-avatars" title="Choose your crest">${chars.map(c => `
+                <button class="pf-av${myAvatar() === c.id ? ' on' : ''}" data-av="${c.id}"
+                    onclick="FLB.setAvatar('${c.id}')" title="${c.name}">
+                    <img src="assets/characters/${c.filename}" alt="${c.name}">
+                </button>`).join('')}
+            </div>
             <div class="pf-row"><span class="pf-label">Rating</span><b>${p.rating || 0}</b></div>
             <div class="pf-row"><span class="pf-label">Stars</span><b>★ ${p.stars || 0}</b></div>
+            <div class="pf-row"><span class="pf-label">Lifetime Power</span><b>⚔ ${p.power || 0}</b></div>
+            <div class="pf-row"><span class="pf-label">Record</span>
+                <b>${p.wins || 0} W · ${p.games || 0} played${(p.bestStreak || 0) > 1 ? ` · best streak ${p.bestStreak}` : ''}</b></div>
             <div class="pf-row"><span class="pf-label">Daily Championships</span>
                 <b class="pf-champs">${CROWN_SVG} ${ch.gold || 0} · 2nd ${ch.silver || 0} · 3rd ${ch.bronze || 0}</b></div>
             <div class="pf-note">Champions are crowned nightly at 10 PM Eastern.${mode === 'local' ? '<br><b class="pf-local">LOCAL PROFILE — leaderboard offline</b>' : ''}</div>
@@ -461,6 +527,40 @@
     }
     function closeProfile() { document.getElementById('profilePanel').classList.remove('active'); }
 
+    // Three boards, one renderer: All-Time (rating), Power (lifetime ⚔,
+    // accumulated every game), Daily (best single-game Favor). Top three
+    // wear medals, every row wears its player's crest, YOUR row glows —
+    // and if you're beyond the visible fifty, your true rank rides a
+    // separated row at the bottom (Nation is the quality bar).
+    const LB_EMPTY = {
+        alltime: 'No champions yet — the realm awaits its first.',
+        power: 'No power yet forged — play a game and the ledger begins.',
+        daily: 'No champions yet — the day awaits its first.',
+    };
+
+    function lbRowHtml(r, rank, tab, opts) {
+        const me = r.uid === uid();
+        const medal = rank <= 3
+            ? `<span class="lb-medal m${rank}">${rank}</span>`
+            : `<span class="lb-rank">${rank}</span>`;
+        const crowns = r.gold > 0 ? `<span class="lb-crowns">${CROWN_SVG}${r.gold}</span>` : '';
+        const sub = tab !== 'daily' && r.games
+            ? `<span class="lb-sub">${r.wins || 0} W · ${r.games} G</span>` : '';
+        const score = tab === 'power'
+            ? `<img class="lb-ico" src="assets/icons/power.png" alt="">${(r.score || 0).toLocaleString()}`
+            : tab === 'daily'
+                ? `<img class="lb-ico" src="assets/icons/favor.png" alt="">${r.score}`
+                : `✦ ${r.score}`;
+        return `
+            <div class="lb-row${me ? ' me' : ''}${rank <= 3 ? ` podium p${rank}` : ''}${opts && opts.appendix ? ' appendix' : ''}" style="--li:${opts ? opts.idx : 0}">
+                ${medal}
+                ${avatarDisc(r.avatar, 'lb-av')}
+                <span class="lb-name">${r.name || 'Unknown Noble'}${crowns}${me ? '<span class="lb-you">You</span>' : ''}</span>
+                ${sub}
+                <b class="lb-score">${score}</b>
+            </div>`;
+    }
+
     async function openLeaderboard(tab = 'alltime') {
         const panel = document.getElementById('lbPanel');
         panel.classList.add('active');
@@ -471,33 +571,42 @@
         document.getElementById('lbLocal').style.display = mode === 'local' ? 'block' : 'none';
 
         try {
+            // Players carry avatar/wins/games for every tab; daily rows
+            // borrow theirs by uid.
+            const players = await dbGet('players') || {};
+            const deck = (u, p) => ({
+                uid: u, name: p.name, avatar: p.avatar || null,
+                wins: p.wins || 0, games: p.games || 0,
+                gold: (p.champs && p.champs.gold) || 0,
+            });
             let rows = [];
-            if (tab === 'alltime') {
-                const players = await dbGet('players') || {};
-                rows = Object.entries(players)
-                    .filter(([, p]) => p && p.name)   // nameless stubs stay off the board
-                    .map(([u, p]) => ({ uid: u, name: p.name, score: p.rating || 0,
-                                        gold: (p.champs && p.champs.gold) || 0 }))
-                    .sort((a, b) => b.score - a.score)
-                    .slice(0, 50);
-            } else {
+            if (tab === 'daily') {
                 const key = currentDateKey();
                 const day = await dbGet(`daily/${key}/scores`) || {};
-                rows = podiumSort(day).map(p => ({ uid: p.uid, name: p.name, score: p.best, gold: 0 }))
-                    .slice(0, 50);
+                rows = podiumSort(day).map(p => ({
+                    ...deck(p.uid, players[p.uid] || { name: p.name }),
+                    name: p.name, score: p.best, gold: 0,
+                }));
+            } else {
+                const metric = tab === 'power' ? (p => p.power || 0) : (p => p.rating || 0);
+                rows = Object.entries(players)
+                    .filter(([, p]) => p && p.name)   // nameless stubs stay off the board
+                    .map(([u, p]) => ({ ...deck(u, p), score: metric(p) }))
+                    .sort((a, b) => b.score - a.score);
+                if (tab === 'power') rows = rows.filter(r => r.score > 0);
             }
             if (!rows.length) {
-                body.innerHTML = `<div class="lb-loading">No champions yet — the ${tab === 'alltime' ? 'realm' : 'day'} awaits its first.</div>`;
+                body.innerHTML = `<div class="lb-loading">${LB_EMPTY[tab] || LB_EMPTY.alltime}</div>`;
                 return;
             }
-            body.innerHTML = rows.map((r, i) => `
-                <div class="lb-row${r.uid === uid() ? ' me' : ''}">
-                    <span class="lb-rank">${i + 1}</span>
-                    <span class="lb-name">${r.name || 'Unknown Noble'}
-                        ${tab === 'alltime' && r.gold > 0 ? `<span class="lb-crowns">${CROWN_SVG}${r.gold}</span>` : ''}
-                    </span>
-                    <b class="lb-score">${r.score}</b>
-                </div>`).join('');
+            const myIdx = rows.findIndex(r => r.uid === uid());
+            const shown = rows.slice(0, 50);
+            let html = shown.map((r, i) => lbRowHtml(r, i + 1, tab, { idx: i })).join('');
+            if (myIdx >= 50) {
+                html += '<div class="lb-gap">···</div>'
+                    + lbRowHtml(rows[myIdx], myIdx + 1, tab, { idx: shown.length, appendix: true });
+            }
+            body.innerHTML = html;
         } catch (e) {
             body.innerHTML = '<div class="lb-loading">The heralds are unreachable.</div>';
         }
@@ -641,6 +750,7 @@
                 </div>
                 <div class="st-plate">
                     <span class="st-name">${c.name}</span>
+                    <span class="st-diff" title="Difficulty">${'★'.repeat(c.difficulty || 1)}</span>
                 </div>
                 ${storeActionHtml(c, owned, stars)}
             </div>`;
@@ -669,15 +779,22 @@
         if (!c) { box.classList.remove('active'); box.innerHTML = ''; return; }
         const owned = ownedIds();
         const stars = (_me && _me.stars) || 0;
+        // The easel speaks rulebook: DIFFICULTY star row, italic epithet,
+        // the printed Tip — that's what makes browsing exciting.
         box.innerHTML = `
             <div class="st-insp-inner" onclick="event.stopPropagation()">
                 <div class="st-insp-frame">
                     <img src="assets/characters/hd/${c.filename}" alt="${c.name}">
                 </div>
                 <div class="st-insp-row">
-                    <span class="st-name">${c.name}</span>
+                    <span class="st-insp-id">
+                        <span class="st-name">${c.name}</span>
+                        ${c.epithet ? `<span class="st-epithet">${c.epithet}</span>` : ''}
+                        <span class="st-insp-diff">DIFFICULTY <b>${'★'.repeat(c.difficulty || 1)}</b></span>
+                    </span>
                     ${storeActionHtml(c, owned, stars)}
                 </div>
+                ${c.tip ? `<div class="st-insp-tip">Tip: <i>${c.tip}</i></div>` : ''}
             </div>
             <div class="st-insp-close" onclick="event.stopPropagation(); FLB.closeInspect()">✕</div>`;
         box.classList.add('active');
@@ -931,6 +1048,7 @@
         inspectChar, closeInspect,
         askBuyStars, buyStars, starCheckoutUrl, watchForStars,
         starPacks: () => STAR_PACKS,
+        setAvatar, myAvatar, avatarDisc,
         get mode() { return mode; }, uid,
     };
 })();
