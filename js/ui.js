@@ -30,7 +30,7 @@ const SPECIAL_DESCRIPTIONS = {
     "map_lost_north":                "Reveals a hidden path to the North.",
     "power_x2":                      "Doubles your Power for Melee!",
     "move_slider_any":               "Move your slider to any position!",
-    "double_adventure_favor":        "Doubles Favor from all Adventures!",
+    "double_adventure_favor":        "Choose one of your Adventures — its Favor doubles!",
     "minus_3_power_all_others":      "All opponents lose 3 Power!",
     "scorn_to_prestige":             "Converts all Scorn into Prestige!",
     "map_finding_lost_corridor":     "Unlocks the Finding the Lost Corridor adventure.",
@@ -39,7 +39,7 @@ const SPECIAL_DESCRIPTIONS = {
     "others_5_scorn":                "All opponents gain 5 Scorn!",
     "multiply_gold_x2":              "Doubles your Gold!",
     "coin_flip_4_power":             "Flip a coin: win = +4 Power!",
-    "remove_mission_requirements":   "Removes all mission requirements!",
+    "remove_mission_requirements":   "Choose an active Mission — it no longer has any Requirement!",
     "remove_13_scorn":               "Removes up to 13 Scorn!",
     "trade_route":                   "Opens a trade route for lasting profit.",
     "discard_opponent_weapon":       "Destroys one weapon from each opponent!",
@@ -60,58 +60,6 @@ const SPECIAL_DESCRIPTIONS = {
     "favor_per_neighbor_power":      "Scores 1 Favor for each Power your neighbors have.",
     "power_6_if_blind_faith":        "+6 Power in Melee while you own Blind Faith.",
 };
-
-// ─── SLOT SPECIAL LABELS (Character Board) ───────────────
-const SLOT_SPECIAL_LABELS = {
-    "steal_3_prestige_each":       "Steal 3 Prestige",
-    "steal_2_gold_each":           "Steal 2 Gold each",
-    "give_1_gold_each":            "Give 1 Gold each",
-    "all_others_1_scorn":          "Others +1 Scorn",
-    "convert_gold_to_prestige":    "Gold \u2192 Prestige",
-    "philosopher_stone":           "Philosopher\u2019s Stone",
-    "philosopher_stone_x2":        "2\u00D7 Philosopher\u2019s Stone",
-    "minds_eye":                   "Mind\u2019s Eye",
-    "minds_eye_x5":                "5\u00D7 Mind\u2019s Eye",
-    "minds_eye_and_philosopher":   "Mind\u2019s Eye + Phil. Stone",
-    "pick_one":                    "Choose a Skill",
-    "borrow_any_player":           "Borrow from any player",
-    "mission_fail_10_gold":        "Fail mission \u2192 +10 Gold",
-    "choose_mission":              "Choose a Mission",
-};
-
-/**
- * Build a compact label array for a character board slot.
- * Returns an array of short strings like ["+5 Gold", "Power +1", "15 Favor"].
- */
-function buildSlotLabel(slot) {
-    if (!slot) return ['(empty)'];
-    const parts = [];
-
-    // Skills
-    if (slot.skills) {
-        Object.entries(slot.skills).forEach(([skill, val]) => {
-            const name = skill.charAt(0).toUpperCase() + skill.slice(1);
-            parts.push(`${name} +${val}`);
-        });
-    }
-
-    // One-time gold
-    if (slot.gold) parts.push(`+${slot.gold} Gold`);
-
-    // One-time scorn
-    if (slot.scorn) parts.push(`+${slot.scorn} Scorn`);
-
-    // Favor
-    if (slot.favor) parts.push(`${slot.favor} Favor`);
-
-    // Special
-    if (slot.special && SLOT_SPECIAL_LABELS[slot.special]) {
-        parts.push(SLOT_SPECIAL_LABELS[slot.special]);
-    }
-
-    if (parts.length === 0) parts.push('\u2014');
-    return parts;
-}
 
 // ─── ANIMATION QUEUE ─────────────────────────────────────
 
@@ -153,125 +101,84 @@ const animationQueue = new AnimationQueue();
 
 // ─── CARD SPOTLIGHT SYSTEM ───────────────────────────────
 
-/**
- * Build a read-only mini slot track for an opponent's character board.
- */
-function buildMiniSlotTrack(playerIndex) {
-    const player = game.players[playerIndex];
-    const char = player.character;
-    if (!char || !char.slots) return '';
+// Printed card contents -> payout chips in the mission-ceremony language
+// (mc-chip): skills aggregated ("Survival, Survival" -> +2 Survival),
+// either/or specials wear both faces, costs read as bad chips. Chips say
+// only what the card says -- sentence-length specials keep their line.
+const SPOTLIGHT_FLEX = {
+    charisma_or_prospecting: ['charisma', 'prospecting'],
+    alchemy_or_prospecting:  ['alchemy', 'prospecting'],
+};
 
-    const posNames = ['1', '2', '3', '4', '5'];
-    const claimed = player.claimedSlots || new Set([2]);
+function spotlightChips(card, action) {
+    const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+    const icon = k => `assets/icons/${k}.png`;
+    const chip = (img, label, cls = 'good') =>
+        `<span class="mc-chip ${cls}"><img src="${img}" alt="">${label}</span>`;
 
-    let cells = '';
-    for (let i = 0; i < 5; i++) {
-        const isCurrent = i === player.sliderPosition;
-        const isClaimed = claimed.has(i) && !isCurrent;
-        const stateClass = isCurrent ? 'current' : isClaimed ? 'claimed' : 'unclaimed';
-        const labels = buildSlotLabel(char.slots[i]);
+    if (action === 'discard') return [chip(icon('gold'), '+3 Gold')];
+    if (action === 'discard_slide') return [chip('assets/ui/slider-ring.png', 'Slides the Ring')];
 
-        cells += `<div class="opp-slot-cell ${stateClass}">
-            <div class="opp-slot-num">${posNames[i]}</div>
-            <div class="opp-slot-rewards">${labels.map(l => `<div class="opp-slot-line">${l}</div>`).join('')}</div>
-        </div>`;
+    if (card.type === 'mission_letter') {
+        return [chip(icon('gold'), '−1 Gold', 'bad'),
+                chip(icon('mission'), 'Chooses a Mission')];
     }
 
-    return `<div class="opp-slot-track">
-        ${cells}
-        <div class="opp-slot-ring" style="transform: translateX(${player.sliderPosition * 100}%)"></div>
-    </div>`;
+    const chips = [];
+    const counts = {};
+    (card.skills || []).forEach(s => { counts[s] = (counts[s] || 0) + 1; });
+    Object.entries(counts).forEach(([s, n]) => chips.push(chip(icon(s), `+${n} ${cap(s)}`)));
+
+    if (SPOTLIGHT_FLEX[card.special]) {
+        const [a, b] = SPOTLIGHT_FLEX[card.special];
+        chips.push(`<span class="mc-chip good"><img src="${icon(a)}" alt=""><img src="${icon(b)}" alt="">${cap(a)} or ${cap(b)}</span>`);
+    }
+
+    const favor = (card.favor || 0) + ((card.rewards && card.rewards.favor) || 0);
+    if (favor) chips.push(chip(icon('favor'), `+${favor} Favor`));
+    if (card.rewards && card.rewards.gold) chips.push(chip(icon('gold'), `+${card.rewards.gold} Gold`));
+    if (card.rewards && card.rewards.prestige) chips.push(chip(icon('prestige'), `+${card.rewards.prestige} Prestige`));
+    if (card.rewards && card.rewards.scorn) chips.push(chip(icon('scorn'), `+${card.rewards.scorn} Scorn`, 'bad'));
+    if (card.cost) chips.push(chip(icon('gold'), `−${card.cost} Gold`, 'bad'));
+    return chips;
 }
 
 function buildSpotlightContent(playerIndex, card, action) {
     const isDiscard = (action === 'discard' || action === 'discard_slide');
     const player = game.players[playerIndex];
-    const playerName = player.name;
     const char = player.character;
     const avatarSrc = char ? `assets/characters/${char.filename}` : '';
     const charName = char ? char.name : '';
-
-    const actionLabel = isDiscard
-        ? `${playerName} discards...`
-        : `${playerName} plays...`;
-
-    // Build new card display
-    const imgSrc = `assets/cards/regular/${card.filename}`;
     const safeCardName = card.name.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
-    const actionTag = isDiscard ? 'DISCARDING' : 'NOW PLAYING';
 
-    // Build effect description for the new card
-    let effectText = '';
-    if (isDiscard) {
-        effectText = action === 'discard_slide' ? 'Slider move' : '+3 Gold';
-    } else if (card.special && SPECIAL_DESCRIPTIONS[card.special]) {
-        effectText = SPECIAL_DESCRIPTIONS[card.special];
-    } else {
-        const parts = [];
-        if (card.rewards) {
-            if (card.rewards.gold) parts.push(`+${card.rewards.gold}g`);
-            if (card.rewards.prestige) parts.push(`+${card.rewards.prestige} Pres`);
-            if (card.rewards.favor) parts.push(`+${card.rewards.favor} Fav`);
-        }
-        if (card.favor) parts.push(`+${card.favor} Fav`);
-        if (card.skills && card.skills.length > 0) parts.push(card.skills.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', '));
-        effectText = parts.join(' \u00B7 ');
-    }
-
-    // Stats
-    const state = game.getState(0);
-    const ps = state.players[playerIndex];
-
-    // Previously played cards (before this card is added)
-    const playedCards = player.playedCards || [];
-    let playedHtml = '';
-    if (playedCards.length > 0) {
-        playedHtml = `<div class="opp-turn-played">
-            ${playedCards.slice(-8).map(c =>
-                `<img class="opp-turn-played-card" src="assets/cards/regular/${c.filename}" alt="${c.name}">`
-            ).join('')}
-        </div>`;
-    }
+    // One story, four beats: who plays -> the card lands BIG (flip +
+    // shimmer) -> its name -> what it does, as ceremony chips. No slot
+    // track, no purse pills, no prior-play thumbnails -- the rival rail
+    // and inspect overlay carry standing info; this moment is the play.
+    const chips = spotlightChips(card, action).join('');
+    const special = (!isDiscard && card.special && SPECIAL_DESCRIPTIONS[card.special] && !SPOTLIGHT_FLEX[card.special])
+        ? `<div class="spl-special">${SPECIAL_DESCRIPTIONS[card.special]}</div>` : '';
 
     let html = `<div class="spotlight-backdrop"></div>`;
-    html += `<div class="opp-turn-inner">`;
-
-    // Header
-    html += `<div class="opp-turn-header">
-        <img class="opp-turn-avatar" src="${avatarSrc}" alt="${charName}">
-        <div class="opp-turn-header-info">
-            <div class="opp-turn-name">${playerName}</div>
-            <div class="opp-turn-char">${charName}</div>
+    html += `<div class="spl-inner">`;
+    html += `<div class="spl-head">
+        <img class="spl-avatar" src="${avatarSrc}" alt="${charName}">
+        <div class="spl-head-text">
+            <div class="spl-title">${player.name} <span class="spl-verb">${isDiscard ? 'discards…' : 'plays…'}</span></div>
+            <div class="spl-char">${charName}</div>
         </div>
     </div>`;
-
-    // Ring track
-    html += `<div class="opp-turn-ring">${buildMiniSlotTrack(playerIndex)}</div>`;
-
-    // Stats
-    html += `<div class="opp-turn-stats">
-        <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${ps.gold}</span>
-        <span class="stat-pill prestige">\u2B50 ${ps.prestige}</span>
-        <span class="stat-pill favor">${ps.favor || 0} Favor</span>
-        <span class="stat-pill scorn">${ps.scorn} Scorn</span>
+    html += `<div class="spl-stage">
+        <div class="spl-glow"></div>
+        <div class="spotlight-card"><img src="assets/cards/regular/${card.filename}" alt="${safeCardName}" onerror="this.style.display='none'"></div>
     </div>`;
-
-    // Action label
-    html += `<div class="spotlight-player">${actionLabel}</div>`;
-
-    // New card + previously played
-    html += `<div class="opp-turn-cards-area">`;
-    html += playedHtml;
-    html += `<div class="opp-turn-new-card ${isDiscard ? 'discard' : 'play'}">
-        <div class="opp-turn-new-tag">${actionTag}</div>
-        <img src="${imgSrc}" alt="${safeCardName}" onerror="this.style.display='none'">
-        <div class="opp-turn-new-name">${card.name}</div>
-        ${effectText ? `<div class="opp-turn-new-effect">${effectText}</div>` : ''}
+    html += `<div class="spl-payoff">
+        <div class="spotlight-name">${card.name}</div>
+        ${chips ? `<div class="spl-chips">${chips}</div>` : ''}
+        ${special}
     </div>`;
     html += `</div>`;
-
-    html += `<div class="spotlight-dismiss">click to continue</div>`;
-    html += `</div>`;
+    html += `<div class="spotlight-dismiss">tap to continue</div>`;
 
     return { html, isDiscard };
 }
@@ -618,31 +525,28 @@ function coachMyTurn(s) {
 
 const COACH_STEPS = [
     { id: 'welcome',
-      text: `This is <b>your board</b>, seated at the bottom. Your rivals fill the table around you.`,
+      text: `You're seated at the table — this chip is <b>you</b>. Tap it (or your board, top right) to open your full board.`,
       anchor: () => document.querySelector('#tvSeats .pmat.you'),
-      place: 'top',
+      place: 'bottom',
       when: () => true },
     { id: 'missions',
-      text: `The cards in the center are <b>Missions</b> — complete them for <b>Favor</b>, the points that win the crown. Tap one to read it.`,
-      anchor: () => document.getElementById('tvCenter'),
+      text: `These are the <b>Missions of the Realm</b> — complete them for <b>Favor</b>, the points that win the crown. Tap one to read it.`,
+      anchor: () => document.getElementById('tvMissionRail'),
       place: 'bottom',
       when: (s) => (s.visibleMissions || []).length > 0 },
     { id: 'hand',
-      text: `Your turn! <b>Tap a card</b> in your hand to see what you can do with it — play it, or discard it for gold.`,
-      anchor: () => document.getElementById('tvHandDrawer'),
+      text: `Your turn! <b>Drag a card up</b> out of your hand and let go — then choose: play it, discard it for gold, or more.`,
+      anchor: () => document.getElementById('tvHandStrip'),
       place: 'top',
-      when: (s) => coachMyTurn(s),
-      // Reveal the hand drawer right as this tip appears (it was tucked for the
-      // earlier board/missions tips).
-      onActivate: () => { tvHandOpen = true; applyDrawerStates(); } },
+      when: (s) => coachMyTurn(s) },
     { id: 'rivals',
-      text: `Tap any <b>rival's board</b> to see their skills — and borrow one when you're short a skill to play a card.`,
+      text: `Tap a <b>rival's chip</b> to see their board and played cards — and borrow a skill when you're short.`,
       anchor: () => document.querySelector('#tvSeats .pmat.opp'),
-      place: 'auto',
+      place: 'bottom',
       when: (s) => s.players.some((p, i) => i !== 0 && coachSumSkills(p.skills) > 0) },
     { id: 'skills',
-      text: `Your <b>skills</b>, ring position and current Act live in this drawer. Tap the arrow to check them anytime.`,
-      anchor: () => document.getElementById('tvLeftTab'),
+      text: `Your <b>skills</b> live here, always in view — the cards you play grow them. Tap an icon for its name.`,
+      anchor: () => document.getElementById('tvSkills'),
       place: 'right',
       when: (s) => coachSumSkills(s.players[0].skills) > 0 },
 ];
@@ -668,24 +572,10 @@ window.resetCoach = resetCoach;
 // Never surface a tip while a full-screen modal / action panel is up.
 function coachOverlayOpen() {
     return ['howto-overlay', 'boardOverlay', 'handInspectOv', 'oppOverlay',
-            'missionLB', 'cardZoom', 'scoring-screen', 'missionSelect', 'actionPanel',
-            'cardPeek', 'meleeSplash', 'promisePicker', 'slideConfirm']
+            'missionLB', 'missionJournal', 'cardZoom', 'scoring-screen', 'missionSelect',
+            'actionPanel', 'cardPeek', 'meleeSplash', 'promisePicker',
+            'tvPopoverHost']
         .some(id => { const el = document.getElementById(id); return el && el.classList.contains('active'); });
-}
-
-function coachFirstUnseen() {
-    const s = COACH_STEPS.find(st => !_coachSeen.has(st.id));
-    return s ? s.id : null;
-}
-// True while a tip *earlier* than 'hand' (board, missions) is still pending —
-// used to keep the hand drawer tucked so those prompts aren't blocked by it.
-function coachTuckHand() {
-    if (!isCompactLandscape()) return false;
-    const first = coachFirstUnseen();
-    if (!first) return false;
-    const handIdx = COACH_STEPS.findIndex(s => s.id === 'hand');
-    const firstIdx = COACH_STEPS.findIndex(s => s.id === first);
-    return firstIdx > -1 && firstIdx < handIdx;
 }
 
 function coachVisibleEl(el) {
@@ -882,6 +772,11 @@ function coachApplyPromptTest() {
 
 // ─── CHARACTER SELECT ──────────────────────────────────────
 
+// The three heroes offered THIS game — the other seven are "already
+// taken" by the other players in your queue, and the bots genuinely
+// draw from those leftovers in confirmCharacter.
+let _offeredHeroes = [];
+
 function showCharacterSelect() {
     const screen = document.getElementById('character-select');
     screen.classList.add('active');
@@ -894,7 +789,15 @@ function showCharacterSelect() {
         return;
     }
 
-    window.FAVOR_DATA.characters.forEach(char => {
+    // The offer draws from the heroes YOU OWN (first five are everyone's;
+    // store purchases join the pool — FLB.ownedIds). Owned is always ≥5,
+    // so three offerings never starve. Bots still draw from all ten.
+    const ownedIds = (window.FLB && typeof FLB.ownedIds === 'function')
+        ? FLB.ownedIds()
+        : window.FAVOR_DATA.characters.slice(0, 5).map(c => c.id);
+    const ownedChars = window.FAVOR_DATA.characters.filter(c => ownedIds.includes(c.id));
+    _offeredHeroes = shuffleArray(ownedChars).slice(0, 3);
+    _offeredHeroes.forEach(char => {
         const card = document.createElement('div');
         card.className = 'character-card fade-in';
         card.dataset.id = char.id;
@@ -919,29 +822,172 @@ function selectCharacter(id, cardEl) {
     document.querySelectorAll('.character-card').forEach(c => c.classList.remove('selected'));
     cardEl.classList.add('selected');
     selectedCharacter = id;
-    document.getElementById('confirmBtn').style.display = 'inline-block';
+    const btn = document.getElementById('confirmBtn');
+    btn.style.display = 'inline-block';
+    // Begin Your Journey sits below the fold on phones — picking a hero
+    // carries you straight down to it (#character-select is the scroller;
+    // rAF lets the reveal land in layout first).
+    requestAnimationFrame(() =>
+        btn.scrollIntoView({ behavior: 'smooth', block: 'end' }));
 }
 
-function confirmCharacter() {
+// Which persona rivals sit at this table? Returns an array the size of the
+// bot count — persona defs in their seats, null where a generic bot plays.
+// Odds are session defaults awaiting Wyatt's veto: 1 in 5 tables seat two
+// personas, 2 in 3 seat at least one, cap two. seed.forceSeats is a rig
+// seam for the audit suite — real seeds never set it.
+function seatPersonas(seed, botCount) {
+    const seats = new Array(botCount).fill(null);
+    const pool = ((seed && seed.personas) || []).slice();
+    if (!pool.length || !botCount) return seats;
+
+    if (Array.isArray(seed.forceSeats)) {
+        seed.forceSeats
+            .map(key => pool.find(p => p.key === key))
+            .filter(Boolean)
+            .slice(0, botCount)
+            .forEach((p, i) => { seats[i] = p; });
+        return seats;
+    }
+
+    const roll = Math.random();
+    let n = roll < 0.2 ? 2 : roll < 2 / 3 ? 1 : 0;
+    n = Math.min(n, botCount, pool.length);
+    for (let k = 0; k < n; k++) {
+        const p = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+        let s = Math.floor(Math.random() * botCount);
+        while (seats[s]) s = (s + 1) % botCount;
+        seats[s] = p;
+    }
+    return seats;
+}
+
+async function confirmCharacter() {
     if (!selectedCharacter) return;
 
-    const playerCount = parseInt(document.getElementById('playerCountSelect').value);
+    // Table size = the queue you joined on the menu (persisted; the old
+    // in-select dropdown moved there so Play Now can never skip past it).
+    const playerCount = (window.FLB && FLB.queueSize()) || 3;
+
+    // MULTIPLAYER: confirming your hero queues you with it. A real match
+    // starts a lockstep table; the expired random window falls through to
+    // the classic game where the persona rivals present as people —
+    // indistinguishable from a slow lobby (Wyatt's spec).
+    if (window._pinEmblemSeed === undefined && !window._mpSkipQueue
+        && window.FMP && FMP.available()) {
+        if (window._confirmBusy) return;
+        window._confirmBusy = true;
+        let mpRes = null;
+        try { mpRes = await mpSearch(playerCount); } catch (e) { mpRes = { solo: true }; }
+        window._confirmBusy = false;
+        if (mpRes && mpRes.cancelled) return;             // back to hero select
+        if (mpRes && mpRes.game) { await startMpGame(mpRes); return; }
+        // window expired → the classic table below
+    }
+
+    // One leaderboard read seeds the rated Emblem start, persona seating,
+    // and the rank-1 boon. Prefetched at boot, raced against 1200ms here —
+    // offline/slow/pinned falls back to the classic start (seat 0, generic
+    // bots, no boon). Resolved BEFORE `game` exists so nothing ever sees a
+    // half-built table.
+    let seed = null;
+    if (window._pinEmblemSeed === undefined
+        && window.FLB && typeof FLB.tableSeed === 'function') {
+        // The select screen stays interactive during this await — swallow
+        // a double-tap on Begin instead of building two games. The race
+        // never rejects, so the flag always clears.
+        if (window._confirmBusy) return;
+        window._confirmBusy = true;
+        try {
+            seed = await Promise.race([
+                FLB.tableSeed(),
+                new Promise(r => setTimeout(() => r(null), 1200)),
+            ]);
+        } catch (e) { seed = null; }
+        window._confirmBusy = false;
+    }
 
     game = new FavorGame(playerCount);
     game.loadDecks();
 
+    // Bots draw from the heroes that were NOT offered to you — the other
+    // "players" in your queue already took theirs, so the three on your
+    // screen (minus your pick) stay off the table.
+    const offered = _offeredHeroes.map(c => c.id);
     const allChars = window.FAVOR_DATA.characters.map(c => c.id);
-    const available = allChars.filter(id => id !== selectedCharacter);
+    let available = allChars.filter(id => id !== selectedCharacter && !offered.includes(id));
+    // Safety: never run short of rivals (10 - 3 offered = 7 ≥ 4 bots today).
+    if (available.length < playerCount - 1) {
+        available = allChars.filter(id => id !== selectedCharacter);
+    }
 
     const choices = [{ characterId: selectedCharacter, playerName: 'You' }];
 
     const shuffled = shuffleArray(available);
     const aiNames = ['Prince Aldric', 'Princess Sera', 'Lord Cassius', 'Lady Elara'];
+    const personaSeats = seatPersonas(seed, playerCount - 1);
+    const seatedPersonas = [];   // [{seat, def}] — marked on game.players below
+    const taken = (id) => choices.some(c => c.characterId === id);
+    let draw = 0;
+    const nextFree = () => {
+        while (draw < shuffled.length && taken(shuffled[draw])) draw++;
+        return shuffled[draw++];
+    };
     for (let i = 0; i < playerCount - 1; i++) {
-        choices.push({ characterId: shuffled[i], playerName: aiNames[i] });
+        const persona = personaSeats[i];
+        if (persona) {
+            // Signature hero for face recognition — random when it was
+            // offered to you or someone at the table already took it.
+            const heroId = (available.includes(persona.hero) && !taken(persona.hero))
+                ? persona.hero : nextFree();
+            choices.push({ characterId: heroId, playerName: persona.name });
+            seatedPersonas.push({ seat: i + 1, def: persona });
+        } else {
+            choices.push({ characterId: nextFree(), playerName: aiNames[i] });
+        }
     }
 
     game.initPlayers(choices);
+    seatedPersonas.forEach(({ seat, def }) => {
+        const gp = game.players[seat];
+        gp._personaUid = def.uid;
+        gp._personaAI = { key: def.key, strong: def.strong.slice() };
+    });
+
+    // ── Rated Emblem start: the highest rating at the table holds it in
+    // Act 1. Rated = you (your favor/players row exists) or a seated
+    // persona; ties break human-first, then lower seat. Nobody rated →
+    // random seat. No seed → seat 0, exactly the old behavior.
+    let emblemSeat = 0;
+    if (window._pinEmblemSeed !== undefined) {
+        emblemSeat = window._pinEmblemSeed;
+    } else if (seed) {
+        const rated = [];
+        if (seed.myRow) rated.push({ seat: 0, rating: seed.myRow.rating || 0 });
+        seatedPersonas.forEach(({ seat, def }) =>
+            rated.push({ seat, rating: def.rating || 0 }));
+        if (rated.length) {
+            const best = Math.max(...rated.map(r => r.rating));
+            emblemSeat = rated.filter(r => r.rating === best)
+                .sort((a, b) => a.seat - b.seat)[0].seat;
+        } else {
+            emblemSeat = Math.floor(Math.random() * playerCount);
+        }
+    }
+    game.setEmblemHolder(emblemSeat);
+
+    // ── Rank-1 boon: if the ALL-TIME #1 sits at this table — you or a
+    // persona — the Queen grants them +1 of one skill for the game. Only
+    // rank 1, only the all-time board, never the daily.
+    let boonSeat = -1;
+    if (window._pinEmblemSeed === undefined && seed && seed.topRow) {
+        if (seed.myRow && seed.topRow.uid === FLB.uid()) {
+            boonSeat = 0;
+        } else {
+            const sp = seatedPersonas.find(({ def }) => def.uid === seed.topRow.uid);
+            if (sp) boonSeat = sp.seat;
+        }
+    }
 
     document.getElementById('character-select').classList.remove('active');
 
@@ -949,24 +995,575 @@ function confirmCharacter() {
     addLogEntry('\u2550\u2550\u2550 Act 1 begins \u2550\u2550\u2550');
     showNotification('Act 1 Begins \u2014 Choose wisely.', 'act');
 
+    // Announce the Act-1 seat \u2014 every table hears who leads and why the
+    // order is what it is. The chip/rail badges re-render with the state.
+    const holderName = game.emblemHolder === 0 ? 'You' : game.players[game.emblemHolder].name;
+    showNotification(
+        holderName === 'You' ? 'You hold the Emblem \u2014 you act first.'
+            : `${holderName} holds the Emblem and acts first.`, 'act');
+    addLogEntry(holderName === 'You' ? 'You hold the Emblem \u2014 you act first'
+        : `${holderName} holds the Emblem and acts first`);
+
     // If Prompt Test is checked, replay the tutorial prompts this game.
     if (typeof coachApplyPromptTest === 'function') coachApplyPromptTest();
 
     showGameScreen();
+
+    // \u2500\u2500 Deliver the rank-1 boon on the freshly-set stage \u2500\u2500
+    if (boonSeat === 0) {
+        await showBoonPicker();
+    } else if (boonSeat > 0) {
+        const gp = game.players[boonSeat];
+        // Heuristic: grow the weaker of its signature skills right now.
+        const skill = gp._personaAI.strong.slice()
+            .sort((a, b) => (gp.skills[a] || 0) - (gp.skills[b] || 0))[0];
+        applyRankOneBoon(boonSeat, skill);
+        const capSkill = skill.charAt(0).toUpperCase() + skill.slice(1);
+        showNotification(
+            `${gp.name} \u2014 the realm's #1 \u2014 receives the Queen's boon: +1 ${capSkill}`, 'act');
+        addLogEntry(`${gp.name}, the realm's #1, gains the Queen's boon: +1 ${capSkill} all game`);
+        renderGameState();
+    }
+}
+
+// The boon lands in bonusSkills \u2014 the same ledger mission skill rewards
+// live in, so it survives every slider recalc for the whole game.
+function applyRankOneBoon(seat, skill) {
+    const p = game.players[seat];
+    p.bonusSkills = p.bonusSkills || {};
+    p.bonusSkills[skill] = (p.bonusSkills[skill] || 0) + 1;
+    game.applySlotSkills(p);
+}
+
+// \u2550\u2550\u2550 RANK-1 BOON \u2014 the realm's #1 chooses a skill \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+// Six icon tiles on the pp overlay; royal copy; NO dismiss-without-pick
+// (the Queen does not offer twice). Applies +1 of the chosen skill via
+// bonusSkills and resolves once confirmed.
+const BOON_SKILLS = ['survival', 'charisma', 'alchemy', 'prospecting', 'power', 'knowledge'];
+
+function showBoonPicker() {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        if (!ov) { resolve(); return; }
+        const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+        let chosen = null;
+        const render = () => {
+            const tiles = BOON_SKILLS.map(s => `
+                <div class="boon-tile${chosen === s ? ' chosen' : ''}" data-skill="${s}">
+                    <img src="assets/icons/${s}.png" alt="${cap(s)}">
+                    <span>${cap(s)}</span>
+                </div>`).join('');
+            ov.innerHTML = `
+                <div class="pp-inner boon">
+                    <div class="pp-title">The Realm's Favorite</div>
+                    <div class="pp-sub">You sit first upon the all-time board \u2014 the Queen grants <b>+1 of one skill</b>, yours for the whole game</div>
+                    <div class="boon-tiles">${tiles}</div>
+                    <div class="pp-actions">
+                        <button class="btn-royal primary" id="boonConfirm" ${chosen ? '' : 'disabled style="opacity:.35"'}>
+                            <span>${chosen ? `Claim +1 ${cap(chosen)}` : 'Choose a skill'}</span>
+                        </button>
+                    </div>
+                </div>`;
+            ov.querySelectorAll('.boon-tile').forEach(el => {
+                el.onclick = () => { chosen = el.dataset.skill; render(); };
+            });
+            ov.querySelector('#boonConfirm').onclick = () => {
+                if (!chosen) return;
+                if (window.FMP && FMP.active()) {
+                    // Lockstep: the pick STREAMS \u2014 every client (this one
+                    // included) applies it on receipt, in stream order.
+                    FMP.publish('boon', { skill: chosen });
+                } else {
+                    applyRankOneBoon(0, chosen);
+                    showNotification(`The Queen favors you \u2014 +1 ${cap(chosen)} all game`, 'act');
+                    addLogEntry(`The Realm's Favorite: you gain +1 ${cap(chosen)} for the whole game`);
+                    renderGameState();
+                }
+                ov.classList.remove('active');
+                resolve();
+            };
+        };
+        render();
+        ov.classList.add('active');
+    });
+}
+
+// \u2550\u2550\u2550 MULTIPLAYER GLUE \u2014 queue UX, lockstep rounds, remote seats \u2550\u2550\u2550\u2550\u2550\u2550\u2550
+// The transport lives in js/mp.js (FMP). This block is everything the
+// game screen needs: the searching overlay, building a table from the
+// match record (rotated so YOU are seat 0 \u2014 a circle doesn't care), the
+// pick barrier, remote-seat activation driven by streamed moves, the
+// canonical-order end-of-act stages, and Wyatt's 2-minute AFK boot.
+
+const mpActive = () => !!(window.FMP && FMP.active());
+const mpPub = (type, data) => { if (mpActive()) FMP.publish(type, data); };
+
+// \u2500\u2500 Searching the realm \u2014 the queue beat on the select screen \u2500\u2500
+function mpSearch(size) {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        let cancelled = false;
+        const paint = (others) => {
+            ov.innerHTML = `
+                <div class="pp-inner boon">
+                    <div class="pp-title">Searching the Realm</div>
+                    <div class="pp-sub" id="mpqSub">${others > 0
+                        ? `<b>${others}</b> noble${others > 1 ? 's' : ''} in the ${size}-player queue\u2026`
+                        : `Calling for challengers to a ${size}-player table\u2026`}</div>
+                    <div class="mpq-spin"></div>
+                    <div class="pp-actions">
+                        <button class="btn-royal" id="mpqCancel"><span>Withdraw</span></button>
+                    </div>
+                </div>`;
+            ov.querySelector('#mpqCancel').onclick = () => {
+                cancelled = true;
+                FMP.cancelQueue();
+                ov.classList.remove('active');
+                resolve({ cancelled: true });
+            };
+        };
+        paint(0);
+        ov.classList.add('active');
+        FMP.enterQueue({
+            size,
+            hero: selectedCharacter,
+            onState: (kind, d) => {
+                if (cancelled) return;
+                const sub = document.getElementById('mpqSub');
+                if (sub && kind === 'searching') {
+                    sub.innerHTML = d.others > 0
+                        ? `<b>${d.others}</b> noble${d.others > 1 ? 's' : ''} found \u2014 forming the table\u2026`
+                        : `Calling for challengers to a ${size}-player table\u2026`;
+                }
+            },
+        }).then((res) => {
+            if (cancelled) return;
+            ov.classList.remove('active');
+            resolve(res);
+        });
+    });
+}
+
+// \u2500\u2500 Build the table from the match record \u2500\u2500
+async function startMpGame({ game: rec, mySeat }) {
+    const n = rec.size;
+    game = new FavorGame(n);
+    game.setSeed(rec.seed);
+    game.setDealOffset(mySeat);   // chunk k stays with canonical seat k
+    game.loadDecks();
+
+    // Rotate the canonical roster so the local human sits at seat 0. The
+    // table is a circle \u2014 rotation preserves every neighbor, pass, and
+    // emblem relationship, and the whole seat-0 UI stays true.
+    const choices = [];
+    for (let i = 0; i < n; i++) {
+        const r = rec.roster[(mySeat + i) % n];
+        choices.push({ characterId: r.hero, playerName: i === 0 ? 'You' : r.name });
+    }
+    game.initPlayers(choices);
+    for (let i = 1; i < n; i++) {
+        const r = rec.roster[(mySeat + i) % n];
+        const gp = game.players[i];
+        if (r.human) { gp._remoteHuman = true; gp._mpUid = r.uid; }
+        if (r.persona) {
+            gp._personaUid = r.personaUid;
+            gp._personaAI = { key: r.persona, strong: (r.strong || []).slice() };
+        }
+    }
+    game.setEmblemHolder(FMP.localIdx(rec.emblemSeat));
+
+    // Boots arrive as broadcast moves so every client converts the seat
+    // at the same point in the stream.
+    FMP.onBroadcast('afk_boot', (m) => mpApplyBoot(m));
+    FMP.onBroadcast('sync', (m) => mpCheckSync(m));
+
+    document.getElementById('character-select').classList.remove('active');
+    game.startAct(1);
+    addLogEntry('\u2550\u2550\u2550 Act 1 begins \u2550\u2550\u2550');
+    showNotification('Act 1 Begins \u2014 Choose wisely.', 'act');
+    const holderName = game.emblemHolder === 0 ? 'You' : game.players[game.emblemHolder].name;
+    showNotification(holderName === 'You' ? 'You hold the Emblem \u2014 you act first.'
+        : `${holderName} holds the Emblem and acts first.`, 'act');
+    addLogEntry(holderName === 'You' ? 'You hold the Emblem \u2014 you act first'
+        : `${holderName} holds the Emblem and acts first`);
+    if (typeof coachApplyPromptTest === 'function') coachApplyPromptTest();
+    showGameScreen();
+
+    // Rank-1 boon, streamed: the #1 seat picks; everyone applies on
+    // receipt. Personas pick by the shared heuristic \u2014 no stream needed.
+    if (rec.boonSeat >= 0) {
+        const li = FMP.localIdx(rec.boonSeat);
+        const bp = game.players[li];
+        if (bp._personaAI) {
+            const skill = bp._personaAI.strong.slice()
+                .sort((a, b) => (bp.skills[a] || 0) - (bp.skills[b] || 0))[0];
+            applyRankOneBoon(li, skill);
+            const capS = skill.charAt(0).toUpperCase() + skill.slice(1);
+            showNotification(`${bp.name} \u2014 the realm's #1 \u2014 receives the Queen's boon: +1 ${capS}`, 'act');
+            addLogEntry(`${bp.name}, the realm's #1, gains the Queen's boon: +1 ${capS} all game`);
+            renderGameState();
+        } else {
+            if (li === 0) showBoonPicker();   // publishes; applied below
+            else mpWaitShow(li, 'choosing the Queen\u2019s boon');
+            const mv = await FMP.waitFor(rec.boonSeat, 'boon');
+            mpWaitHide();
+            if (mv && BOON_SKILLS.includes(mv.skill)) {
+                applyRankOneBoon(FMP.localIdx(mv.seat), mv.skill);
+                const who = FMP.localIdx(mv.seat) === 0 ? 'You' : game.players[FMP.localIdx(mv.seat)].name;
+                const capS = mv.skill.charAt(0).toUpperCase() + mv.skill.slice(1);
+                showNotification(who === 'You'
+                    ? `The Queen favors you \u2014 +1 ${capS} all game`
+                    : `${who} \u2014 the realm's #1 \u2014 receives the Queen's boon: +1 ${capS}`, 'act');
+                addLogEntry(`The Queen's boon: +1 ${capS} to ${who === 'You' ? 'you' : who}`);
+                renderGameState();
+            }
+            // Booted at the boon \u2192 the Queen withdraws; no boon this game.
+        }
+    }
+    if (FMP.isHost()) mpPub('sync', { act: 1, hash: mpStateHash() });
+}
+
+// \u2500\u2500 Waiting pill \u2014 non-modal, shows who the table waits on + AFK clock \u2500\u2500
+let _mpWaitTimer = null;
+function mpWaitShow(localSeat, doing) {
+    let el = document.getElementById('mpWait');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'mpWait';
+        document.body.appendChild(el);
+    }
+    const name = game.players[localSeat] ? game.players[localSeat].name : 'a noble';
+    const started = Date.now();
+    const afk = (window.FMP && FMP._T.afk) || 120000;
+    const paint = () => {
+        const left = Math.max(0, afk - (Date.now() - started));
+        const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
+        el.innerHTML = `\u23f3 Waiting on <b>${name}</b> \u2014 ${doing} <span class="mpw-clock">${m}:${String(s).padStart(2, '0')}</span>`;
+    };
+    paint();
+    el.classList.add('on');
+    clearInterval(_mpWaitTimer);
+    _mpWaitTimer = setInterval(paint, 1000);
+}
+function mpWaitHide() {
+    clearInterval(_mpWaitTimer);
+    _mpWaitTimer = null;
+    const el = document.getElementById('mpWait');
+    if (el) el.classList.remove('on');
+}
+
+// \u2500\u2500 AFK boot (host published it; every client applies identically) \u2500\u2500
+function mpApplyBoot(m) {
+    if (!mpActive() || typeof m.target !== 'number') return;
+    FMP.markBooted(m.target);
+    const li = FMP.localIdx(m.target);
+    if (li === 0) {
+        // That's me \u2014 the court moved on. Leave cleanly and say so.
+        FMP.leaveGame();
+        const ov = document.getElementById('champOverlay');
+        if (ov) {
+            document.getElementById('champTitle').textContent = 'Removed for Inactivity';
+            document.getElementById('champSub').innerHTML =
+                'The court waited two minutes \u2014 the game continued without you.';
+            ov.classList.add('active');
+            const back = () => location.reload();
+            ov.onclick = back;
+            document.getElementById('champBtn').onclick = back;
+        } else {
+            location.reload();
+        }
+        return;
+    }
+    const gp = game.players[li];
+    if (gp) {
+        gp._remoteHuman = false;   // AI plays the seat from here on
+        showNotification(`${gp.name} was removed for inactivity \u2014 the court plays on.`, 'act');
+        addLogEntry(`${gp.name} was removed for inactivity`);
+    }
+}
+
+// \u2500\u2500 Lockstep round \u2014 the pick barrier \u2500\u2500
+// Bots pick deterministically at once; every remote human's pick is
+// awaited from the stream (canonical order for determinism); then hands
+// pass and activation runs exactly like solo.
+async function mpProcessRound(humanAction) {
+    for (let i = 1; i < game.playerCount; i++) {
+        const p = game.players[i];
+        if (!p._remoteHuman && game.pendingActivations[i] === null && p.hand.length > 0) {
+            aiPickCard(i);
+        }
+    }
+    renderGameState();
+
+    for (let cs = 0; cs < game.playerCount; cs++) {
+        const li = FMP.localIdx(cs);
+        if (li === 0) continue;
+        const p = game.players[li];
+        if (!p._remoteHuman || game.pendingActivations[li] !== null || !p.hand.length) continue;
+        mpWaitShow(li, 'choosing a card');
+        const mv = await FMP.waitFor(cs, 'pick');
+        mpWaitHide();
+        if (!mv) {           // booted mid-pick \u2014 the AI takes the seat over
+            if (game.pendingActivations[li] === null && p.hand.length) aiPickCard(li);
+            continue;
+        }
+        const hi = p.hand.findIndex(c => c.id === mv.cardId);
+        game.pickCard(li, hi >= 0 ? hi : 0);
+        p._mpRoundMove = mv;   // action + args consumed at activation
+        renderGameState();
+    }
+
+    game.passHands();
+    const needsMissionSelect = await activateAllCards(humanAction);
+    if (needsMissionSelect) {
+        renderGameState();
+        showMissionSelectUI();
+        return;
+    }
+    finishRound();
+}
+
+// \u2500\u2500 Remote seat activation \u2014 their streamed intent, our shared engine \u2500\u2500
+// Mirrors the local-human branch action for action; every wait can return
+// null (boot) and falls back to the exact AI move every client computes.
+async function mpActivateRemote(pi, card, cardIdx) {
+    const p = game.players[pi];
+    const cs = FMP.canonSeat(pi);
+    let mv;
+    if (cardIdx === 0) {
+        mv = p._mpRoundMove || null;
+        p._mpRoundMove = null;
+        if (mv && mv.cardId !== card.id) mv = null;   // stream skew \u2014 fall back honestly
+    } else {
+        mpWaitShow(pi, 'deciding their final card');
+        mv = await FMP.waitFor(cs, 'final');
+        mpWaitHide();
+    }
+
+    let action = mv && mv.action;
+    if (!action) {
+        // Boot/fallback: the same default the AI takes, on every client.
+        const { canPlay } = game.checkRequirements(pi, card);
+        action = (card.type === 'mission_letter') ? 'discard' : (canPlay ? 'play' : 'discard');
+    }
+
+    if (action === 'mission_letter' && card.type === 'mission_letter'
+        && p.gold >= 1 && game.visibleMissions.length > 0) {
+        await showCardSpotlight(pi, card, 'play');
+        const result = game.activateCard(pi, card.id, 'mission_letter');
+        if (result && result.chooseMission) {
+            mpWaitShow(pi, 'choosing a mission');
+            const pick = await FMP.waitFor(cs, 'mission_pick');
+            mpWaitHide();
+            const idx = pick && Number.isInteger(pick.missionIdx)
+                && pick.missionIdx >= 0 && pick.missionIdx < game.visibleMissions.length
+                ? pick.missionIdx : aiBestMission(pi);
+            game.chooseMission(pi, idx);
+            addLogEntry(`${p.name} uses a Mission Letter`);
+        }
+    } else if (action === 'borrow_play') {
+        const plan = (mv.borrow || []).map(b => ({ skill: b.skill, neighborIndex: FMP.localIdx(b.lender) }));
+        const borrowable = game.getBorrowableSkills(pi);
+        const covered = plan.length && plan.every(b =>
+            borrowable[b.skill] && borrowable[b.skill].includes(b.neighborIndex));
+        await showCardSpotlight(pi, card, covered ? 'play' : 'discard');
+        if (covered && p.gold >= plan.length * 2) {
+            game.activateCard(pi, card.id, 'play', plan);
+            addLogEntry(`${p.name} borrows and plays ${card.name}`);
+        } else {
+            game.activateCard(pi, card.id, 'discard');
+            addLogEntry(`${p.name} discards ${card.name} (+3 Gold)`);
+        }
+    } else if (action === 'discard_slide') {
+        const dir = mv.dir === -1 || mv.dir === 1 ? mv.dir : 1;
+        await showCardSpotlight(pi, card, 'discard');
+        game.activateCard(pi, card.id, 'discard_slide', dir);
+        addLogEntry(`${p.name} discards ${card.name} to slide their ring`);
+        if (p._pendingSlotMission) {
+            p._pendingSlotMission = false;
+            mpWaitShow(pi, 'choosing a mission');
+            const pick = await FMP.waitFor(cs, 'slot_mission');
+            mpWaitHide();
+            const idx = pick && Number.isInteger(pick.missionIdx)
+                && pick.missionIdx >= 0 && pick.missionIdx < game.visibleMissions.length
+                ? pick.missionIdx : aiBestMission(pi);
+            game.chooseMission(pi, idx);
+        }
+    } else if (action === 'play') {
+        const { canPlay } = game.checkRequirements(pi, card);
+        if (canPlay) {
+            await showCardSpotlight(pi, card, 'play');
+            game.activateCard(pi, card.id, 'play');
+            addLogEntry(`${p.name} plays ${card.name}`);
+        } else {
+            await showCardSpotlight(pi, card, 'discard');
+            game.activateCard(pi, card.id, 'discard');
+            addLogEntry(`${p.name} discards ${card.name}`);
+        }
+    } else {
+        await showCardSpotlight(pi, card, 'discard');
+        game.activateCard(pi, card.id, 'discard');
+        addLogEntry(`${p.name} discards ${card.name}`);
+    }
+
+    // Chemical Y resolved for a remote human \u2014 their pick, streamed.
+    if (p._pendingChemYPick) {
+        p._pendingChemYPick = false;
+        mpWaitShow(pi, 'choosing which favor doubles');
+        const pick = await FMP.waitFor(cs, 'chemy');
+        mpWaitHide();
+        const advs = p.playedCards.filter(c =>
+            c.type === 'adventure' && (c.favor || 0) > 0 && !c._favorDoubled);
+        let target = pick && advs.find(c => c.id === pick.cardId);
+        if (!target && advs.length) {
+            target = advs.reduce((a, b) => ((b.favor || 0) > (a.favor || 0) ? b : a));
+        }
+        if (target) {
+            target._favorDoubled = true;
+            addLogEntry(`${p.name}'s Chemical Y doubles ${target.name}`);
+        }
+    }
+
+    // Life Essence resolved for a remote human — their mission pick, streamed.
+    if (p._pendingLifeEssencePick) {
+        p._pendingLifeEssencePick = false;
+        mpWaitShow(pi, 'choosing a mission to free of its requirement');
+        const pick = await FMP.waitFor(cs, 'lepick');
+        mpWaitHide();
+        const missions = (p.missions || []).filter(m => !m._reqWaived);
+        let target = pick && missions.find(m => m.id === pick.missionId);
+        if (!target && missions.length) {
+            // Booted / silent seat: the AI heuristic keeps every client identical.
+            const failing = missions.filter(m => !game.probeMissionRequirements(pi, m).success);
+            const pool = failing.length ? failing : missions;
+            target = pool.reduce((a, b) =>
+                (game.missionFavorEstimate(pi, b) > game.missionFavorEstimate(pi, a) ? b : a));
+        }
+        if (target) {
+            target._reqWaived = true;
+            addLogEntry(`${p.name}'s Life Essence blesses ${target.name} — no requirement`);
+        }
+    }
+}
+
+// \u2500\u2500 End-of-act stages, canonical order \u2014 every client applies every
+// seat's choices at the same point. Local seat uses the real choosers
+// (and publishes); remote seats stream; booted seats fall back to AI.
+async function mpEndActStages(borrowsPendingLocal) {
+    const n = game.playerCount;
+    for (let cs = 0; cs < n; cs++) {
+        const li = FMP.localIdx(cs);
+        const p = game.players[li];
+        if (li === 0) {
+            for (const m of borrowsPendingLocal) {
+                await showMissionBorrowChooser(m);   // publishes inside
+            }
+        } else if (p._remoteHuman || (p._pendingMissionBorrows || []).length) {
+            const pend = (p._pendingMissionBorrows || []).slice();
+            p._pendingMissionBorrows = [];
+            for (const m of pend) {
+                mpWaitShow(li, `deciding ${m.name}`);
+                const mv = p._remoteHuman ? await FMP.waitFor(cs, 'mission_borrow') : null;
+                mpWaitHide();
+                const idx = p.missions.indexOf(m);
+                if (idx < 0) continue;
+                const plan = game.missionBorrowPlan(li, m);
+                const accept = mv ? !!mv.accept
+                    : (plan && game.missionFavorEstimate(li, m) >= plan.cost); // boot \u2192 persona-grade judgment
+                if (accept && plan) {
+                    const res = game.completeMissionWithBorrow(li, idx);
+                    if (!res.success) game.failMissionByChoice(li, idx);
+                    else addLogEntry(`${p.name} borrows to complete ${m.name}`);
+                } else {
+                    game.failMissionByChoice(li, idx);
+                    addLogEntry(`${p.name} lets ${m.name} fail`);
+                }
+                renderGameState();
+            }
+        }
+    }
+    // Penalty discards \u2014 the failed owners pick which cards to give up.
+    for (let cs = 0; cs < n; cs++) {
+        const li = FMP.localIdx(cs);
+        const p = game.players[li];
+        const owed = p._pendingPenaltyDiscard || 0;
+        if (!owed) continue;
+        p._pendingPenaltyDiscard = 0;
+        if (li === 0) {
+            await showPenaltyDiscardPicker(owed);    // publishes inside
+        } else {
+            mpWaitShow(li, `discarding ${owed} to a failed mission`);
+            const mv = p._remoteHuman ? await FMP.waitFor(cs, 'penalty') : null;
+            mpWaitHide();
+            const ids = (mv && Array.isArray(mv.cardIds)) ? mv.cardIds : [];
+            let taken = ids.length
+                ? game.discardPlayedCards(li, c => ids.includes(c.id), Math.min(owed, ids.length))
+                : 0;
+            if (taken < Math.min(owed, p.playedCards.length + taken)) {
+                // Short or booted \u2014 the engine's own AI keep-score fills in.
+                p._remoteHuman = false;
+                game.penaltyDiscard(li, owed - taken);
+                if (mv) p._remoteHuman = true;
+            }
+            addLogEntry(`${p.name} discards ${owed} card(s) to a failed mission`);
+            renderGameState();
+        }
+    }
+    // A Promise \u2014 sacrifice any number for prestige.
+    for (let cs = 0; cs < n; cs++) {
+        const li = FMP.localIdx(cs);
+        const p = game.players[li];
+        if (!p._pendingPromiseDiscard) continue;
+        p._pendingPromiseDiscard = false;
+        if (li === 0) {
+            await showPromiseDiscardPicker();        // publishes inside
+        } else {
+            mpWaitShow(li, 'weighing A Promise');
+            const mv = p._remoteHuman ? await FMP.waitFor(cs, 'promise') : null;
+            mpWaitHide();
+            const ids = (mv && Array.isArray(mv.cardIds)) ? mv.cardIds : [];
+            if (ids.length) {
+                const nDone = game.discardPlayedCards(li, c => ids.includes(c.id));
+                p.prestige += 10 * nDone;
+                addLogEntry(`${p.name} honors A Promise: ${nDone} card(s), +${10 * nDone} Prestige`);
+            }
+            renderGameState();
+        }
+    }
+}
+
+// \u2500\u2500 Desync insurance \u2014 the host hashes the table each act; a mismatch
+// converts the remotes to AI locally rather than play a forked game.
+function mpStateHash() {
+    const n = game.playerCount;
+    const rows = [];
+    for (let cs = 0; cs < n; cs++) {
+        const p = game.players[FMP.localIdx(cs)];
+        rows.push([p.gold, p.prestige, p.scorn, p.favor,
+            (p.hand || []).map(c => c.id).join(','),
+            (p.playedCards || []).map(c => c.id).join(','),
+            (p.missions || []).map(m => m.id || m.name).join(',')].join('|'));
+    }
+    rows.push((game.visibleMissions || []).map(m => m.id || m.name).join(','));
+    rows.push(String(FMP.canonSeat(game.emblemHolder)));
+    const s = rows.join(';');
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return h;
+}
+function mpCheckSync(m) {
+    if (!mpActive() || FMP.isHost() || typeof m.hash !== 'number') return;
+    if (m.hash !== mpStateHash()) {
+        console.error('[FMP] state hash mismatch at act', m.act);
+        showNotification('The connection to the table slipped \u2014 the realm plays on.', 'error');
+        game.players.forEach(p => { p._remoteHuman = false; });
+        FMP.leaveGame();
+    }
 }
 
 // ─── GAME SCREEN ───────────────────────────────────────────
 
 // ─── SKILL GROUP MAPPING FOR CARD STACKS ─────────────────
-
-const SKILL_GROUPS = {
-    alchemy:     { label: 'Alchemy',     order: 0 },
-    survival:    { label: 'Survival',    order: 1 },
-    charisma:    { label: 'Charisma',    order: 2 },
-    prospecting: { label: 'Prospecting', order: 3 },
-    knowledge:   { label: 'Knowledge',   order: 4 },
-    power:       { label: 'Power',       order: 5 },
-};
 
 // True on phones/short viewports in landscape, where the left panels flow
 // in a flex rail (.left-rail) instead of the desktop JS-pinned absolute stack.
@@ -983,11 +1580,19 @@ window.addEventListener('resize', () => {
     }, 120);
 });
 
-function getCardSkillGroup(card) {
-    if (card.skills && card.skills.length > 0) {
-        return card.skills[0]; // Primary skill
-    }
-    return 'misc';
+// Card families — the color language of the physical game ("wisdom cards,
+// weapon cards, endeavor cards..."). Played cards stack by family, and the
+// label chip wears the family color.
+const TYPE_GROUPS = {
+    adventure: { label: 'Adventures', order: 0, color: '#3f8657' },
+    artifact:  { label: 'Artifacts',  order: 1, color: '#8a5fa8' },
+    weapon:    { label: 'Weapons',    order: 2, color: '#8d979f' },
+    wisdom:    { label: 'Wisdom',     order: 3, color: '#3f6fa8' },
+    endeavor:  { label: 'Endeavors',  order: 4, color: '#b58a3f' },
+    potion:    { label: 'Potions',    order: 5, color: '#8fae3c' },
+};
+function getCardTypeGroup(card) {
+    return TYPE_GROUPS[card.type] ? card.type : 'misc';
 }
 
 // ─── GAME SCREEN ───────────────────────────────────────────
@@ -1011,6 +1616,13 @@ function renderGameState() {
     renderHand(state);
     renderBottomStats(state);
     renderTableView(state);
+
+    // The journal reads live sections — keep it honest if it's up while
+    // state moves (e.g. a Turn In from the browser layered above it).
+    if (missionJournalOpen()) renderMissionJournal();
+
+    // Neighbor-read marks survive the innerHTML rebuilds above.
+    applyTargetHighlights();
 }
 
 function formatPhase(phase) {
@@ -1046,16 +1658,23 @@ function renderPhaseBar(state) {
     const bar = document.getElementById('phaseBar');
     const acts = ['I', 'II', 'III'];
     const compact = isCompactLandscape();
+    // #table-view is a stacking context (z:1), so a screen-level sibling pill
+    // can only sit entirely above or below the WHOLE table — it could never
+    // interleave (above the board, below a bloomed hand card). While compact,
+    // the pill lives INSIDE the table view and joins its ladder at z:6:
+    // above stage/board/rails, below hand strip (45) / bloom (60) / drag (70).
+    // position:fixed keeps it viewport-placed; overflow:hidden can't clip it.
+    const home = compact
+        ? document.getElementById('table-view')
+        : document.getElementById('game-screen');
+    if (bar.parentElement !== home) {
+        if (compact) home.appendChild(bar);
+        else home.insertBefore(bar, home.querySelector('.game-layout'));
+    }
     const phaseText = compact ? formatPhaseShort(state.phase) : formatPhase(state.phase);
-    // On the table view the pill also carries your purse — gold must be
-    // readable at all times, not buried on the dimmed board.
-    const purse = compact
-        ? `<span class="purse"><img src="${TOKEN_IMG.gold}" alt="Gold"><b>${state.players[0].gold}</b></span>`
-        : '';
     bar.innerHTML = `
         <span class="act-tag">Act ${acts[state.currentAct - 1] || state.currentAct}</span>
         <span class="phase-text">${phaseText}</span>
-        ${purse}
     `;
 }
 
@@ -1099,26 +1718,26 @@ const SKILL_ICONS = {
     minds_eye:   `<img class="skill-svg" src="assets/icons/minds_eye.png" alt="Mind's Eye">`
 };
 
-function renderStatsPanel(state) {
-    const panel = document.getElementById('statsPanel');
-    const player = state.players[0];
-    const gp = game.players[0];
-    const emblem = state.emblemHolder === 0 ? '<div class="emblem-tag">\uD83D\uDC51 Emblem Holder</div>' : '';
-    const sliderPos = gp.sliderPosition;
-    const posNames = ['1', '2', '3', '4', '5'];
+// The juicy panel body -- token totem + summed skills -- for ANY player.
+// Your left-rail panel and the rival inspect overlay's desktop panel both
+// read from here, so a rival's spread displays exactly like your own.
+function buildStatsPanelHtml(playerIndex, state) {
+    const player = state.players[playerIndex];
+    const gp = game.players[playerIndex];
+    const emblem = state.emblemHolder === playerIndex ? `<div class="emblem-tag">${emblemBadge()} Emblem Holder</div>` : '';
 
     // Resource tokens row
     const resourcesHtml = `
         <div class="resource-tokens">
-            <span class="resource-token gold-token">
+            <span class="resource-token gold-token" data-stat="gold">
                 <img src="assets/tokens/Copy of Tokens_Design_v1_Gold_1_v1.jpg" alt="Gold" class="token-img">
                 <span class="token-val gold-val">${player.gold}</span>
             </span>
-            <span class="resource-token prestige-token">
+            <span class="resource-token prestige-token" data-stat="prestige">
                 <img src="assets/tokens/Copy of Tokens_Design_v1_Prestige_1_v1.jpg" alt="Prestige" class="token-img">
                 <span class="token-val prestige-val">${player.prestige}</span>
             </span>
-            <span class="resource-token scorn-token">
+            <span class="resource-token scorn-token" data-stat="scorn">
                 <img src="assets/tokens/Copy of Tokens_Design_v1_Scorn_1_v1.jpg" alt="Scorn" class="token-img">
                 <span class="token-val scorn-val">${player.scorn}</span>
             </span>
@@ -1140,14 +1759,14 @@ function renderStatsPanel(state) {
     skillEntries.forEach(s => {
         const val = skills[s.key] || 0;
         skillsHtml += `
-            <div class="skill-row">
+            <div class="skill-row" data-stat="${s.key}">
                 <span class="skill-icon">${s.icon}</span>
                 <span class="skill-label">${s.label}</span>
                 <span class="skill-value${val > 0 ? ' has-skill' : ''}">${val}</span>
             </div>`;
     });
 
-    // Flex skills (Mining Guild etc.): one unit, EITHER option per use —
+    // Flex skills (Mining Guild etc.): one unit, EITHER option per use --
     // shown as their own rows so the fixed totals above never wander.
     const flexPairs = {};
     (player.flexSkills || []).forEach(pair => {
@@ -1158,52 +1777,100 @@ function renderStatsPanel(state) {
         const [a, b] = key.split('|');
         const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
         skillsHtml += `
-            <div class="skill-row flex-skill" title="Counts as ${cap(a)} OR ${cap(b)} — your choice each time, never both">
-                <span class="skill-icon">${SKILL_ICONS[a]}</span>
+            <div class="skill-row flex-skill" title="Counts as ${cap(a)} OR ${cap(b)} -- one per use, never both">
+                <span class="skill-icon flex-pair">${SKILL_ICONS[a]}${SKILL_ICONS[b]}</span>
                 <span class="skill-label">${cap(a)} <i>or</i> ${cap(b)}</span>
                 <span class="skill-value has-skill">${n > 1 ? '×' + n : '✦'}</span>
             </div>`;
     });
 
-    // Special abilities: Philosopher's Stone & Mind's Eye
+    // Special abilities: Philosopher's Stone & Mind's Eye -- the engine
+    // count (cards + slot + mission rewards), shown as the digit it is.
     const hasPhilosopher = gp.philosopherStone && gp.philosopherStone > 0;
-    const hasMindsEye = (gp.playedCards || []).some(c =>
-        c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_x2_philosopher_stone_x5'
-    );
+    const mindsEyeCount = game.getMindsEyeCount(playerIndex);
 
     if (hasPhilosopher) {
         skillsHtml += `
-            <div class="skill-row special-ability">
+            <div class="skill-row special-ability" title="Philosopher's Stone — converts your Gold to Favor at game end (×${gp.philosopherStone} per Gold)">
                 <span class="skill-icon">${SKILL_ICONS.philosopher}</span>
-                <span class="skill-label">Phil. Stone</span>
-                <span class="skill-value has-skill">${gp.philosopherStone}:1</span>
+                <span class="skill-label phil-label">Philosopher's Stone</span>
+                <span class="skill-value has-skill">${gp.philosopherStone}</span>
             </div>`;
     }
-    if (hasMindsEye) {
+    if (mindsEyeCount > 0) {
         skillsHtml += `
-            <div class="skill-row special-ability">
+            <div class="skill-row special-ability" title="Mind's Eye — already counted in Knowledge">
                 <span class="skill-icon">${SKILL_ICONS.minds_eye}</span>
                 <span class="skill-label">Mind's Eye</span>
-                <span class="skill-value has-skill">\u2713</span>
+                <span class="skill-value has-skill">${mindsEyeCount}</span>
             </div>`;
     }
     skillsHtml += '</div>';
 
-    panel.innerHTML = `
-        <div class="act-badge">Act ${state.currentAct}</div>
-        ${resourcesHtml}
-        ${skillsHtml}
-        <div class="ring-indicator">
-            Ring: ${[0,1,2,3,4].map(pos => {
-                const charData = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
-                const tip = charData ? buildSlotLabel(charData.slots[pos]).join(', ') : '';
-                return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posNames[pos]}</span>`;
-            }).join('')}
-        </div>
-        ${emblem}
-    `;
+    return `${resourcesHtml}${skillsHtml}${emblem}`;
+}
 
-    // Position dynamically after board thumb loads (desktop only — in compact
+// The same variables in the phone HUD's chip language -- purse first
+// (the overlay is the only place a rival's full purse shows on phones),
+// then the six skills, flex pairs, specials, and the Emblem. Tap a chip
+// for its name, exactly like your own rail.
+function buildStatChipsHtml(playerIndex, state) {
+    const p = state.players[playerIndex];
+    const gp = game.players[playerIndex];
+    const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+    const purse = (k, img, val, label) =>
+        `<span class="tv-purse-chip ${k}" onclick="tvChipTip(event, '${label}')">
+            <img src="${img}" alt="${label}"><b>${val}</b></span>`;
+
+    let h = purse('gold', PURSE_ICONS.gold, p.gold, 'Gold')
+          + purse('prestige', TOKEN_IMG.prestige, p.prestige, 'Prestige')
+          + purse('favor', PURSE_ICONS.favor, p.favor || 0, 'Favor')
+          + purse('scorn', PURSE_ICONS.scorn, p.scorn, 'Scorn');
+
+    const skills = p.skills || {};
+    ['survival', 'charisma', 'alchemy', 'prospecting', 'knowledge', 'power'].forEach(k => {
+        const val = skills[k] || 0;
+        h += `<span class="tv-skill-chip${val > 0 ? '' : ' zero'}"
+                    onclick="tvChipTip(event, '${cap(k)}')">${SKILL_ICONS[k]}<b>${val}</b></span>`;
+    });
+
+    const flexPairs = {};
+    (p.flexSkills || []).forEach(pair => {
+        const key = pair.join('|');
+        flexPairs[key] = (flexPairs[key] || 0) + 1;
+    });
+    Object.entries(flexPairs).forEach(([key, n]) => {
+        const [a, b] = key.split('|');
+        h += `<span class="tv-skill-chip flex"
+                    onclick="tvChipTip(event, '${cap(a)} or ${cap(b)} — one per use, never both')">
+                    <span class="flex-pair">${SKILL_ICONS[a]}${SKILL_ICONS[b]}</span><b>${n > 1 ? '×' + n : '✦'}</b></span>`;
+    });
+
+    if (gp.philosopherStone && gp.philosopherStone > 0) {
+        h += `<span class="tv-skill-chip special"
+                    onclick="tvChipTip(event, 'Philosopher\\'s Stone ×${gp.philosopherStone} — converts Gold to Favor at game end')">
+                    ${SKILL_ICONS.philosopher}<b>${gp.philosopherStone}</b></span>`;
+    }
+    const mindsEye = game.getMindsEyeCount(playerIndex);
+    if (mindsEye > 0) {
+        h += `<span class="tv-skill-chip special"
+                    onclick="tvChipTip(event, 'Mind\\'s Eye — already counted in Knowledge')">
+                    ${SKILL_ICONS.minds_eye}<b>${mindsEye}</b></span>`;
+    }
+    if (state.emblemHolder === playerIndex) {
+        h += `<span class="tv-purse-chip emblem" onclick="tvChipTip(event, 'Emblem Holder')">
+                <img src="${EMBLEM_IMG}" alt="Emblem Holder"><b>Emblem</b></span>`;
+    }
+    return h;
+}
+
+function renderStatsPanel(state) {
+    const panel = document.getElementById('statsPanel');
+    // No act badge (the phase pill says it) and no ring-dot row (the board
+    // thumb above wears the ring ON the art) -- the panel is tokens + skills.
+    panel.innerHTML = buildStatsPanelHtml(0, state);
+
+    // Position dynamically after board thumb loads (desktop only -- in compact
     // landscape the .left-rail flex flow handles stacking, so clear inline top).
     if (isCompactLandscape()) {
         panel.style.top = '';
@@ -1226,52 +1893,54 @@ function renderMissionStrip(state) {
     const completedMissions = game.players[0].completedMissions || [];
     const allAcquired = [...missions, ...completedMissions];
 
-    let html = '';
+    // ONE at-a-glance row: your missions first (gold ring / green when
+    // complete), then the realm's available ones (dim). The pip borders
+    // carry the grouping — separate labeled sections cost too much height
+    // next to the juicy stats panel on 800px-tall screens.
+    let pips = '';
+    allAcquired.forEach(m => {
+        const isComplete = completedMissions.includes(m);
+        pips += `<img class="mission-pip${isComplete ? ' completed' : ' active'}"
+                    src="assets/cards/missions/${m.filename}"
+                    alt="${m.name}"
+                    onclick="openMissionBrowser('mine', '${m.name.replace(/'/g, "\\'")}')">`;
+    });
+    (state.visibleMissions || []).forEach(m => {
+        pips += `<img class="mission-pip available"
+                    src="assets/cards/missions/${m.filename}"
+                    alt="${m.name}"
+                    onclick="openMissionBrowser('realm', '${m.name.replace(/'/g, "\\'")}')">`;
+    });
 
-    // Active/Acquired missions section
-    if (allAcquired.length > 0) {
-        html += '<div class="mission-section">';
-        html += '<span class="strip-label">Active Missions</span>';
-        html += '<div class="mission-pips">';
-        allAcquired.forEach(m => {
-            const isComplete = completedMissions.includes(m);
-            html += `<img class="mission-pip${isComplete ? ' completed' : ' active'}"
-                        src="assets/cards/missions/${m.filename}"
-                        alt="${m.name}"
-                        onclick="openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
-        });
-        html += '</div></div>';
-    }
-
-    // Available missions from pool
-    if (state.visibleMissions && state.visibleMissions.length > 0) {
-        html += '<div class="mission-section">';
-        html += '<span class="strip-label">Available Missions</span>';
-        html += '<div class="mission-pips">';
-        state.visibleMissions.forEach(m => {
-            html += `<img class="mission-pip available"
-                        src="assets/cards/missions/${m.filename}"
-                        alt="${m.name}"
-                        onclick="openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
-        });
-        html += '</div></div>';
-    }
-
-    if (!html) {
-        html = '<span class="strip-label">No Missions</span>';
-    }
-
-    strip.innerHTML = html;
+    const head = `
+        <div class="mission-strip-head">
+            <span class="strip-label">Missions</span>
+            <button class="mj-open" onclick="event.stopPropagation(); openMissionJournal()">Journal</button>
+        </div>`;
+    strip.innerHTML = pips
+        ? `<div class="mission-section">
+               ${head}
+               <div class="mission-pips">${pips}</div>
+           </div>`
+        : `<div class="mission-section">${head}
+           <span class="strip-label" style="opacity:0.5">None yet</span></div>`;
 
     // Position below stats panel (desktop only — compact landscape uses flex flow)
     if (isCompactLandscape()) {
         strip.style.top = '';
+        strip.style.maxHeight = '';
+        strip.style.overflowY = '';
     } else {
         requestAnimationFrame(() => {
             if (isCompactLandscape()) { strip.style.top = ''; return; }
             const statsPanel = document.getElementById('statsPanel');
             if (statsPanel && statsPanel.offsetHeight > 10) {
-                strip.style.top = (statsPanel.offsetTop + statsPanel.offsetHeight + 6) + 'px';
+                const top = statsPanel.offsetTop + statsPanel.offsetHeight + 6;
+                strip.style.top = top + 'px';
+                // The juicy stats panel is tall now — never let the strip
+                // run off the bottom; it scrolls inside itself instead.
+                strip.style.maxHeight = Math.max(40, window.innerHeight - top - 12) + 'px';
+                strip.style.overflowY = 'auto';
             }
         });
     }
@@ -1288,27 +1957,28 @@ function renderCardStacks(state) {
         return;
     }
 
-    // Group cards by primary skill
+    // Group cards by family — the card's color, the physical game's language
     const groups = {};
     player.playedCards.forEach(card => {
-        const group = getCardSkillGroup(card);
+        const group = getCardTypeGroup(card);
         if (!groups[group]) groups[group] = [];
         groups[group].push(card);
     });
 
     // Sort groups by defined order
     const sortedKeys = Object.keys(groups).sort((a, b) => {
-        const oa = SKILL_GROUPS[a] ? SKILL_GROUPS[a].order : 99;
-        const ob = SKILL_GROUPS[b] ? SKILL_GROUPS[b].order : 99;
+        const oa = TYPE_GROUPS[a] ? TYPE_GROUPS[a].order : 99;
+        const ob = TYPE_GROUPS[b] ? TYPE_GROUPS[b].order : 99;
         return oa - ob;
     });
 
     let html = '';
     sortedKeys.forEach(key => {
-        const label = SKILL_GROUPS[key] ? SKILL_GROUPS[key].label : 'Other';
+        const g = TYPE_GROUPS[key];
+        const label = g ? g.label : 'Other';
         const cards = groups[key];
 
-        html += '<div class="card-stack">';
+        html += `<div class="card-stack"${g ? ` style="--typeC:${g.color}"` : ''}>`;
         html += `<div class="stack-label">${label}</div>`;
         cards.forEach(card => {
             const doubled = card._favorDoubled ? ' doubled' : '';
@@ -1329,32 +1999,25 @@ function renderSidebar(state) {
     const sidebar = document.getElementById('gameSidebar');
     let html = '<div class="sidebar-header">Opponents</div>';
 
+    // Quiet entries: portrait, name, emblem, gold (real coin art) and the
+    // recent-cards fan. Ring position / favor / scorn / prestige live
+    // behind the click \u2014 the overlay shows their whole spread.
     state.players.forEach((p, i) => {
         if (i === 0) return;
 
         const isActive = state.activePlayerIndex === i;
-        const emblem = state.emblemHolder === i ? ' \uD83D\uDC51' : '';
+        const emblem = state.emblemHolder === i ? ' ' + emblemBadge() : '';
         const char = game.players[i].character;
         const avatarSrc = char ? `assets/characters/${char.filename}` : '';
-        const sliderPos = game.players[i].sliderPosition; // 0-4
-        const posLabels = ['1', '2', '3', '4', '5'];
 
         html += `
-            <div class="opp-entry${isActive ? ' active-turn' : ''}"
+            <div class="opp-entry${isActive ? ' active-turn' : ''}" data-pi="${i}"
                  onclick="openOppOverlay(${i})">
                 <img class="opp-avatar" src="${avatarSrc}">
                 <div class="opp-details">
                     <span class="opp-name">${p.name}${emblem}</span>
-                    <div class="opp-ring-row">
-                        ${[0,1,2,3,4].map(pos => {
-                            const tip = char ? buildSlotLabel(char.slots[pos]).join(', ') : '';
-                            return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posLabels[pos]}</span>`;
-                        }).join('')}
-                    </div>
-                    <div class="opp-stats-row">
-                        <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${p.gold}</span>
-                        <span class="stat-pill favor">${p.favor || 0}</span>
-                        <span class="stat-pill scorn">${p.scorn}</span>
+                    <div class="opp-gold-row">
+                        <img src="${PURSE_ICONS.gold}" alt="Gold"><b>${p.gold}</b>
                     </div>
                     <div class="mini-stack">
                         ${p.playedCards.slice(-5).map(c =>
@@ -1400,6 +2063,7 @@ function renderHand(state) {
 
         html += `<div class="hand-card${isSelected ? ' selected' : ''}"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
+                    data-hand-i="${i}"
                     onclick="event.stopPropagation(); selectHandCard(${i})"
                     ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
                     <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
@@ -1429,114 +2093,325 @@ function renderBottomStats(state) {
 // board + played cards tucked underneath), arranged around a center
 // missions area. Desktop is untouched (#table-view is display:none there).
 
-// One token "chip" resting on the mat: real token art (or a favor star) + count.
-function tvTokenChip(kind, amount) {
-    const face = TOKEN_IMG[kind]
-        ? `<img src="${TOKEN_IMG[kind]}" alt="">`
-        : `<span class="pmat-tok-favor">★</span>`;
-    return `<span class="pmat-tok ${kind}">${face}<b>${amount}</b></span>`;
+// ═══ WINGSPAN HUD ZONES (phone landscape) ═══════════════════
+// Every zone glanceable at once — no drawers. All CSS lives inside the
+// compact-landscape media query; desktop .game-layout is untouched.
+
+// Tap a HUD chip → a transient name label (phones have no hover).
+function tvChipTip(e, label) {
+    if (e) e.stopPropagation();
+    const old = document.getElementById('tvChipTip');
+    if (old) old.remove();
+    const target = e && (e.currentTarget || e.target);
+    if (!target || !target.getBoundingClientRect) return;
+    const r = target.getBoundingClientRect();
+    const tip = document.createElement('div');
+    tip.id = 'tvChipTip';
+    tip.textContent = label;
+    document.body.appendChild(tip);
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.max(6, Math.min(r.right + 8, window.innerWidth - w - 6)) + 'px';
+    tip.style.top = Math.max(6, Math.min(r.top + r.height / 2 - h / 2, window.innerHeight - h - 6)) + 'px';
+    setTimeout(() => { tip.classList.add('out'); setTimeout(() => tip.remove(), 260); }, 1300);
 }
 
-function buildPlayerMat(i, state, isYou, seat) {
-    const p = state.players[i];
-    const char = game.players[i] ? game.players[i].character : null;
-    const boardSrc = char ? `assets/characters/${char.filename}` : '';
-    const isActive = state.activePlayerIndex === i;
-    const crown = state.emblemHolder === i ? ' 👑' : '';
+// ── Z1 · Purse — your four currencies, top-left ──
+const PURSE_ICONS = {
+    gold:  'assets/icons/gold.png',
+    favor: 'assets/icons/favor.png',
+    scorn: 'assets/icons/scorn.png',
+};
 
-    // Ring indicator on the board's slider track (5 slots, evenly spaced).
-    const sliderPos = game.players[i] ? game.players[i].sliderPosition : 2;
-    const slotLeft = [16, 33, 50, 67, 84][sliderPos] != null ? [16, 33, 50, 67, 84][sliderPos] : 50;
+// The physical game's Emblem marker — used wherever "emblem holder" shows.
+const EMBLEM_IMG = 'assets/tokens/Copy of Emblem.jpg';
+const emblemBadge = (title = 'Emblem Holder') =>
+    `<img class="emblem-badge" src="${EMBLEM_IMG}" alt="${title}" title="${title}">`;
 
-    // Tokens laid out on the board (corner cluster). Gold always; others if > 0.
-    let tokens = tvTokenChip('gold', p.gold);
-    if (p.prestige) tokens += tvTokenChip('prestige', p.prestige);
-    if (p.scorn)    tokens += tvTokenChip('scorn', p.scorn);
-    if (p.favor)    tokens += tvTokenChip('favor', p.favor);
-
-    // Played cards tucked under the mat (peeking, overlapped). Click mat to expand.
-    const cards = p.playedCards || [];
-    let tucked = cards.map(c =>
-        `<img class="pmat-card" src="assets/cards/regular/${c.filename}" alt="${c.name}"
-              data-peek="assets/cards/regular/${c.filename}">`
-    ).join('');
-    if (!tucked) tucked = '<span class="pmat-empty">No cards played</span>';
-
+// Stat pills in the game's own visual language — real token art, never
+// emoji (a gray unicode coin reads as somebody else's game).
+function statPillsHtml(ps) {
     return `
-        <div class="pmat ${isYou ? 'you' : 'opp'} seat-${seat}${isActive ? ' active' : ''}"
-             data-pi="${i}"
-             onclick="openOppOverlay(${i})">
-            <div class="pmat-boardwrap">
-                <img class="pmat-board" src="${boardSrc}" alt="${p.name}">
-                <img class="pmat-ring" src="assets/ui/slider-ring.png" style="left:${slotLeft}%" alt="">
-                <span class="pmat-name">${p.name}${crown}</span>
-                <div class="pmat-tokens">${tokens}</div>
-            </div>
-            <div class="pmat-cards">${tucked}</div>
-        </div>`;
+        <span class="stat-pill gold"><img class="pill-icon" src="${PURSE_ICONS.gold}" alt="Gold"> ${ps.gold}</span>
+        <span class="stat-pill prestige"><img class="pill-icon" src="${TOKEN_IMG.prestige}" alt="Prestige"> ${ps.prestige}</span>
+        <span class="stat-pill favor"><img class="pill-icon" src="${PURSE_ICONS.favor}" alt="Favor"> ${ps.favor || 0} Favor</span>
+        <span class="stat-pill scorn"><img class="pill-icon" src="${PURSE_ICONS.scorn}" alt="Scorn"> ${ps.scorn} Scorn</span>
+    `;
 }
 
-// ── Rival plaque (Battlegrounds-style top rail) ──
-// Rivals compress into upright portrait plaques along the top edge instead of
-// rotated full boards: portrait + name + the same public info the old mats
-// showed (gold / prestige / scorn / favor tokens, played-card count, ring
-// slot). Keeps .pmat/.opp classes + data-pi so coach-marks, tap-to-inspect
-// and the FX delta system all keep working unchanged.
-function buildRivalPlaque(i, state) {
+function renderTvPurse(state) {
+    const el = document.getElementById('tvPurse');
+    if (!el) return;
+    const p = state.players[0];
+    const chip = (k, img, val, label) =>
+        `<span class="tv-purse-chip ${k}" data-stat="${k}" onclick="tvChipTip(event, '${label}')">
+            <img src="${img}" alt="${label}"><b>${val}</b></span>`;
+    // 2×2 reading order (Wyatt's 7/7 call): gold · prestige on top,
+    // favor · scorn beneath.
+    el.innerHTML =
+        chip('gold', PURSE_ICONS.gold, p.gold, 'Gold')
+      + chip('prestige', TOKEN_IMG.prestige, p.prestige, 'Prestige')
+      + chip('favor', PURSE_ICONS.favor, p.favor || 0, 'Favor')
+      + chip('scorn', PURSE_ICONS.scorn, p.scorn, 'Scorn');
+}
+
+// ── Z2 · Skill rail — always-visible icon+number chips, left edge.
+// Same data logic as the old skills drawer: six fixed skills (dim at 0),
+// flex-skill pairs as dashed ✦ chips, then Mind's Eye / Philosopher's
+// Stone only when owned. Icon + number only; tap a chip for its name.
+function renderTvSkills(state) {
+    const el = document.getElementById('tvSkills');
+    if (!el) return;
+    const player = state.players[0];
+    const gp = game.players[0];
+    const skills = player.skills || {};
+    const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+    let h = '', rows = 0;
+
+    ['survival', 'charisma', 'alchemy', 'prospecting', 'knowledge', 'power'].forEach(k => {
+        const val = skills[k] || 0;
+        h += `<span class="tv-skill-chip${val > 0 ? '' : ' zero'}" data-stat="${k}"
+                    onclick="tvChipTip(event, '${cap(k)}')">${SKILL_ICONS[k]}<b>${val}</b></span>`;
+        rows++;
+    });
+
+    const flexPairs = {};
+    (player.flexSkills || []).forEach(pair => {
+        const key = pair.join('|');
+        flexPairs[key] = (flexPairs[key] || 0) + 1;
+    });
+    Object.entries(flexPairs).forEach(([key, n]) => {
+        const [a, b] = key.split('|');
+        // BOTH faces of the either/or pair — a lone icon read as a
+        // duplicate of the fixed-skill chip above it (Wyatt, 7/7).
+        h += `<span class="tv-skill-chip flex"
+                    onclick="tvChipTip(event, '${cap(a)} or ${cap(b)} — one per use, never both')">
+                    <span class="flex-pair">${SKILL_ICONS[a]}${SKILL_ICONS[b]}</span><b>${n > 1 ? '×' + n : '✦'}</b></span>`;
+        rows++;
+    });
+
+    const hasPhil = gp.philosopherStone && gp.philosopherStone > 0;
+    // Engine count (cards + slot + mission rewards) — the digit Wyatt
+    // asked for; the old ✓ also missed slot-granted Mind's Eyes entirely.
+    const mindsEye = game.getMindsEyeCount(0);
+    if (hasPhil) {
+        h += `<span class="tv-skill-chip special"
+                    onclick="tvChipTip(event, 'Philosopher\\'s Stone ×${gp.philosopherStone} — converts Gold to Favor at game end')">
+                    ${SKILL_ICONS.philosopher}<b>${gp.philosopherStone}</b></span>`;
+        rows++;
+    }
+    if (mindsEye > 0) {
+        h += `<span class="tv-skill-chip special"
+                    onclick="tvChipTip(event, 'Mind\\'s Eye — already counted in Knowledge')">
+                    ${SKILL_ICONS.minds_eye}<b>${mindsEye}</b></span>`;
+        rows++;
+    }
+
+    // Two-column grid: --railRows counts GRID ROWS (chips packed two per
+    // row) so the fit-to-height chip formula sees the real column length.
+    el.style.setProperty('--railRows', Math.max(3, Math.ceil(rows / 2)));
+    el.innerHTML = h;
+}
+
+// ── Z3 · Seat chips — one compact portrait per player, YOU first.
+// CRITICAL: every chip keeps .pmat + data-pi — tvAnimateDeltas /
+// tvDropToken / tvAnimateNewCard and the coach-marks all target
+// #table-view .pmat[data-pi] (tvMatEl).
+function buildSeatChip(i, state) {
     const p = state.players[i];
     const char = game.players[i] ? game.players[i].character : null;
-    const boardSrc = char ? `assets/characters/${char.filename}` : '';
+    const artSrc = char ? `assets/characters/${char.filename}` : '';
     const isActive = state.activePlayerIndex === i;
-    const crown = state.emblemHolder === i ? ' 👑' : '';
-    const ringPos = game.players[i] ? game.players[i].sliderPosition : 2;
+    const isYou = i === 0;
+    const crown = state.emblemHolder === i ? `<span class="chip-crown">${emblemBadge()}</span>` : '';
+    const youTag = isYou ? '<span class="chip-you">YOU</span>' : '';
     const cardCount = (p.playedCards || []).length;
-
-    let chips = tvTokenChip('gold', p.gold);
-    if (p.prestige) chips += tvTokenChip('prestige', p.prestige);
-    if (p.scorn)    chips += tvTokenChip('scorn', p.scorn);
-    if (p.favor)    chips += tvTokenChip('favor', p.favor);
-
-    const ringDots = [0,1,2,3,4].map(s =>
-        `<i class="rplq-ringdot${s === ringPos ? ' on' : ''}"></i>`).join('');
-
+    const open = isYou ? 'openBoardOverlay()' : `openOppOverlay(${i})`;
     return `
-        <div class="pmat opp rplq${isActive ? ' active' : ''}" data-pi="${i}"
-             onclick="openOppOverlay(${i})">
-            <div class="rplq-portrait"><img src="${boardSrc}" alt="${p.name}"></div>
-            <div class="rplq-info">
-                <span class="rplq-name">${p.name}${crown}</span>
-                <div class="pmat-tokens rplq-chips">${chips}</div>
-                <div class="rplq-foot">
-                    <span class="rplq-ring">${ringDots}</span>
-                    <span class="rplq-cards">🂠 ${cardCount}</span>
-                </div>
-            </div>
+        <div class="pmat ${isYou ? 'you' : 'opp'} seat-chip${isActive ? ' active' : ''}" data-pi="${i}"
+             onclick="event.stopPropagation(); ${open}" title="${p.name}">
+            <img class="chip-art" src="${artSrc}" alt="${p.name}">
+            ${crown}${youTag}
+            <span class="chip-count" title="Cards played">${cardCount}</span>
         </div>`;
 }
 
-function renderTvCenter(state) {
-    const c = document.getElementById('tvCenter');
-    if (!c) return;
+// ── Z4 · Mission rail — Missions of the Realm + the My Missions chip ──
+function renderTvMissionRail(state) {
+    const el = document.getElementById('tvMissionRail');
+    if (!el) return;
     const ms = state.visibleMissions || [];
-    // Missions are the stage: big readable cards, with ghosted placeholder
-    // slots (Wingspan-style) so the pool always reads as 3 seats.
-    let h = '<span class="tv-center-label">Missions of the Realm</span><div class="tv-missions">';
+    let h = '';
     ms.forEach(m => {
         h += `<img class="tv-mission" src="assets/cards/missions/${m.filename}"
                    alt="${m.name}" data-peek="assets/cards/missions/${m.filename}"
-                   onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">`;
+                   onclick="event.stopPropagation(); openMissionBrowser('realm', '${m.name.replace(/'/g, "\\'")}')">`;
     });
-    for (let g = ms.length; g < 3; g++) {
-        h += '<span class="tv-mission ghost"></span>';
+    for (let g = ms.length; g < 3; g++) h += '<span class="tv-mission ghost"></span>';
+
+    // Journal button — replaces the old ● ✓ ✕ tally chip. Count = current
+    // missions only; the ledger inside holds the rest.
+    const cur = (game.players[0].missions || []).length;
+    h += `<button class="tv-mym" title="Mission Journal"
+                  onclick="event.stopPropagation(); openMissionJournal()">
+            <img class="mym-icon" src="assets/icons/mission.png" alt="">
+            <span class="mym-label">Missions</span>
+            <b class="mym-count">${cur}</b>
+          </button>`;
+    el.innerHTML = h;
+}
+
+// ── Z5 · Your board, small — the ring rides BOARD_OV_TRACK exactly like
+// the big overlay, so the mini board always shows where you stand. ──
+function renderTvBoardThumb(state) {
+    const el = document.getElementById('tvBoardThumb');
+    if (!el) return;
+    const char = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
+    if (!char) return;
+    const cur = (game && game.players[0]) ? game.players[0].sliderPosition : 2;
+    el.innerHTML = `
+        <img class="tv-thumb-board" src="assets/characters/${char.filename}" alt="${char.name}">
+        <img class="thumb-ring" src="assets/ui/slider-ring.png" alt=""
+             style="left:${BOARD_OV_TRACK.lefts[cur]}%; top:${BOARD_OV_TRACK.top}%">`;
+    el.onclick = () => openBoardOverlay();
+}
+
+// Tucked family stacks — shared by the center stage (your cards)
+// and the rival overlay (their cards read exactly like yours).
+function buildSkillStacks(cards) {
+    const groups = {};
+    cards.forEach(c => {
+        const g = getCardTypeGroup(c);
+        (groups[g] = groups[g] || []).push(c);
+    });
+    const keys = Object.keys(groups).sort((x, y) =>
+        (TYPE_GROUPS[x] ? TYPE_GROUPS[x].order : 99) - (TYPE_GROUPS[y] ? TYPE_GROUPS[y].order : 99));
+    let h = '';
+    keys.forEach(k => {
+        const list = groups[k];
+        // Tall stacks tighten their tuck so the zone never overflows.
+        const peek = list.length > 5 ? Math.max(11, Math.floor(100 / (list.length - 1))) : 20;
+        h += `<div class="tv-stack" style="--tvPeek:${peek}px">`;
+        list.forEach(c => {
+            h += `<img class="tv-stack-card${c._favorDoubled ? ' doubled' : ''}"
+                       src="assets/cards/regular/${c.filename}" alt="${c.name}"
+                       data-peek="assets/cards/regular/${c.filename}">`;
+        });
+        h += `<span class="tv-stack-label"${TYPE_GROUPS[k] ? ` style="--typeC:${TYPE_GROUPS[k].color}"` : ''}>${TYPE_GROUPS[k] ? TYPE_GROUPS[k].label : 'Other'}</span></div>`;
+    });
+    return h;
+}
+
+// ── Z6 · Center stage — YOUR played cards as tucked skill stacks.
+// The stage is also where every focus moment lands (action panel,
+// overlays, melee splash, #tvFx deltas) — those live above it.
+function renderTvStage(state) {
+    const el = document.getElementById('tvStage');
+    if (!el) return;
+    const cards = state.players[0].playedCards || [];
+    el.innerHTML = cards.length
+        ? buildSkillStacks(cards)
+        : '<div class="tv-stage-empty">Cards you play gather here</div>';
+}
+
+// ── Popovers (gear menu / My Missions) — the action panel steps aside
+// while one is up (#actionPanel is a ROOT child at z 9999 and would
+// otherwise paint over it), then comes back on close. ──
+let _tvPopover = null;
+let _tvPanelAside = false;
+
+function _tvPanelStepAside() {
+    const panel = document.getElementById('actionPanel');
+    if (panel && panel.classList.contains('active')) {
+        panel.classList.remove('active');   // direct toggle — survives the _finalChoicePending guard
+        _tvPanelAside = true;
     }
-    h += '</div>';
-    c.innerHTML = h;
+}
+function _tvPanelRestore() {
+    if (!_tvPanelAside) return;
+    _tvPanelAside = false;
+    const panel = document.getElementById('actionPanel');
+    if (panel) panel.classList.add('active');
+}
+
+function closeTvPopover(restorePanel = true) {
+    if (!_tvPopover) return;
+    _tvPopover = null;
+    const host = document.getElementById('tvPopoverHost');
+    if (host) { host.classList.remove('active'); host.innerHTML = ''; }
+    if (restorePanel) _tvPanelRestore();
+    if (typeof coachTick === 'function') coachTick();
+}
+
+// ── Mission Journal — a royal ledger of where you stand: Current
+// Missions (with their due act) and Completed. Failed missions are
+// discarded in the fiction and do NOT appear (gp.failedMissions data
+// stays intact for scoring/log). Cards are BIG scans; tapping one opens
+// the mission browser focused on it (Turn In lives there).
+function openMissionJournal() {
+    if (!game) return;
+    if (typeof coachMarkSeen === 'function') coachMarkSeen('missions');
+    _tvPanelStepAside();   // root-level action panel would paint over the journal
+    renderMissionJournal();
+    document.getElementById('missionJournal').classList.add('active');
+}
+
+function renderMissionJournal() {
+    const body = document.getElementById('mjBody');
+    if (!body || !game) return;
+    const gp = game.players[0];
+    const esc = (s) => s.replace(/'/g, "\\'");
+    const entry = (m, done) => `
+        <div class="mj-card${done ? ' done' : ''}"
+             onclick="event.stopPropagation(); openMissionBrowser('mine', '${esc(m.name)}')">
+            <img src="assets/cards/missions/${m.filename}" alt="${m.name}"
+                 data-peek="assets/cards/missions/${m.filename}" draggable="false">
+            ${done ? '<div class="mj-ribbon">✓ Completed</div>'
+                   : `<div class="mj-due">${mjDueNote(m)}</div>`}
+        </div>`;
+    const cur = (gp.missions || []).map(m => entry(m, false)).join('');
+    const done = (gp.completedMissions || []).map(m => entry(m, true)).join('');
+    body.innerHTML = `
+        <div class="mj-section">
+            <div class="mj-section-title">Current Missions</div>
+            ${cur ? `<div class="mj-grid">${cur}</div>`
+                  : '<div class="mj-empty">None yet — play a mission card to take one.</div>'}
+        </div>
+        <div class="mj-section">
+            <div class="mj-section-title">Completed</div>
+            ${done ? `<div class="mj-grid">${done}</div>`
+                   : '<div class="mj-empty">The ledger awaits your first success.</div>'}
+        </div>`;
+}
+
+function mjDueNote(m) {
+    const due = game.missionDueAct(m);
+    return due > game.currentAct ? `Due end of Act ${due}` : 'Due THIS act';
+}
+
+function closeMissionJournal() {
+    const el = document.getElementById('missionJournal');
+    if (el) el.classList.remove('active');
+    setTimeout(_tvPanelRestore, 0);   // after this click's outside-click handler
+}
+
+function missionJournalOpen() {
+    const el = document.getElementById('missionJournal');
+    return !!el && el.classList.contains('active');
 }
 
 function renderTvHand(state) {
     const zone = document.getElementById('tvHand');
     if (!zone) return;
     const hand = state.players[0].hand;
+
+    // Playable glow (Battlegrounds-style): on your turn, cards you can
+    // actually play get a soft green edge so options read at a glance.
+    const myTurn = state.activePlayerIndex === 0 && state.phase === 'gameplay';
+
+    // "Your turn" pulse on the always-visible strip (replaces the old
+    // auto-opening drawer as the turn signal).
+    const strip = document.getElementById('tvHandStrip');
+    if (strip) strip.classList.toggle('your-turn', myTurn && !!(hand && hand.length));
 
     if (!hand || hand.length === 0) {
         zone.innerHTML = game.phase === 'gameplay'
@@ -1548,10 +2423,6 @@ function renderTvHand(state) {
     const maxAngle = Math.min(count * 3, 12);
     const step = count > 1 ? (maxAngle * 2) / (count - 1) : 0;
     const startAngle = -maxAngle;
-
-    // Playable glow (Battlegrounds-style): on your turn, cards you can
-    // actually play get a soft green edge so options read at a glance.
-    const myTurn = state.activePlayerIndex === 0 && state.phase === 'gameplay';
 
     let html = '<div class="hand-arc">';
     hand.forEach((card, i) => {
@@ -1566,11 +2437,11 @@ function renderTvHand(state) {
                 try { playable = game.checkRequirements(0, card).canPlay; } catch (e) { playable = false; }
             }
         }
+        // No tap-to-select here: committing a card is the DRAG-UP gesture
+        // (touch = bloom to read, drag up + release = action sheet).
         html += `<div class="hand-card${isSelected ? ' selected' : ''}${playable ? ' playable' : ''}"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
-                    data-hand-i="${i}"
-                    onclick="event.stopPropagation(); selectHandCard(${i})"
-                    ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
+                    data-hand-i="${i}">
                     <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
                 </div>`;
     });
@@ -1579,125 +2450,8 @@ function renderTvHand(state) {
     requestAnimationFrame(_tvBloomLayout);
 }
 
-// ── Left drawer: your skills / ring / act ──
-function renderTvLeft(state) {
-    const el = document.getElementById('tvLeftContent');
-    if (!el) return;
-    const player = state.players[0];
-    const gp = game.players[0];
-    const skills = player.skills || {};
-    const skillEntries = [
-        { key: 'survival',    label: 'Survival',    icon: SKILL_ICONS.survival },
-        { key: 'charisma',    label: 'Charisma',    icon: SKILL_ICONS.charisma },
-        { key: 'alchemy',     label: 'Alchemy',     icon: SKILL_ICONS.alchemy },
-        { key: 'prospecting', label: 'Prospecting', icon: SKILL_ICONS.prospecting },
-        { key: 'knowledge',   label: 'Knowledge',   icon: SKILL_ICONS.knowledge },
-        { key: 'power',       label: 'Power',       icon: SKILL_ICONS.power },
-    ];
-    let skillsHtml = '<div class="skills-grid">';
-    skillEntries.forEach(s => {
-        const val = skills[s.key] || 0;
-        skillsHtml += `<div class="skill-row">
-            <span class="skill-icon">${s.icon}</span>
-            <span class="skill-label">${s.label}</span>
-            <span class="skill-value${val > 0 ? ' has-skill' : ''}">${val}</span>
-        </div>`;
-    });
-    const flexPairs = {};
-    (player.flexSkills || []).forEach(pair => {
-        const key = pair.join('|');
-        flexPairs[key] = (flexPairs[key] || 0) + 1;
-    });
-    Object.entries(flexPairs).forEach(([key, n]) => {
-        const [a, b] = key.split('|');
-        const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
-        skillsHtml += `<div class="skill-row flex-skill" title="Counts as ${cap(a)} OR ${cap(b)} — one or the other, never both">
-            <span class="skill-icon">${SKILL_ICONS[a]}</span>
-            <span class="skill-label">${cap(a)}/${cap(b)}</span>
-            <span class="skill-value has-skill">${n > 1 ? '×' + n : '✦'}</span>
-        </div>`;
-    });
-    const hasPhil = gp.philosopherStone && gp.philosopherStone > 0;
-    const hasMindsEye = (gp.playedCards || []).some(c =>
-        c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_x2_philosopher_stone_x5');
-    if (hasPhil) skillsHtml += `<div class="skill-row special-ability">
-        <span class="skill-icon">${SKILL_ICONS.philosopher}</span>
-        <span class="skill-label">Phil. Stone</span>
-        <span class="skill-value has-skill">${gp.philosopherStone}:1</span></div>`;
-    if (hasMindsEye) skillsHtml += `<div class="skill-row special-ability">
-        <span class="skill-icon">${SKILL_ICONS.minds_eye}</span>
-        <span class="skill-label">Mind's Eye</span>
-        <span class="skill-value has-skill">✓</span></div>`;
-    skillsHtml += '</div>';
-
-    const sliderPos = gp.sliderPosition;
-    const posNames = ['1', '2', '3', '4', '5'];
-    const ringHtml = `<div class="ring-indicator">Ring: ${[0,1,2,3,4].map(pos => {
-        const charData = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
-        const tip = charData ? buildSlotLabel(charData.slots[pos]).join(', ') : '';
-        return `<span class="ring-dot${pos === sliderPos ? ' ring-active' : ''}" title="${tip}">${posNames[pos]}</span>`;
-    }).join('')}</div>`;
-
-    el.innerHTML = `<div class="tv-left-title">Your Skills</div><div class="act-badge">Act ${state.currentAct}</div>${skillsHtml}${ringHtml}`;
-}
-
-// ── Right drawer: your acquired missions + status ──
+// Mission requirement abbreviations for the My Missions popover rows.
 const SKILL_ABBR = { survival:'SUR', charisma:'CHA', alchemy:'ALC', prospecting:'PRO', knowledge:'KNO', power:'POW' };
-
-function renderTvRight(state) {
-    const el = document.getElementById('tvRightContent');
-    if (!el) return;
-    const gp = game.players[0];
-    const active = gp.missions || [];
-    const done = gp.completedMissions || [];
-    const failed = gp.failedMissions || [];
-
-    let rows = '';
-    const entry = (m, cls, tag) => {
-        const reqs = (m.requirements || []).map(r => SKILL_ABBR[r] || r.slice(0,3).toUpperCase()).join(' + ') || '—';
-        return `<div class="tv-mission-row ${cls}"
-                     onclick="event.stopPropagation(); openMissionLB('assets/cards/missions/${m.filename}', '${m.name.replace(/'/g, "\\'")}')">
-            <img class="tv-mission-thumb" src="assets/cards/missions/${m.filename}" alt="${m.name}"
-                 data-peek="assets/cards/missions/${m.filename}">
-            <div class="tv-mission-info">
-                <span class="tv-mission-name">${m.name}</span>
-                <span class="tv-mission-meta">${m.favorValue || 0} Favor · ${reqs}</span>
-            </div>
-            <span class="tv-mission-tag">${tag}</span>
-        </div>`;
-    };
-    active.forEach(m => rows += entry(m, 'active', '●'));
-    done.forEach(m => rows += entry(m, 'done', '✓'));
-    failed.forEach(m => rows += entry(m, 'failed', '✕'));
-    if (!rows) rows = '<div class="tv-right-empty">No missions taken yet.<br>Play a mission card to acquire one.</div>';
-
-    el.innerHTML = `<div class="tv-right-title">Your Missions</div>${rows}`;
-}
-
-// ── Drawer state (hand auto-opens on your turn; all have manual arrows) ──
-let tvHandOpen = true;
-let tvLeftOpen = false;
-let tvRightOpen = false;
-let _tvTurnSig = null;
-
-function applyDrawerStates() {
-    const hd = document.getElementById('tvHandDrawer');
-    const ld = document.getElementById('tvLeftDrawer');
-    const rd = document.getElementById('tvRightDrawer');
-    const ht = document.getElementById('tvHandTab');
-    const lt = document.getElementById('tvLeftTab');
-    const rt = document.getElementById('tvRightTab');
-    if (hd) hd.classList.toggle('open', tvHandOpen);
-    if (ld) ld.classList.toggle('open', tvLeftOpen);
-    if (rd) rd.classList.toggle('open', tvRightOpen);
-    if (ht) ht.textContent = tvHandOpen ? '▾' : '▴';
-    if (lt) lt.textContent = tvLeftOpen ? '◂' : '▸';
-    if (rt) rt.textContent = tvRightOpen ? '▸' : '◂';
-    if (typeof coachTick === 'function') coachTick();
-}
-function toggleHandDrawer(e) { if (e) e.stopPropagation(); tvHandOpen = !tvHandOpen; applyDrawerStates(); }
-function toggleLeftDrawer(e) { if (e) e.stopPropagation(); tvLeftOpen = !tvLeftOpen; if (tvLeftOpen && typeof coachMarkSeen === 'function') coachMarkSeen('skills'); applyDrawerStates(); }
-function toggleRightDrawer(e) { if (e) e.stopPropagation(); tvRightOpen = !tvRightOpen; applyDrawerStates(); }
 
 // ═══ PHASE C — tabletop motion via per-player state diffing ═══
 // No engine edits: each render we compare each player's tokens / played-card
@@ -1721,16 +2475,74 @@ function tvDropToken(matEl, key, amount) {
     if (!fx || !matEl) return;
     const tokRow = matEl.querySelector('.pmat-tokens') || matEl;
     const r = tokRow.getBoundingClientRect();
+    // Seat chips hug the top edge — the classic upward drop would start
+    // off-screen, so top-edge targets get the mirrored downward drop.
+    const below = r.top < 64;
     const el = document.createElement('div');
-    el.className = `tv-token-drop ${key}`;
+    el.className = `tv-token-drop ${key}${below ? ' below' : ''}`;
     const face = TOKEN_IMG[key]
         ? `<img src="${TOKEN_IMG[key]}" alt="">`
         : `<span class="tv-token-favor">★</span>`;
     el.innerHTML = `${face}<span class="tv-token-amt">+${amount}</span>`;
     el.style.left = `${r.left + r.width / 2}px`;
-    el.style.top = `${r.top}px`;
+    el.style.top = below ? `${r.bottom}px` : `${r.top}px`;
     fx.appendChild(el);
     setTimeout(() => el.remove(), 1100 * window.CINEMATIC_SPEED);
+}
+
+// ── Stat float: a "+N" pops off the stat that just grew, rises and
+// fades — the payoff beat for playing a card (Wyatt: "boom, +3 Charisma
+// goes up"). Lives on document.body, NOT #tvFx: the panel re-render that
+// triggers it must not wipe it, and #tvFx sits inside the phone table
+// view, which desktop hides.
+function statFloatFx(anchor, key, amount, idx) {
+    if (!anchor) return;
+    const r = anchor.getBoundingClientRect();
+    if (!r.width && !r.height) return;   // anchor hidden (other layout's surface)
+    // Escape the dense column: the float hangs in the open air just RIGHT
+    // of the panel/rail, level with its stat — a rise that starts ON the
+    // anchor drifts across the row above it and "+3" over the next row's
+    // "2" reads as "+32" (caught in the audit shot).
+    const rail = anchor.closest('.resource-tokens') || anchor.closest('#tvSkills')
+        || anchor.closest('#statsPanel');
+    const baseX = (rail ? rail.getBoundingClientRect().right : r.right) + 16;
+    // Purse tokens share one row — fan simultaneous floats out sideways.
+    const fan = anchor.closest('.resource-tokens') ? (idx || 0) * 34 : 0;
+    const el = document.createElement('div');
+    el.className = `stat-float${key === 'scorn' ? ' bad' : ''}`;
+    el.textContent = `+${amount}`;
+    el.style.left = `${baseX + fan}px`;
+    el.style.top = `${r.top + r.height / 2}px`;
+    el.style.animationDuration = `${1.15 * window.CINEMATIC_SPEED}s`;
+    el.style.animationDelay = `${(idx || 0) * 130}ms`;
+    document.body.appendChild(el);
+    const life = 1300 * window.CINEMATIC_SPEED + (idx || 0) * 130;
+    // The activation loop waits for this before the next spotlight takes
+    // the stage — otherwise your "+N" payoff plays under the rival's turn.
+    _statFloatUntil = Math.max(_statFloatUntil, Date.now() + life);
+    setTimeout(() => el.remove(), life);
+}
+
+// When the newest stat float finishes (epoch ms); statFloatWait() pauses
+// exactly that long and no longer, so back-to-back beats never double-wait.
+let _statFloatUntil = 0;
+function statFloatWait() {
+    const ms = _statFloatUntil - Date.now();
+    return ms > 0 ? new Promise(r => setTimeout(r, ms)) : Promise.resolve();
+}
+
+// Where a given stat lives on the CURRENT layout (your surfaces only).
+function _statAnchor(key) {
+    if (isCompactLandscape()) {
+        return document.querySelector(`#tvSkills [data-stat="${key}"]`)
+            || document.querySelector(`#tvPurse [data-stat="${key}"]`);
+    }
+    // Desktop: skill rows (float off the VALUE digit, not the wide row)
+    // + token totem. Favor has no panel token — its float rises off the
+    // token row so the gain still lands somewhere real.
+    const row = document.querySelector(`#statsPanel [data-stat="${key}"]`);
+    if (row) return row.querySelector('.skill-value') || row;
+    return document.querySelector('#statsPanel .resource-tokens');
 }
 
 function tvAnimateNewCard(matEl, card) {
@@ -1738,11 +2550,12 @@ function tvAnimateNewCard(matEl, card) {
     if (!fx || !matEl || !card) return;
     const cardsEl = matEl.querySelector('.pmat-cards') || matEl;
     const r = cardsEl.getBoundingClientRect();
+    const below = r.top < 64;   // chip rail: the card tucks in from below
     const img = document.createElement('img');
-    img.className = 'tv-card-drop';
+    img.className = `tv-card-drop${below ? ' below' : ''}`;
     img.src = `assets/cards/regular/${card.filename}`;
     img.style.left = `${r.left + r.width / 2}px`;
-    img.style.top = `${r.top}px`;
+    img.style.top = below ? `${r.bottom}px` : `${r.top}px`;
     fx.appendChild(img);
     setTimeout(() => img.remove(), 850 * window.CINEMATIC_SPEED);
 }
@@ -1772,7 +2585,25 @@ function tvAnimateDeltas(state) {
             cardCount: (p.playedCards || []).length,
             missionNames: acquired.map(m => m.name)
         };
+        if (i === 0) {
+            const sk = p.skills || {};
+            curr.skills = {};
+            ['survival', 'charisma', 'alchemy', 'prospecting', 'knowledge', 'power']
+                .forEach(k => { curr.skills[k] = sk[k] || 0; });
+        }
         const prev = _tvPrev[i];
+
+        // YOUR gains float as "+N" off the stat itself. Skills float on
+        // both layouts; purse floats are desktop-only — the phone already
+        // narrates those with tvDropToken on your seat chip below.
+        if (prev && i === 0) {
+            let n = 0;
+            const bump = (key, d) => {
+                if (d > 0) statFloatFx(_statAnchor(key), key, d, n++);
+            };
+            if (!animate) ['gold', 'prestige', 'scorn', 'favor'].forEach(k => bump(k, curr[k] - prev[k]));
+            Object.keys(curr.skills).forEach(k => bump(k, curr.skills[k] - ((prev.skills || {})[k] || 0)));
+        }
 
         if (prev && animate) {
             const matEl = tvMatEl(i);
@@ -1800,37 +2631,18 @@ function renderTableView(state) {
     const seatsEl = document.getElementById('tvSeats');
     if (!seatsEl) return;
 
-    // You: full mat, bottom-left anchor. Rivals: compact plaque rail, top.
-    let html = buildPlayerMat(0, state, true, 'bottom');
-    html += '<div class="tv-rivals">';
-    state.players.forEach((p, i) => { if (i !== 0) html += buildRivalPlaque(i, state); });
-    html += '</div>';
-    seatsEl.innerHTML = html;
+    // Z3 — one seat chip per player, YOU first (seat order = index order).
+    seatsEl.innerHTML = state.players.map((p, i) => buildSeatChip(i, state)).join('');
 
-    renderTvCenter(state);
+    renderTvPurse(state);
+    renderTvSkills(state);
+    renderTvMissionRail(state);
+    renderTvBoardThumb(state);
+    renderTvStage(state);
     renderTvHand(state);
-    renderTvLeft(state);
-    renderTvRight(state);
 
     // Tabletop motion: animate any per-player deltas since the last render.
     tvAnimateDeltas(state);
-
-    // Auto-open the hand when the turn context changes to the human's turn to
-    // act; tuck it otherwise. Manual arrow toggles persist within a turn.
-    const sig = state.phase + ':' + state.activePlayerIndex;
-    if (sig !== _tvTurnSig) {
-        _tvTurnSig = sig;
-        const hand = state.players[0].hand;
-        const myTurn = state.activePlayerIndex === 0
-            && hand && hand.length > 0
-            && state.phase !== 'scoring' && state.phase !== 'game_over';
-        tvHandOpen = myTurn;
-    }
-    // Tutorial: while the early tips (board, missions) are still up, keep the
-    // hand tucked so the "this is your board" prompt isn't blocked. The 'hand'
-    // tip itself opens the drawer when it's reached.
-    if (typeof coachTuckHand === 'function' && coachTuckHand()) tvHandOpen = false;
-    applyDrawerStates();
 
     // Prong 2: re-evaluate contextual coach-marks after each table render.
     coachTick();
@@ -1843,16 +2655,26 @@ function renderTableView(state) {
 function openBoardOverlay() {
     const char = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
     if (!char) return;
+    if (typeof coachMarkSeen === 'function') coachMarkSeen('welcome');
+
+    // Root-level #actionPanel (z 9999) would paint over the board —
+    // it steps aside while the overlay has the stage (slide-pick mode
+    // manages the panel itself, so only the plain open does this).
+    if (!_slidePick) _tvPanelStepAside();
 
     document.getElementById('boardOvImg').src = `assets/characters/${char.filename}`;
     document.getElementById('boardOvName').textContent = char.name;
 
+    _ovSlideTarget = null;   // fresh open, no slide pending
+    _ovRingDragInit();
     renderBoardOvSlots();
 
     document.getElementById('boardOverlay').classList.add('active');
 }
 
 function closeBoardOverlay() {
+    _ovSlideTarget = null;
+    _ovDragging = false;
     document.getElementById('boardOverlay').classList.remove('active');
     // Escape / backdrop while picking a slide slot: cancel back to where
     // the player came from. The hand panel is re-opened a tick later so
@@ -1866,6 +2688,10 @@ function closeBoardOverlay() {
         } else {
             document.getElementById('actionPanel').classList.add('active');
         }
+    } else {
+        // Same-tick dodge: restoring in this click's own bubble would let
+        // the document-level outside-click handler immediately re-hide it.
+        setTimeout(_tvPanelRestore, 0);
     }
 }
 
@@ -1894,52 +2720,112 @@ function openSlidePickerFinal(onPick) {
 }
 
 // The board art already explains every slot \u2014 no widget re-explains it.
-// Invisible hotspots sit on the art's five track circles: hover for the
-// landing halo + cost, click to pay & slide. The ring token overlaps the
-// current circle, exactly like the physical board.
+// Invisible hotspots sit on the art's five track circles. Paid slides are
+// tap-or-drag: tap a reachable circle (or drag the ring itself) and the
+// ring rides out and waits there pulsing while a confirm chip floats just
+// above the slot \u2014 Pay & Slide locks it, \u2715 glides it home. Repeatable
+// while gold lasts; the engine holds the one-direction-per-turn rule.
+// (The old confirm was a fixed-position bubble hung above the board RECT \u2014
+// on phones the board starts at the screen's top edge, so it rendered
+// off-screen and the tap looked dead. Everything now lives IN the art.)
 // Calibrated against the board scans (pixel-measured): the five circles
-// sit at these % of the board image. (The table mats' RING_SLOT_LEFTS are
-// rounded for their tiny size \u2014 at overlay size the drift shows.)
+// sit at these % of the board image. The board thumb (Z5) rides the same
+// track, so geometry transfers 1:1 between thumb and overlay.
 const BOARD_OV_TRACK = { lefts: [17, 33.4, 50, 66.3, 82.9], top: 84.7 };
+let _ovSlideTarget = null;   // slot index awaiting Pay & Slide, or null
+
+// Slots a paid slide can reach RIGHT NOW: affordable at 5g a space, and
+// matching the direction already taken this turn (engine truth).
+function _ovPaidReach() {
+    const ok = new Set();
+    if (!game || game.phase !== 'gameplay' || _slidePick) return ok;
+    const p = game.players[0];
+    const afford = Math.floor(p.gold / 5);
+    const lock = p._paidSlideDir || 0;
+    BOARD_OV_TRACK.lefts.forEach((L, i) => {
+        const steps = i - p.sliderPosition;
+        if (steps === 0 || Math.abs(steps) > afford) return;
+        if (lock && Math.sign(steps) !== lock) return;
+        ok.add(i);
+    });
+    return ok;
+}
+
+function _ovWhyBlocked(i) {
+    if (!game || game.phase !== 'gameplay') return 'The ring slides during gameplay rounds';
+    const p = game.players[0];
+    const steps = i - p.sliderPosition;
+    if (p._paidSlideDir && Math.sign(steps) !== p._paidSlideDir)
+        return `One direction per turn \u2014 you already slid ${p._paidSlideDir < 0 ? 'left' : 'right'}`;
+    if (Math.abs(steps) * 5 > p.gold) return `Need ${Math.abs(steps) * 5} Gold (5 per space)`;
+    return '';
+}
 
 function renderBoardOvSlots() {
     const player = game.players[0];
     const cur = player.sliderPosition;
+    const picking = !!_slidePick;
+    const target = (!picking && _ovSlideTarget !== null) ? _ovSlideTarget : null;
+    const reach = _ovPaidReach();
+
+    // The ring sits on its committed slot \u2014 unless a slide awaits its
+    // confirm: then it waits ON the target while the ghost marks home.
     const ring = document.getElementById('boardOvRing');
-    if (ring) {
-        ring.style.left = BOARD_OV_TRACK.lefts[cur] + '%';
+    if (ring && !_ovDragging) {
+        const at = target !== null ? target : cur;
+        ring.style.left = BOARD_OV_TRACK.lefts[at] + '%';
         ring.style.top = BOARD_OV_TRACK.top + '%';
+        ring.classList.toggle('pending', target !== null);
+        ring.classList.toggle('grab', !picking && reach.size > 0);
+    }
+    const ghost = document.getElementById('boardOvGhost');
+    if (ghost) {
+        ghost.style.left = BOARD_OV_TRACK.lefts[cur] + '%';
+        ghost.style.top = BOARD_OV_TRACK.top + '%';
+        ghost.classList.toggle('show', target !== null);
     }
 
     const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
     const holder = document.getElementById('boardOvSlots');
     if (!holder) return;
-    const picking = !!_slidePick;
     holder.innerHTML = BOARD_OV_TRACK.lefts.map((L, i) => {
         const steps = Math.abs(i - cur);
         const pickable = picking && steps === 1;
+        const reachable = reach.has(i);
         const tip = i === cur
             ? 'Your ring is here'
             : picking
                 ? (pickable ? `Slide to ${posNames[i]} \u2014 the discard pays` : 'One space per discard')
-                : `Slide to ${posNames[i]} \u2014 ${steps * 5} Gold`;
+                : (reachable ? `Slide to ${posNames[i]} \u2014 ${steps * 5} Gold` : _ovWhyBlocked(i));
         const cls = 'board-ov-slot'
             + (i === cur ? ' current' : '')
             + (pickable ? ' pickable' : '')
+            + (reachable ? ' reach' : '')
+            + (!picking && !reachable && i !== cur ? ' blocked' : '')
             + (picking && !pickable && i !== cur ? ' dimmed' : '');
         return `<div class="${cls}"
                      style="left:${L}%; top:${BOARD_OV_TRACK.top}%"
                      title="${tip}"
                      onclick="event.stopPropagation(); boardOvSlotClick(${i})"></div>`;
     }).join('');
+
+    renderBoardOvConfirm();
+
     const hint = document.getElementById('boardOvHint');
     if (hint) hint.textContent = picking
         ? 'Pick a glowing circle \u2014 the discarded card pays the toll'
-        : '';
+        : (target !== null
+            ? ''
+            : (reach.size
+                ? `Tap a circle or drag your ring \u2014 5 Gold a space${player._paidSlideDir ? ` \u00b7 ${player._paidSlideDir < 0 ? 'leftward' : 'rightward'} only this turn` : ''}`
+                : ''));
 }
 
 function boardOvSlotClick(i) {
     const player = game.players[0];
+
+    // A drag that ends over a circle also fires its click \u2014 one beat, not two.
+    if (_ovDragJustEnded && Date.now() - _ovDragJustEnded < 300) return;
 
     // Pick-a-slot mode: the discard pays the toll, one space only.
     if (_slidePick) {
@@ -1953,14 +2839,146 @@ function boardOvSlotClick(i) {
         return;
     }
 
-    if (i === player.sliderPosition) return;
+    if (i === player.sliderPosition) {
+        if (_ovSlideTarget !== null) _ovSlideCancel();   // tapping home = never mind
+        return;
+    }
     if (!game || game.phase !== 'gameplay') {
         showNotification('The ring slides during gameplay rounds', 'error');
         return;
     }
-    const wrap = document.querySelector('.board-ov-boardwrap');
-    if (!wrap) return;
-    showSlideConfirm(i, wrap.getBoundingClientRect());
+    if (!_ovPaidReach().has(i)) {
+        const why = _ovWhyBlocked(i);
+        if (why) showNotification(why, 'error');
+        return;
+    }
+    _ovSlideTarget = i;
+    renderBoardOvSlots();
+}
+
+// The confirm chip floats just above the target circle, INSIDE the board
+// art \u2014 always on-screen wherever the board sits in the viewport.
+function renderBoardOvConfirm() {
+    const holder = document.getElementById('boardOvConfirm');
+    if (!holder) return;
+    if (_ovSlideTarget === null || _slidePick) {
+        holder.classList.remove('active');
+        holder.innerHTML = '';
+        return;
+    }
+    const player = game.players[0];
+    const steps = Math.abs(_ovSlideTarget - player.sliderPosition);
+    const cost = steps * 5;
+    const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
+    holder.style.left = Math.min(78, Math.max(22, BOARD_OV_TRACK.lefts[_ovSlideTarget])) + '%';
+    holder.style.top = (BOARD_OV_TRACK.top - 8) + '%';
+    holder.innerHTML = `
+        <div class="sc-bubble">
+            <div class="sc-text">Slide to <b>${posNames[_ovSlideTarget]}</b>?</div>
+            <div class="sc-cost">${steps} space${steps > 1 ? 's' : ''} \u00b7 <b>\u2212${cost} Gold</b></div>
+            <div class="sc-actions">
+                <button class="btn-royal" onclick="event.stopPropagation(); _ovSlideCancel()"><span>\u2715</span></button>
+                <button class="btn-royal primary" onclick="event.stopPropagation(); _ovSlideConfirm()"><span>Pay &amp; Slide</span></button>
+            </div>
+        </div>`;
+    holder.classList.add('active');
+}
+
+function _ovSlideCancel() {
+    _ovSlideTarget = null;
+    renderBoardOvSlots();   // the ring glides home, the ghost fades
+}
+
+async function _ovSlideConfirm() {
+    const target = _ovSlideTarget;
+    if (target === null) return;
+    _ovSlideTarget = null;
+    const player = game.players[0];
+    const dir = target > player.sliderPosition ? 1 : -1;
+    const steps = Math.abs(target - player.sliderPosition);
+    for (let s = 0; s < steps; s++) {
+        await payToSlide(dir);   // 5g a step; slot landing events fire per step
+    }
+    renderGameState();
+    renderBoardOvSlots();   // stay open \u2014 slide again while gold and direction allow
+}
+
+// \u2500\u2500 Ring drag \u2014 grab the ring, ride the track, drop it on a circle \u2500\u2500
+// Maps finger X to the nearest REACHABLE slot (never past gold or the
+// direction lock); release off home shows the same confirm chip as a tap.
+let _ovDragging = false;
+let _ovDragJustEnded = 0;
+
+function _ovRingDragInit() {
+    const ring = document.getElementById('boardOvRing');
+    if (!ring || ring._dragWired) return;
+    ring._dragWired = true;
+
+    let startX = 0, engaged = false, rect = null;
+
+    const slotAtX = (clientX) => {
+        const pct = ((clientX - rect.left) / rect.width) * 100;
+        const reach = _ovPaidReach();
+        const cur = game.players[0].sliderPosition;
+        let best = cur, bestD = Infinity;
+        BOARD_OV_TRACK.lefts.forEach((L, i) => {
+            if (i !== cur && !reach.has(i)) return;
+            const d = Math.abs(L - pct);
+            if (d < bestD) { bestD = d; best = i; }
+        });
+        return best;
+    };
+
+    ring.addEventListener('pointerdown', (e) => {
+        if (_slidePick || !game || game.phase !== 'gameplay') return;
+        if (_ovPaidReach().size === 0) return;
+        const wrap = document.querySelector('.board-ov-boardwrap');
+        if (!wrap) return;
+        rect = wrap.getBoundingClientRect();
+        startX = e.clientX;
+        engaged = false;
+        _ovDragging = true;
+        ring.setPointerCapture(e.pointerId);
+        e.preventDefault();
+    });
+
+    ring.addEventListener('pointermove', (e) => {
+        if (!_ovDragging) return;
+        if (!engaged && Math.abs(e.clientX - startX) < 6) return;   // tap tolerance
+        engaged = true;
+        ring.classList.add('dragging');
+        const ghost = document.getElementById('boardOvGhost');
+        if (ghost) ghost.classList.add('show');   // home stays marked under the drag
+        // Follow the finger along the track, clamped to the reachable span.
+        const reach = _ovPaidReach();
+        const cur = game.players[0].sliderPosition;
+        const idxs = [cur, ...reach];
+        const minL = Math.min(...idxs.map(i => BOARD_OV_TRACK.lefts[i]));
+        const maxL = Math.max(...idxs.map(i => BOARD_OV_TRACK.lefts[i]));
+        const pct = Math.min(maxL, Math.max(minL, ((e.clientX - rect.left) / rect.width) * 100));
+        ring.style.left = pct + '%';
+        // Live halo on the circle it would snap to.
+        const snap = slotAtX(e.clientX);
+        document.querySelectorAll('#boardOvSlots .board-ov-slot').forEach((el, i) =>
+            el.classList.toggle('snap', i === snap && i !== cur));
+    });
+
+    const release = (e) => {
+        if (!_ovDragging) return;
+        _ovDragging = false;
+        const wasEngaged = engaged;
+        engaged = false;
+        ring.classList.remove('dragging');
+        document.querySelectorAll('#boardOvSlots .board-ov-slot.snap')
+            .forEach(el => el.classList.remove('snap'));
+        if (!wasEngaged) { renderBoardOvSlots(); return; }   // a tap, not a drag
+        _ovDragJustEnded = Date.now();
+        const snap = slotAtX(e.clientX);
+        _ovSlideTarget = (snap === game.players[0].sliderPosition) ? null : snap;
+        renderBoardOvSlots();   // ring settles on the target (or glides home)
+    };
+    ring.addEventListener('pointerup', release);
+    ring.addEventListener('pointercancel', release);
 }
 
 // ── Hand Inspect Overlay ──
@@ -1992,17 +3010,47 @@ function openOppOverlay(playerIndex) {
     const char = game.players[playerIndex].character;
     if (!char) return;
     if (typeof coachMarkSeen === 'function') coachMarkSeen(playerIndex === 0 ? 'welcome' : 'rivals');
+    _tvPanelStepAside();   // the root-level action panel would paint over the overlay
 
     document.getElementById('oppOvAvatar').src = `assets/characters/${char.filename}`;
     document.getElementById('oppOvName').textContent = p.name;
     document.getElementById('oppOvBoard').src = `assets/characters/${char.filename}`;
 
-    document.getElementById('oppOvStats').innerHTML = `
-        <span class="stat-pill gold"><i class="coin-icon">\uD83E\uDE99</i> ${p.gold}</span>
-        <span class="stat-pill prestige">\u2B50 ${p.prestige}</span>
-        <span class="stat-pill favor">${p.favor || 0} Favor</span>
-        <span class="stat-pill scorn">${p.scorn} Scorn</span>
-    `;
+    // Their ring on the board's track (both layouts — with the rail's
+    // ring-dots gone, this is where a rival's position lives) — same
+    // BOARD_OV_TRACK geometry as your board overlay and thumb.
+    const oppRing = document.getElementById('oppOvRing');
+    if (oppRing) {
+        const pos = game.players[playerIndex].sliderPosition;
+        oppRing.style.left = BOARD_OV_TRACK.lefts[pos] + '%';
+        oppRing.style.top = BOARD_OV_TRACK.top + '%';
+    }
+
+    // Phone: their played cards sit beside the board as tucked skill
+    // stacks — read exactly like your own on the stage. (Hidden on desktop,
+    // which keeps its inline cards panel.)
+    const oppStacks = document.getElementById('oppOvStacks');
+    if (oppStacks) {
+        const played = p.playedCards || [];
+        oppStacks.innerHTML = played.length
+            ? buildSkillStacks(played)
+            : '<div class="tv-stage-empty">No cards played yet</div>';
+        // Fit-to-width: size the stacks so every skill group is visible at
+        // once (floor 64px card height — past that the row scrolls).
+        const groups = Math.max(1, new Set(played.map(getCardTypeGroup)).size);
+        const avail = window.innerWidth * 0.40 - 4;          // tracks the CSS max-width: 40vw
+        const per = (avail - (groups - 1) * 10) / groups;    // 10px stack gap
+        const fitH = Math.max(64, Math.min(Math.round(per / 0.666), Math.round(window.innerHeight * 0.28)));
+        oppStacks.style.setProperty('--tvStackCardH', fitH + 'px');
+    }
+
+    document.getElementById('oppOvStats').innerHTML = statPillsHtml(p);
+
+    // Their variables, summed and displayed like your own: the juicy
+    // token-totem panel on desktop, the HUD chip rail on phones (CSS
+    // shows exactly one of the two per layout).
+    document.getElementById('oppOvPanel').innerHTML = buildStatsPanelHtml(playerIndex, state);
+    document.getElementById('oppOvChips').innerHTML = buildStatChipsHtml(playerIndex, state);
 
     const cardsEl = document.getElementById('oppOvCards');
     cardsEl.innerHTML = '';
@@ -2037,6 +3085,7 @@ function toggleOppCards(e) {
 function closeOppOverlay() {
     const ov = document.getElementById('oppOverlay');
     ov.classList.remove('active', 'cards-open');
+    setTimeout(_tvPanelRestore, 0);   // after this click's outside-click handler
 }
 
 function requestLend(oppIndex, cardName) {
@@ -2049,12 +3098,90 @@ function requestLend(oppIndex, cardName) {
 
 // ── Mission Lightbox ──
 
-function openMissionLB(src, name) {
+// ── Mission Browser — picking up one mission picks up the whole row.
+// kind 'realm' = the table's available missions; 'mine' = your current +
+// completed set. The clicked card opens centered; swipe / arrows / click
+// browse the rest, every card readable-big.
+let _mbList = [], _mbKind = null, _mbIndex = 0, _mbScrollT = null;
+
+function openMissionBrowser(kind, focusName) {
+    if (!game) return;
     if (typeof coachMarkSeen === 'function') coachMarkSeen('missions');
-    document.getElementById('missionLBImg').src = src;
-    document.getElementById('missionLBLabel').textContent = name;
-    renderMissionLBTurnIn(name);
-    document.getElementById('missionLB').classList.add('active');
+    _tvPanelStepAside();   // the root-level action panel would paint over the browser
+
+    const p = game.players[0];
+    _mbKind = kind;
+    _mbList = kind === 'mine'
+        ? [...(p.missions || []).map(m => ({ m, held: true })),
+           ...(p.completedMissions || []).map(m => ({ m, done: true }))]
+        : (game.getState(0).visibleMissions || []).map(m => ({ m }));
+    if (!_mbList.length) return;
+
+    document.getElementById('mbTitle').textContent =
+        kind === 'mine' ? 'Your Missions' : 'Missions of the Realm';
+
+    const track = document.getElementById('mbTrack');
+    track.innerHTML = _mbList.map((e, i) => `
+        <div class="mb-card${e.done ? ' done' : ''}" data-i="${i}"
+             onclick="event.stopPropagation(); mbFocus(${i}, true)">
+            <img src="assets/cards/missions/${e.m.filename}" alt="${e.m.name}"
+                 draggable="false">
+            ${e.done ? '<div class="mb-done-ribbon">✓ Completed</div>' : ''}
+        </div>`).join('');
+
+    // Swipe/scroll settles on the nearest card: while moving, focus tracks
+    // the center; on idle, snap it exactly (rAF + short debounce).
+    track.onscroll = () => {
+        requestAnimationFrame(_mbTrackFocus);
+        clearTimeout(_mbScrollT);
+        _mbScrollT = setTimeout(() => mbFocus(_mbIndex, true), 130);
+    };
+
+    const nav = _mbList.length > 1 ? '' : ' mb-solo';
+    document.getElementById('missionLB').className = 'mission-lb active' + nav;
+
+    const idx = Math.max(0, _mbList.findIndex(e => e.m.name === focusName));
+    requestAnimationFrame(() => mbFocus(idx, false));
+}
+
+// Which card sits nearest the track's center right now?
+function _mbTrackFocus() {
+    const track = document.getElementById('mbTrack');
+    const mid = track.scrollLeft + track.clientWidth / 2;
+    let best = 0, bestD = Infinity;
+    track.querySelectorAll('.mb-card').forEach((c, i) => {
+        const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid);
+        if (d < bestD) { bestD = d; best = i; }
+    });
+    if (best !== _mbIndex) { _mbIndex = best; _mbApplyFocus(); }
+}
+
+function mbFocus(i, smooth) {
+    _mbIndex = Math.max(0, Math.min(_mbList.length - 1, i));
+    const track = document.getElementById('mbTrack');
+    const el = track.querySelector(`.mb-card[data-i="${_mbIndex}"]`);
+    if (!el) return;
+    clearTimeout(_mbScrollT);   // this IS the snap — don't re-snap after it
+    const left = Math.round(el.offsetLeft - (track.clientWidth - el.offsetWidth) / 2);
+    if (Math.abs(track.scrollLeft - left) > 1) {
+        track.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
+    }
+    _mbApplyFocus();
+}
+
+function mbStep(d) { mbFocus(_mbIndex + d, true); }
+
+function _mbApplyFocus() {
+    const track = document.getElementById('mbTrack');
+    track.querySelectorAll('.mb-card').forEach((c, i) =>
+        c.classList.toggle('focus', i === _mbIndex));
+    const e = _mbList[_mbIndex];
+    if (!e) return;
+    document.getElementById('missionLBLabel').textContent =
+        e.m.name + (e.done ? ' — completed' : '');
+    // Turn In / Borrow attach to the focused card, held missions only
+    // (renderMissionLBTurnIn no-ops for realm/completed entries).
+    renderMissionLBTurnIn(e.m.name);
 }
 
 // "Turn In Now" — a held mission may be cashed in during ANY act of its
@@ -2065,13 +3192,19 @@ function renderMissionLBTurnIn(name) {
     if (!holder) return;
     holder.innerHTML = '';
     if (!game || game.phase !== 'gameplay') return;
+    // Anytime-actions can't ride the round barrier — early turn-ins sit
+    // out of multiplayer v1; missions resolve at their due date instead.
+    if (mpActive()) return;
     const p = game.players[0];
     const mi = (p.missions || []).findIndex(m => m.name === name);
     if (mi < 0) return;
 
     const mission = p.missions[mi];
     const due = game.missionDueAct(mission);
-    const { success } = game.checkMissionRequirements(0, mission);
+    // PURE probe — the old checkMissionRequirements call CONSUMED a held
+    // Life Essence just to label this button; browsing N missions would
+    // have burned it N times over. Only the real turn-in may consume.
+    const { success } = game.probeMissionRequirements(0, mission);
     const dueNote = due > game.currentAct
         ? `<div class="mission-lb-due">Due at the end of Act ${due} — turn in any time before</div>` : '';
     // Short only on borrowable skills? Turning in now can borrow them too —
@@ -2129,6 +3262,10 @@ function renderMissionLBTurnIn(name) {
 
 function closeMissionLB() {
     document.getElementById('missionLB').classList.remove('active');
+    // If the journal is still holding the stage beneath the browser, the
+    // action panel must NOT come back yet — it would paint over the
+    // journal (root-level z 9999). The journal's own close restores it.
+    if (!missionJournalOpen()) setTimeout(_tvPanelRestore, 0);
 }
 
 // ── ESC closes all overlays ──
@@ -2138,6 +3275,13 @@ function closeAllOverlays() {
     closeHandInspect();
     closeOppOverlay();
     closeMissionLB();
+    closeMissionJournal();
+    if (typeof closeTvPopover === 'function') closeTvPopover();
+    if (window.FLB) {
+        FLB.closeLeaderboard();
+        FLB.closeProfile();
+        if (typeof FLB.closeStore === 'function') FLB.closeStore();
+    }
 }
 
 function selectHandCard(index) {
@@ -2147,6 +3291,69 @@ function selectHandCard(index) {
     selectedHandCard = index;
     renderHand(game.getState(0));
     showActionPanel(index);
+}
+
+// ─── NEIGHBOR-TARGET HIGHLIGHT ─────────────────────────────
+// Cards that read other players ("1 Favor for each Power your left &
+// right neighbor have") light up exactly WHO they read while selected:
+// pulsing gold ring + floating tag on the rival-rail portraits (desktop
+// sidebar AND phone seat chips); self-including cards also mark your own
+// stats/purse. Data-driven — future cards join by adding a row here.
+const TARGET_READ_SPECIALS = {
+    gold_2_per_power_neighbors:  { neighbors: true },              // Melee Spectacular
+    gold_2_per_alchemy_triangle: { neighbors: true, self: true },  // Marketplace Sales
+    favor_per_neighbor_power:    { neighbors: true },              // Royal Hilt
+};
+
+// Engine truth (getBorrowableSkills): left = (pi−1+n)%n, right = (pi+1)%n.
+// The human is player 0, so left = LAST player, right = players[1].
+let _targetHighlights = null;
+
+function setTargetHighlights(card) {
+    clearTargetHighlights();
+    const spec = card && card.special && TARGET_READ_SPECIALS[card.special];
+    if (!spec || !game) return;
+    const n = game.playerCount;
+    _targetHighlights = { left: (n - 1) % n, right: 1 % n, self: !!spec.self };
+    applyTargetHighlights();
+}
+
+function clearTargetHighlights() {
+    _targetHighlights = null;
+    document.querySelectorAll('.nt-read').forEach(el => {
+        el.classList.remove('nt-read', 'nt-left', 'nt-right', 'nt-self');
+    });
+    document.querySelectorAll('.nt-tag').forEach(t => t.remove());
+}
+
+function _ntMark(el, side, tagText) {
+    if (!el) return;
+    el.classList.add('nt-read', 'nt-' + side);
+    if (tagText && !el.querySelector(':scope > .nt-tag')) {
+        const tag = document.createElement('span');
+        tag.className = 'nt-tag';
+        tag.textContent = tagText;
+        el.appendChild(tag);
+    }
+}
+
+// Re-applied at the end of every renderGameState — the sidebar and seat
+// chips are rebuilt via innerHTML, which wipes marks mid-selection.
+function applyTargetHighlights() {
+    if (!_targetHighlights || !game) return;
+    const { left, right, self } = _targetHighlights;
+    const mark = (pi, side, text) => {
+        _ntMark(document.querySelector(`#gameSidebar .opp-entry[data-pi="${pi}"]`), side, text);
+        _ntMark(document.querySelector(`#tvSeats .pmat[data-pi="${pi}"]`), side, text);
+    };
+    mark(left, 'left', '◀ Left Neighbor');
+    mark(right, 'right', 'Right Neighbor ▶');
+    if (self) {
+        // Desktop: your stats/purse panel. Phone: your own seat chip
+        // (its built-in YOU badge is the label; the ring says "read").
+        _ntMark(document.getElementById('statsPanel'), 'self', 'You');
+        _ntMark(document.querySelector('#tvSeats .pmat[data-pi="0"]'), 'self', null);
+    }
 }
 
 // ─── ACTION PANEL ──────────────────────────────────────────
@@ -2223,6 +3430,7 @@ function showActionPanel(cardIndex) {
 
     panel.innerHTML = html;
     panel.classList.add('active');
+    setTargetHighlights(card);
     if (typeof coachTick === 'function') coachTick();
 }
 
@@ -2231,8 +3439,13 @@ function hideActionPanel() {
     // Dismissing it (outside click, etc.) would strand that await and freeze
     // the round — so while it's pending the panel refuses to hide.
     if (window._finalChoicePending) return;
-    document.getElementById('actionPanel').classList.remove('active');
+    document.getElementById('actionPanel').classList.remove('active', 'final-choice');
     selectedHandCard = null;
+    // Nothing re-renders the hand here, so the .selected card (z 31)
+    // would linger and paint OVER a neighbor's hover-bloom (Wyatt's
+    // buried-bloom screenshot) — strip the class with the selection.
+    document.querySelectorAll('.hand-card.selected').forEach(c => c.classList.remove('selected'));
+    clearTargetHighlights();
     if (typeof coachTick === 'function') coachTick();
 }
 
@@ -2286,7 +3499,10 @@ function showFinalCardChoice(card) {
         html += '</div></div>';
 
         panel.innerHTML = html;
-        panel.classList.add('active');
+        // final-choice: the card lives in pending (not the hand), so nothing
+        // blooms beside the panel — the panel itself must show the art.
+        panel.classList.add('active', 'final-choice');
+        setTargetHighlights(card);
         if (typeof coachTick === 'function') coachTick();
 
         panel.querySelectorAll('[data-act]').forEach(b => {
@@ -2297,13 +3513,30 @@ function showFinalCardChoice(card) {
                 if (b.dataset.act === 'discard_slide_pick') {
                     openSlidePickerFinal((direction) => {
                         window._finalChoicePending = false;
-                        panel.classList.remove('active');
+                        panel.classList.remove('active', 'final-choice');
+                        clearTargetHighlights();
                         resolve(direction < 0 ? 'discard_slide_left' : 'discard_slide_right');
                     });
                     return;
                 }
+                // Borrow is two beats here too: pick the lender first. The
+                // panel steps aside directly (the pending guard stays armed
+                // against stray clicks); cancel re-surfaces it.
+                if (b.dataset.act === 'borrow_play') {
+                    panel.classList.remove('active');
+                    showBorrowChooser(card).then(chosen => {
+                        if (!chosen) { panel.classList.add('active'); return; }
+                        window._finalBorrowChoice = chosen;
+                        window._finalChoicePending = false;
+                        panel.classList.remove('final-choice');
+                        clearTargetHighlights();
+                        resolve('borrow_play');
+                    });
+                    return;
+                }
                 window._finalChoicePending = false;
-                panel.classList.remove('active');
+                panel.classList.remove('active', 'final-choice');
+                clearTargetHighlights();
                 resolve(b.dataset.act);
             };
         });
@@ -2313,21 +3546,45 @@ function showFinalCardChoice(card) {
 // Apply the chosen action to the final card through the normal engine paths.
 async function resolveFinalCardChoice(card) {
     const act = await showFinalCardChoice(card);
+
+    if (mpActive()) {
+        // The final card's fate streams like the round pick did.
+        const data = {
+            action: (act === 'discard_slide_left' || act === 'discard_slide_right')
+                ? 'discard_slide' : act,
+        };
+        if (act === 'discard_slide_left') data.dir = -1;
+        if (act === 'discard_slide_right') data.dir = 1;
+        if (act === 'borrow_play') {
+            data.borrow = (window._finalBorrowChoice || []).map(b =>
+                ({ skill: b.skill, lender: FMP.canonSeat(b.neighborIndex) }));
+        }
+        mpPub('final', data);
+    }
+
     await showMiniSpotlight(card, act === 'play' || act === 'borrow_play' || act === 'mission_letter' ? 'play' : 'discard');
 
     if (act === 'play') {
         game.activateCard(0, card.id, 'play');
         addLogEntry(`You also play ${card.name}`);
     } else if (act === 'borrow_play') {
-        const { missingSkills } = game.checkRequirements(0, card);
-        const borrowable = game.getBorrowableSkills(0);
-        const borrowFrom = missingSkills.map(s => ({ skill: s, neighborIndex: borrowable[s][0] }));
-        game.activateCard(0, card.id, 'play', borrowFrom);
-        addLogEntry(`You borrow skills and play ${card.name}`);
+        const chosen = window._finalBorrowChoice;
+        window._finalBorrowChoice = null;
+        const { borrowFrom, uncovered } = resolveBorrowPlan(card, chosen);
+        if (uncovered) {
+            game.activateCard(0, card.id, 'discard');
+            showNotification(`No one can lend for ${card.name} anymore — discarded (+3g)`, 'error');
+            addLogEntry(`No neighbor could lend for ${card.name} — discarded (+3 Gold)`);
+        } else {
+            const lenders = [...new Set(borrowFrom.map(b => game.players[b.neighborIndex].name))].join(' & ');
+            game.activateCard(0, card.id, 'play', borrowFrom);
+            addLogEntry(`You borrow from ${lenders} and play ${card.name}`);
+        }
     } else if (act === 'mission_letter') {
         const result = game.activateCard(0, card.id, 'mission_letter');
         if (result && result.chooseMission) {
             renderGameState();
+            if (mpActive()) window._mpMissionCtx = 'mission_pick';
             await showMissionSelectAsync();
         }
     } else if (act === 'discard_slide_left' || act === 'discard_slide_right') {
@@ -2336,6 +3593,7 @@ async function resolveFinalCardChoice(card) {
         if (game.players[0]._pendingSlotMission) {
             game.players[0]._pendingSlotMission = false;
             renderGameState();
+            if (mpActive()) window._mpMissionCtx = 'slot_mission';
             await showMissionSelectAsync();
         }
     } else {
@@ -2360,6 +3618,7 @@ function playSelectedCard(cardIndex) {
 
     game.pickCard(0, cardIndex);
     hideActionPanel();
+    mpPub('pick', { cardId: card.id, action: 'play' });
 
     const skillText = card.skills && card.skills.length > 0
         ? ` \u2014 ${card.skills.join(', ')}`
@@ -2378,6 +3637,7 @@ function discardSelectedCard(cardIndex) {
 
     game.pickCard(0, cardIndex);
     hideActionPanel();
+    mpPub('pick', { cardId: card.id, action: 'discard' });
 
     game.players[0]._discardNext = true;
 
@@ -2392,6 +3652,19 @@ async function playMissionLetter(cardIndex) {
 
     const card = game.players[0].hand[cardIndex];
     if (!card || game.players[0].gold < 1) return;
+
+    if (mpActive()) {
+        // Lockstep: letters resolve at ACTIVATION in seat order (the
+        // physical rule) — never early, or two same-round letters could
+        // race for one mission and fork the clients.
+        game.pickCard(0, cardIndex);
+        hideActionPanel();
+        game.players[0]._letterNext = true;
+        mpPub('pick', { cardId: card.id, action: 'mission_letter' });
+        addLogEntry('You play a Mission Letter');
+        processRound('mission_letter');
+        return;
+    }
 
     game.pickCard(0, cardIndex);
     hideActionPanel();
@@ -2415,6 +3688,10 @@ async function playMissionLetter(cardIndex) {
     processRound('mission_letter_done');
 }
 
+// Borrow & Play is TWO beats: the button first, THEN "from whom?" \u2014 the
+// chooser shows both neighbors (one may have nothing to lend; it sits
+// grayed with the reason). The 2g-per-skill fee goes TO the lender, so
+// who gets paid is the player's call \u2014 never auto-picked.
 function playWithBorrow(cardIndex) {
     if (!game || game.phase !== 'gameplay') return;
 
@@ -2428,17 +3705,28 @@ function playWithBorrow(cardIndex) {
         return;
     }
 
-    game.pickCard(0, cardIndex);
-    hideActionPanel();
+    showBorrowChooser(card).then(chosen => {
+        if (!chosen) {
+            // Cancelled \u2014 land back on the card. Re-selected a tick later
+            // so this click's own outside-click handler can't eat the panel.
+            setTimeout(() => selectHandCard(cardIndex), 0);
+            return;
+        }
 
-    game.players[0]._borrowNext = true;
+        game.pickCard(0, cardIndex);
+        hideActionPanel();
+        mpPub('pick', { cardId: card.id, action: 'borrow_play',
+            borrow: chosen.map(b => ({ skill: b.skill, lender: FMP.canonSeat(b.neighborIndex) })) });
 
-    const { missingSkills } = game.checkRequirements(0, card);
-    const borrowCost = missingSkills.length * 2;
-    showNotification(`Borrowed skills & played: ${card.name} (\u2212${borrowCost}g)`, 'play');
-    addLogEntry(`You borrow skills and play ${card.name}`);
+        game.players[0]._borrowNext = chosen;   // [{skill, neighborIndex}] \u2014 consumed at activation
 
-    processRound('borrow_play');
+        const lenders = [...new Set(chosen.map(b => game.players[b.neighborIndex].name))].join(' & ');
+        const borrowCost = chosen.length * 2;
+        showNotification(`Borrowing from ${lenders} \u2014 playing ${card.name} (\u2212${borrowCost}g)`, 'play');
+        addLogEntry(`You borrow from ${lenders} and play ${card.name}`);
+
+        processRound('borrow_play');
+    });
 }
 
 function discardToSlide(cardIndex, direction) {
@@ -2453,6 +3741,7 @@ function discardToSlide(cardIndex, direction) {
 
     game.pickCard(0, cardIndex);
     hideActionPanel();
+    mpPub('pick', { cardId: card.id, action: 'discard_slide', dir: direction });
 
     game.players[0]._discardSlideNext = direction;
 
@@ -2467,6 +3756,14 @@ function discardToSlide(cardIndex, direction) {
 // Pay 5 Gold to move slider (can do anytime during gameplay)
 async function payToSlide(direction) {
     if (!game || game.phase !== 'gameplay') return;
+
+    // Anytime-actions can't ride the round barrier — they'd apply at
+    // different points on different clients. Paid slides sit out of
+    // multiplayer v1 (discard-to-slide still works — it's pick-staged).
+    if (mpActive()) {
+        showNotification('Paid slides return in a future multiplayer update.', 'error');
+        return;
+    }
 
     const player = game.players[0];
     if (player.gold < 5) {
@@ -2497,6 +3794,10 @@ async function payToSlide(direction) {
 // ─── ROUND PROCESSING ─────────────────────────────────────
 
 async function processRound(humanAction) {
+    // Multiplayer rounds run the pick barrier instead — bots pick the
+    // same on every client; humans stream.
+    if (mpActive()) return mpProcessRound(humanAction);
+
     // AI picks
     for (let i = 1; i < game.playerCount; i++) {
         if (game.pendingActivations[i] === null && game.players[i].hand.length > 0) {
@@ -2557,6 +3858,7 @@ async function activateAllCards(humanAction) {
                     if (game.players[0]._pendingSlotMission) {
                         game.players[0]._pendingSlotMission = false;
                         renderGameState();
+                        if (mpActive()) window._mpMissionCtx = 'slot_mission';
                         await showMissionSelectAsync();
                     }
                 } else if (humanAction === 'discard' && cardIdx === 0 && game.players[0]._discardNext) {
@@ -2567,14 +3869,28 @@ async function activateAllCards(humanAction) {
                 } else if (humanAction === 'borrow_play' && cardIdx === 0 && game.players[0]._borrowNext) {
                     await showMiniSpotlight(card, 'play');
 
-                    const { missingSkills } = game.checkRequirements(0, card);
-                    const borrowable = game.getBorrowableSkills(0);
-                    const borrowFrom = missingSkills.map(s => ({
-                        skill: s,
-                        neighborIndex: borrowable[s][0]
-                    }));
-                    game.activateCard(0, card.id, 'play', borrowFrom);
+                    // The lender was CHOSEN in the borrow chooser at pick time;
+                    // resolveBorrowPlan re-validates it against the table now.
+                    const { borrowFrom, uncovered } = resolveBorrowPlan(card, game.players[0]._borrowNext);
+                    if (uncovered) {
+                        game.activateCard(0, card.id, 'discard');
+                        showNotification(`No one can lend for ${card.name} anymore — discarded (+3g)`, 'error');
+                        addLogEntry(`No neighbor could lend for ${card.name} — discarded (+3 Gold)`);
+                    } else {
+                        game.activateCard(0, card.id, 'play', borrowFrom);
+                    }
                     game.players[0]._borrowNext = false;
+                } else if (humanAction === 'mission_letter' && cardIdx === 0 && game.players[0]._letterNext) {
+                    // MP-staged Mission Letter: it resolves HERE, in seat
+                    // order, exactly where every other client applies it.
+                    game.players[0]._letterNext = false;
+                    await showMiniSpotlight(card, 'play');
+                    const result = game.activateCard(0, card.id, 'mission_letter');
+                    if (result && result.chooseMission) {
+                        renderGameState();
+                        window._mpMissionCtx = 'mission_pick';
+                        await showMissionSelectAsync();
+                    }
                 } else if (cardIdx > 0 || humanAction === 'mission_letter_done') {
                     // The auto-activated FINAL card: the player still chooses
                     // its fate — play / borrow / letter / discard / slide.
@@ -2612,7 +3928,19 @@ async function activateAllCards(humanAction) {
                 await showChemYPicker();
             }
 
-            if (pi !== 0) {
+            // Life Essence likewise: choose which active mission is freed
+            // of its requirement, right where every client applies it.
+            if (pi === 0 && game.players[0]._pendingLifeEssencePick) {
+                game.players[0]._pendingLifeEssencePick = false;
+                renderGameState();
+                await showLifeEssencePicker();
+            }
+
+            if (pi !== 0 && game.players[pi]._remoteHuman) {
+                // Remote human — their streamed choice drives our engine
+                // at exactly this point in the order on every client.
+                await mpActivateRemote(pi, card, cardIdx);
+            } else if (pi !== 0) {
                 // AI player
                 const isMissionLetter = card.type === 'mission_letter';
 
@@ -2649,6 +3977,11 @@ async function activateAllCards(humanAction) {
             // Animate stat changes after each card resolves
             renderGameState();
             animateStatChanges();
+
+            // YOUR payoff gets its beat: if "+N" floats just fired off your
+            // stats, let them land before the next player's spotlight takes
+            // the stage (Wyatt: the pluses were playing under rival turns).
+            await statFloatWait();
 
             // Brief pause between cards from the same player
             if (cardIdx < cards.length - 1) {
@@ -2705,6 +4038,13 @@ function showMissionSelectAsync() {
 }
 
 function selectMission(index) {
+    // In multiplayer the pick streams so every client applies it at the
+    // same point in the activation order (letter or slot-landing context
+    // is set by whoever opened the select).
+    if (mpActive() && window._mpMissionCtx) {
+        mpPub(window._mpMissionCtx, { missionIdx: index });
+        window._mpMissionCtx = null;
+    }
     game.chooseMission(0, index);
     document.getElementById('missionSelect').classList.remove('active');
     if (typeof coachTick === 'function') coachTick();
@@ -2723,14 +4063,56 @@ function selectMission(index) {
 
 // ─── AI ────────────────────────────────────────────────────
 
-// AI picks the best available mission (highest favor value)
+// Unmet skill units across a player's HELD missions — what its next card
+// should feed. Pure math via unmetSkillReqs; NEVER checkMissionRequirements
+// here (that consumes Life Essence). Mind's Eye / Philosopher's Stone gaps
+// aren't card-feedable, so they stay out of the map.
+function personaMissionNeeds(playerIndex) {
+    const needs = {};
+    const p = game.players[playerIndex];
+    (p.missions || []).forEach(m => {
+        const reqCounts = {};
+        (m.requirements || []).forEach(r => {
+            if (r !== 'minds_eye' && r !== 'philosopher_stone') {
+                reqCounts[r] = (reqCounts[r] || 0) + 1;
+            }
+        });
+        const unmet = game.unmetSkillReqs(playerIndex, reqCounts);
+        Object.entries(unmet).forEach(([s, n]) => {
+            needs[s] = Math.max(needs[s] || 0, n);
+        });
+    });
+    return needs;
+}
+
+// AI picks the best available mission (highest favor value). Personas
+// judge worth × feasibility instead: live favor estimate, minus how many
+// skill units they're still short (the boon and mission rewards already
+// flow through bonusSkills → skills, so feasibility sees them), plus a
+// nudge toward their signature skills.
 function aiBestMission(playerIndex) {
+    const p = game.players[playerIndex];
+    const persona = p && p._personaAI;
     let bestIdx = 0;
-    let bestFavor = -1;
+    let bestScore = -Infinity;
     game.visibleMissions.forEach((m, i) => {
-        const favor = m.favor || m.successReward?.favor || 0;
-        if (favor > bestFavor) {
-            bestFavor = favor;
+        let score;
+        if (persona) {
+            score = game.missionFavorEstimate(playerIndex, m);
+            const reqCounts = {};
+            (m.requirements || []).forEach(r => {
+                if (r !== 'minds_eye' && r !== 'philosopher_stone') {
+                    reqCounts[r] = (reqCounts[r] || 0) + 1;
+                }
+            });
+            const unmet = game.unmetSkillReqs(playerIndex, reqCounts);
+            score -= 4 * Object.values(unmet).reduce((a, b) => a + b, 0);
+            if ((m.requirements || []).some(r => persona.strong.includes(r))) score += 3;
+        } else {
+            score = m.favor || m.successReward?.favor || 0;
+        }
+        if (score > bestScore) {
+            bestScore = score;
             bestIdx = i;
         }
     });
@@ -2740,6 +4122,13 @@ function aiBestMission(playerIndex) {
 function aiPickCard(playerIndex) {
     const player = game.players[playerIndex];
     if (!player.hand || player.hand.length === 0) return;
+
+    // Persona layer: the permanent leaderboard rivals read the table
+    // harder — cards feeding a held mission or their signature skills
+    // outrank generic point salad, and Favor weighs like the win metric
+    // it is. Sharper judgment only, never stat cheating.
+    const persona = player._personaAI || null;
+    const needs = persona ? personaMissionNeeds(playerIndex) : null;
 
     let bestIndex = 0;
     let bestScore = -1;
@@ -2758,6 +4147,15 @@ function aiPickCard(playerIndex) {
         const { canPlay } = game.checkRequirements(playerIndex, card);
         if (canPlay) score += 5;
 
+        if (persona) {
+            (card.skills || []).forEach(s => {
+                if (needs[s] > 0) score += 6;
+                if (persona.strong.includes(s)) score += 2;
+            });
+            if ((card.favor || 0) > 0) score += Math.min(card.favor, 12) / 2;
+            if (card.rewards && card.rewards.scorn) score -= card.rewards.scorn;
+        }
+
         if (score > bestScore) {
             bestScore = score;
             bestIndex = i;
@@ -2772,26 +4170,18 @@ function aiPickCard(playerIndex) {
 function endActPhases() {
     const actNum = game.currentAct;
 
-    // MISSIONS PHASE
+    // MISSIONS PHASE — resolve everything, then let the ceremony tell it
+    // player by player (toast spam used to blow past in a blur).
     game.phase = 'missions';
     renderGameState();
     const missionResults = game.resolveMissions();
 
-    let missionDelay = 500;
     let hasMissionResults = false;
-
     missionResults.forEach(pr => {
         pr.results.forEach(r => {
             hasMissionResults = true;
             const playerName = pr.playerIndex === 0 ? 'You' : game.players[pr.playerIndex].name;
-            if (r.success) {
-                setTimeout(() => showNotification(`${playerName} completed: ${r.mission.name}!`, 'mission'), missionDelay);
-                addLogEntry(`${playerName} completed mission: ${r.mission.name}`);
-            } else {
-                setTimeout(() => showNotification(`${playerName} failed: ${r.mission.name}`, 'error'), missionDelay);
-                addLogEntry(`${playerName} failed mission: ${r.mission.name}`);
-            }
-            missionDelay += 600;
+            addLogEntry(`${playerName} ${r.success ? 'completed' : 'failed'} mission: ${r.mission.name}`);
         });
     });
 
@@ -2800,8 +4190,9 @@ function endActPhases() {
     }
 
     // A PROMISE — the player chooses how many played cards to sacrifice
-    // (+10 Prestige each) before the Melee begins.
-    const promisePending = game.players[0]._pendingPromiseDiscard;
+    // (+10 Prestige each) before the Melee begins. In multiplayer the
+    // canonical-order stage loop owns the flag instead (mpEndActStages).
+    const promisePending = mpActive() ? false : game.players[0]._pendingPromiseDiscard;
     if (promisePending) game.players[0]._pendingPromiseDiscard = false;
 
     // MISSION BORROW — due missions short only on borrowable skills were
@@ -2812,7 +4203,7 @@ function endActPhases() {
     game.players[0]._pendingMissionBorrows = [];
 
     // MELEE PHASE
-    const meleeStart = hasMissionResults ? missionDelay + 400 : 800;
+    const meleeStart = 600;
 
     const startMelee = () => setTimeout(() => {
         game.phase = 'melee';
@@ -2835,7 +4226,17 @@ function endActPhases() {
             } else {
                 addLogEntry(`\u2550\u2550\u2550 Act ${game.currentAct} begins \u2550\u2550\u2550`);
                 showNotification(`Act ${game.currentAct} Begins!`, 'act');
+                // The act boundary passed the Emblem one seat clockwise
+                // (engine startAct) \u2014 say so, the whole order just shifted.
+                const hn = game.emblemHolder === 0 ? 'you' : game.players[game.emblemHolder].name;
+                showNotification(`The Emblem passes to ${hn}${hn === 'you' ? ' \u2014 you act first' : ''}.`, 'act');
+                addLogEntry(`The Emblem passes to ${hn}`);
                 renderGameState();
+                // Desync insurance: the host stamps the table each act;
+                // a client whose hash disagrees falls back to solo.
+                if (mpActive() && FMP.isHost()) {
+                    mpPub('sync', { act: game.currentAct, hash: mpStateHash() });
+                }
             }
         };
 
@@ -2846,12 +4247,19 @@ function endActPhases() {
         }
     }, meleeStart);
 
-    const afterBorrows = () => borrowsPending.reduce(
-        (chain, m) => chain.then(() => showMissionBorrowChooser(m)), Promise.resolve());
+    // Multiplayer: every seat's end-of-act choices (borrows, penalty
+    // picks, A Promise) resolve in CANONICAL order inside one stage so
+    // all clients mutate the engine at identical points. Solo keeps the
+    // classic local-first chain.
+    const afterBorrows = mpActive()
+        ? () => mpEndActStages(borrowsPending)
+        : () => borrowsPending.reduce(
+            (chain, m) => chain.then(() => showMissionBorrowChooser(m)), Promise.resolve());
     // PENALTY DISCARD — a failed mission says "Discard N Cards": the player
     // picks which (physical-game agency), not the engine. Read AFTER the
     // borrow choosers so declined missions' penalties are included.
     const afterPenalty = () => {
+        if (mpActive()) return Promise.resolve();   // handled in the stage loop
         const penaltyPending = game.players[0]._pendingPenaltyDiscard || 0;
         game.players[0]._pendingPenaltyDiscard = 0;
         return penaltyPending ? showPenaltyDiscardPicker(penaltyPending) : Promise.resolve();
@@ -2859,7 +4267,146 @@ function endActPhases() {
     const afterPromise = promisePending
         ? () => showPromiseDiscardPicker()
         : () => Promise.resolve();
-    afterBorrows().then(afterPenalty).then(afterPromise).then(startMelee);
+    // The ceremony narrates every resolution first; the stats it changed
+    // repaint before the player is asked to make any follow-up choice.
+    showMissionCeremony(missionResults, actNum)
+        .then(() => renderGameState())
+        .then(afterBorrows).then(afterPenalty).then(afterPromise).then(startMelee);
+}
+
+// ═══ BORROW & PLAY — "from whom?" ═══════════════════════════════════
+// Tapping Borrow & Play asks WHICH neighbor lends before anything moves:
+// both neighbors always take the stage (the 2g-per-skill fee goes TO the
+// lender, so the pick matters) and a neighbor with nothing to lend sits
+// grayed with the reason. On the Merchant's borrow-any slot the whole
+// table appears. Resolves [{skill, neighborIndex}] — or null on cancel.
+function showBorrowChooser(card) {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        const { missingSkills } = game.checkRequirements(0, card);
+        const borrowable = game.getBorrowableSkills(0);
+        if (!ov || missingSkills.length === 0) { resolve(null); return; }
+
+        const n = game.playerCount;
+        const p0 = game.players[0];
+        const curSlot = p0.character && p0.character.slots ? p0.character.slots[p0.sliderPosition] : null;
+        const anyLender = curSlot && curSlot.special === 'borrow_any_player';
+        const leftPi = (n - 1) % n, rightPi = 1 % n;
+        const seats = anyLender
+            ? [...Array(n).keys()].filter(i => i !== 0)
+            : [...new Set([leftPi, rightPi])];
+
+        // Units of the same skill share one lender (the table habit);
+        // distinct skills each pick their own.
+        const counts = {};
+        missingSkills.forEach(s => { counts[s] = (counts[s] || 0) + 1; });
+        const sections = Object.entries(counts);   // [skill, units]
+        const single = sections.length === 1;
+        const choice = {};                          // skill -> lender pi
+        const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+        const totalCost = missingSkills.length * 2;
+
+        const seatTag = pi => {
+            if (anyLender) return '';
+            if (pi === leftPi) return '<span class="bw-tag">◀ Left Neighbor</span>';
+            if (pi === rightPi) return '<span class="bw-tag">Right Neighbor ▶</span>';
+            return '';
+        };
+
+        const finish = (result) => {
+            ov.classList.remove('active');
+            resolve(result);
+        };
+
+        const render = () => {
+            const sectionHtml = sections.map(([skill, units]) => {
+                const fee = units * 2;
+                const head = single
+                    ? ''
+                    : `<div class="bw-skill-head">${cap(skill)}${units > 1 ? ' ×' + units : ''} — ${fee}g to its lender</div>`;
+                const seatCards = seats.map(pi => {
+                    const pl = game.players[pi];
+                    const has = !!(borrowable[skill] && borrowable[skill].includes(pi));
+                    const on = choice[skill] === pi;
+                    const art = pl.character ? `assets/characters/${pl.character.filename}` : 'assets/ui/cover.jpg';
+                    const note = has ? `+${fee}g to their purse` : `No ${cap(skill)} to lend`;
+                    return `<div class="bw-row${has ? '' : ' off'}${on ? ' on' : ''}" data-skill="${skill}" data-pi="${pi}">
+                                <img class="bw-art" src="${art}" alt="${pl.name}">
+                                ${seatTag(pi)}
+                                <span class="bw-name">${pl.name}</span>
+                                <span class="bw-note">${note}</span>
+                            </div>`;
+                }).join('');
+                const undecided = !single && choice[skill] === undefined;
+                return `<div class="bw-section${undecided ? ' undecided' : ''}" data-skill="${skill}">
+                            ${head}<div class="bw-rows">${seatCards}</div>
+                        </div>`;
+            }).join('');
+
+            const needTxt = sections.map(([s, u]) => `${cap(s)}${u > 1 ? ' ×' + u : ''}`).join(', ');
+            const ready = sections.every(([s]) => choice[s] !== undefined);
+
+            // Sections live in their own scroller; the title and the
+            // Confirm/Cancel row stay pinned — a multi-skill borrow can
+            // outgrow a phone screen (Wyatt 7/8: the second lender and
+            // the buttons sat unreachable below the fold).
+            ov.innerHTML = `
+                <div class="pp-inner bw">
+                    <div class="pp-title">Borrow &amp; Play</div>
+                    <div class="pp-sub"><b>${card.name}</b> needs <b>${needTxt}</b> —
+                        ${single ? 'tap the neighbor who lends it' : 'pick a lender for each skill'}.
+                        The fee is paid <b>to them</b>${anyLender ? ' · your Merchant slot lets anyone lend' : ''}.</div>
+                    <div class="bw-scroll">${sectionHtml}</div>
+                    <div class="pp-actions">
+                        ${single ? '' : `<button class="btn-royal primary" id="bwConfirm" ${ready ? '' : 'disabled style="opacity:.35"'}><span>Borrow &amp; Play (−${totalCost}g)</span></button>`}
+                        <button class="btn-royal" id="bwCancel"><span>Cancel</span></button>
+                    </div>
+                </div>`;
+
+            ov.querySelectorAll('.bw-row:not(.off)').forEach(el => {
+                el.onclick = () => {
+                    const skill = el.dataset.skill;
+                    const pi = parseInt(el.dataset.pi, 10);
+                    // One missing skill = tap-to-commit (the Borrow & Play tap
+                    // already said "yes"); several = assemble, then confirm.
+                    if (single) { finish(missingSkills.map(s => ({ skill: s, neighborIndex: pi }))); return; }
+                    choice[skill] = pi;
+                    render();
+                    // Carry the player to the next open decision.
+                    requestAnimationFrame(() => {
+                        const next = ov.querySelector('.bw-section.undecided');
+                        if (next) next.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    });
+                };
+            });
+            const confirmBtn = ov.querySelector('#bwConfirm');
+            if (confirmBtn) confirmBtn.onclick = () => {
+                if (!sections.every(([s]) => choice[s] !== undefined)) return;
+                finish(missingSkills.map(s => ({ skill: s, neighborIndex: choice[s] })));
+            };
+            ov.querySelector('#bwCancel').onclick = () => finish(null);
+        };
+
+        render();
+        ov.classList.add('active');
+    });
+}
+
+// Chosen lenders are validated at ACTIVATION time — between the click and
+// the activation a lender can slide off the very slot that granted the
+// skill. Stale picks fall back to any current lender; a skill nobody can
+// lend anymore leaves the plan uncovered (the caller discards honestly).
+function resolveBorrowPlan(card, chosen) {
+    const { missingSkills } = game.checkRequirements(0, card);
+    const borrowable = game.getBorrowableSkills(0);
+    const pool = Array.isArray(chosen) ? chosen.slice() : [];
+    const borrowFrom = missingSkills.map(s => {
+        const ci = pool.findIndex(b => b.skill === s);
+        const pick = ci >= 0 ? pool.splice(ci, 1)[0] : null;
+        if (pick && borrowable[s] && borrowable[s].includes(pick.neighborIndex)) return pick;
+        return { skill: s, neighborIndex: borrowable[s] ? borrowable[s][0] : undefined };
+    });
+    return { borrowFrom, uncovered: borrowFrom.some(b => b.neighborIndex === undefined) };
 }
 
 // ═══ MISSION BORROW — a due mission, short only on borrowable skills ════
@@ -2905,6 +4452,7 @@ function showMissionBorrowChooser(mission) {
             </div>`;
 
         ov.querySelector('#borrowYes').onclick = () => {
+            mpPub('mission_borrow', { accept: true, missionName: mission.name });
             const idx = game.players[0].missions.indexOf(mission);
             const res = game.completeMissionWithBorrow(0, idx);
             ov.classList.remove('active');
@@ -2921,6 +4469,7 @@ function showMissionBorrowChooser(mission) {
             resolve();
         };
         ov.querySelector('#borrowNo').onclick = () => {
+            mpPub('mission_borrow', { accept: false, missionName: mission.name });
             const idx = game.players[0].missions.indexOf(mission);
             game.failMissionByChoice(0, idx);
             ov.classList.remove('active');
@@ -2971,6 +4520,7 @@ function showPenaltyDiscardPicker(n) {
             ov.querySelector('#ppConfirm').onclick = () => {
                 if (chosen.size !== mustPick) return;
                 const picked = [...chosen].map(i => player.playedCards[i]);
+                mpPub('penalty', { cardIds: picked.map(c => c.id) });
                 const removed = game.discardPlayedCards(0, c => picked.includes(c), mustPick);
                 addLogEntry(`You discard ${removed} card(s) to a failed mission`);
                 ov.classList.remove('active');
@@ -3019,6 +4569,8 @@ function showPromiseDiscardPicker() {
                 };
             });
             const done = () => {
+                // Even "Keep All" streams — the other clients are waiting.
+                mpPub('promise', { cardIds: [...chosen].map(i => player.playedCards[i].id) });
                 if (chosen.size) {
                     const picked = [...chosen].map(i => player.playedCards[i]);
                     const n = game.discardPlayedCards(0, c => picked.includes(c));
@@ -3074,6 +4626,7 @@ function showChemYPicker() {
             });
             ov.querySelector('#chemYConfirm').onclick = () => {
                 const card = player.playedCards[chosen];
+                mpPub('chemy', { cardId: card.id });
                 card._favorDoubled = true;
                 addLogEntry(`Chemical Y doubles ${card.name} (+${card.favor} Favor at scoring)`);
                 showNotification(`${card.name} is now worth ${card.favor * 2} Favor`, 'play');
@@ -3087,52 +4640,206 @@ function showChemYPicker() {
     });
 }
 
-// ─── SCORING ───────────────────────────────────────────────
+// ═══ LIFE ESSENCE — choose ONE active mission, its requirement is gone ══
+// Faithful to the card: "Choose One of Your Active Missions — This Mission
+// no longer has any Requirement." The blessing is marked on the mission
+// itself and holds for good; completed missions are out of reach.
+function showLifeEssencePicker() {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        const player = game.players[0];
+        const missions = (player.missions || []).filter(m => !m._reqWaived);
+        if (!ov || !missions.length) { resolve(); return; }
+
+        let chosen = 0;
+        const render = () => {
+            const cards = missions.map((m, i) => `
+                <div class="pp-card${chosen === i ? ' chosen' : ''}" data-i="${i}">
+                    <img src="assets/cards/missions/${m.filename}" alt="${m.name}">
+                </div>`).join('');
+            const pick = missions[chosen];
+            ov.innerHTML = `
+                <div class="pp-inner chemy">
+                    <div class="pp-title">Life Essence</div>
+                    <div class="pp-sub">Choose one of your <b>active missions</b> — it will no longer have any requirement</div>
+                    <div class="pp-cards">${cards}</div>
+                    <div class="pp-actions">
+                        <button class="btn-royal primary" id="leConfirm">
+                            <span>Bless ${pick.name} — no requirement</span>
+                        </button>
+                    </div>
+                </div>`;
+            ov.querySelectorAll('.pp-card').forEach(el => {
+                el.onclick = () => { chosen = parseInt(el.dataset.i, 10); render(); };
+            });
+            ov.querySelector('#leConfirm').onclick = () => {
+                const m = missions[chosen];
+                mpPub('lepick', { missionId: m.id });
+                m._reqWaived = true;
+                addLogEntry(`Life Essence blesses ${m.name} — it no longer has any requirement`);
+                showNotification(`${m.name} no longer has any requirement`, 'play');
+                ov.classList.remove('active');
+                renderGameState();
+                resolve();
+            };
+        };
+        render();
+        ov.classList.add('active');
+    });
+}
+
+// ─── SCORING — the victory ceremony ─────────────────────────
+
+// Placement colors: 1st gold, 2nd silver, 3rd bronze, the rest muted.
+// Indexed by finish order so every table size (3/4/5) reads the same.
+const VS_PLACES = [
+    { cls: 'p1', color: '#e8c34b' },
+    { cls: 'p2', color: '#c6ccd6' },
+    { cls: 'p3', color: '#cd8a4b' },
+];
+const VS_ORDINAL = ['1st', '2nd', '3rd', '4th', '5th'];
+
+// Inline trophy cup — ours, never an emoji (same doctrine as .crown-ico).
+function vsTrophy(color) {
+    return `<svg class="vs-trophy" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 3h10v6a5 5 0 0 1-10 0Z" fill="${color}" stroke="rgba(0,0,0,0.35)" stroke-width="0.8"/>
+        <path d="M7 4.2H4.1a3.5 3.5 0 0 0 3.4 4.4M17 4.2h2.9a3.5 3.5 0 0 1-3.4 4.4" fill="none" stroke="${color}" stroke-width="1.7"/>
+        <path d="M10.7 13.4h2.6v3.2h-2.6z" fill="${color}"/>
+        <rect x="7.6" y="16.9" width="8.8" height="2.7" rx="0.7" fill="${color}" stroke="rgba(0,0,0,0.35)" stroke-width="0.8"/>
+    </svg>`;
+}
 
 function showScoring() {
     const scores = game.getWinner();
 
+    // Snapshot BEFORE posting — the deltas below say what THIS game did,
+    // measured against where you stood when it began.
+    const before = (window.FLB && typeof FLB.snapshot === 'function')
+        ? FLB.snapshot() : { rating: 0, stars: 0 };
+
+    // Post YOUR result to the leaderboard the moment scoring resolves —
+    // rating points vs the table + best-Favor for today's daily board.
+    // Seated persona rivals post rating-only placements to their permanent
+    // rows; generic bots present as people but never post. In multiplayer
+    // every client posts its OWN human — only the HOST posts the personas
+    // (three clients must not triple-pay a persona's delta).
+    const personaPlaces = (!mpActive() || FMP.isHost())
+        ? scores.map((s, i) => {
+            const gp = game.players[s.playerIndex];
+            return gp && gp._personaUid ? { uid: gp._personaUid, name: gp.name, place: i } : null;
+        }).filter(Boolean)
+        : [];
+    if (window.FLB) FLB.postGameResult(scores, personaPlaces);
+    if (mpActive()) FMP.gameOver();   // host tidies the record; everyone detaches
+
     document.getElementById('game-screen').classList.remove('active');
     document.getElementById('scoring-screen').classList.add('active');
 
+    // Late toasts (melee results, mission payouts) float above this screen
+    // — the ceremony opens on a clean stage.
+    const toasts = document.getElementById('notifications');
+    if (toasts) toasts.innerHTML = '';
+
     const content = document.getElementById('scoringContent');
     const winner = scores[0];
+    const place = scores.findIndex(s => s.playerIndex === 0);
+    const youWon = place === 0;
+
+    const headline = youWon ? 'You Are Victorious!' : `${winner.name} Claims the Throne`;
+    const personal = youWon
+        ? 'The realm bows before its new sovereign.'
+        : `You finished ${VS_ORDINAL[place] || (place + 1) + 'th'}.`;
+
+    // Rating + Stars deltas, shown BIG. Rating persists via postGameResult
+    // (works offline too — the local adapter keeps the same ledgers);
+    // per-game Stars appear once the store economy exposes FLB.gameStars.
+    const fmtDelta = (n) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '±0');
+    let deltas = '';
+    if (window.FLB && place >= 0) {
+        const rDelta = FLB.ratingDelta(place, scores.length);
+        const newRating = Math.max(0, (before.rating || 0) + rDelta);
+        deltas += `<div class="vs-delta rating">
+            <span class="vs-d-what">✦ Rating</span><b>${fmtDelta(rDelta)}</b>
+            <span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${newRating}">0</b>
+        </div>`;
+        if (typeof FLB.gameStars === 'function') {
+            const sDelta = FLB.gameStars(place, scores.length);
+            const newStars = (before.stars || 0) + sDelta;
+            deltas += `<div class="vs-delta stars">
+                <span class="vs-d-what">★ Stars</span><b>+${sDelta}</b>
+                <span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${newStars}">0</b>
+            </div>`;
+        }
+    }
+
+    // The score sheet from the box — one color-coded grid, heirs across,
+    // categories down, tallied the way the table does it after a real game
+    // (Missions / Adventures / Artifacts / Character / Prestige / Scorn).
+    // Artifacts carries every non-adventure card's favor plus the
+    // Philosopher's Stone gold conversion, so the columns sum to the total.
+    const artAll = (s) => (s.artFavor || 0) + (s.otherCardFavor || 0) + (s.stoneFavor || 0);
+    const SHEET_ROWS = [
+        { label: 'Missions',   icon: 'assets/icons/mission.png',  c: '#c2a14d', v: s => s.missionFavor || 0 },
+        { label: 'Adventures', icon: 'assets/icons/maps.png',     c: '#4c8a63', v: s => s.advFavor || 0 },
+        { label: 'Artifacts',  icon: 'assets/icons/philosopher.png', c: '#8a63a8', v: s => artAll(s) },
+        { label: 'Character',  icon: 'assets/icons/favor.png',    c: '#75695a', v: s => s.characterFavor || 0 },
+        { label: 'Prestige',   icon: 'assets/icons/prestige.png', c: '#3f9fd0', v: s => s.prestige || 0 },
+        { label: 'Scorn',      icon: 'assets/icons/scorn.png',    c: '#c0463e', v: s => s.scorn || 0, neg: true },
+    ];
+    const heads = scores.map((s, i) => {
+        const ch = game.players[s.playerIndex].character;
+        const p = VS_PLACES[i];
+        return `<div class="vsg-head${s.playerIndex === 0 ? ' me' : ''}${i === 0 ? ' win' : ''}" style="--ri:0">
+            ${ch && ch.filename ? `<img class="vsg-face" src="assets/characters/${ch.filename}" alt="">` : ''}
+            <span class="vsg-ord"${p ? ` style="color:${p.color}"` : ''}>${p ? vsTrophy(p.color) : ''}${VS_ORDINAL[i] || (i + 1) + 'th'}</span>
+            <span class="vsg-hname">${s.name}</span>
+        </div>`;
+    }).join('');
+    const bodyRows = SHEET_ROWS.map((r, ri) => {
+        const cells = scores.map((s, i) => {
+            const raw = r.v(s);
+            const txt = r.neg && raw > 0 ? `−${raw}` : `${raw}`;
+            return `<div class="vsg-cell${s.playerIndex === 0 ? ' me' : ''}${i === 0 ? ' win' : ''}${r.neg && raw > 0 ? ' bad' : ''}" style="--rowC:${r.c};--ri:${ri + 1}">${txt}</div>`;
+        }).join('');
+        return `<div class="vsg-label" style="--rowC:${r.c};--ri:${ri + 1}">${r.icon ? `<img src="${r.icon}" alt="">` : ''}<span>${r.label}</span></div>${cells}`;
+    }).join('');
+    const totalCells = scores.map((s, i) =>
+        `<div class="vsg-cell total${s.playerIndex === 0 ? ' me' : ''}${i === 0 ? ' win' : ''}" style="--ri:7"><b data-total="${s.finalScore}" data-cd="1150">0</b></div>`).join('');
+    const grid = `
+        <div class="vs-grid" style="--vsgCols:${scores.length}">
+            <div class="vsg-corner" style="--ri:0"></div>${heads}
+            ${bodyRows}
+            <div class="vsg-label total" style="--rowC:#efe6cf;--ri:7"><img src="${PURSE_ICONS.favor}" alt=""><span>Total</span></div>${totalCells}
+        </div>`;
 
     content.innerHTML = `
-        <h2 class="scoring-title">${winner.name} Claims the Throne!</h2>
-        <p class="scoring-sub">Final Score: ${winner.finalScore} points</p>
-        <div class="scoring-scroll">
-            <table class="scoring-table">
-                <tr>
-                    <th>Heir</th>
-                    <th>Mission Favor</th>
-                    <th>Card Favor</th>
-                    <th>Character Favor</th>
-                    <th>Prestige</th>
-                    <th>Scorn</th>
-                    <th>Total</th>
-                    <th>Gold (Tiebreaker)</th>
-                </tr>
-                ${scores.map((s, i) => `
-                    <tr class="${i === 0 ? 'winner' : ''}">
-                        <td>${s.name}</td>
-                        <td>${s.missionFavor}</td>
-                        <td>${s.cardFavor}</td>
-                        <td>${s.characterFavor}</td>
-                        <td>${s.prestige}</td>
-                        <td>${s.scorn ? '−' + s.scorn : 0}</td>
-                        <td><strong>${s.finalScore}</strong></td>
-                        <td>${s.gold}</td>
-                    </tr>
-                `).join('')}
-            </table>
+        <div class="vs-head${youWon ? ' win' : ''}">
+            ${youWon ? '<div class="champ-rays"></div>' : ''}
+            <div class="vs-headline">${headline}</div>
+            <div class="vs-personal">${personal}</div>
         </div>
+        ${deltas ? `<div class="vs-deltas">${deltas}</div>` : ''}
+        <div class="scoring-scroll">${grid}</div>
         <div class="scoring-actions">
             <button class="btn-royal primary" onclick="location.reload()">
                 <span>Play Again</span>
             </button>
         </div>
     `;
+
+    // Roll every total up from 0 (the Melee splash count-up, ease-out).
+    content.querySelectorAll('[data-total]').forEach(b => {
+        const target = parseInt(b.dataset.total, 10) || 0;
+        const dur = 900;
+        let t0 = null;
+        const tick = (t) => {
+            if (t0 === null) t0 = t;
+            const k = Math.min(1, (t - t0) / dur);
+            b.textContent = Math.round(target * (1 - Math.pow(1 - k, 3)));
+            if (k < 1) requestAnimationFrame(tick);
+        };
+        setTimeout(() => requestAnimationFrame(tick), parseInt(b.dataset.cd, 10) || 350);
+    });
 }
 
 // ─── PLAYER STATS (renderStats alias for backward compat) ──
@@ -3326,10 +5033,12 @@ document.addEventListener('pointerdown', (e) => {
 }, true);
 document.addEventListener('scroll', _hoverPeekHide, true);
 
-// ── Hand bloom (Battlegrounds tray feel) ──
-// Touching a hand card blooms it to near screen height IN PLACE (CSS .bloom /
-// :hover). Slide your finger across the fan and each card blooms in turn;
-// release to open that card's action sheet. Mouse gets the same via :hover.
+// ── Hand gestures (Hearthstone/Battlegrounds) ──
+// Touch a hand card and it BLOOMS to near screen height in place — that's
+// the read. Slide along the fan and each card blooms in turn (browse).
+// DRAG UP past the lift line and the card detaches and follows your
+// finger; release up top → its action sheet (play / discard / …).
+// Release back down low, or a plain tap, commits nothing.
 let _bloomEl = null;
 let _bloomStartEl = null;
 
@@ -3382,18 +5091,73 @@ function _bloomSet(el) {
     if (el) el.classList.add('bloom');
 }
 
+// Drag-up state: how far the finger must climb before the bloom hands
+// the card to the drag (and the same line the release must clear to
+// commit — letting go below it just tucks the card home).
+const HAND_DRAG_LIFT = 60;
+// Rise past this and the card in your hand LOCKS: an ascending pull that
+// drifts sideways must not glide onto a neighbor mid-play. Browsing stays
+// live while the finger rides level along the fan; dip back under the
+// band and the glide resumes (the check is per-move, not a latch).
+const HAND_GLIDE_BAND = 24;
+let _handDrag = null;
+
 document.addEventListener('pointerdown', (e) => {
     const card = e.target.closest && e.target.closest('.tv-hand .hand-card');
     if (!card) return;
-    // Touching your peeking hand raises the drawer — otherwise the bloom
-    // grows from a card whose bottom is still below the screen edge.
-    if (typeof tvHandOpen !== 'undefined' && !tvHandOpen) {
-        tvHandOpen = true;
-        applyDrawerStates();
-    }
     _bloomStartEl = card;
+    _handDrag = { startX: e.clientX, startY: e.clientY, active: false, card: null, baseTransform: '' };
     _bloomSet(card);
 }, { passive: true });
+
+// The card detaches from the fan and rides the finger (straightened,
+// shrunk so the table stays readable — the Battlegrounds pull).
+function _handDragStart(ev) {
+    const card = _bloomEl || _bloomStartEl;
+    if (!card || !_handDrag) return;
+    _handDrag.active = true;
+    _handDrag.card = card;
+    _handDrag.baseTransform = card.style.transform;
+    card.classList.remove('bloom');
+    _bloomEl = null;                     // the drag owns the card now
+    card.classList.add('dragging');
+    const strip = document.getElementById('tvHandStrip');
+    if (strip) strip.classList.add('drag-from');
+    _handDragFollow(ev);
+}
+
+function _handDragFollow(ev) {
+    const d = _handDrag;
+    if (!d || !d.card) return;
+    const dx = ev.clientX - d.startX;
+    const dy = ev.clientY - d.startY;
+    // Inline !important: the hover-bloom rule is !important too, and a
+    // mouse-driven drag must not fight it mid-gesture.
+    d.card.style.setProperty('transform',
+        `translate(${Math.round(dx)}px, ${Math.round(dy - 24)}px) scale(1.45)`, 'important');
+}
+
+// Release: above the lift line → this card's action sheet is the next
+// beat; below it (or a cancelled pointer) → the card tucks back home.
+function _handDragEnd(e, allowCommit) {
+    const d = _handDrag;
+    _handDrag = null;
+    if (!d || !d.active || !d.card) return;
+    const card = d.card;
+    card.classList.remove('dragging');        // transition comes back on
+    card.style.removeProperty('transform');   // drop the !important drag transform
+    card.style.transform = d.baseTransform;   // snap home
+    const strip = document.getElementById('tvHandStrip');
+    if (strip) strip.classList.remove('drag-from');
+    if (allowCommit && (d.startY - e.clientY) > HAND_DRAG_LIFT) {
+        // Swallow this release's synthetic click so the outside-click
+        // handler can't instantly hide the sheet we're about to open.
+        _peekSwallowClick = true;
+        setTimeout(() => { _peekSwallowClick = false; }, 400);
+        const i = parseInt(card.getAttribute('data-hand-i'), 10);
+        if (!isNaN(i)) setTimeout(() => selectHandCard(i), 0);
+    }
+}
 
 // Glide: map finger X to the card whose RESTING slot is nearest — never
 // hit-test the screen, because the bloomed card itself sits on top and
@@ -3421,180 +5185,242 @@ document.addEventListener('pointermove', (e) => {
         const ev = _bloomMoveEv;
         _bloomMoveEv = null;
         if (!_bloomStartEl || !ev) return;
+        if (_handDrag && _handDrag.active) { _handDragFollow(ev); return; }
+        const rise = _handDrag ? (_handDrag.startY - ev.clientY) : 0;
+        if (_handDrag && rise > HAND_DRAG_LIFT) {
+            _handDragStart(ev);
+            return;
+        }
+        // Ascending past the band: the card is spoken for — no glide swap.
+        if (rise > HAND_GLIDE_BAND) return;
         const card = _bloomNearest(ev.clientX);
         if (card) _bloomSet(card);
     });
 }, { passive: true });
 
-function _bloomRelease() {
-    // Slid to a different card than the touch started on: the native click
-    // lands nowhere, so select the card that's blooming now.
-    if (_bloomEl && _bloomStartEl && _bloomEl !== _bloomStartEl && !_peekShowing) {
-        const i = parseInt(_bloomEl.getAttribute('data-hand-i'), 10);
-        if (!isNaN(i)) setTimeout(() => selectHandCard(i), 0);
-    }
+function _bloomRelease(e) {
+    _handDragEnd(e, e.type !== 'pointercancel');
     _bloomSet(null);
     _bloomStartEl = null;
 }
 document.addEventListener('pointerup', _bloomRelease, { passive: true });
 document.addEventListener('pointercancel', _bloomRelease, { passive: true });
 
-// ═══ RING DRAG — slide your ring on the board, pay 5 Gold per slot ═══
-// Grab anywhere along your board's slider track and drag the ring to a
-// slot. Release → confirm "Pay N Gold to slide here?". Uses the same
-// payToSlide engine path as the board overlay (one step at a time, so
-// slot events fire per space, exactly like the physical game).
-const RING_SLOT_LEFTS = [16, 33, 50, 67, 84];
-let _ringDrag = null;
-
-function _ringSlotFromX(clientX, rect) {
-    const pct = ((clientX - rect.left) / rect.width) * 100;
-    let best = 0, bestD = Infinity;
-    RING_SLOT_LEFTS.forEach((L, i) => {
-        const d = Math.abs(pct - L);
-        if (d < bestD) { bestD = d; best = i; }
-    });
-    return best;
-}
+// ═══ DESKTOP DRAG-TO-PLAY — the phone's Hearthstone pull, mouse-driven ═══
+// Press a fan card and pull: it leaves the fan and rides the cursor;
+// release above the same HAND_DRAG_LIFT line and its action sheet opens —
+// exactly the phone gesture. Release low and it tucks back home. A plain
+// click (no pull) still selects the classic way, and hover-bloom keeps
+// working: the drag's inline !important transform is the only thing that
+// outranks the hover rule, and only while dragging.
+const DESK_DRAG_SLOP = 8;   // px of travel before a press becomes a drag
+let _deskDrag = null;
 
 document.addEventListener('pointerdown', (e) => {
-    if (!game || game.phase !== 'gameplay') return;
-    const wrap = e.target.closest && e.target.closest('.pmat.you .pmat-boardwrap');
-    if (!wrap) return;
-    const rect = wrap.getBoundingClientRect();
-    // Only the slider track zone (bottom quarter of the board) starts a drag.
-    if (e.clientY < rect.top + rect.height * 0.72) return;
-    const ring = wrap.querySelector('.pmat-ring');
-    if (!ring) return;
-    _ringDrag = { wrap, rect, ring, moved: false, slot: game.players[0].sliderPosition };
-    ring.classList.add('dragging');
-}, true);
-
-document.addEventListener('pointermove', (e) => {
-    if (!_ringDrag) return;
-    _ringDrag.moved = true;
-    const slot = _ringSlotFromX(e.clientX, _ringDrag.rect);
-    _ringDrag.slot = slot;
-    _ringDrag.ring.style.left = RING_SLOT_LEFTS[slot] + '%';
+    if (isCompactLandscape() || e.button !== 0) return;
+    const card = e.target.closest && e.target.closest('#handZone .hand-card');
+    if (!card) return;
+    _deskDrag = { startX: e.clientX, startY: e.clientY, active: false,
+                  card, baseTransform: card.style.transform };
 }, { passive: true });
 
-function _ringDragEnd(e) {
-    if (!_ringDrag) return;
-    const { ring, slot, moved, rect } = _ringDrag;
-    ring.classList.remove('dragging');
-    _ringDrag = null;
-    const current = game.players[0].sliderPosition;
-    if (!moved || slot === current) { renderGameState(); return; }
-    // Block the mat's tap-to-inspect for this gesture.
-    if (e) { e.stopPropagation(); }
+document.addEventListener('pointermove', (e) => {
+    const d = _deskDrag;
+    if (!d) return;
+    if (!d.active) {
+        if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) <= DESK_DRAG_SLOP) return;
+        d.active = true;
+        d.card.classList.add('dragging');
+        const zone = document.getElementById('handZone');
+        if (zone) zone.classList.add('drag-from');
+    }
+    d.card.style.setProperty('transform',
+        `translate(${Math.round(e.clientX - d.startX)}px, ${Math.round(e.clientY - d.startY - 24)}px) scale(1.45)`,
+        'important');
+}, { passive: true });
+
+function _deskDragEnd(e, allowCommit) {
+    const d = _deskDrag;
+    _deskDrag = null;
+    if (!d || !d.active) return;
+    const card = d.card;
+    card.classList.remove('dragging');        // transition comes back on
+    card.style.removeProperty('transform');   // drop the !important drag transform
+    card.style.transform = d.baseTransform;   // snap home
+    const zone = document.getElementById('handZone');
+    if (zone) zone.classList.remove('drag-from');
+    // A real drag's release must never read as a click: a low release
+    // would otherwise "click" the card it just put back and open the
+    // sheet the player was cancelling out of.
     _peekSwallowClick = true;
     setTimeout(() => { _peekSwallowClick = false; }, 400);
-    showSlideConfirm(slot, rect);
+    if (allowCommit && (d.startY - e.clientY) > HAND_DRAG_LIFT) {
+        const i = parseInt(card.getAttribute('data-hand-i'), 10);
+        if (!isNaN(i)) setTimeout(() => selectHandCard(i), 0);
+    }
 }
-document.addEventListener('pointerup', _ringDragEnd, true);
-document.addEventListener('pointercancel', _ringDragEnd, true);
+document.addEventListener('pointerup', (e) => _deskDragEnd(e, true), { passive: true });
+document.addEventListener('pointercancel', (e) => _deskDragEnd(e, false), { passive: true });
 
-function showSlideConfirm(targetSlot, boardRect) {
-    const ov = document.getElementById('slideConfirm');
-    if (!ov) { renderGameState(); return; }
-    const current = game.players[0].sliderPosition;
-    const steps = Math.abs(targetSlot - current);
-    const cost = steps * 5;
-    const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
-    const canAfford = game.players[0].gold >= cost;
-    ov.innerHTML = `
-        <div class="sc-bubble">
-            <div class="sc-text">Slide your ring to <b>${posNames[targetSlot]}</b>?</div>
-            <div class="sc-cost">${steps} slot${steps > 1 ? 's' : ''} · <b>−${cost} Gold</b>${canAfford ? '' : ' — not enough gold'}</div>
-            <div class="sc-actions">
-                <button class="btn-royal" id="scCancel"><span>Cancel</span></button>
-                <button class="btn-royal primary" id="scPay" ${canAfford ? '' : 'disabled style="opacity:.35"'}><span>Pay &amp; Slide</span></button>
-            </div>
-        </div>`;
-    // Sit just above the player's board.
-    ov.style.left = Math.round(boardRect.left + boardRect.width / 2) + 'px';
-    ov.style.top = Math.round(boardRect.top - 8) + 'px';
-    ov.classList.add('active');
-
-    // Keep the board overlay's ring/hotspots honest if it's open.
-    const refreshBoardOv = () => {
-        const bo = document.getElementById('boardOverlay');
-        if (bo && bo.classList.contains('active')) renderBoardOvSlots();
-    };
-    const close = () => { ov.classList.remove('active'); renderGameState(); refreshBoardOv(); };
-    ov.querySelector('#scCancel').onclick = close;
-    const payBtn = ov.querySelector('#scPay');
-    if (canAfford) payBtn.onclick = async () => {
-        ov.classList.remove('active');
-        const dir = targetSlot > current ? 1 : -1;
-        for (let i = 0; i < steps; i++) {
-            await payToSlide(dir);   // charges 5g/step, fires slot events
-        }
-        renderGameState();
-        refreshBoardOv();
-    };
-}
+// The fan is <img>s — without this, the browser's native image drag
+// hijacks the pointer stream on the very first pull.
+document.addEventListener('dragstart', (e) => {
+    if (e.target.closest && e.target.closest('.hand-card')) e.preventDefault();
+});
 
 // ═══ MELEE SPLASH — end-of-act tournament flair ═══════════════════════
 // A quick full-screen moment (Battlegrounds combat splash energy): banner,
 // every heir's Power counts up, the strongest flares gold and takes
 // Prestige. Tap to skip; resolves a promise so the act flow waits for it.
 
-function showMeleeSplash(results, actNum) {
+// ═══ MISSION CEREMONY — the missions phase, player by player ═══════════
+// One beat per resolved mission: the attempting player takes the stage,
+// their mission card lands, a wax verdict stamps it, and the ACTUAL payout
+// (engine deltas — per-asset favor included) pops in as chips. Tap once to
+// reveal the verdict early, tap again for the next beat. Borrow choices the
+// player still owes come AFTER the ceremony, exactly as before.
+function showMissionCeremony(missionResults, actNum) {
     return new Promise((resolve) => {
-        const el = document.getElementById('meleeSplash');
-        if (!el || !results || !results.length) { resolve(); return; }
-        const acts = ['I', 'II', 'III'];
+        const el = document.getElementById('missionCeremony');
+        const beats = [];
+        (missionResults || []).forEach(pr => pr.results.forEach(r => beats.push({ pi: pr.playerIndex, r })));
+        if (!el || !beats.length) { resolve(); return; }
 
-        const rows = results.map((r, idx) => {
-            const pi = (r.playerIndex != null) ? r.playerIndex : game.players.findIndex(p => p.name === r.name);
-            const char = pi >= 0 && game.players[pi] && game.players[pi].character ? game.players[pi].character : null;
-            const img = char ? `assets/characters/${char.filename}` : 'assets/ui/cover.jpg';
-            return `<div class="ms-row${idx === 0 ? ' winner' : ''}" style="animation-delay:${0.25 + idx * 0.14}s">
-                <span class="ms-place">${['1st','2nd','3rd','4th','5th'][r.placement - 1] || r.placement + 'th'}</span>
-                <img class="ms-portrait" src="${img}" alt="">
-                <span class="ms-name">${r.name}</span>
-                <span class="ms-power"><img src="assets/icons/power.png" alt=""><b data-power="${r.power}">0</b></span>
-                <span class="ms-prestige">${r.prestige ? `+${r.prestige} Prestige` : ''}</span>
-            </div>`;
-        }).join('');
+        const acts = ['I', 'II', 'III'];
+        const speed = () => (window.CINEMATIC_SPEED || 1);
+        const perPlayer = {};
+        beats.forEach(b => { (perPlayer[b.pi] = perPlayer[b.pi] || []).push(b); });
 
         el.innerHTML = `
-            <div class="ms-inner">
-                <div class="ms-banner">⚔ &nbsp;Melee&nbsp; ⚔<span class="ms-act">Act ${acts[actNum - 1] || actNum}</span></div>
-                <div class="ms-rows">${rows}</div>
-                <div class="ms-hint">tap to continue</div>
+            <div class="mc-inner">
+                <div class="ms-banner"><img class="mc-banner-icon" src="assets/icons/mission.png" alt="">Missions<span class="ms-act">Act ${acts[actNum - 1] || actNum}</span></div>
+                <div class="mc-stage"></div>
+                <div class="ms-hint">tap — reveal, then onward</div>
             </div>`;
-        el.classList.add('active');
+        const stage = el.querySelector('.mc-stage');
 
-        // Roll every Power count up from 0 (ease-out).
-        el.querySelectorAll('.ms-power b').forEach(b => {
-            const target = parseInt(b.dataset.power, 10) || 0;
-            const dur = 750;
-            let t0 = null;
-            const tick = (t) => {
-                if (!el.classList.contains('active')) return;
-                if (t0 === null) t0 = t;
-                const k = Math.min(1, (t - t0) / dur);
-                b.textContent = Math.round(target * (1 - Math.pow(1 - k, 3)));
-                if (k < 1) requestAnimationFrame(tick);
-            };
-            setTimeout(() => requestAnimationFrame(tick), 420);
-        });
+        let bi = 0, timer = null, closed = false;
 
-        let closed = false;
+        const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+        const chip = (icon, label, cls) =>
+            `<span class="mc-chip ${cls}"><img src="assets/icons/${icon}.png" alt="">${label}</span>`;
+
+        // Honest payout chips from the engine's measured deltas — plus the
+        // printed skill grants and map, which deltas can't see.
+        const rewardChips = (b) => {
+            const m = b.r.mission;
+            const d = b.r.deltas || {};
+            const goldGain = (d.gold || 0) + (b.r.borrowed || 0); // reward gross of the borrow fee
+            const chips = [];
+            if (d.favor > 0) chips.push(chip('favor', `+${d.favor} Favor`, 'good'));
+            if (goldGain > 0) chips.push(chip('gold', `+${goldGain} Gold`, 'good'));
+            if (d.prestige > 0) chips.push(chip('prestige', `+${d.prestige} Prestige`, 'good'));
+            if (d.scorn < 0) chips.push(chip('scorn', `−${-d.scorn} Scorn`, 'good'));
+            if (d.stones > 0) chips.push(chip('philosopher', `+${d.stones} Philosopher's Stone`, 'good'));
+            if (d.mindsEye > 0) chips.push(chip('minds_eye', `+${d.mindsEye} Mind's Eye`, 'good'));
+            if (b.r.success && m.successRewards && m.successRewards.skills) {
+                Object.entries(m.successRewards.skills).forEach(([sk, n]) =>
+                    chips.push(chip(sk, `+${n} ${cap(sk)}`, 'good')));
+            }
+            if (b.r.success && m.grantsMap) chips.push(chip('maps', `${m.grantsMap} Map`, 'good'));
+            if (b.r.borrowed) chips.push(chip('gold', `Borrowed help −${b.r.borrowed}g`, 'bad'));
+            if (goldGain < 0) chips.push(chip('gold', `−${-goldGain} Gold`, 'bad'));
+            if (d.favor < 0) chips.push(chip('favor', `−${-d.favor} Favor`, 'bad'));
+            if (d.prestige < 0) chips.push(chip('prestige', `−${-d.prestige} Prestige`, 'bad'));
+            if (d.scorn > 0) chips.push(chip('scorn', `+${d.scorn} Scorn`, 'bad'));
+            return chips.join('');
+        };
+
+        const renderBeat = (b) => {
+            const p = game.players[b.pi];
+            const char = p.character;
+            const portrait = char ? `assets/characters/${char.filename}` : 'assets/ui/cover.jpg';
+            const mine = perPlayer[b.pi];
+            const nth = mine.indexOf(b) + 1;
+            stage.className = 'mc-stage';   // fresh beat: clears stamped/fail
+            stage.innerHTML = `
+                <div class="mc-player">
+                    <img class="mc-portrait" src="${portrait}" alt="">
+                    <div class="mc-pname">${b.pi === 0 ? 'You' : p.name}</div>
+                    <div class="mc-pcount">Mission ${nth} of ${mine.length}</div>
+                </div>
+                <div class="mc-cardwrap">
+                    <img class="mc-card" src="assets/cards/missions/${b.r.mission.filename}" alt="${b.r.mission.name}">
+                    <div class="mc-stamp">${b.r.success ? 'Complete' : 'Failed'}</div>
+                </div>
+                <div class="mc-rewards"></div>`;
+            timer = setTimeout(() => stamp(b), 1000 * speed());
+        };
+
+        const stamp = (b) => {
+            if (closed || stage.classList.contains('stamped')) return;
+            clearTimeout(timer);
+            stage.classList.add('stamped');
+            if (!b.r.success) stage.classList.add('fail');
+            const rw = stage.querySelector('.mc-rewards');
+            rw.innerHTML = rewardChips(b);
+            [...rw.children].forEach((c, i) => { c.style.animationDelay = `${0.12 + i * 0.13}s`; });
+            timer = setTimeout(next, (1700 + rw.children.length * 260) * speed());
+        };
+
+        const next = () => {
+            if (closed) return;
+            clearTimeout(timer);
+            bi++;
+            if (bi >= beats.length) { close(); return; }
+            renderBeat(beats[bi]);
+        };
+
         const close = () => {
             if (closed) return;
             closed = true;
+            clearTimeout(timer);
             el.classList.remove('active');
             el.onclick = null;
-            setTimeout(resolve, 260);
+            setTimeout(resolve, 280);
         };
-        el.onclick = close;
-        const hold = (2100 + results.length * 500) * (window.CINEMATIC_SPEED || 1);
-        setTimeout(close, hold);
+
+        // Tap once = reveal the verdict now; tap again = next mission.
+        el.onclick = () => {
+            if (!stage.classList.contains('stamped')) stamp(beats[bi]);
+            else next();
+        };
+
+        el.classList.add('active');
+        renderBeat(beats[0]);
     });
 }
+
+// ═══ MELEE — end-of-act battle & coronation cinematic ═════════════════
+// The reveal itself lives in js/melee.js (Skylar's system — self-contained,
+// it also drives testrealm/tools/melee-preview.html). Here we just hand it
+// the results, the portraits and the engine's power arithmetic, and await
+// the promise so the act flow waits for the moment. Unattended it advances
+// on its own (per-fighter fallback + autoClose), so MP never stalls on a seat.
+function showMeleeSplash(results, actNum) {
+    const el = document.getElementById('meleeSplash');
+    if (!el || !results || !results.length || typeof playMeleeCinematic !== 'function') {
+        return Promise.resolve();
+    }
+    const musicBtn = document.getElementById('musicBtn');
+    return playMeleeCinematic(el, results, actNum, {
+        speed: window.CINEMATIC_SPEED || 1,
+        sound: !(musicBtn && musicBtn.classList.contains('muted')),
+        powerIcon: 'assets/icons/power.png',
+        portraitFor: (pi) => {
+            const p = (pi != null && game.players[pi]) ? game.players[pi] : null;
+            return p && p.character ? `assets/characters/${p.character.filename}` : 'assets/ui/cover.jpg';
+        },
+        breakdownFor: (pi) => (typeof game.powerBreakdown === 'function' ? game.powerBreakdown(pi) : null),
+        // Mission cards live in their own art folder.
+        cardImgFor: (filename, mission) => (filename ? `assets/cards/${mission ? 'missions' : 'regular'}/${filename}` : null),
+        // Physical prestige token art by denomination (25 lacks the "Copy of" prefix).
+        prestigeTokenFor: (d) => (d === 25
+            ? 'assets/tokens/Tokens_Design_v1_Prestige_25_v1.jpg'
+            : `assets/tokens/Copy of Tokens_Design_v1_Prestige_${d}_v1.jpg`)
+    });
+}
+
 
 // ─── CARD ZOOM ─────────────────────────────────────────────
 
@@ -3607,19 +5433,29 @@ function closeZoom() {
     document.getElementById('cardZoom').classList.remove('active');
 }
 
-// Close action panel on outside click
+// Close action panel on outside click.
+// Player chips, sidebar rows and their ◀▶ neighbor tags are NOT "outside":
+// they open overlays that step the panel aside and restore it on close —
+// dismissing here would eat the selection under that dance (tapping a
+// neighbor arrow used to silently kill the panel; that was the whole bug).
 document.addEventListener('click', (e) => {
-    if (!e.target.closest('.hand-card') && !e.target.closest('.action-panel')) {
+    if (!e.target.closest('.hand-card') && !e.target.closest('.action-panel')
+        && !e.target.closest('.pmat') && !e.target.closest('.opp-entry')
+        && !e.target.closest('.nt-tag') && !e.target.closest('#tvBoardThumb')) {
         hideActionPanel();
     }
 });
 
-// ESC closes all game overlays
+// ESC closes all game overlays; arrows browse the mission browser
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
         closeAllOverlays();
         closeZoom();
         closeCardPeek();
+    }
+    if (document.getElementById('missionLB')?.classList.contains('active')) {
+        if (e.key === 'ArrowLeft') { e.preventDefault(); mbStep(-1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); mbStep(1); }
     }
 });
 

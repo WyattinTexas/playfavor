@@ -154,9 +154,12 @@ for (const m of MISSIONS) {
   // Success: favor lives ONLY in favorValue (scored once at game end).
   const s = m.successRewards || {};
   if (s.favor) flag(label, `successRewards.favor ${s.favor} would double-count favorValue`);
-  if (rew.favor && rew.favor !== (m.favorValue || 0))
-    flag(label, `favorValue: audit ${rew.favor} vs data ${m.favorValue || 0}`);
+  // Strict BOTH ways: a favorValue with no printed favor is an invented
+  // number (how 17 phantom values crept in before 7/9).
+  if ((rew.favor || 0) !== (m.favorValue || 0))
+    flag(label, `favorValue: audit ${rew.favor || 0} vs data ${m.favorValue || 0}`);
   if (rew.gold !== (s.gold || 0)) flag(label, `success gold: audit ${rew.gold} vs data ${s.gold || 0}`);
+  if (rew.scorn !== (s.scorn || 0)) flag(label, `success scorn: audit ${rew.scorn} vs data ${s.scorn || 0}`);
   if (rew.prestige !== (s.prestige || 0)) flag(label, `success prestige: audit ${rew.prestige} vs data ${s.prestige || 0}`);
   if (rew.mindsEye !== (s.mindsEye || 0)) flag(label, `success Mind's Eye: audit ${rew.mindsEye} vs data ${s.mindsEye || 0}`);
   if (rew.philStone !== (s.philosopherStone || 0)) flag(label, `success Phil Stone: audit ${rew.philStone} vs data ${s.philosopherStone || 0}`);

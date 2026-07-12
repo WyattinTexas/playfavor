@@ -39,7 +39,8 @@ class FavorGame {
         this.playerCount = playerCount;
         this.currentAct = 0;         // 0 = not started, 1-3
         this.phase = PHASES.SETUP;
-        this.emblemHolder = 0;        // Player index with the Emblem
+        this._rand = Math.random;    // seedable — see setSeed()
+        this.emblemHolder = 0;        // Player index with the Emblem (rated start seats it; act boundaries pass it +1)
         this.activePlayerIndex = 0;   // Current player acting
         this.turnInAct = 0;           // Which draft turn within the act
 
@@ -108,9 +109,59 @@ class FavorGame {
 
     // ─── ACT FLOW ──────────────────────────────────────────────
 
+    /**
+     * Seat the Emblem before Act 1 (rated start — the UI decides WHO from
+     * the leaderboard; the engine only records the seat). Anything outside
+     * the table clamps to seat 0, the classic default.
+     */
+    setEmblemHolder(idx) {
+        this.emblemHolder =
+            (Number.isInteger(idx) && idx >= 0 && idx < this.playerCount) ? idx : 0;
+    }
+
+    /**
+     * Seed every random the engine consumes (deck shuffles, Liquid
+     * Courage's coin) with mulberry32 — multiplayer lockstep needs every
+     * client to deal the same cards and flip the same coins. Call BEFORE
+     * loadDecks. Solo games never call this and keep Math.random.
+     */
+    setSeed(seed) {
+        let s = (seed >>> 0) || 1;
+        this._rand = () => {
+            s |= 0; s = (s + 0x6D2B79F5) | 0;
+            let t = Math.imul(s ^ (s >>> 15), 1 | s);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    /**
+     * Multiplayer deal alignment: every client rotates the shared roster
+     * so ITS human sits at local seat 0, which means "local seat i" names
+     * a DIFFERENT canonical player on every client. Deck chunk k must
+     * always land with CANONICAL seat k or the clients deal different
+     * hands from identical decks. The offset is the client's canonical
+     * seat: local player i holds canonical seat (i + offset) % n, so it
+     * takes chunk (i + offset) % n. Solo games leave it 0.
+     */
+    setDealOffset(k) {
+        this._dealOffset = Number.isInteger(k) ? ((k % this.playerCount) + this.playerCount) % this.playerCount : 0;
+    }
+
     startAct(actNumber) {
         this.currentAct = actNumber;
         this.turnInAct = 0;
+
+        // Act boundary: the Emblem passes one seat clockwise — the same +1
+        // circle activation order and borrow neighbors already walk.
+        // Activation and mission order derive from emblemHolder, so the
+        // whole table shifts with it for free.
+        if (actNumber > 1) {
+            this.emblemHolder = (this.emblemHolder + 1) % this.playerCount;
+            const holder = this.players[this.emblemHolder];
+            if (holder) this.addLog(`The Emblem passes to ${holder.name}`);
+        }
+
         this.addLog(`Act ${actNumber} begins!`);
 
         // Deal cards to each player from the current act's deck
@@ -128,9 +179,12 @@ class FavorGame {
             this.hands.push(hand);
         }
 
-        // Assign initial hands
+        // Assign initial hands — a fresh act is a fresh turn for the
+        // paid-slide direction lock too. The deal offset keeps chunk k
+        // with canonical seat k across rotated multiplayer clients.
         this.players.forEach((p, i) => {
-            p.hand = this.hands[i];
+            p.hand = this.hands[(i + (this._dealOffset || 0)) % this.playerCount];
+            p._paidSlideDir = null;
         });
 
         this.phase = PHASES.GAMEPLAY;
@@ -177,6 +231,9 @@ class FavorGame {
             this.players[i].hand = this.players[i + 1].hand;
         }
         this.players[this.playerCount - 1].hand = temp;
+
+        // New turn — the paid-slide direction lock releases.
+        this.players.forEach(p => { p._paidSlideDir = null; });
 
         this.phase = PHASES.ACTIVATE;
         this.activePlayerIndex = this.emblemHolder;
@@ -523,8 +580,17 @@ class FavorGame {
             return { success: false, error: 'Need 5 gold to move slider' };
         }
 
+        // One direction per turn: the first paid slide of the turn locks the
+        // direction until hands next pass (or a new act deals). Discard-slides
+        // are a different mechanic and stay free of this lock.
+        if (player._paidSlideDir && direction !== player._paidSlideDir) {
+            const dirName = player._paidSlideDir < 0 ? 'left' : 'right';
+            return { success: false, error: `One direction per turn — you already slid ${dirName} this turn` };
+        }
+
         player.gold -= SLIDER_MOVE_COST;
         player.sliderPosition = newPos;
+        player._paidSlideDir = direction;
 
         // Apply new position's one-time bonuses and recalc skills
         this.applySliderAbilities(player);
@@ -789,15 +855,17 @@ class FavorGame {
             case 'choose_mission':
                 // One-time: choose a mission from the visible pool (free, no gold cost)
                 if (this.visibleMissions.length > 0) {
-                    if (player.index === 0) {
-                        // Human player: flag for UI to show mission select
+                    if (player.index === 0 || player._remoteHuman) {
+                        // Human (local OR remote) — the flag pauses for a
+                        // choice: local shows the picker, remote awaits the
+                        // owner's streamed pick. Never auto-decided.
                         player._pendingSlotMission = true;
                     } else {
                         // AI: auto-pick best mission
                         let bestIdx = 0;
                         let bestFavor = -1;
                         this.visibleMissions.forEach((m, i) => {
-                            const favor = m.favor || (m.successRewards ? m.successRewards.favor : 0) || 0;
+                            const favor = this.missionFavorEstimate(player.index, m);
                             if (favor > bestFavor) { bestFavor = favor; bestIdx = i; }
                         });
                         this.chooseMission(player.index, bestIdx);
@@ -956,22 +1024,29 @@ class FavorGame {
                 for (let i = 0; i < this.playerCount; i++) {
                     if (i !== playerIndex) {
                         if (!this.players[i].powerDebuffs) this.players[i].powerDebuffs = [];
-                        this.players[i].powerDebuffs.push({ amount: -3, act: this.currentAct, source: card.name });
+                        // `from` records the caster so the Melee can fire its bolts.
+                        this.players[i].powerDebuffs.push({ amount: -3, act: this.currentAct, source: card.name, from: playerIndex });
                         this.addLog(`${this.players[i].name} receives -3 power from ${player.name}'s Fuzzy Head`);
                     }
                 }
                 break;
 
             case 'coin_flip_4_power':
-                // Liquid Courage: 50% chance to gain 4 power for melee
+                // Shot of Courage: next Melee, flip a coin — heads = +4 Power.
+                // The outcome is decided HERE (seeded — MP lockstep) but
+                // recorded on coinFlips win OR lose, so the Melee can reveal
+                // it as a live toss. `coin` tags the won bonus so
+                // powerBreakdown shows ONE coin step, not a bonus + a toss.
                 {
-                    const won = Math.random() < 0.5;
+                    const won = this._rand() < 0.5;
+                    if (!player.coinFlips) player.coinFlips = [];
+                    player.coinFlips.push({ source: card.name, act: this.currentAct, won: won, amount: 4 });
                     if (won) {
                         if (!player.powerBonuses) player.powerBonuses = [];
-                        player.powerBonuses.push({ amount: 4, act: this.currentAct, source: card.name });
-                        this.addLog(`${player.name}'s Liquid Courage: HEADS! +4 Power for melee`);
+                        player.powerBonuses.push({ amount: 4, act: this.currentAct, source: card.name, coin: true });
+                        this.addLog(`${player.name}'s ${card.name}: HEADS! +4 Power for melee`);
                     } else {
-                        this.addLog(`${player.name}'s Liquid Courage: TAILS! No bonus`);
+                        this.addLog(`${player.name}'s ${card.name}: TAILS! No bonus`);
                     }
                 }
                 break;
@@ -1024,9 +1099,9 @@ class FavorGame {
                         this.addLog(`${player.name}'s Chemical Y: no adventure favor to double`);
                         break;
                     }
-                    if (playerIndex === 0) {
-                        // Human chooses via the picker (UI shows it right
-                        // after this activation resolves).
+                    if (playerIndex === 0 || player._remoteHuman) {
+                        // Human (local or remote) chooses via picker/stream
+                        // right after this activation resolves.
                         player._pendingChemYPick = true;
                     } else {
                         const best = advs.reduce((a, b) => ((b.favor || 0) > (a.favor || 0) ? b : a));
@@ -1113,9 +1188,34 @@ class FavorGame {
                 break;
 
             case 'remove_mission_requirements':
-                // Life Essence: next mission auto-succeeds
-                player.removeMissionRequirements = true;
-                this.addLog(`${player.name}'s Life Essence: next mission ignores requirements`);
+                // Life Essence, per the card: "Choose One of Your Active
+                // Missions — This Mission no longer has any Requirement."
+                // ONE active (not yet resolved) mission is chosen and marked
+                // _reqWaived for good. With no active missions the potion
+                // simply rests on the field (cards that count potions still
+                // see it).
+                {
+                    const active = (player.missions || []).filter(m => !m._reqWaived);
+                    if (!active.length) {
+                        this.addLog(`${player.name}'s Life Essence: no active missions — the essence rests`);
+                        break;
+                    }
+                    if (playerIndex === 0 || player._remoteHuman) {
+                        // Human (local or remote) chooses via picker/stream
+                        // right after this activation resolves.
+                        player._pendingLifeEssencePick = true;
+                    } else {
+                        // AI: waive the mission it is least likely to meet —
+                        // the highest-value one that currently fails; if all
+                        // pass today, protect the most valuable anyway.
+                        const failing = active.filter(m => !this.probeMissionRequirements(playerIndex, m).success);
+                        const pool = failing.length ? failing : active;
+                        const best = pool.reduce((a, b) =>
+                            (this.missionFavorEstimate(playerIndex, b) > this.missionFavorEstimate(playerIndex, a) ? b : a));
+                        best._reqWaived = true;
+                        this.addLog(`${player.name}'s Life Essence: ${best.name} no longer has any requirement`);
+                    }
+                }
                 break;
 
             case 'remove_13_scorn':
@@ -1346,6 +1446,24 @@ class FavorGame {
     }
 
     /**
+     * What completing this mission is WORTH in favor right now — the printed
+     * favorValue plus whatever its per-asset success special would pay at
+     * this moment. Pure valuation for AI decisions (borrow fees, mission
+     * picks); pays nothing.
+     */
+    missionFavorEstimate(playerIndex, mission) {
+        const p = this.players[playerIndex];
+        let favor = mission.favorValue || 0;
+        switch (mission.successSpecial) {
+            case 'favor_per_charisma_x2':   favor += 2 * (p.skills.charisma || 0); break;
+            case 'favor_per_knowledge_x1':  favor += (p.skills.knowledge || 0); break;
+            case 'favor_per_minds_eye_x5':  favor += 5 * this.getMindsEyeCount(playerIndex); break;
+            case 'favor_per_philstone_x10': favor += 10 * (p.philosopherStone || 0); break;
+        }
+        return favor;
+    }
+
+    /**
      * Turn a held mission in EARLY, by choice — it resolves immediately,
      * success or failure, exactly as it would at its due date.
      */
@@ -1372,12 +1490,11 @@ class FavorGame {
      * exactly like card borrows (2g per unit, paid to the lender), or null
      * when it can't: any Mind's Eye / Philosopher's Stone / Gold / Favor gap
      * is unborrowable, and gold must cover the fee WITHOUT breaking a
-     * hold-N-gold requirement. Pure analysis — no side effects (never calls
-     * checkMissionRequirements, which consumes Life Essence).
+     * hold-N-gold requirement. Pure analysis — no side effects.
      */
     missionBorrowPlan(playerIndex, mission) {
         const player = this.players[playerIndex];
-        if (player.removeMissionRequirements) return null; // succeeds on its own
+        if (mission._reqWaived) return null; // Life Essence: succeeds on its own
 
         const reqCounts = {};
         (mission.requirements || []).forEach(req => { reqCounts[req] = (reqCounts[req] || 0) + 1; });
@@ -1392,8 +1509,13 @@ class FavorGame {
             }
         }
         if (mission.reqFavor && player.favor < mission.reqFavor) return null;
-        if (mission.reqSpecial === 'favor_5_per_minds_eye' &&
-            player.favor < 5 * this.getMindsEyeCount(playerIndex)) return null;
+        if (mission.reqMaps && mission.reqMaps.length) {
+            const held = this.getPlayerMaps(playerIndex);
+            // A map ALTERNATIVE already completes it → nothing to borrow;
+            // a missing reqMapsAll map can never be borrowed.
+            if (!mission.reqMapsAll && mission.reqMaps.some(mp => held.includes(mp))) return null;
+            if (mission.reqMapsAll && !mission.reqMaps.every(mp => held.includes(mp))) return null;
+        }
 
         const gaps = this.unmetSkillReqs(playerIndex, skillReqs);
         const borrowable = this.getBorrowableSkills(playerIndex);
@@ -1456,6 +1578,26 @@ class FavorGame {
     resolveMissions() {
         const results = [];
 
+        // What each resolution actually PAID or COST — the mission ceremony
+        // shows these honest deltas. Per-asset favor depends on the player's
+        // state at this exact moment, so recomputing later would lie.
+        const measure = (idx, fn) => {
+            const p = this.players[idx];
+            const before = {
+                favor: p.favor, gold: p.gold, prestige: p.prestige, scorn: p.scorn,
+                stones: p.philosopherStone || 0, mindsEye: this.getMindsEyeCount(idx),
+            };
+            fn();
+            return {
+                favor: p.favor - before.favor,
+                gold: p.gold - before.gold,
+                prestige: p.prestige - before.prestige,
+                scorn: p.scorn - before.scorn,
+                stones: (p.philosopherStone || 0) - before.stones,
+                mindsEye: this.getMindsEyeCount(idx) - before.mindsEye,
+            };
+        };
+
         // Start with emblem holder, go clockwise
         let pi = this.emblemHolder;
         for (let i = 0; i < this.playerCount; i++) {
@@ -1479,10 +1621,10 @@ class FavorGame {
                     if (pi !== 0) {
                         const { success, details } = this.checkMissionRequirements(pi, mission);
                         if (success) {
-                            this.applyMissionRewards(pi, mission);
+                            const deltas = measure(pi, () => this.applyMissionRewards(pi, mission));
                             player.completedMissions.push(mission);
                             resolved.add(mission);
-                            playerResults.push({ mission, success: true, details });
+                            playerResults.push({ mission, success: true, details, deltas });
                         }
                     }
                     return;
@@ -1491,9 +1633,9 @@ class FavorGame {
                 const { success, details } = this.checkMissionRequirements(pi, mission);
                 if (success) {
                     resolved.add(mission);
-                    this.applyMissionRewards(pi, mission);
+                    const deltas = measure(pi, () => this.applyMissionRewards(pi, mission));
                     player.completedMissions.push(mission);
-                    playerResults.push({ mission, success: true, details });
+                    playerResults.push({ mission, success: true, details, deltas });
                 } else {
                     // Unmet at its due date — can borrowed skills save it?
                     // Borrowing is a CHOICE, never automatic: the human gets
@@ -1501,21 +1643,27 @@ class FavorGame {
                     // as _pendingPenaltyDiscard); the AI borrows only when
                     // the mission's favor clearly beats the gold fee.
                     const plan = this.missionBorrowPlan(pi, mission);
-                    if (plan && pi === 0) {
+                    if (plan && (pi === 0 || player._remoteHuman)) {
                         player._pendingMissionBorrows = player._pendingMissionBorrows || [];
                         player._pendingMissionBorrows.push(mission);
-                        return; // stays in player.missions; the chooser resolves it
+                        return; // stays in player.missions; the chooser/stream resolves it
                     }
-                    if (plan && pi !== 0 && (mission.favorValue || 0) >= plan.cost * 2) {
-                        player.gold -= plan.cost;
-                        plan.borrowFrom.forEach(b => {
-                            this.players[b.neighborIndex].gold += BORROW_SKILL_COST;
+                    // Persona rivals judge the trade sharper: any mission
+                    // worth at least the fee is taken; generic bots still
+                    // demand a clear 2× win. Judgment only — no stat cheats.
+                    const borrowBar = plan ? plan.cost * (player._personaAI ? 1 : 2) : Infinity;
+                    if (plan && pi !== 0 && this.missionFavorEstimate(pi, mission) >= borrowBar) {
+                        const deltas = measure(pi, () => {
+                            player.gold -= plan.cost;
+                            plan.borrowFrom.forEach(b => {
+                                this.players[b.neighborIndex].gold += BORROW_SKILL_COST;
+                            });
+                            this.applyMissionRewards(pi, mission);
                         });
                         resolved.add(mission);
-                        this.applyMissionRewards(pi, mission);
                         player.completedMissions.push(mission);
                         this.addLog(`${player.name} borrows ${plan.borrowFrom.map(b => b.skill).join(', ')} (−${plan.cost}g) to complete ${mission.name}`);
-                        playerResults.push({ mission, success: true, details, borrowed: plan.cost });
+                        playerResults.push({ mission, success: true, details, borrowed: plan.cost, deltas });
                         return;
                     }
                     resolved.add(mission);
@@ -1524,7 +1672,11 @@ class FavorGame {
                     playerResults.push({ mission, success: false, details });
                 }
             });
-            failed.forEach(mission => this.applyMissionFailure(pi, mission));
+            failed.forEach(mission => {
+                const deltas = measure(pi, () => this.applyMissionFailure(pi, mission));
+                const entry = playerResults.find(r => r.mission === mission && !r.success);
+                if (entry) entry.deltas = deltas;
+            });
 
             // Remove only what actually resolved — missions still inside
             // their window carry over to the next act.
@@ -1538,15 +1690,26 @@ class FavorGame {
     }
 
     checkMissionRequirements(playerIndex, mission) {
+        // Pure since the Life Essence rework: the waiver is chosen at play
+        // time and lives ON the mission (_reqWaived), so checking is safe
+        // from anywhere. Kept as the resolve-time entry point.
+        return this.probeMissionRequirements(playerIndex, mission);
+    }
+
+    /**
+     * PURE preview of checkMissionRequirements — same verdict, zero side
+     * effects: a held Life Essence still answers "success" but is NOT
+     * consumed, and nothing is logged. Rendering N missions in the
+     * browser calls this N times and the player's state never moves.
+     */
+    probeMissionRequirements(playerIndex, mission) {
         const player = this.players[playerIndex];
 
-        // Life Essence: next mission auto-succeeds, ignore requirements
-        if (player.removeMissionRequirements) {
-            player.removeMissionRequirements = false; // Consumed
-            this.addLog(`${player.name}'s Life Essence: mission requirements bypassed!`);
+        // Life Essence already blessed this mission — no requirement at all.
+        if (mission._reqWaived) {
             return {
                 success: true,
-                details: { missing: [], canBorrow: {}, lifeEssenceUsed: true }
+                details: { missing: [], canBorrow: {}, reqWaived: true }
             };
         }
 
@@ -1586,10 +1749,22 @@ class FavorGame {
         if (mission.reqFavor && player.favor < mission.reqFavor) {
             missing.push(`${mission.reqFavor} Favor`); met = false;
         }
-        // The Shadow Guide: needs 5 Favor for each Mind's Eye you hold.
-        if (mission.reqSpecial === 'favor_5_per_minds_eye') {
-            const need = 5 * this.getMindsEyeCount(playerIndex);
-            if (player.favor < need) { missing.push(`${need} Favor (5 per Mind's Eye)`); met = false; }
+        // Mission maps come in two printed forms: an ALTERNATIVE ("7 Power &
+        // 7 Knowledge OR Guardian Map" — holding it completes the mission by
+        // itself) or, with reqMapsAll, one MORE requirement alongside the
+        // stats (The Shadow Guide's A Hidden Door).
+        if (mission.reqMaps && mission.reqMaps.length) {
+            const held = this.getPlayerMaps(playerIndex);
+            if (mission.reqMapsAll) {
+                mission.reqMaps.forEach(mp => {
+                    if (!held.includes(mp)) { missing.push(`${mp} Map`); met = false; }
+                });
+            } else if (mission.reqMaps.some(mp => held.includes(mp))) {
+                return {
+                    success: true,
+                    details: { missing: [], canBorrow: this.getBorrowableSkills(playerIndex), mapUsed: true }
+                };
+            }
         }
 
         return {
@@ -1609,6 +1784,9 @@ class FavorGame {
         if (s.favor) player.favor += s.favor;
         if (s.prestige) player.prestige += s.prestige;
         if (s.gold) player.gold += s.gold;
+        // Some successes sting: Usurper and Alchemic Seige print Scorn in the
+        // SUCCESS zone (red medallion) — a reward can hurt.
+        if (s.scorn) player.scorn += s.scorn;
         // Skill rewards persist in bonusSkills — applySlotSkills rebuilds
         // the tally from scratch, so a direct write here would vanish on
         // the next slider move.
@@ -1640,6 +1818,12 @@ class FavorGame {
                 const f = player.skills.knowledge || 0;
                 player.favor += f;
                 this.addLog(`${player.name}: +${f} Favor (1 per Knowledge)`);
+                break;
+            }
+            case 'favor_per_minds_eye_x5': {
+                const f = 5 * this.getMindsEyeCount(playerIndex);
+                player.favor += f;
+                this.addLog(`${player.name}: +${f} Favor (5 per Mind's Eye)`);
                 break;
             }
             case 'philosopher_stone_x2_grant':
@@ -1700,7 +1884,7 @@ class FavorGame {
     penaltyDiscard(playerIndex, n) {
         const player = this.players[playerIndex];
         if (!player.playedCards.length) return;
-        if (playerIndex === 0) {
+        if (playerIndex === 0 || player._remoteHuman) {
             player._pendingPenaltyDiscard = (player._pendingPenaltyDiscard || 0) + n;
             return;
         }
@@ -1767,7 +1951,7 @@ class FavorGame {
                 // A Promise: discard AS MANY of your played cards as you like,
                 // +10 Prestige each. The human picks via UI after mission
                 // resolution; the AI trades away its low-value cards.
-                if (playerIndex === 0) {
+                if (playerIndex === 0 || player._remoteHuman) {
                     player._pendingPromiseDiscard = true;
                 } else {
                     const cheap = player.playedCards.filter(c =>
@@ -1933,8 +2117,11 @@ class FavorGame {
             // Defend the Throne: negate the first power reduction
             if (totalDebuff < 0 && player.defendTheThrone) {
                 // Negate the first -3 debuff (absorb one instance)
+                const absorbed = Math.min(3, -totalDebuff);
                 totalDebuff = Math.min(0, totalDebuff + 3);
                 player.defendTheThrone = false; // Used up
+                // Recorded so powerBreakdown can SHOW the negation truthfully.
+                player._throneDefended = { act: this.currentAct, amount: absorbed };
             }
 
             power += totalDebuff;
@@ -1947,6 +2134,132 @@ class FavorGame {
 
         // Power cannot go below 0
         return Math.max(0, power);
+    }
+
+    /**
+     * The Melee cinematic's arithmetic — calculatePower, ATTRIBUTED. Pure
+     * (no defendTheThrone consumption; it reads what calculatePower already
+     * recorded). Contract (js/melee.js): { base, baseOther, baseCards,
+     * steps, ownRawTotal, rawTotal, sliderPosition, computedTotal } where
+     *   · baseCards = every power-granting played card / completed mission
+     *   · steps: bonus / coinflip (won) / attack (hits[] — wounds I DEAL;
+     *     wounds I take arrive via the attacker's hits, no step of my own)
+     *     / mult (×2, engine applies it last)
+     *   · ownRawTotal + wounds-I-take === rawTotal; max(0, rawTotal) ===
+     *     computedTotal === calculatePower. The meters lock to these, so
+     *     the reveal can never drift from the engine's tally.
+     */
+    powerBreakdown(playerIndex) {
+        const player = this.players[playerIndex];
+        const act = this.currentAct;
+        const steps = [];
+        const base = player.skills.power || 0;
+        const artOf = (name) => {
+            const c = player.playedCards.find(x => x.name === name);
+            return c ? (c.filename || null) : null;
+        };
+
+        // Attribute the base: every power-granting played card, every
+        // completed mission whose success reward paid power, and
+        // baseOther = whatever remains (the character board's slot).
+        const baseCards = [];
+        player.playedCards.forEach(c => {
+            const n = (c.skills || []).filter(s => s === 'power').length;
+            if (n > 0) baseCards.push({ name: c.name, filename: c.filename || null, amount: n, mission: false });
+        });
+        (player.completedMissions || []).forEach(m => {
+            const n = (m.successRewards && m.successRewards.skills && m.successRewards.skills.power) || 0;
+            if (n > 0) baseCards.push({ name: m.name, filename: m.filename || null, amount: n, mission: true });
+        });
+        const baseOther = Math.max(0, base - baseCards.reduce((a, c) => a + c.amount, 0));
+
+        let own = base;
+
+        // Blind Faith pairings (+6 each for Heaven's Blade / Archeus)
+        if (player.playedCards.some(c => c.name === 'Blind Faith')) {
+            player.playedCards.forEach(c => {
+                if (c.special === 'power_6_if_blind_faith' || c.name === 'Archeus') {
+                    own += 6;
+                    steps.push({ kind: 'bonus', label: c.name + ' + Blind Faith', amount: 6, filename: c.filename || null });
+                }
+            });
+        }
+
+        // Power bonuses — King of the Sky only if it actually pays (same
+        // tie rule as calculatePower). Coin winners are counted here but
+        // SHOWN as the live toss below (`coin` tags them out of the steps).
+        (player.powerBonuses || []).forEach(bonus => {
+            if (bonus.act !== act) return;
+            if (bonus.conditional === 'most_survival') {
+                const mine = player.skills.survival || 0;
+                let hasMost = true;
+                for (let i = 0; i < this.playerCount; i++) {
+                    if (i !== playerIndex && (this.players[i].skills.survival || 0) >= mine) { hasMost = false; break; }
+                }
+                if (hasMost && mine > 0) {
+                    own += bonus.amount;
+                    steps.push({ kind: 'bonus', label: bonus.source || 'Bonus', amount: bonus.amount, filename: artOf(bonus.source) });
+                }
+            } else {
+                own += bonus.amount;
+                if (!bonus.coin) steps.push({ kind: 'bonus', label: bonus.source || 'Bonus', amount: bonus.amount, filename: artOf(bonus.source) });
+            }
+        });
+
+        // Coin flips (Shot of Courage) — a live toss that lands on its real,
+        // play-time-decided result. Won flips already added their +4 above.
+        (player.coinFlips || []).forEach(flip => {
+            if (flip.act !== act) return;
+            steps.push({ kind: 'coinflip', label: flip.source || 'Shot of Courage', amount: flip.amount || 4, won: !!flip.won, filename: artOf(flip.source) });
+        });
+
+        // Guardian's absorbed strike (recorded by calculatePower at resolve):
+        // the wound still flies in full below — this step gives it back.
+        if (player._throneDefended && player._throneDefended.act === act && player._throneDefended.amount > 0) {
+            own += player._throneDefended.amount;
+            steps.push({ kind: 'bonus', label: 'Guardian — negates the strike', amount: player._throneDefended.amount, filename: artOf('Guardian') });
+        }
+
+        // Wounds I take (they arrive as the attackers' bolts, not my steps).
+        const woundsTaken = (player.powerDebuffs || [])
+            .filter(d => d.act === act)
+            .reduce((a, d) => a + d.amount, 0);
+
+        // Wounds I DEAL — my attack step fires its bolts at every victim.
+        const myAttacks = {};
+        for (let i = 0; i < this.playerCount; i++) {
+            if (i === playerIndex) continue;
+            (this.players[i].powerDebuffs || []).forEach(d => {
+                if (d.act !== act || d.from !== playerIndex) return;
+                const key = d.source || 'Attack';
+                const a = (myAttacks[key] = myAttacks[key] || { label: key, amount: d.amount, hits: [] });
+                a.hits.push({ playerIndex: i, delta: d.amount });
+            });
+        }
+        Object.values(myAttacks).forEach(a => {
+            steps.push({ kind: 'attack', label: a.label, amount: a.amount, filename: artOf(a.label), hits: a.hits });
+        });
+
+        // Power ×2 — the engine applies it LAST (after wounds), so the
+        // doubled total is engine truth even for a wounded fighter. The
+        // label/art come from whichever played card set the flag.
+        const mult = (player.powerX2 === act);
+        if (mult) {
+            const mc = player.playedCards.find(c => c.special === 'power_x2');
+            steps.push({ kind: 'mult', label: mc ? mc.name : 'Power ×2', amount: 2, filename: mc ? (mc.filename || null) : null });
+        }
+
+        const rawTotal = (own + woundsTaken) * (mult ? 2 : 1);
+        // The lock value: what the fighter's own forge sums to, defined so
+        // that ownRawTotal + wounds-shown === rawTotal exactly.
+        const ownRawTotal = rawTotal - woundsTaken;
+
+        return {
+            base, baseOther, baseCards, steps,
+            ownRawTotal, rawTotal,
+            sliderPosition: player.sliderPosition,
+            computedTotal: Math.max(0, rawTotal)
+        };
     }
 
     // ─── ACT TRANSITIONS ───────────────────────────────────────
@@ -2008,13 +2321,18 @@ class FavorGame {
                 if (m.favorValue) missionFavor += m.favorValue;
             });
 
-            // Favor from adventure and artifact cards (static + dynamic).
+            // Favor from played cards (static + dynamic), split by family
+            // for the score sheet: Adventures / Artifacts / everything else.
             // Chemical Y's chosen adventure counts double (_favorDoubled).
-            let cardFavor = 0;
+            let advFavor = 0, artFavor = 0, otherCardFavor = 0;
             p.playedCards.forEach(card => {
-                if (card.favor) cardFavor += card.favor * (card._favorDoubled ? 2 : 1);
-                cardFavor += this.dynamicCardFavor(i, card);
+                const f = (card.favor ? card.favor * (card._favorDoubled ? 2 : 1) : 0)
+                        + this.dynamicCardFavor(i, card);
+                if (card.type === 'adventure') advFavor += f;
+                else if (card.type === 'artifact') artFavor += f;
+                else otherCardFavor += f;
             });
+            const cardFavor = advFavor + artFavor + otherCardFavor;
 
             // Character favor from current slider position
             let characterFavor = p.favor;
@@ -2043,6 +2361,9 @@ class FavorGame {
                 name: p.name,
                 missionFavor,
                 cardFavor,
+                advFavor,
+                artFavor,
+                otherCardFavor,
                 characterFavor,
                 stoneFavor,
                 totalFavor,
@@ -2069,7 +2390,7 @@ class FavorGame {
     shuffle(array) {
         const a = [...array];
         for (let i = a.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
+            const j = Math.floor(this._rand() * (i + 1));
             [a[i], a[j]] = [a[j], a[i]];
         }
         return a;

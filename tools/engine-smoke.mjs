@@ -106,6 +106,92 @@ console.log('── Mission success: skill rewards + favorValue not double-paid'
   ok(g.players[0].favor === favor, 'no favor paid at completion (favorValue scores at end)');
 }
 
+console.log('── Mission favor audit (7/9): phantom favorValues gone, per-asset favor pays at turn-in');
+{
+  const zeroed = ["The Minister's Plan", 'A Day With the Birds', 'Helping the Merchant',
+    'Golden Fiddle', 'Trust of the Elders', 'Tunnel of Trinkets', 'The Shadow Guide',
+    'Usurper', 'Bodyguard', 'Quest for the Stones', 'Mounted Champion', 'Secret Grotto',
+    'Alchemic Seige', 'Mercy', 'Passing the Mirror Gate', 'Wild Experiments', 'King of the Sky'];
+  ok(zeroed.every(n => (missionByName(n).favorValue || 0) === 0),
+     "all 17 phantom favorValues zeroed (Wyatt's 16 + Trust of the Elders)");
+
+  const g = newGame();
+  const p = g.players[0];
+  // King of the Sky: favor ONLY per Philosopher's Stone (blue ×10 crystal medallion)
+  p.philosopherStone = 2;
+  const f0 = p.favor;
+  g.applyMissionRewards(0, { ...missionByName('King of the Sky') });
+  ok(p.favor === f0 + 20, `King of the Sky pays 10 Favor per stone at turn-in (+${p.favor - f0} for 2 stones)`);
+
+  // Usurper: success = 30 Gold AND 10 Scorn (red medallion in the success zone)
+  const gold0 = p.gold, scorn0 = p.scorn;
+  g.applyMissionRewards(0, { ...missionByName('Usurper') });
+  ok(p.gold === gold0 + 30, `Usurper success pays 30 Gold (+${p.gold - gold0})`);
+  ok(p.scorn === scorn0 + 10, `Usurper success stings 10 Scorn (+${p.scorn - scorn0})`);
+
+  // Alchemic Seige: success = 10 Scorn (art medallion; transcription said 20)
+  const s1 = p.scorn;
+  g.applyMissionRewards(0, { ...missionByName('Alchemic Seige') });
+  ok(p.scorn === s1 + 10, `Alchemic Seige success stings 10 Scorn (+${p.scorn - s1})`);
+}
+
+console.log("── The Shadow Guide: art-true requirements + 5 Favor per Mind's Eye reward");
+{
+  const g = newGame();
+  const p = g.players[0];
+  const sg = { ...missionByName('The Shadow Guide') };
+  p.skills.knowledge = 4; p.skills.prospecting = 3; p.bonusMindsEye = 2;
+  ok(g.probeMissionRequirements(0, sg).success === false,
+     'stats alone are NOT enough — A Hidden Door Map is a hard requirement');
+  ok(g.missionBorrowPlan(0, sg) === null, 'the missing map cannot be borrowed');
+  p.playedCards.push({ ...cardByName('A Hidden Door') });
+  ok(g.probeMissionRequirements(0, sg).success === true, 'stats + A Hidden Door Map → success');
+  const me = g.getMindsEyeCount(0);
+  const f0 = p.favor;
+  g.applyMissionRewards(0, sg);
+  ok(me >= 2 && p.favor === f0 + 5 * me, `success pays 5 Favor per Mind's Eye (+${p.favor - f0} for ${me})`);
+}
+
+console.log('── Mission map alternatives: holding the printed map completes the mission');
+{
+  const g = newGame();
+  const p = g.players[0];
+  const kots = { ...missionByName('King of the Sky') }; // 4 Survival & 12 Power OR Dawnharbinger Map
+  ok(g.probeMissionRequirements(0, kots).success === false, 'no stats, no map → unmet');
+  p.playedCards.push({ ...cardByName('Dawnharbinger') });
+  ok(g.probeMissionRequirements(0, kots).success === true, 'Dawnharbinger Map alone completes King of the Sky');
+  ok(g.missionBorrowPlan(0, kots) === null, 'map already completes it → no borrow offer');
+}
+
+console.log('── resolveMissions: ceremony deltas are the honest payout');
+{
+  // Success with per-asset favor: deltas must equal what was ACTUALLY paid.
+  const g = newGame();
+  const ai = g.players[1];
+  ai.philosopherStone = 2;
+  ai.skills.survival = 4; ai.skills.power = 12;
+  ai.missions = [{ ...missionByName('King of the Sky') }];
+  g.currentAct = 3;
+  const f0 = ai.favor;
+  const res = g.resolveMissions();
+  const r = res.find(pr => pr.playerIndex === 1).results.find(x => x.mission.name === 'King of the Sky');
+  ok(r && r.success === true, 'AI completes King of the Sky at its due act');
+  ok(r && r.deltas && r.deltas.favor === 20 && ai.favor === f0 + 20,
+     `deltas.favor ${r && r.deltas && r.deltas.favor} = actual payout (10 × 2 stones)`);
+
+  // Failure: the penalty lands in the SAME result entry's deltas.
+  const g2 = newGame();
+  const ai2 = g2.players[1];
+  ai2.missions = [{ ...missionByName('Defending the Kingdom') }]; // 5 Sur & 5 Pow — unmet, fail: 10 Scorn
+  g2.currentAct = 2;
+  const s0 = ai2.scorn;
+  const res2 = g2.resolveMissions();
+  const r2 = res2.find(pr => pr.playerIndex === 1).results.find(x => x.mission.name === 'Defending the Kingdom');
+  ok(r2 && r2.success === false, 'AI fails Defending the Kingdom');
+  ok(r2 && r2.deltas && r2.deltas.scorn === 10 && ai2.scorn === s0 + 10,
+     `failure deltas carry the penalty (+${r2 && r2.deltas && r2.deltas.scorn} Scorn)`);
+}
+
 console.log('── Mission failure specials: discard + payouts');
 {
   const g = newGame();
@@ -499,7 +585,7 @@ console.log('── Mission borrowing: optional rescue at mission time, 2g/skill
   // AI: borrows when favorValue clearly beats the fee, refuses a bad deal.
   const g6 = newGame();
   const ai = g6.players[1];
-  ai.missions = [{ ...missionByName('A Day With the Birds') }]; // favorValue 10
+  ai.missions = [{ ...missionByName('A Day With the Birds'), favorValue: 10 }]; // rig pins worth ≥ 2× fee (real card pays no flat favor)
   ai.skills.knowledge = 2;
   ai.gold = 10;
   g6.players[0].playedCards.push({ ...kCard });
@@ -518,6 +604,368 @@ console.log('── Mission borrowing: optional rescue at mission time, 2g/skill
   g7.currentAct = 1;
   g7.resolveMissions();
   ok(ai7.failedMissions.length === 1 && ai7.gold === 10, 'AI refuses when 3 favor < 2× the fee');
+
+  // Persona judgment: the same 3-favor mission clears a persona's 1× bar
+  // (fee 2g) — sharper trades, zero stat cheating.
+  const g8 = newGame();
+  const ai8 = g8.players[1];
+  ai8._personaAI = { key: 'test', strong: [] };
+  ai8.missions = [{ ...missionByName('A Day With the Birds'), favorValue: 3 }];
+  ai8.skills.knowledge = 2;
+  ai8.gold = 10;
+  g8.players[0].playedCards.push({ ...kCard });
+  g8.currentAct = 1;
+  g8.resolveMissions();
+  ok(ai8.completedMissions.length === 1 && ai8.gold === 8,
+    `persona borrows when favor ≥ 1× fee (gold → ${ai8.gold})`);
+}
+
+console.log('── Multiplayer lockstep: seeded engines deal identical worlds');
+{
+    const build = (seed) => {
+        const g = new FavorGame(3);
+        g.setSeed(seed);
+        g.loadDecks();
+        return g;
+    };
+    const deckIds = (g) => [1, 2, 3].map(a => g.actDecks[a].map(c => c.id).join(',')).join(';')
+        + '|' + g.visibleMissions.map(m => m.id || m.name).join(',');
+    const a = build(12345), b = build(12345), c = build(54321);
+    ok(deckIds(a) === deckIds(b), 'same seed → identical decks + revealed missions');
+    ok(deckIds(a) !== deckIds(c), 'different seed → different world');
+
+    // Liquid Courage's coin comes from the same stream.
+    const flips = (g) => Array.from({ length: 8 }, () => g._rand() < 0.5).join(',');
+    ok(flips(a) === flips(b), 'same seed → same coin flips after identical draws');
+
+    // Solo games keep Math.random — two unseeded games differ.
+    const s1 = new FavorGame(3); s1.loadDecks();
+    const s2 = new FavorGame(3); s2.loadDecks();
+    ok(deckIds(s1) !== deckIds(s2), 'unseeded games still shuffle freely');
+
+    // Deal offset: every client rotates the roster so ITS human is local
+    // seat 0 — the deal must still hand chunk k to CANONICAL seat k, or
+    // identical decks deal different hands (the first live-match desync).
+    const gA = new FavorGame(3); gA.setSeed(777); gA.loadDecks();
+    gA.initPlayers([{ characterId: 'explorer', playerName: 'A' },
+        { characterId: 'knight', playerName: 'B' }, { characterId: 'bandit', playerName: 'C' }]);
+    gA.startAct(1);
+    const gB = new FavorGame(3); gB.setSeed(777); gB.setDealOffset(1); gB.loadDecks();
+    gB.initPlayers([{ characterId: 'knight', playerName: 'B' },
+        { characterId: 'bandit', playerName: 'C' }, { characterId: 'explorer', playerName: 'A' }]);
+    gB.startAct(1);
+    const canonA = (k) => gA.players[k].hand.map(x => x.id).join(',');
+    const canonB = (k) => gB.players[((k - 1) + 3) % 3].hand.map(x => x.id).join(',');
+    ok([0, 1, 2].every(k => canonA(k) === canonB(k)),
+        'deal offset keeps chunk k with canonical seat k on a rotated client');
+    gA.startAct(2); gB.startAct(2);
+    ok([0, 1, 2].every(k => canonA(k) === canonB(k)),
+        'act-2 redeal stays canonical too');
+}
+
+console.log('── Remote humans: decisions DEFER (never auto-decided by another client)');
+{
+    // A remote human's borrowable mission must WAIT for their streamed
+    // choice — exactly like the local human's chooser pause.
+    const g = newGame();
+    const kCard = window.FAVOR_DATA.cards.find(c => (c.skills || []).includes('knowledge'));
+    const rp = g.players[1];
+    rp._remoteHuman = true;
+    rp.missions = [{ ...missionByName('A Day With the Birds'), favorValue: 50 }];
+    rp.skills.knowledge = 2;
+    rp.gold = 10;
+    g.players[0].playedCards.push({ ...kCard });
+    g.currentAct = 1;
+    g.resolveMissions();
+    ok((rp._pendingMissionBorrows || []).length === 1 && rp.completedMissions.length === 0,
+        'borrowable mission deferred for the remote human (no auto-borrow at 50 favor)');
+    ok(rp.failedMissions.length === 0, 'and not failed either — the stream decides');
+
+    // Penalty discards defer the same way.
+    const g2 = newGame();
+    const rp2 = g2.players[1];
+    rp2._remoteHuman = true;
+    rp2.playedCards.push({ ...kCard }, { ...kCard });
+    g2.penaltyDiscard(1, 2);
+    ok(rp2._pendingPenaltyDiscard === 2 && rp2.playedCards.length === 2,
+        'penalty discard deferred for the remote human (cards intact)');
+}
+
+console.log('── Emblem: rated seat + act-boundary clockwise pass');
+{
+  const g = newGame();
+  ok(g.emblemHolder === 0, 'constructor default: seat 0');
+  g.setEmblemHolder(2);
+  ok(g.emblemHolder === 2, 'setEmblemHolder seats the token');
+  g.setEmblemHolder(7);
+  ok(g.emblemHolder === 0, 'out-of-table seat clamps to 0');
+  g.setEmblemHolder(-1);
+  ok(g.emblemHolder === 0, 'negative seat clamps to 0');
+
+  g.setEmblemHolder(2);
+  g.startAct(1);
+  ok(g.emblemHolder === 2, 'Act 1 never rotates the Emblem');
+  g.startAct(2);
+  ok(g.emblemHolder === 0, 'act boundary passes clockwise (+1, wraps 2→0 at 3p)');
+  g.startAct(3);
+  ok(g.emblemHolder === 1, 'next boundary passes again (0→1)');
+
+  // Activation order derives from the holder — passHands starts there.
+  g.pendingActivations = [null, null, null];
+  g.passHands();
+  ok(g.activePlayerIndex === 1, 'activation begins at the new holder');
+}
+
+console.log('── Rank-1 boon: +1 bonusSkill survives recalc, flips a mission check');
+{
+  const g = newGame();
+  const p = g.players[0];
+  // Mission rewards earned earlier this game live in bonusSkills too —
+  // the boon stacks on the same ledger.
+  p.bonusSkills = { knowledge: 2 };
+  g.applySlotSkills(p);
+  const m = { ...missionByName('A Day With the Birds') };   // needs 3 Knowledge
+  ok(g.checkMissionRequirements(0, m).success === false, '2 Knowledge < 3 → still short');
+  // The boon lands: +1 chosen skill via the same path the UI uses.
+  p.bonusSkills.knowledge += 1;
+  g.applySlotSkills(p);
+  ok(p.skills.knowledge === 3, `boon +1 shows in the sum (${p.skills.knowledge})`);
+  ok(g.checkMissionRequirements(0, m).success === true, 'the boon flips the mission to a pass');
+  // Slider recalcs must never eat it.
+  g.applySlotSkills(p);
+  ok(p.skills.knowledge === 3, 'recalc keeps the boon');
+}
+
+// ═══ probeMissionRequirements: PURE — browsing must never mutate state ═══
+{
+  // A Life-Essence-blessed mission answers "success" to the probe forever —
+  // the waiver lives ON the mission and nothing consumes it.
+  const g = newGame();
+  const p = g.players[0];
+  p.missions = [{ ...missionByName('A Day With the Birds') }]; // needs 3 Knowledge
+  p.skills.knowledge = 0;                                      // unmet on merits
+  p.missions[0]._reqWaived = true;                             // Life Essence blessing
+  const snap = () => JSON.stringify({ ...p, character: undefined });
+  const before = snap();
+  const r1 = g.probeMissionRequirements(0, p.missions[0]);
+  const r2 = g.probeMissionRequirements(0, p.missions[0]);
+  ok(r1.success === true && r2.success === true, 'probe: blessed mission answers success every time');
+  ok(p.missions[0]._reqWaived === true, 'the blessing is never consumed');
+  ok(snap() === before, 'probe leaves the player byte-identical (blessed)');
+
+  // Without the blessing: probe reports the unmet requirement, still byte-pure.
+  delete p.missions[0]._reqWaived;
+  const before2 = snap();
+  const rMiss = g.probeMissionRequirements(0, p.missions[0]);
+  ok(rMiss.success === false && rMiss.details.missing.length > 0, 'probe reports unmet requirements');
+  ok(snap() === before2, 'probe leaves the player byte-identical (no blessing)');
+  p.skills.knowledge = 3;
+  ok(g.probeMissionRequirements(0, p.missions[0]).success === true, 'probe: met requirements read as success');
+
+  // The real check agrees — and is pure now too (nothing left to consume).
+  p.skills.knowledge = 0;
+  p.missions[0]._reqWaived = true;
+  const rReal = g.checkMissionRequirements(0, p.missions[0]);
+  ok(rReal.success === true && p.missions[0]._reqWaived === true,
+    'checkMissionRequirements honors the blessing without consuming anything');
+}
+
+console.log('── Life Essence: choose an active mission, its requirement is gone');
+{
+  // AI path: playing Life Essence waives the mission it is least likely to
+  // meet; that mission then reads as a success with zero skills.
+  const g = newGame();
+  const ai = g.players[1];
+  ai.missions = [{ ...missionByName('A Day With the Birds') }]; // 3 Knowledge, unmet
+  ai.skills.knowledge = 0;
+  g.resolveSpecial(1, { ...cardByName('Life Essence') });
+  ok(ai.missions[0]._reqWaived === true, 'AI Life Essence blesses its failing mission');
+  ok(g.checkMissionRequirements(1, ai.missions[0]).success === true, 'blessed mission succeeds with zero skills');
+
+  // Human path: the pick is deferred to the picker via the pause flag.
+  const p = g.players[0];
+  p.missions = [{ ...missionByName('A Day With the Birds') }];
+  g.resolveSpecial(0, { ...cardByName('Life Essence') });
+  ok(p._pendingLifeEssencePick === true, 'human Life Essence pauses for the mission picker');
+
+  // No active missions: the potion just rests (no crash, no flag).
+  const g2 = newGame();
+  g2.players[0].missions = [];
+  g2.resolveSpecial(0, { ...cardByName('Life Essence') });
+  ok(!g2.players[0]._pendingLifeEssencePick, 'no active missions — the essence rests');
+}
+
+console.log('── Great North Connection plays as printed: 1 Charisma & 1 Power');
+{
+  const g = newGame();
+  const p = g.players[0];
+  const gnc = { ...cardByName('Great North Connection') };
+  p.hand = [gnc];
+  p.skills.charisma = 1; p.skills.power = 1;
+  const { canPlay } = g.checkRequirements(0, gnc);
+  ok(canPlay === true, 'GNC playable with exactly 1 Charisma + 1 Power');
+  ok((gnc.favor || 0) === 5, `GNC favor is 5 as printed (got ${gnc.favor})`);
+
+  // The flex unit (Mining Guild) covers the Charisma half on its own.
+  const g2 = newGame();
+  const p2 = g2.players[0];
+  const gnc2 = { ...cardByName('Great North Connection') };
+  p2.skills.charisma = 0; p2.skills.power = 1;
+  p2.flexSkills = [['charisma', 'prospecting']];
+  ok(g2.checkRequirements(0, gnc2).canPlay === true, 'Mining Guild flex covers the Charisma requirement');
+}
+
+console.log('── powerBreakdown: the Melee forge arithmetic is engine truth');
+{
+  const g = newGame();
+  g.currentAct = 1;                          // melee rewards are per-act
+  const [p0, p1, p2] = g.players;
+  // p0: board+cards 6 own, casts Fuzzy Head, ×2 (legacy flag — no card sets
+  // it in current data, the fallback label covers it).
+  p0.skills.power = 6;
+  p0.playedCards = [{ ...cardByName('Reckless Training') }, { ...cardByName('Fuzzy Head') }];
+  p0.powerX2 = g.currentAct;
+  // p1: 6 power, a WON coin (+4), Guardian absorbs the incoming bolt.
+  p1.skills.power = 6;
+  p1.playedCards = [{ ...cardByName('Shot of Courage') }, { ...cardByName('Guardian') }];
+  p1.defendTheThrone = true;
+  g._rand = () => 0.2;                       // heads
+  g.resolveSpecial(1, p1.playedCards[0]);
+  // p2: 2 power, a LOST coin.
+  p2.skills.power = 2;
+  p2.playedCards = [{ ...cardByName('Shot of Courage') }];
+  g._rand = () => 0.9;                       // tails
+  g.resolveSpecial(2, p2.playedCards[0]);
+  // Fuzzy Head wounds land on p1 and p2, tagged with the caster.
+  g.resolveSpecial(0, p0.playedCards[1]);
+
+  const results = g.resolveMelee();          // consumes the Guardian, records it
+  for (const r of results) {
+    const bd = g.powerBreakdown(r.playerIndex);
+    ok(bd.computedTotal === r.power,
+      `p${r.playerIndex}: breakdown total = melee tally (${bd.computedTotal}/${r.power})`);
+    const wounds = (g.players[r.playerIndex].powerDebuffs || [])
+      .filter(d => d.act === g.currentAct).reduce((a, d) => a + d.amount, 0);
+    ok(bd.ownRawTotal + wounds === bd.rawTotal, `p${r.playerIndex}: own + wounds = raw`);
+    ok(bd.baseOther + bd.baseCards.reduce((a, c) => a + c.amount, 0) === bd.base,
+      `p${r.playerIndex}: base fully attributed`);
+  }
+  const bd0 = g.powerBreakdown(0), bd1 = g.powerBreakdown(1), bd2 = g.powerBreakdown(2);
+  const atk = bd0.steps.find(s => s.kind === 'attack');
+  ok(!!atk && atk.hits.length === 2 && atk.hits.every(h => h.delta === -3),
+    'caster carries the attack step with both bolts');
+  ok(bd0.steps.some(s => s.kind === 'mult' && s.amount === 2), 'the ×2 rides as a mult step');
+  ok(bd0.baseCards.some(c => c.name === 'Reckless Training' && c.amount === 2),
+    'power cards attributed in the base');
+  ok(bd1.steps.some(s => s.kind === 'coinflip' && s.won === true), 'won coin revealed as a live toss');
+  ok(!bd1.steps.some(s => s.kind === 'bonus' && /Shot of Courage/.test(s.label)),
+    'won coin is NOT double-shown as a bonus');
+  ok(bd1.steps.some(s => /Guardian/.test(s.label) && s.amount === 3),
+    "Guardian's negation gives the bolt back");
+  ok(bd2.steps.some(s => s.kind === 'coinflip' && s.won === false), 'lost coin still shows its toss');
+  const snap = JSON.stringify(g.players.map(p => ({ ...p, character: undefined })));
+  g.powerBreakdown(0); g.powerBreakdown(1); g.powerBreakdown(2);
+  ok(JSON.stringify(g.players.map(p => ({ ...p, character: undefined }))) === snap,
+    'powerBreakdown is pure — reading it moves nothing');
+}
+
+console.log('── Score sheet split: adventures + artifacts + other = card favor');
+{
+  const g = newGame();
+  const p = g.players[0];
+  p.playedCards = [
+    { ...cardByName('Great North Connection') },   // adventure, 5 favor
+    { ...cardByName("Philosopher's Scepter") },    // artifact
+  ];
+  const s = g.calculateFinalScores().find(x => x.playerIndex === 0);
+  ok(s.advFavor + s.artFavor + s.otherCardFavor === s.cardFavor,
+    `family split sums to cardFavor (${s.advFavor}+${s.artFavor}+${s.otherCardFavor}=${s.cardFavor})`);
+  ok(s.advFavor >= 5, `GNC favor lands under Adventures (${s.advFavor})`);
+}
+
+console.log('── Paid slide: one direction per turn (5g a space, repeatable)');
+{
+  const g = newGame();
+  const p = g.players[0];
+  p.gold = 50;
+  const startPos = p.sliderPosition; // explorer starts center (2)
+
+  const r1 = g.moveSlider(0, 1);
+  ok(r1.success === true && p.sliderPosition === startPos + 1, 'first paid slide right works');
+  const r2 = g.moveSlider(0, 1);
+  ok(r2.success === true && p.sliderPosition === startPos + 2, 'second slide SAME direction works (repeatable)');
+  const r3 = g.moveSlider(0, -1);
+  ok(r3.success === false && /direction per turn/i.test(r3.error || ''),
+    'reversing within the turn is refused', JSON.stringify(r3));
+  ok(p.sliderPosition === startPos + 2, 'refused slide does not move the ring');
+
+  // Hands passing = a new turn — the lock releases.
+  g.players.forEach(pl => { pl.hand = [{ ...cardByName('First Aid') }]; });
+  g.passHands();
+  const r4 = g.moveSlider(0, -1);
+  ok(r4.success === true && p.sliderPosition === startPos + 1, 'after passHands the other direction works');
+
+  // A new act deals fresh hands — lock releases there too.
+  p._paidSlideDir = 1;
+  g.startAct(2);
+  ok(p._paidSlideDir === null, 'startAct clears the direction lock');
+
+  // Guards unchanged: gold and board edges still refuse.
+  g.phase = 'gameplay';
+  p.gold = 3;
+  const rPoor = g.moveSlider(0, 1);
+  ok(rPoor.success === false && /5 gold/i.test(rPoor.error || ''), 'under 5 gold still refuses');
+  p.gold = 50;
+  p.sliderPosition = 4;
+  p._paidSlideDir = null;
+  const rEdge = g.moveSlider(0, 1);
+  ok(rEdge.success === false, 'board edge still refuses');
+
+  // Discard-to-slide is a DIFFERENT mechanic — the paid lock never binds it.
+  const g2 = newGame();
+  const p2 = g2.players[0];
+  p2.gold = 50;
+  g2.moveSlider(0, 1);                    // paid right; lock = +1
+  const posAfterPay = p2.sliderPosition;
+  const card = { ...cardByName('First Aid') };
+  p2.hand = [card];
+  g2.pendingActivations[0] = null;
+  g2.pickCard(0, 0);
+  g2.activateCard(0, card.id, 'discard_slide', -1);
+  ok(p2.sliderPosition === posAfterPay - 1, 'discard-slide may still go the other way');
+}
+
+console.log('── Borrow & Play: the CHOSEN lender is the one who gets paid');
+{
+  const g = newGame();
+  const p0 = g.players[0];
+  // A card missing exactly one borrowable skill, with no cost/gold/special
+  // (so the purse math below is pure borrow fee).
+  const reqCard = window.FAVOR_DATA.cards.find(c => {
+    if (c.cost || (c.rewards && c.rewards.gold) || c.special) return false;
+    const probe = g.checkRequirements(0, { ...c });
+    return !probe.canPlay && probe.missingSkills.length === 1 && (probe.missingSpecial || []).length === 0;
+  });
+  ok(!!reqCard, 'found a one-skill-short rig card', 'no candidate in data');
+  const skill = g.checkRequirements(0, { ...reqCard }).missingSkills[0];
+  const lenderCard = window.FAVOR_DATA.cards.find(c => (c.skills || []).includes(skill));
+  // BOTH neighbors can lend — the choice is real. Left neighbor = players[2].
+  g.players[1].playedCards.push({ ...lenderCard });
+  g.players[2].playedCards.push({ ...lenderCard });
+  const borrowable = g.getBorrowableSkills(0);
+  ok(borrowable[skill] && borrowable[skill].includes(1) && borrowable[skill].includes(2),
+    `both neighbors offer ${skill}`);
+
+  const before = [p0.gold, g.players[1].gold, g.players[2].gold];
+  const card = { ...reqCard };
+  p0.hand = [card];
+  g.pendingActivations[0] = null;
+  g.pickCard(0, 0);
+  const res = g.activateCard(0, card.id, 'play', [{ skill, neighborIndex: 2 }]);
+  ok(res.success === true, `borrow-play succeeds (${reqCard.name} via ${skill})`, JSON.stringify(res));
+  ok(p0.gold === before[0] - 2, `borrower pays 2g (${before[0]} → ${p0.gold})`);
+  ok(g.players[2].gold === before[2] + 2, 'the CHOSEN left neighbor receives the fee');
+  ok(g.players[1].gold === before[1], 'the other neighbor gets nothing');
 }
 
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);

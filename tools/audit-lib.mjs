@@ -34,7 +34,7 @@ export const CARD_TEXT_SPECIALS = {
 export const MISSION_SUCCESS_SPECIALS = {
   'Golden Fiddle': 'favor_per_charisma_x2',
   'Trust of the Elders': 'favor_per_knowledge_x1',
-  "The Falls' Dark Sussurus": 'philosopher_stone_x2_grant',
+  'The Shadow Guide': 'favor_per_minds_eye_x5',   // art: blue ×5 eye medallion on the REWARD side
   'Water Temple': 'philosopher_stone_x2_grant',
   'Quest for the Stones': 'scorn_to_prestige_all',
   'Mercy': 'remove_20_scorn',
@@ -67,9 +67,9 @@ export const MISSION_FAIL_SPECIALS = {
   'Champion of Legend': 'lose_all_prestige_and_scorn',
 };
 
-export const MISSION_REQ_SPECIALS = {
-  'The Shadow Guide': 'favor_5_per_minds_eye',    // Req: 5 Favor for each Mind's Eye you have
-};
+// (empty — The Shadow Guide's per-Mind's-Eye favor turned out to live on the
+// REWARD side of the art, not the requirement side; art-verified 7/9)
+export const MISSION_REQ_SPECIALS = {};
 
 // ── Art-verified quirks (audit text is wrong/ambiguous; card image wins) ──
 export const AUDIT_QUIRKS = {

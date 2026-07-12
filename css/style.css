@@ -43,12 +43,11 @@ html, body {
     position: fixed;
     inset: 0;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
     background:
-        radial-gradient(ellipse at 50% 30%, rgba(201, 168, 76, 0.08) 0%, transparent 60%),
-        radial-gradient(ellipse at 50% 80%, rgba(42, 26, 62, 0.6) 0%, transparent 50%),
+        radial-gradient(ellipse at 32% 42%, rgba(201, 168, 76, 0.09) 0%, transparent 55%),
+        radial-gradient(ellipse at 50% 85%, rgba(42, 26, 62, 0.6) 0%, transparent 55%),
         linear-gradient(180deg, #0a0612 0%, #1a0f28 40%, #0a0612 100%);
     z-index: 1000;
     transition: opacity 1.2s ease;
@@ -59,8 +58,32 @@ html, body {
     pointer-events: none;
 }
 
+/* ── The stage: art panel left, one decisive menu column right.
+     A landscape game gets a landscape menu — console-style, no more
+     wide slabs scattered across rows. Portrait stacks below. ── */
+.title-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(32px, 7vw, 96px);
+    width: 100%;
+    padding: 0 5vw;
+    box-sizing: border-box;
+}
+
+.title-art {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 13px;
+    flex-shrink: 0;
+}
+
 .title-cover {
-    width: min(380px, 70vw);
+    width: auto;
+    max-width: min(360px, 32vw);
+    max-height: min(66vh, 520px);
+    object-fit: contain;
     border-radius: 12px;
     box-shadow:
         0 0 60px rgba(201, 168, 76, 0.3),
@@ -80,23 +103,627 @@ html, body {
     50% { transform: translateY(-8px); }
 }
 
-.title-subtitle {
-    font-family: 'Cinzel', serif;
-    font-size: clamp(14px, 2.5vw, 20px);
-    color: var(--gold);
-    letter-spacing: 6px;
-    text-transform: uppercase;
-    margin-top: 30px;
-    opacity: 0.8;
+/* The box's spec line lives with the box, like a shelf plate. */
+.title-plate {
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: rgba(201, 168, 76, 0.55);
+    margin: 0;
 }
 
-.title-buttons {
+.title-menu {
     display: flex;
     flex-direction: column;
-    gap: 14px;
-    margin-top: 40px;
-    align-items: center;
+    align-items: stretch;
+    gap: 15px;
+    width: clamp(280px, 30vw, 380px);
 }
+
+.title-subtitle {
+    font-family: 'Cinzel', serif;
+    font-size: clamp(13px, 1.6vw, 17px);
+    color: var(--gold);
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    text-align: center;
+    margin: 0 0 4px;
+    opacity: 0.85;
+}
+
+/* One unmistakable primary. */
+.btn-royal.menu-play {
+    width: 100%;
+    padding: 19px 20px;
+    font-size: clamp(18px, 2.2vw, 23px);
+    letter-spacing: 3px;
+    box-shadow: 0 0 34px rgba(201,168,76,0.25), 0 8px 22px rgba(0,0,0,0.5);
+}
+
+/* Table size — a segmented row, one tap, stays lit. */
+.queue-seg {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.queue-label {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--gold-dark);
+    white-space: nowrap;
+    padding-right: 2px;
+}
+.queue-seg button {
+    flex: 1;
+    height: 42px;
+    font-family: 'Cinzel', serif;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--gold-light);
+    background: rgba(20,10,4,0.55);
+    border: 1px solid rgba(201,168,76,0.35);
+    border-radius: 9px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.queue-seg button:hover { border-color: var(--gold); }
+.queue-seg button.on {
+    background: linear-gradient(160deg, rgba(201,168,76,0.95), rgba(146,110,38,0.95));
+    color: #241503;
+    border-color: var(--gold-light);
+    box-shadow: 0 0 14px rgba(201,168,76,0.35);
+}
+
+/* Secondary pair — equal citizens, half-width each. */
+.menu-pair { display: flex; gap: 12px; }
+.menu-pair .btn-royal { flex: 1; padding: 13px 8px; font-size: 14px; }
+
+/* The quiet row — reference and dev hooks, present but not shouting. */
+.menu-quiet {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 2px;
+}
+.menu-link {
+    background: none;
+    border: none;
+    padding: 6px 2px;
+    font-family: 'Cinzel', serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: rgba(232, 205, 120, 0.7);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    text-decoration-color: rgba(201,168,76,0.35);
+    cursor: pointer;
+    transition: color 0.15s;
+}
+.menu-link:hover { color: var(--gold-light); }
+
+/* Portrait / narrow: the stage stacks — art above, column below. */
+@media (orientation: portrait), (max-width: 640px) {
+    .title-stage { flex-direction: column; gap: 20px; padding: 0 6vw; }
+    .title-cover { max-width: min(300px, 62vw); max-height: 36dvh; }
+    .title-menu { width: min(420px, 100%); }
+}
+
+/* Profile chip — top-right of the menu */
+.profile-chip {
+    position: absolute;
+    top: max(14px, env(safe-area-inset-top));
+    right: max(16px, env(safe-area-inset-right));
+    display: inline-flex;
+    align-items: center;
+    gap: 11px;
+    padding: 8px 18px;
+    background: linear-gradient(160deg, rgba(42,22,10,0.88), rgba(20,10,4,0.92));
+    border: 1px solid var(--gold-dark);
+    border-radius: 999px;
+    cursor: pointer;
+    font-family: 'Cinzel', serif;
+    transition: all 0.2s;
+    z-index: 5;
+}
+.profile-chip:hover { border-color: var(--gold); box-shadow: 0 0 18px rgba(201,168,76,0.25); }
+.pc-name { color: var(--gold-light); font-size: 13px; font-weight: 700; letter-spacing: 1px; }
+.pc-rating { color: #a9d4ff; font-weight: 900; font-size: 14px; }
+.pc-crowns { display: inline-flex; align-items: center; gap: 4px; color: #e8c34b; font-weight: 900; font-size: 13px; }
+.crown-ico { width: 17px; height: 12px; display: inline-block; }
+
+/* ── Leaderboard + profile panels ── */
+.lb-panel, .profile-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 10005;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(14,7,2,0.92);
+    backdrop-filter: blur(14px);
+}
+.lb-panel.active, .profile-panel.active { display: flex; }
+
+.lb-inner, .pf-inner {
+    display: flex;
+    flex-direction: column;
+    width: min(560px, 92vw);
+    max-height: 88dvh;
+    background: linear-gradient(175deg, #2e1c0e 0%, #1a0d05 100%);
+    border: 2px solid var(--gold-dark);
+    border-radius: 14px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 30px 90px rgba(0,0,0,0.75), inset 0 1px 0 rgba(232,212,139,0.14);
+    padding: 20px 24px 16px;
+    animation: ovZoom 0.4s cubic-bezier(0.16,1,0.3,1);
+}
+
+.lb-title, .pf-title {
+    font-family: 'Cinzel', serif;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: var(--gold-light);
+    text-align: center;
+    text-shadow: 0 0 22px rgba(201,168,76,0.35);
+}
+
+.lb-tabs { display: flex; gap: 8px; justify-content: center; margin: 14px 0 10px; }
+.lb-tab {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 6px 20px;
+    border: 1px solid rgba(201,168,76,0.3);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--gold-dark);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.lb-tab.on { color: var(--gold-light); border-color: var(--gold); background: rgba(201,168,76,0.12); }
+
+.lb-localnote {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #e88;
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+.lb-body { overflow-y: auto; min-height: 140px; }
+.lb-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(201,168,76,0.08);
+    font-family: 'Cinzel', serif;
+}
+.lb-row.me { background: rgba(201,168,76,0.1); border-radius: 8px; }
+.lb-rank { width: 26px; text-align: right; color: var(--gold-dark); font-weight: 900; }
+.lb-name { flex: 1; color: var(--parchment); font-size: 13px; display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.lb-crowns { display: inline-flex; align-items: center; gap: 3px; color: #e8c34b; font-size: 12px; font-weight: 900; }
+.lb-score { color: var(--gold-light); font-size: 15px; }
+.lb-foot, .lb-loading, .pf-note {
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: 12.5px;
+    color: rgba(240,230,211,0.55);
+    text-align: center;
+}
+.lb-foot { margin-top: 10px; }
+.lb-loading { padding: 34px 0; }
+
+/* ── Character store — a market stall under the royal awning ──
+   Wyatt's market scene (the Merchant board) is the backdrop; heroes are
+   framed paintings standing on planks, priced with hanging rope tags,
+   sealed in wax once owned. Art IS the UI. */
+
+.st-inner {
+    width: min(940px, 94vw);
+    position: relative;
+    overflow: hidden;                 /* keeps the awning + backdrop inside the panel frame */
+    padding-top: 50px;                /* room for the canopy */
+    background:
+        linear-gradient(180deg, rgba(26,13,4,0.78) 0%, rgba(18,9,3,0.92) 58%, rgba(14,7,2,0.97) 100%),
+        url('../assets/ui/shop-backdrop.jpg') center 22% / cover no-repeat,
+        linear-gradient(175deg, #2e1c0e 0%, #1a0d05 100%);
+}
+/* Scalloped canopy — two alternating crimson stripes with hanging arcs */
+.st-awning {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 30px;
+    background: repeating-linear-gradient(90deg, #6d1a1f 0 44px, #99302a 44px 88px);
+    border-bottom: 2px solid rgba(201, 168, 76, 0.85);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+}
+.st-awning::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; top: 100%;
+    height: 13px;
+    background:
+        radial-gradient(circle at 22px -7px, #6d1a1f 20px, transparent 21px),
+        radial-gradient(circle at 66px -7px, #99302a 20px, transparent 21px);
+    background-size: 88px 13px;
+    filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4));
+}
+/* The shop sign hangs from the awning on two cords */
+.st-sign {
+    position: relative;
+    margin: 4px auto 0;
+    width: fit-content;
+    max-width: 92%;
+    padding: 8px 24px 9px;
+    font-size: 17px;
+    background: linear-gradient(180deg, #4a2c12, #2c180a 70%, #241203);
+    border: 2px solid var(--gold-dark);
+    border-radius: 10px;
+    box-shadow: inset 0 1px 0 rgba(232, 212, 139, 0.28), 0 8px 18px rgba(0, 0, 0, 0.55);
+    animation: signSettle 1.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform-origin: 50% -22px;
+}
+.st-sign::before, .st-sign::after {
+    content: '';
+    position: absolute;
+    top: -22px;
+    width: 2px;
+    height: 22px;
+    background: linear-gradient(180deg, #caa35a, #7a5a24);
+}
+.st-sign::before { left: 18%; }
+.st-sign::after  { right: 18%; }
+@keyframes signSettle {
+    0% { transform: rotate(-1.6deg); }
+    55% { transform: rotate(1.1deg); }
+    100% { transform: rotate(0deg); }
+}
+/* Your star purse, stitched leather */
+.st-stars {
+    margin-left: 16px;
+    padding: 3px 12px 4px;
+    color: #ffd97a;
+    letter-spacing: 1px;
+    font-size: 0.78em;
+    white-space: nowrap;
+    background: radial-gradient(130% 170% at 30% 18%, #6b4a22, #3c250e 72%);
+    border: 1.5px solid #b98d3e;
+    border-radius: 999px;
+    box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.55);
+    vertical-align: 2px;
+}
+.st-local {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: #f0a0a0;
+    vertical-align: middle;
+}
+.st-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+    gap: 30px 16px;                   /* tall row gap: planks + tags live between rows */
+    margin-top: 16px;
+    overflow-y: auto;
+    overflow-x: hidden;               /* plank/tag overhang must never grow a sideways scroll */
+    min-height: 0;   /* flex child: without this the grid refuses to shrink-and-scroll */
+    padding: 14px 14px 18px;          /* side padding gives the overhang room INSIDE the box */
+}
+@keyframes shelfIn {
+    from { opacity: 0; transform: translateY(12px); }
+}
+.st-card {
+    position: relative;               /* tags, seals and planks anchor here */
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.25s;
+    cursor: pointer;                  /* the painting opens the board inspect */
+}
+.st-card:hover { transform: translateY(-3px); }
+/* every hero stands on a wooden plank */
+.st-card::after {
+    content: '';
+    position: absolute;
+    left: -6%; right: -6%; bottom: -12px;
+    height: 11px;
+    background: linear-gradient(180deg, #6b4423, #4a2c12 55%, #2c1706);
+    border-radius: 3px;
+    box-shadow: 0 5px 9px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(232, 212, 139, 0.2);
+}
+.st-frame {
+    position: relative;
+    padding: 3px;                     /* the gilded frame */
+    background: linear-gradient(160deg, #e8c34b, #8a6a1f 38%, #f0d278 66%, #6d4f16);
+    border-radius: 4px;
+    box-shadow: 0 7px 16px rgba(0, 0, 0, 0.6);
+}
+.st-card img {
+    width: 100%;
+    display: block;
+    aspect-ratio: 3 / 2;
+    object-fit: cover;
+    border-radius: 2px;
+}
+.st-card:not(.owned) img { filter: saturate(0.5) brightness(0.78); }
+.st-card.owned .st-frame { box-shadow: 0 0 20px rgba(232, 195, 75, 0.22), 0 7px 16px rgba(0, 0, 0, 0.6); }
+.st-plate {
+    display: flex;
+    justify-content: center;
+    padding: 8px 4px 2px;
+}
+/* brass name plate under the painting */
+.st-name {
+    font-family: 'Cinzel', serif;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--gold);
+    padding: 2px 14px 3px;
+    background: linear-gradient(180deg, rgba(58, 36, 14, 0.92), rgba(30, 17, 6, 0.92));
+    border: 1px solid rgba(201, 168, 76, 0.45);
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 rgba(232, 212, 139, 0.22), 0 2px 5px rgba(0, 0, 0, 0.4);
+}
+/* wax seal — stamped once a hero is yours */
+.st-owned {
+    position: absolute;
+    top: -9px; right: -7px;
+    z-index: 2;
+    width: 46px; height: 46px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Cinzel', serif;
+    font-size: 7.5px;
+    font-weight: 900;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #ffe9b8;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+    background: radial-gradient(circle at 34% 28%, #b8452f, #7a1f18 62%, #55110d);
+    border: 2px solid rgba(255, 220, 150, 0.35);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55), inset 0 -3px 6px rgba(0, 0, 0, 0.45), inset 0 2px 3px rgba(255, 255, 255, 0.16);
+    transform: rotate(8deg);
+}
+/* hanging price tag — rope, punched hole, parchment */
+.st-buy {
+    position: absolute;
+    top: -8px; right: -5px;
+    z-index: 2;
+    transform: rotate(6deg);
+    transform-origin: 12px -12px;
+    font-family: 'Cinzel', serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #2a1810;
+    background: linear-gradient(165deg, #f7ecd2, #e2cd9d);
+    border: 1px solid #a98d54;
+    border-radius: 4px 9px 9px 4px;
+    padding: 5px 12px 5px 17px;
+    cursor: pointer;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
+    transition: transform 0.18s, box-shadow 0.18s;
+    animation: tagSettle 0.9s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.st-buy::before {   /* punched hole with brass grommet */
+    content: '';
+    position: absolute;
+    left: 6px; top: 50%;
+    transform: translateY(-50%);
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: #241203;
+    box-shadow: 0 0 0 1.5px #c9b075;
+}
+.st-buy::after {    /* the string up to the frame */
+    content: '';
+    position: absolute;
+    left: 7px; top: -13px;
+    width: 1.5px; height: 14px;
+    background: #caa35a;
+    transform: rotate(22deg);
+}
+@keyframes tagSettle {
+    0% { transform: rotate(-9deg); }
+    55% { transform: rotate(11deg); }
+    100% { transform: rotate(6deg); }
+}
+.st-buy:hover { transform: rotate(1deg) translateY(-1px); box-shadow: 0 5px 12px rgba(232, 195, 75, 0.4); }
+.st-buy.confirm {
+    background: linear-gradient(165deg, #fff3c4, #ffd97a);
+    border-color: #8a6a1f;
+    box-shadow: 0 0 16px rgba(255, 217, 122, 0.55);
+    animation: ntPulse 1.5s ease-in-out infinite;
+}
+.st-buy.poor { opacity: 0.6; }
+/* ── Board inspect — tap a painting, the whole board on the easel ──
+   Full color even when unowned (the player is judging the goods), the
+   print-res recut from assets/characters/hd/, same buy button along. */
+.st-inspect {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 5, 1, 0.84);
+    z-index: 6;
+}
+.st-inspect.active { display: flex; }
+.st-insp-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    animation: inspIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes inspIn {
+    from { transform: scale(0.84); opacity: 0; }
+    to   { transform: scale(1); opacity: 1; }
+}
+.st-insp-frame {
+    padding: 6px;                     /* the gilded frame, sized up */
+    background: linear-gradient(160deg, #e8c34b, #8a6a1f 38%, #f0d278 66%, #6d4f16);
+    border-radius: 6px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.75), 0 0 34px rgba(232, 195, 75, 0.18);
+}
+.st-insp-frame img {
+    display: block;
+    max-width: min(88vw, 1240px);
+    max-height: 72vh;
+    border-radius: 3px;
+}
+.st-insp-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.st-insp-row .st-name { font-size: 16px; }
+/* inspect's price tag sits beside the plate, not hung off a shelf frame —
+   no rope rigging (::before grommet, ::after string), no settle-swing */
+.st-insp-row .st-buy {
+    position: static;
+    transform: none;
+    animation: none;
+    padding: 6px 14px;
+    font-size: 13px;
+}
+.st-insp-row .st-buy::before, .st-insp-row .st-buy::after { display: none; }
+.st-insp-close {
+    position: absolute;
+    top: 14px; right: 78px;           /* beside the panel's ESC badge, not on it */
+    width: 34px; height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Cinzel', serif;
+    font-size: 15px;
+    color: var(--gold);
+    background: linear-gradient(180deg, rgba(58, 36, 14, 0.92), rgba(30, 17, 6, 0.92));
+    border: 1px solid rgba(201, 168, 76, 0.45);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.st-insp-close:hover { color: var(--gold-light); box-shadow: 0 0 12px rgba(232, 195, 75, 0.35); }
+
+/* the wares counter along the bottom — the realm's goods on display */
+.st-counter {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    margin-top: 12px;
+    padding: 7px 10px 9px;
+    background: linear-gradient(180deg, #5d3a1c, #3a2210 60%, #241203);
+    border-radius: 6px;
+    border-top: 2px solid rgba(232, 212, 139, 0.3);
+    box-shadow: inset 0 -8px 14px rgba(0, 0, 0, 0.45), 0 -3px 10px rgba(0, 0, 0, 0.3);
+}
+.st-counter img {
+    width: 30px; height: 30px;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.65));
+}
+
+.pf-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 4px;
+    border-bottom: 1px solid rgba(201,168,76,0.08);
+    font-family: 'Cinzel', serif;
+    color: var(--parchment);
+}
+.pf-label { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--gold-dark); }
+.pf-row b { color: var(--gold-light); display: inline-flex; align-items: center; gap: 5px; }
+.pf-namerow { border-bottom: none; padding-top: 14px; }
+.pf-namerow input {
+    flex: 1;
+    min-width: 0;
+    font-family: 'Cinzel', serif;
+    font-size: 15px;
+    color: var(--gold-light);
+    background: rgba(0,0,0,0.35);
+    border: 1px solid var(--gold-dark);
+    border-radius: 8px;
+    padding: 9px 13px;
+}
+.pf-namerow input.bad { border-color: #e85454; }
+.pf-namerow .btn-royal { padding: 9px 20px; font-size: 12px; }
+.pf-note { margin-top: 12px; }
+.pf-local { color: #e88; font-style: normal; }
+
+/* ── Daily Champion — the royal moment, not a toast ── */
+.champ-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10008;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10,4,1,0.94);
+    backdrop-filter: blur(18px);
+}
+.champ-overlay.active { display: flex; }
+.champ-card {
+    position: relative;
+    overflow: hidden;
+    text-align: center;
+    padding: 46px 58px 40px;
+    max-width: min(560px, 92vw);
+    background:
+        radial-gradient(ellipse 90% 70% at 50% 0%, rgba(232,195,75,0.13), transparent 60%),
+        linear-gradient(175deg, #32200f 0%, #1a0d05 100%);
+    border: 2px solid var(--gold);
+    border-radius: 18px;
+    box-shadow: 0 0 120px rgba(232,195,75,0.22), 0 30px 90px rgba(0,0,0,0.8);
+    animation: ovZoom 0.5s cubic-bezier(0.16,1,0.3,1);
+}
+.champ-rays {
+    position: absolute;
+    inset: -60%;
+    background: repeating-conic-gradient(from 0deg,
+        transparent 0deg 14deg, rgba(232,195,75,0.06) 14deg 22deg);
+    animation: champSpin 26s linear infinite;
+    pointer-events: none;
+}
+@keyframes champSpin { to { transform: rotate(360deg); } }
+.champ-title {
+    position: relative;
+    font-family: 'Cinzel', serif;
+    font-size: clamp(19px, 3.4vw, 26px);
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--gold-light);
+    text-shadow: 0 0 30px rgba(232,195,75,0.5);
+}
+.champ-sub {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font-family: 'Cinzel', serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: #e8c34b;
+    margin: 14px 0 26px;
+}
+.champ-card .btn-royal { position: relative; }
 
 .btn-royal {
     font-family: 'Cinzel', serif;
@@ -150,40 +777,28 @@ html, body {
     color: var(--royal-deep);
 }
 
-/* Prompt Test — dev toggle to replay the in-game tutorial prompts */
+/* Prompt Test — dev toggle to replay the in-game tutorial prompts.
+   Lives in the menu's quiet row now — no pill chrome, just a checkbox. */
 .prompt-test-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 9px;
-    margin-top: 16px;
-    padding: 8px 16px;
-    border: 1px solid rgba(201, 168, 76, 0.28);
-    border-radius: 22px;
-    background: rgba(0, 0, 0, 0.28);
+    gap: 8px;
     font-family: 'Cinzel', serif;
-    font-size: 12px;
-    letter-spacing: 0.08em;
-    color: rgba(201, 168, 76, 0.72);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: rgba(201, 168, 76, 0.55);
     cursor: pointer;
     user-select: none;
-    transition: color 0.15s, border-color 0.15s;
+    transition: color 0.15s;
 }
-.prompt-test-toggle:hover { color: var(--gold); border-color: var(--gold); }
+.prompt-test-toggle:hover { color: var(--gold); }
 .prompt-test-toggle input {
-    width: 18px; height: 18px;
+    width: 16px; height: 16px;
     margin: 0;
     accent-color: var(--gold);
     cursor: pointer;
-}
-
-.title-footer {
-    position: absolute;
-    bottom: 30px;
-    font-family: 'EB Garamond', serif;
-    font-style: italic;
-    font-size: 14px;
-    color: rgba(201, 168, 76, 0.4);
-    letter-spacing: 2px;
 }
 
 /* Music toggle */
@@ -210,6 +825,15 @@ html, body {
     border-color: var(--gold);
     box-shadow: 0 0 15px rgba(201, 168, 76, 0.3);
 }
+
+/* Pre-game the top-right corner belongs to the PROFILE CHIP: music parks
+   top-left and the game-log button waits until there is a game to log.
+   In-game the corner belongs to the OPPONENTS rail — floating toggles
+   there ate real clicks aimed at the first rival (the log panel opened
+   instead of the rival overlay) — so both slide left of the sidebar. */
+.music-toggle { right: auto; left: 20px; }
+body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
+/* (log-toggle placement lives with its base block below — cascade order) */
 
 .music-toggle.muted { opacity: 0.4; }
 
@@ -434,7 +1058,7 @@ html, body {
     display: flex;
     align-items: flex-start;
     padding: 50px 24px calc(var(--handCardH) + 40px);
-    padding-left: 220px;
+    padding-left: 282px;   /* clears the 250px stats panel + 16px inset */
     overflow-y: auto;
     overflow-x: hidden;
 }
@@ -516,6 +1140,12 @@ html, body {
 
 /* ── Stats Panel — under board thumbnail ── */
 
+/* Juicy stats scale — tokens on a table, readable at arm's length.
+   Full size on tall windows; ~0.78 on short desktops (≤849px) so the
+   panel + mission strip still clear 1280×800 without colliding. */
+:root { --sx: 1; }
+@media (max-height: 849px) { :root { --sx: 0.78; } }
+
 .stats-panel {
     position: absolute;
     top: 185px;
@@ -533,13 +1163,17 @@ html, body {
         inset 0 2px 8px rgba(0,0,0,0.6),
         inset 0 -1px 3px rgba(255,190,90,0.04),
         0 4px 16px rgba(0,0,0,0.5);
-    width: 195px;
+    width: 250px;
+    /* Safety net for rare tall states (flex + both specials): scroll
+       inside the panel rather than run under the hand zone. */
+    max-height: calc(100dvh - 285px);
+    overflow-y: auto;
 }
 
 .stats-panel .act-badge {
     text-align: center;
     font-family: 'Cinzel', serif;
-    font-size: 9px;
+    font-size: 11px;
     color: var(--gold-dark);
     letter-spacing: 2px;
     text-transform: uppercase;
@@ -559,9 +1193,9 @@ html, body {
 
 .resource-tokens {
     display: flex;
-    justify-content: center;
-    gap: 6px;
-    padding: 6px 0;
+    flex-direction: column;
+    gap: calc(4px * var(--sx));
+    padding: 5px 0 7px;
     border-bottom: 1px solid rgba(201, 168, 76, 0.08);
     margin-bottom: 6px;
 }
@@ -569,16 +1203,17 @@ html, body {
 .resource-token {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 6px;
-    border-radius: 12px;
+    justify-content: space-between;
+    gap: 10px;
+    padding: calc(1px * var(--sx)) 14px calc(1px * var(--sx)) 6px;
+    border-radius: 999px;
     background: rgba(0,0,0,0.2);
     border: 1px solid rgba(201, 168, 76, 0.1);
 }
 
 .token-img {
-    width: 20px;
-    height: 20px;
+    width: calc(38px * var(--sx));
+    height: calc(38px * var(--sx));
     border-radius: 50%;
     object-fit: cover;
     box-shadow: 0 1px 4px rgba(0,0,0,0.4);
@@ -586,7 +1221,7 @@ html, body {
 
 .token-val {
     font-family: 'Cinzel', serif;
-    font-size: 13px;
+    font-size: calc(34px * var(--sx));
     font-weight: 900;
     line-height: 1;
 }
@@ -600,15 +1235,15 @@ html, body {
 .skills-grid {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
     padding: 4px 0;
 }
 
 .skill-row {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 3px 4px;
+    gap: 8px;
+    padding: 1px 6px;
     border-radius: 6px;
     transition: background 0.2s ease;
 }
@@ -631,10 +1266,18 @@ html, body {
 }
 .skill-row.flex-skill .skill-label { font-style: normal; }
 .skill-row.flex-skill .skill-label i { color: var(--gold); font-size: 0.85em; }
+/* Both faces of the either/or pair share the icon cell — a lone icon
+   read as a duplicate of the fixed skill row above it. */
+.skill-icon.flex-pair { width: auto; }
+.skill-icon.flex-pair .skill-svg {
+    width: calc(22px * var(--sx));
+    height: calc(22px * var(--sx));
+}
+.skill-icon.flex-pair .skill-svg + .skill-svg { margin-left: -5px; }
 
 .skill-icon {
-    width: 18px;
-    height: 18px;
+    width: calc(30px * var(--sx));
+    height: calc(30px * var(--sx));
     display: flex;
     align-items: center;
     justify-content: center;
@@ -642,27 +1285,30 @@ html, body {
 }
 
 .skill-svg {
-    width: 22px;
-    height: 22px;
-    border-radius: 3px;
+    width: calc(30px * var(--sx));
+    height: calc(30px * var(--sx));
+    border-radius: 6px;
     object-fit: contain;
 }
 
 .skill-label {
     font-family: 'Cinzel', serif;
-    font-size: 9px;
+    font-size: 12px;
     color: var(--gold-dark);
     letter-spacing: 1px;
     text-transform: uppercase;
     flex: 1;
 }
+/* The full "Philosopher's Stone" fits its row at a smaller size (Wyatt:
+   no more "PHIL. STONE"). */
+.skill-label.phil-label { font-size: 9.5px; letter-spacing: 0.6px; }
 
 .skill-value {
     font-family: 'Cinzel', serif;
-    font-size: 14px;
+    font-size: calc(30px * var(--sx));
     font-weight: 900;
     color: rgba(201, 168, 76, 0.25);
-    min-width: 20px;
+    min-width: calc(44px * var(--sx));
     text-align: right;
 }
 
@@ -675,23 +1321,43 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 6px;
     margin-top: 4px;
     font-family: 'Cinzel', serif;
-    font-size: 9px;
+    font-size: 12px;
     color: rgba(255,255,255,0.5);
 }
 
 .stat-pill {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    padding: 2px 8px;
-    border-radius: 10px;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 12px;
     font-family: 'Cinzel', serif;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
+}
+
+/* Real token art inside stat pills (never emoji). */
+.stat-pill .pill-icon {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6));
+}
+.stat-pill.prestige .pill-icon { border-radius: 50%; object-fit: cover; }
+
+/* The Emblem marker, anywhere "emblem holder" shows — a round mini-token. */
+.emblem-badge {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid var(--gold-dark);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    vertical-align: -3px;
 }
 
 .stat-pill.gold {
@@ -718,14 +1384,11 @@ html, body {
     border: 1px solid rgba(79, 195, 247, 0.22);
 }
 
-.stat-pill .coin-icon {
-    font-style: normal;
-}
-
-.stats-panel .emblem-tag {
+.stats-panel .emblem-tag,
+.opp-ov-panel .emblem-tag {
     text-align: center;
     font-family: 'Cinzel', serif;
-    font-size: 8px;
+    font-size: 11px;
     color: var(--gold);
     letter-spacing: 1px;
     margin-top: 2px;
@@ -749,7 +1412,7 @@ html, body {
     box-shadow:
         inset 0 2px 6px rgba(0,0,0,0.55),
         0 3px 12px rgba(0,0,0,0.45);
-    width: 195px;
+    width: 250px;   /* matches the stats panel above it */
 }
 
 .mission-section {
@@ -836,12 +1499,13 @@ html, body {
 .card-stack .stack-label {
     font-family: 'Cinzel', serif;
     font-size: 7px;
-    color: var(--gold-dark);
+    color: var(--typeC, var(--gold-dark));
     letter-spacing: 2px;
     text-transform: uppercase;
     text-align: center;
     margin-bottom: 5px;
-    opacity: 0.6;
+    opacity: 0.95;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
 .card-stack .stack-card {
@@ -922,11 +1586,12 @@ html, body {
 }
 
 .opp-entry .opp-avatar {
-    width: 36px;
-    height: 36px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
     object-fit: cover;
-    border: 2px solid rgba(201, 168, 76, 0.25);
+    border: 2px solid rgba(201, 168, 76, 0.45);
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.5);
     flex-shrink: 0;
 }
 
@@ -940,68 +1605,126 @@ html, body {
 
 .opp-entry .opp-name {
     font-family: 'Cinzel', serif;
-    font-size: 11px;
-    color: var(--gold);
-}
-
-.opp-ring-row {
-    display: flex;
-    gap: 2px;
-    margin-top: 2px;
-}
-.ring-dot {
-    font-size: 7px;
-    font-family: 'Cinzel', serif;
-    color: rgba(255,255,255,0.25);
-    width: 14px;
-    height: 14px;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    color: var(--gold-light);
     display: flex;
     align-items: center;
-    justify-content: center;
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 50%;
-}
-.ring-dot.ring-active {
-    color: var(--gold);
-    border-color: var(--gold);
-    background: rgba(212,175,55,0.2);
-    box-shadow: 0 0 4px rgba(212,175,55,0.4);
+    gap: 5px;
 }
 
-.opp-entry .opp-stats-row {
+/* Gold rides the rail (Wyatt keeps it glanceable) — the game's own coin
+   art, big Cinzel count. Everything else waits behind the click. */
+.opp-entry .opp-gold-row {
     display: flex;
-    gap: 3px;
-    margin-top: 2px;
+    align-items: center;
+    gap: 6px;
+    margin-top: 3px;
 }
-
-.opp-entry .opp-stats-row .stat-pill {
-    font-size: 8px;
-    padding: 1px 5px;
+.opp-entry .opp-gold-row img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+}
+.opp-entry .opp-gold-row b {
+    font-family: 'Cinzel', serif;
+    font-size: 18px;
+    font-weight: 900;
+    color: var(--gold-light);
+    line-height: 1;
+    text-shadow: 0 0 8px rgba(255,215,0,0.25);
 }
 
 .opp-entry .mini-stack {
     display: flex;
-    gap: 2px;
-    margin-top: 4px;
+    margin-top: 6px;
 }
 
 .opp-entry .mini-card {
-    width: 22px;
-    height: 31px;
-    border-radius: 2px;
+    width: 32px;
+    height: 48px;
+    border-radius: 3px;
     object-fit: cover;
-    opacity: 0.45;
-    transition: opacity 0.2s;
+    border: 1px solid rgba(201, 168, 76, 0.25);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    opacity: 0.6;
+    transition: opacity 0.2s, transform 0.2s;
 }
+.opp-entry .mini-card + .mini-card { margin-left: -9px; }
 
 .opp-entry:hover .mini-card {
-    opacity: 0.7;
+    opacity: 0.9;
 }
 
 .opp-entry.active-turn {
     border-left: 2px solid var(--gold);
     padding-left: 10px;
 }
+
+/* ── Neighbor-target highlight — who does the selected card read? ──
+   .nt-read marks the entries/chips a selected card reads (see
+   TARGET_READ_SPECIALS in ui.js); .nt-tag is the floating label. */
+
+/* Scoped: sidebar rows are static and need a positioning context for the
+   tag; #statsPanel is ALREADY position:absolute — forcing relative on it
+   would yank the whole panel out of its place in the layout. */
+.opp-entry.nt-read { position: relative; z-index: 5; }
+
+.opp-entry.nt-read .opp-avatar,
+.tv-seats .pmat.nt-read,
+#statsPanel.nt-read {
+    animation: ntPulse 1.5s ease-in-out infinite;
+}
+.opp-entry.nt-read {
+    background: linear-gradient(135deg, rgba(72,52,16,0.55) 0%, rgba(42,26,8,0.5) 100%);
+}
+
+@keyframes ntPulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(232, 195, 75, 0.9), 0 0 12px 2px rgba(232, 195, 75, 0.35); }
+    50%      { box-shadow: 0 0 0 3px rgba(240, 210, 120, 1), 0 0 22px 7px rgba(232, 195, 75, 0.6); }
+}
+
+.nt-tag {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, #f0d278, #c9a84c);
+    color: #2a1810;
+    font: 700 9px 'Cinzel', serif;
+    letter-spacing: 0.5px;
+    padding: 2px 8px;
+    border-radius: 8px;
+    border: 1px solid #8a6a1f;
+    white-space: nowrap;
+    /* Tappable: the tag is the most button-looking thing on the seat and
+       hangs OUTSIDE its chip — pointer-events:none let taps fall through
+       to dead space, and the outside-click handler ate the action panel.
+       Now a tag tap bubbles to its chip and opens the rival peek instead. */
+    pointer-events: auto;
+    cursor: pointer;
+    z-index: 7;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* Desktop sidebar rows: the tag sits INSIDE the row's bottom edge —
+   the sidebar scrolls (overflow-y:auto), anything hung outside clips. */
+.opp-entry .nt-tag { bottom: 3px; }
+
+/* Desktop stats panel: tag pinned inside the top edge. */
+#statsPanel .nt-tag { top: 4px; }
+
+/* Phone seat chips hug the top screen edge — tags hang BELOW their chip,
+   arrow end anchored under it: the left tag extends rightward (its ◀
+   points at the chip), the right tag extends leftward (its ▶ points at
+   the chip). Opposite directions = no collision on 3–4 player tables
+   where the two marked chips sit close. */
+.tv-seats .pmat.nt-left .nt-tag  { top: calc(100% + 6px); transform: translateX(-9%); }
+.tv-seats .pmat.nt-right .nt-tag { top: calc(100% + 6px); transform: translateX(-91%); }
+
+/* While marks are up, the seat row must outrank the phase pill (z:6,
+   reparented into #table-view AFTER the seats — DOM order would win). */
+.tv-seats:has(.nt-read) { z-index: 12; }
 
 /* ── Hand Zone — bottom tray ── */
 
@@ -1089,7 +1812,9 @@ html, body {
     .hand-card:hover {
         transform: translateX(var(--bloomShift, 0px)) translateY(-14px) scale(var(--bloomScaleDesk, 4)) rotate(0deg) !important;
         transform-origin: bottom center;
-        z-index: 30;
+        /* Above .selected (31): the card you're READING always wins the
+           stack — a selected neighbor used to paint over the bloom. */
+        z-index: 33;
         border-color: var(--gold);
         box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 20px rgba(201,168,76,0.1);
     }
@@ -1107,6 +1832,27 @@ html, body {
     border-color: var(--gold-light);
     box-shadow: 0 12px 40px rgba(201,168,76,0.3), 0 0 30px rgba(201,168,76,0.15);
 }
+
+/* A selected card must beat the phase bar (z 30) even with no hover —
+   same layout bump as :hover above, but hover-independent: without it
+   the card only outranks the pill while the mouse happens to rest on it. */
+.game-layout:has(.hand-card.selected) { z-index: 31; }
+.hand-zone:has(.hand-card.selected) { z-index: 40; }
+
+/* Desktop drag-to-play (the phone's Hearthstone pull, mouse-driven):
+   the pulled card rides the cursor via inline transform — transition off
+   so it tracks 1:1 — while the rest of the fan dims and goes hover-dead
+   (a neighbor blooming to screen height mid-drag would bury the drag). */
+#handZone .hand-card.dragging {
+    transition: none !important;
+    z-index: 70;
+    cursor: grabbing;
+    filter: drop-shadow(0 14px 26px rgba(0,0,0,0.65)) drop-shadow(0 0 16px rgba(240,210,120,0.4));
+}
+#handZone.drag-from .hand-card:not(.dragging) { opacity: 0.45; pointer-events: none; }
+.game-layout:has(.hand-card.dragging) { z-index: 31; }
+.hand-zone:has(.hand-card.dragging) { z-index: 40; }
+#handZone .hand-card img { -webkit-user-drag: none; }
 
 /* Hand waiting text */
 .hand-zone .hand-waiting {
@@ -1242,6 +1988,54 @@ html, body {
     50%      { box-shadow: 0 0 0 3px rgba(240,210,120,0.65), 0 0 36px 14px rgba(201,168,76,0.3); }
 }
 
+/* Paid mode: circles a slide can reach right now (gold + direction) wear
+   a quiet standing halo — the pulse stays the discard-picker's language.
+   Blocked circles still take the tap (a notification says why). */
+.board-ov-slot.reach {
+    box-shadow: 0 0 0 2px rgba(240,210,120,0.5), 0 0 14px 3px rgba(201,168,76,0.28);
+}
+.board-ov-slot.reach:hover, .board-ov-slot.snap {
+    box-shadow: 0 0 0 2px rgba(240,210,120,0.95), 0 0 24px 7px rgba(201,168,76,0.5);
+}
+.board-ov-slot.blocked { cursor: default; }
+.board-ov-slot.blocked:hover { box-shadow: none; }
+
+/* The ring is grabbable in paid mode — raised above the hotspots so the
+   grab wins; while a slide waits on its confirm it pulses on the target. */
+.board-ov-ring.grab { pointer-events: auto; cursor: grab; z-index: 5; touch-action: none; }
+.board-ov-ring.dragging { transition: none; cursor: grabbing; transform: translate(-50%, -50%) scale(1.1); }
+.board-ov-ring.pending { animation: ringPending 1.1s ease-in-out infinite; }
+@keyframes ringPending {
+    0%, 100% { filter: drop-shadow(0 2px 5px rgba(0,0,0,0.65)) drop-shadow(0 0 5px rgba(240,210,120,0.95)); }
+    50%      { filter: drop-shadow(0 2px 5px rgba(0,0,0,0.65)) drop-shadow(0 0 15px rgba(240,210,120,0.55)); }
+}
+
+/* Home marker while the ring is out on a preview/drag. */
+.board-ov-ghost {
+    position: absolute;
+    top: 88%;
+    width: 9%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s;
+    z-index: 2;
+}
+.board-ov-ghost.show { opacity: 0.35; }
+
+/* Pay-&-slide confirm chip — anchored INSIDE the board art, just above
+   the target circle (the old fixed-position bubble hung above the board
+   RECT and rendered off-screen on phones). Reuses the .sc-bubble skin. */
+#boardOvConfirm {
+    position: absolute;
+    display: none;
+    transform: translate(-50%, -100%);
+    line-height: 1.3;
+    z-index: 6;
+}
+#boardOvConfirm.active { display: block; }
+
 .board-ov-hint {
     margin-top: 6px;
     font-family: 'EB Garamond', serif;
@@ -1366,13 +2160,67 @@ html, body {
     margin-top: 6px;
 }
 
-.opp-ov-board {
-    max-width: 70vw;
-    max-height: 28vh;
-    border-radius: 10px;
+/* Phone chip rail — hidden on desktop (the panel below carries it) */
+.opp-ov-chips { display: none; }
+
+/* Middle row: their variables (left) + their board (right). The panel
+   reads exactly like your own left-rail panel — same classes, same
+   token art — just without the fixed positioning. */
+.opp-ov-mid {
+    display: flex;
+    align-items: center;
+    gap: 22px;
     margin-bottom: 20px;
-    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+}
+.opp-ov-panel {
+    width: 250px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px;
+    border-radius: 10px;
+    background:
+        linear-gradient(160deg, var(--wood-darker) 0%, var(--wood-deepest) 100%);
+    border: 2px solid var(--gold-dark);
+    box-shadow:
+        inset 0 2px 8px rgba(0,0,0,0.6),
+        inset 0 -1px 3px rgba(255,190,90,0.04),
+        0 4px 16px rgba(0,0,0,0.5);
+    max-height: 76vh;
+    overflow-y: auto;
+    animation: ovZoom 0.4s cubic-bezier(0.16,1,0.3,1);
+}
+
+/* Board + ring on BOTH layouts: with the ring-dots gone from the rail,
+   the overlay board is where a rival's position lives. The wrapper is
+   position:relative so the %-based ring rides the art (phone media block
+   re-tunes sizes for its side-by-side layout). Stacks stay phone-only —
+   desktop keeps the big inline cards panel. */
+.opp-ov-boardwrap {
+    display: block;
+    position: relative;
+    line-height: 0;
     animation: ovZoom 0.45s cubic-bezier(0.16,1,0.3,1);
+}
+.opp-ov-ring {
+    display: block;
+    position: absolute;
+    width: 11%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+}
+.opp-ov-stacks { display: none; }
+
+.opp-ov-board {
+    display: block;
+    max-width: 70vw;
+    max-height: 42vh;   /* the board IS their sheet — let it breathe */
+    border-radius: 10px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+    animation: none;    /* the wrapper animates so the ring rides along */
 }
 
 .opp-ov-section-label {
@@ -1414,8 +2262,8 @@ html, body {
 .opp-ov-card-wrap:hover { transform: translateY(-8px); }
 
 .opp-ov-card-wrap img {
-    width: 130px;
-    height: 182px;
+    width: 150px;
+    height: 225px;      /* true 2:3 card ratio — no cropped art */
     border-radius: 6px;
     box-shadow: 0 6px 24px rgba(0,0,0,0.6);
     object-fit: cover;
@@ -1449,13 +2297,14 @@ html, body {
     background: rgba(201, 168, 76, 0.12);
 }
 
-/* ── Mission Lightbox ── */
+/* ── Mission Browser — the whole row of missions, one in focus ── */
 
 .mission-lb {
     position: fixed;
     inset: 0;
     z-index: 10000;
     display: none;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     background: rgba(14,7,2,0.94);
@@ -1463,13 +2312,249 @@ html, body {
 }
 .mission-lb.active { display: flex; }
 
-.mission-lb-card {
-    max-height: 78vh;
-    max-width: 50vw;
-    border-radius: 12px;
-    box-shadow: 0 0 80px rgba(201,168,76,0.12), 0 20px 60px rgba(0,0,0,0.8);
+.mb-title {
+    font-family: 'Cinzel', serif;
+    font-size: 13px;
+    color: var(--gold-dark);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
     animation: ovZoom 0.3s ease;
 }
+
+/* The film strip: half-viewport inline padding lets the first and last
+   cards reach dead center; JS settles the nearest card there on idle. */
+.mb-track {
+    display: flex;
+    align-items: center;
+    gap: clamp(16px, 3vw, 36px);
+    width: 100vw;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding: 26px 50vw;
+    scrollbar-width: none;
+}
+.mb-track::-webkit-scrollbar { display: none; }
+
+.mb-card {
+    position: relative;
+    flex: 0 0 auto;
+    cursor: pointer;
+    opacity: 0.5;
+    transform: scale(0.84);
+    transition: transform 0.32s cubic-bezier(0.16,1,0.3,1), opacity 0.32s;
+}
+.mb-card img {
+    display: block;
+    height: min(62vh, 560px);
+    border-radius: 12px;
+    box-shadow: 0 14px 50px rgba(0,0,0,0.75);
+    -webkit-user-drag: none;
+}
+.mb-card.focus {
+    opacity: 1;
+    transform: scale(1);
+}
+.mb-card.focus img {
+    box-shadow: 0 0 80px rgba(201,168,76,0.14), 0 20px 60px rgba(0,0,0,0.8);
+}
+.mb-card.done img { outline: 2px solid rgba(76,175,80,0.55); }
+.mb-done-ribbon {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #cfe8cf;
+    background: rgba(30,70,34,0.9);
+    border: 1px solid rgba(76,175,80,0.6);
+    border-radius: 10px;
+    padding: 3px 10px;
+    pointer-events: none;
+}
+
+.mb-nav {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 52px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Cinzel', serif;
+    font-size: 34px;
+    line-height: 1;
+    color: var(--gold);
+    background: rgba(20,10,4,0.75);
+    border: 1px solid rgba(201,168,76,0.35);
+    border-radius: 50%;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s;
+    z-index: 3;
+}
+.mb-nav:hover { color: var(--gold-light); border-color: var(--gold); }
+.mb-nav.prev { left: 26px; }
+.mb-nav.next { right: 26px; }
+.mission-lb.mb-solo .mb-nav { display: none; }
+
+/* ── Mission Journal — a royal ledger, rolled at both ends ── */
+
+.mission-journal {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;   /* below the browser (10000) — tapping a card layers it on top */
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(14,7,2,0.9);
+    backdrop-filter: blur(14px);
+}
+.mission-journal.active { display: flex; }
+
+.mj-scroll {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: min(880px, 92vw);
+    max-height: 88dvh;
+    background: linear-gradient(175deg, #2e1c0e 0%, #241407 45%, #1a0d05 100%);
+    border: 2px solid var(--gold-dark);
+    border-radius: 14px;
+    box-shadow:
+        0 0 0 1px rgba(0,0,0,0.6),
+        0 30px 90px rgba(0,0,0,0.75),
+        inset 0 1px 0 rgba(232,212,139,0.14);
+    overflow: hidden;
+    animation: ovZoom 0.4s cubic-bezier(0.16,1,0.3,1);
+}
+
+/* Rolled parchment ends — a slim wooden cylinder top and bottom. */
+.mj-roller {
+    flex: 0 0 auto;
+    height: 13px;
+    background: linear-gradient(180deg, #4a2f16 0%, #6b4a24 30%, #2a1708 100%);
+    border-bottom: 1px solid rgba(201,168,76,0.35);
+    box-shadow: inset 0 -3px 6px rgba(0,0,0,0.55), inset 0 2px 3px rgba(255,215,130,0.18);
+}
+.mj-roller.bottom {
+    border-bottom: none;
+    border-top: 1px solid rgba(201,168,76,0.35);
+    background: linear-gradient(0deg, #4a2f16 0%, #6b4a24 30%, #2a1708 100%);
+}
+
+.mj-head {
+    flex: 0 0 auto;
+    text-align: center;
+    padding: 12px 20px 8px;
+    border-bottom: 1px double rgba(201,168,76,0.3);
+}
+.mj-title {
+    font-family: 'Cinzel', serif;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    color: var(--gold-light);
+    text-shadow: 0 0 22px rgba(201,168,76,0.35);
+}
+
+.mj-body {
+    overflow-y: auto;
+    padding: 12px 24px 16px;
+}
+
+.mj-section + .mj-section { margin-top: 14px; }
+.mj-section-title {
+    font-family: 'Cinzel', serif;
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--gold-dark);
+    padding-bottom: 5px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid rgba(201,168,76,0.15);
+}
+
+.mj-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+}
+
+.mj-card {
+    position: relative;
+    cursor: pointer;
+    text-align: center;
+    transition: transform 0.22s;
+}
+.mj-card:hover { transform: translateY(-6px); }
+.mj-card img {
+    display: block;
+    height: clamp(190px, 30vh, 300px);
+    border-radius: 9px;
+    border: 1px solid rgba(201,168,76,0.35);
+    box-shadow: 0 8px 26px rgba(0,0,0,0.6);
+    -webkit-user-drag: none;
+}
+.mj-card:hover img { box-shadow: 0 12px 34px rgba(201,168,76,0.18), 0 8px 26px rgba(0,0,0,0.6); }
+.mj-card.done img { outline: 2px solid rgba(76,175,80,0.5); opacity: 0.92; }
+
+.mj-due {
+    margin-top: 6px;
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: 13px;
+    color: rgba(240,230,211,0.7);
+}
+.mj-ribbon {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Cinzel', serif;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: #cfe8cf;
+    background: rgba(30,70,34,0.92);
+    border: 1px solid rgba(76,175,80,0.6);
+    border-radius: 10px;
+    padding: 3px 10px;
+    pointer-events: none;
+}
+.mj-empty {
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: 14px;
+    color: rgba(240,230,211,0.5);
+    padding: 4px 0 8px;
+}
+
+/* Desktop strip head: the at-a-glance pips stay; Journal opens the ledger. */
+.mission-strip-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.mj-open {
+    font-family: 'Cinzel', serif;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--gold);
+    background: rgba(201,168,76,0.07);
+    border: 1px solid rgba(201,168,76,0.3);
+    border-radius: 9px;
+    padding: 3px 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.mj-open:hover { color: var(--gold-light); border-color: var(--gold); background: rgba(201,168,76,0.14); }
 
 .mission-lb-label {
     position: absolute;
@@ -1655,31 +2740,156 @@ html, body {
     margin-bottom: 20px;
 }
 
+/* ── Victory ceremony — headline, deltas, placement ladder ── */
+
+.vs-head {
+    position: relative;
+    overflow: hidden;
+    text-align: center;
+    padding: 26px 46px 18px;
+    border-radius: 16px;
+    max-width: min(720px, 94vw);
+}
+.vs-head.win {
+    background: radial-gradient(ellipse 90% 85% at 50% 0%, rgba(232, 195, 75, 0.13), transparent 65%);
+}
+.vs-head .champ-rays { inset: -120% -60%; }
+.vs-headline {
+    position: relative;
+    font-family: 'Cinzel Decorative', 'Cinzel', serif;
+    font-size: clamp(24px, 5vw, 42px);
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--gold);
+    text-shadow: 0 0 34px rgba(232, 195, 75, 0.45);
+}
+.vs-head.win .vs-headline {
+    color: #f4dd8f;
+    text-shadow: 0 0 40px rgba(232, 195, 75, 0.65);
+}
+.vs-personal {
+    position: relative;
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: clamp(14px, 2.2vw, 19px);
+    color: var(--parchment-dark);
+    margin-top: 7px;
+}
+
+.vs-deltas {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 12px 0 4px;
+}
+.vs-delta {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    font-family: 'Cinzel', serif;
+    font-size: clamp(15px, 2.4vw, 20px);
+    padding: 9px 20px;
+    border: 1px solid rgba(201, 168, 76, 0.45);
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(60, 40, 14, 0.55), rgba(30, 18, 7, 0.65));
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+.vs-delta b { color: var(--gold-light); font-size: 1.3em; }
+.vs-delta.stars b { color: #ffd97a; }
+.vs-d-what { color: var(--gold); letter-spacing: 1px; }
+.vs-d-arrow { color: var(--parchment-dark); opacity: 0.8; }
+
+/* ── The Score Sheet — the box's tally grid recreated: heirs across,
+   color-coded categories down, chunky numbers, one glance tells all. ── */
+.vs-trophy { width: 22px; height: 22px; flex: 0 0 22px; }
+
+.vs-grid {
+    display: grid;
+    grid-template-columns: minmax(96px, auto) repeat(var(--vsgCols, 5), minmax(64px, 1fr));
+    gap: 4px;
+    margin: 18px auto 4px;
+    width: min(720px, 94vw);
+    font-family: 'Cinzel', serif;
+}
+.vsg-head {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 4px 4px 6px; min-width: 0;
+}
+.vsg-face {
+    width: 40px; height: 40px; border-radius: 50%; object-fit: cover;
+    object-position: top; border: 2px solid rgba(201, 168, 76, 0.45);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.vsg-head.win .vsg-face { border-color: #e8c34b; box-shadow: 0 0 14px rgba(232, 195, 75, 0.5); }
+.vsg-ord {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 10px; font-weight: 700; letter-spacing: 1px; color: #8d8578;
+}
+.vsg-ord .vs-trophy { width: 13px; height: 13px; flex: 0 0 13px; }
+.vsg-hname {
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 11px; letter-spacing: 0.5px; color: #e8dcc0;
+}
+.vsg-head.me .vsg-hname { color: #ffe9a8; font-weight: 700; }
+.vsg-label {
+    display: flex; align-items: center; gap: 7px;
+    background: var(--rowC);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--rowC) 86%, #fff), var(--rowC));
+    color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    padding: 5px 10px; border-radius: 7px;
+    border: 1px solid rgba(0, 0, 0, 0.35);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 2px 5px rgba(0, 0, 0, 0.35);
+    font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+}
+.vsg-label img { width: 20px; height: 20px; object-fit: contain; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45)); }
+.vsg-label.total { color: #3a3325; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4); }
+.vsg-cell {
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(26, 17, 9, 0.72);
+    background: color-mix(in srgb, var(--rowC, #c9a84c) 16%, rgba(26, 17, 9, 0.72));
+    border: 1px solid rgba(201, 168, 76, 0.18);
+    border-color: color-mix(in srgb, var(--rowC, #c9a84c) 32%, transparent);
+    border-radius: 7px; padding: 4px;
+    color: #f3e9d2; font-size: 16px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.vsg-cell.bad { color: #ff9d8a; }
+.vsg-cell.win { box-shadow: inset 0 0 0 1px rgba(232, 195, 75, 0.4), 0 0 10px rgba(232, 195, 75, 0.12); }
+.vsg-cell.total {
+    background: rgba(239, 230, 207, 0.14);
+    border-color: rgba(239, 230, 207, 0.45);
+    font-size: 20px; color: #fff;
+}
+.vsg-cell.total.win { color: #f4dd8f; }
+@keyframes vsgIn {
+    from { opacity: 0; transform: translateY(9px); }
+    to { opacity: 1; transform: none; }
+}
+.vs-grid > * { animation: vsgIn 0.45s both; animation-delay: calc(var(--ri, 0) * 90ms + 250ms); }
+
 .scoring-scroll { max-width: 96vw; overflow-x: auto; }
 
-.scoring-actions { margin: 40px 0 12px; }
+.scoring-actions { margin: 26px 0 12px; }
 
-.scoring-table {
-    border-collapse: collapse;
-    margin-top: 30px;
-    font-family: 'EB Garamond', serif;
+/* Narrow portrait: tighter sheet, scroll inside .scoring-scroll if needed. */
+@media (max-width: 480px) {
+    .vs-grid { grid-template-columns: minmax(78px, auto) repeat(var(--vsgCols, 5), minmax(52px, 1fr)); gap: 3px; }
+    .vsg-cell { font-size: 13px; }
+    .vsg-label { font-size: 9px; padding: 4px 7px; letter-spacing: 1px; gap: 5px; }
+    .vsg-label img { width: 15px; height: 15px; }
 }
 
-.scoring-table th, .scoring-table td {
-    padding: 10px 20px;
-    border: 1px solid rgba(201, 168, 76, 0.2);
-    text-align: center;
-}
-
-.scoring-table th {
-    font-family: 'Cinzel', serif;
-    color: var(--gold);
-    background: rgba(201, 168, 76, 0.1);
-}
-
-.scoring-table .winner {
-    background: rgba(201, 168, 76, 0.15);
-    color: var(--gold-light);
+/* Phone landscape: the whole sheet fits 844×390 under the headline. */
+@media (max-height: 500px) {
+    .vs-grid { gap: 3px; width: min(640px, 96vw); margin-top: 10px; }
+    .vsg-face { width: 26px; height: 26px; }
+    .vsg-hname { font-size: 9px; }
+    .vsg-label { font-size: 9px; padding: 3px 7px; letter-spacing: 1px; gap: 5px; }
+    .vsg-label img { width: 14px; height: 14px; }
+    .vsg-cell { font-size: 12.5px; padding: 2px 3px; border-radius: 5px; }
+    .vsg-cell.total { font-size: 15px; }
+    .scoring-actions { margin: 12px 0 10px; }
 }
 
 /* ─── ANIMATIONS ───────────────────────────────────────── */
@@ -1723,7 +2933,11 @@ html, body {
     pointer-events: auto;
     max-width: 500px;
     text-align: center;
-    white-space: nowrap;
+    /* Long announcements (Emblem passes, the Queen's boon) wrap inside
+       the box — nowrap let them ghost past the gold edge. Short toasts
+       under the max-width still read as one line. */
+    white-space: normal;
+    line-height: 1.4;
 }
 
 .game-toast.show { opacity: 1; transform: translateY(0); }
@@ -1794,6 +3008,11 @@ html, body {
     justify-content: center;
     transition: all 0.3s ease;
 }
+
+/* No game yet, nothing to log: hidden pre-game (the profile chip owns the
+   corner); in-game it rides left of the sidebar beside the music note. */
+.log-toggle { display: none; }
+body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
 
 .log-toggle:hover {
     border-color: var(--gold);
@@ -1970,30 +3189,20 @@ html, body {
     to { opacity: 1; }
 }
 
-/* Player banner at top */
-.spotlight-player {
-    position: relative;
-    z-index: 2;
-    font-family: 'Cinzel', serif;
-    font-size: clamp(14px, 2.5vw, 20px);
-    color: var(--text-light);
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    opacity: 0;
-    margin-bottom: 16px;
-    animation: spotlightPlayerIn calc(0.4s * var(--cinematic-speed, 1)) ease-out calc(0.15s * var(--cinematic-speed, 1)) forwards;
-}
-
 @keyframes spotlightPlayerIn {
     from { opacity: 0; transform: translateY(-20px); }
     to { opacity: 0.8; transform: translateY(0); }
 }
 
-/* Card image container */
+/* Card image container — the star of the moment, height-driven BIG.
+   333×500 scans go soft past ~680px tall, so cap there (same soft cap
+   as the hand bloom). */
 .spotlight-card {
     position: relative;
-    z-index: 2;
-    width: min(320px, 55vw);
+    z-index: 1;
+    height: min(560px, 56vh);
+    aspect-ratio: 2 / 3;
+    max-width: 86vw;
     border-radius: 12px;
     overflow: hidden;
     box-shadow:
@@ -2008,23 +3217,9 @@ html, body {
 
 .spotlight-card img {
     width: 100%;
+    height: 100%;
+    object-fit: cover;
     display: block;
-}
-
-/* Fallback for missing images */
-.spotlight-card-fallback {
-    width: 100%;
-    aspect-ratio: 5/7;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, var(--royal-deep) 0%, var(--royal-purple) 100%);
-    border: 2px solid var(--gold);
-    font-family: 'Cinzel', serif;
-    font-size: 24px;
-    color: var(--gold);
-    text-align: center;
-    padding: 20px;
 }
 
 @keyframes cardReveal {
@@ -2089,69 +3284,9 @@ html, body {
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* Card type label */
-.spotlight-type {
-    position: relative;
-    z-index: 2;
-    font-family: 'Cinzel', serif;
-    font-size: clamp(11px, 1.8vw, 15px);
-    color: var(--gold);
-    letter-spacing: 4px;
-    text-transform: uppercase;
-    opacity: 0;
-    margin-top: 6px;
-    animation: spotlightTypeIn calc(0.3s * var(--cinematic-speed, 1)) ease-out calc(0.55s * var(--cinematic-speed, 1)) forwards;
-}
-
-@keyframes spotlightTypeIn {
-    from { opacity: 0; }
-    to { opacity: 0.6; }
-}
-
-/* Effect/ability description */
-.spotlight-effect {
-    position: relative;
-    z-index: 2;
-    font-family: 'EB Garamond', serif;
-    font-size: clamp(14px, 2vw, 18px);
-    font-style: italic;
-    color: var(--text-light);
-    max-width: 400px;
-    text-align: center;
-    line-height: 1.5;
-    margin-top: 12px;
-    opacity: 0;
-    animation: spotlightEffectIn calc(0.4s * var(--cinematic-speed, 1)) ease-out calc(0.65s * var(--cinematic-speed, 1)) forwards;
-}
-
 @keyframes spotlightEffectIn {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 0.85; transform: translateY(0); }
-}
-
-/* Skills granted chips */
-.spotlight-skills {
-    position: relative;
-    z-index: 2;
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    justify-content: center;
-    margin-top: 10px;
-    opacity: 0;
-    animation: spotlightEffectIn calc(0.3s * var(--cinematic-speed, 1)) ease-out calc(0.75s * var(--cinematic-speed, 1)) forwards;
-}
-
-.spotlight-skill-chip {
-    padding: 3px 12px;
-    border-radius: 12px;
-    font-family: 'Cinzel', serif;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    border: 1px solid rgba(201, 168, 76, 0.4);
-    background: rgba(201, 168, 76, 0.12);
-    color: var(--gold-light);
 }
 
 /* Spotlight dismiss hint */
@@ -2182,11 +3317,9 @@ html, body {
     animation: spotlightFadeOut calc(0.3s * var(--cinematic-speed, 1)) ease-in forwards;
 }
 
-.card-spotlight.exiting .spotlight-name,
-.card-spotlight.exiting .spotlight-type,
-.card-spotlight.exiting .spotlight-effect,
-.card-spotlight.exiting .spotlight-player,
-.card-spotlight.exiting .spotlight-skills,
+.card-spotlight.exiting .spl-head,
+.card-spotlight.exiting .spl-glow,
+.card-spotlight.exiting .spl-payoff,
 .card-spotlight.exiting .spotlight-dismiss {
     animation: spotlightFadeOut calc(0.2s * var(--cinematic-speed, 1)) ease-in forwards;
 }
@@ -2218,239 +3351,146 @@ html, body {
         0 0 30px rgba(139, 26, 26, 0.2);
 }
 
-/* ── Opponent Turn Spotlight (Board View) ── */
+.card-spotlight.discard-variant .spl-verb { color: #e08a7a; }
+.card-spotlight.discard-variant .spl-glow {
+    background: radial-gradient(ellipse at center,
+        rgba(160, 44, 32, 0.30) 0%,
+        rgba(160, 44, 32, 0.10) 42%,
+        transparent 70%);
+}
 
-.opp-turn-inner {
+/* ── Opponent Turn Spotlight — one story, four beats: who plays →
+   the card lands BIG (flip + shimmer + glow bloom) → its name →
+   what it does, as ceremony payout chips + the special's line.
+   Desktop reads top-to-bottom; compact landscape goes left-to-right
+   (head | card | payoff) so the card takes most of the screen. ── */
+
+.spl-inner {
     position: relative;
     z-index: 2;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
-    max-width: 600px;
-    width: 90vw;
-    max-height: 85vh;
-    overflow-y: auto;
-    animation: spotlightFadeIn calc(0.35s * var(--cinematic-speed, 1)) ease-out forwards;
+    gap: 14px;
+    max-width: 94vw;
 }
 
-.opp-turn-header {
+.spl-head {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 13px;
+    opacity: 0;
+    animation: spotlightPlayerIn calc(0.4s * var(--cinematic-speed, 1)) ease-out calc(0.1s * var(--cinematic-speed, 1)) forwards;
 }
 
-.opp-turn-avatar {
-    width: 56px;
-    height: 56px;
+.spl-avatar {
+    width: 58px;
+    height: 58px;
     border-radius: 50%;
     object-fit: cover;
     border: 2px solid var(--gold);
-    box-shadow: 0 0 20px rgba(201, 168, 76, 0.3);
+    box-shadow: 0 0 22px rgba(201, 168, 76, 0.35);
 }
 
-.opp-turn-header-info {
-    text-align: left;
-}
+.spl-head-text { text-align: left; }
 
-.opp-turn-name {
+.spl-title {
     font-family: 'Cinzel', serif;
-    font-size: 20px;
+    font-size: clamp(17px, 2.6vw, 24px);
     color: var(--gold-light);
     letter-spacing: 2px;
 }
 
-.opp-turn-char {
+.spl-verb {
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: 0.82em;
+    color: rgba(240, 230, 211, 0.75);
+    letter-spacing: 1px;
+}
+
+.spl-char {
     font-family: 'EB Garamond', serif;
     font-size: 13px;
-    color: rgba(240, 230, 211, 0.4);
     font-style: italic;
+    color: rgba(240, 230, 211, 0.4);
 }
 
-/* Mini slot track for opponent spotlight */
-.opp-slot-track {
-    display: flex;
+/* The stage: a warm glow blooms behind the flipping card */
+.spl-stage {
     position: relative;
-    gap: 1px;
-    border-radius: 8px;
-    overflow: hidden;
-}
-
-.opp-slot-cell {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    padding: 4px 8px;
-    min-width: 65px;
-    background: rgba(42, 22, 10, 0.5);
-    border: 1px solid rgba(201, 168, 76, 0.06);
-    transition: all 0.3s;
-}
-
-.opp-slot-cell.current {
-    background: rgba(201, 168, 76, 0.12);
-    border-color: rgba(201, 168, 76, 0.3);
-}
-
-.opp-slot-cell.claimed {
-    background: rgba(42, 22, 10, 0.3);
-}
-
-.opp-slot-cell.unclaimed {
-    opacity: 0.4;
-}
-
-.opp-slot-num {
-    font-family: 'Cinzel', serif;
-    font-size: 7px;
-    color: rgba(240, 230, 211, 0.35);
-    margin-bottom: 2px;
-}
-
-.opp-slot-rewards {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
-
-.opp-slot-line {
-    font-family: 'EB Garamond', serif;
-    font-size: 9px;
-    color: rgba(240, 230, 211, 0.55);
-    white-space: nowrap;
-    line-height: 1.2;
-}
-
-.opp-slot-cell.current .opp-slot-line {
-    color: var(--gold-light);
-}
-
-.opp-slot-ring {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: calc(100% / 5);
-    height: 100%;
-    border: 2px solid var(--gold);
-    border-radius: 7px;
-    box-shadow: 0 0 14px rgba(201, 168, 76, 0.3);
-    pointer-events: none;
-    z-index: 2;
-}
-
-.opp-turn-ring {
-    margin: 2px 0;
-}
-
-.opp-turn-stats {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
     justify-content: center;
 }
 
-.opp-turn-stats .stat-pill {
-    font-size: 11px;
-    padding: 3px 10px;
+.spl-glow {
+    position: absolute;
+    inset: -22% -34%;
+    background: radial-gradient(ellipse at center,
+        rgba(201, 168, 76, 0.26) 0%,
+        rgba(201, 168, 76, 0.09) 42%,
+        transparent 70%);
+    opacity: 0;
+    pointer-events: none;
+    animation:
+        splGlowIn calc(0.6s * var(--cinematic-speed, 1)) ease-out calc(0.18s * var(--cinematic-speed, 1)) forwards,
+        splGlowBreathe 3.4s ease-in-out calc(0.9s * var(--cinematic-speed, 1)) infinite;
 }
 
-.opp-turn-cards-area {
+@keyframes splGlowIn {
+    from { opacity: 0; transform: scale(0.55); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes splGlowBreathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* The payoff: card name, honest chips, special line */
+.spl-payoff {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 10px;
-    width: 100%;
 }
 
-.opp-turn-played {
+.spl-payoff .spotlight-name {
+    margin-top: 0;
+    font-size: clamp(20px, 3vw, 30px);
+}
+
+.spl-chips {
     display: flex;
-    gap: 4px;
     flex-wrap: wrap;
     justify-content: center;
+    gap: 7px;
+    max-width: min(560px, 92vw);
 }
 
-.opp-turn-played-card {
-    width: 36px;
-    height: 50px;
-    border-radius: 3px;
-    object-fit: cover;
-    opacity: 0.5;
-    border: 1px solid rgba(201, 168, 76, 0.1);
-}
+/* Chips pop ceremony-style, one beat after the card lands */
+.spl-chips .mc-chip { animation-delay: calc(0.62s * var(--cinematic-speed, 1)); }
+.spl-chips .mc-chip:nth-child(2) { animation-delay: calc(0.72s * var(--cinematic-speed, 1)); }
+.spl-chips .mc-chip:nth-child(3) { animation-delay: calc(0.82s * var(--cinematic-speed, 1)); }
+.spl-chips .mc-chip:nth-child(4) { animation-delay: calc(0.92s * var(--cinematic-speed, 1)); }
+.spl-chips .mc-chip:nth-child(5) { animation-delay: calc(1.02s * var(--cinematic-speed, 1)); }
+.spl-chips .mc-chip:nth-child(n+6) { animation-delay: calc(1.1s * var(--cinematic-speed, 1)); }
 
-.opp-turn-new-card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    position: relative;
-    animation: newCardIn calc(0.5s * var(--cinematic-speed, 1)) ease-out forwards;
-}
-
-.opp-turn-new-card img {
-    width: 120px;
-    height: 168px;
-    border-radius: 8px;
-    object-fit: cover;
-    border: 2px solid var(--gold);
-    box-shadow: 0 0 30px rgba(201, 168, 76, 0.4), 0 0 60px rgba(201, 168, 76, 0.15);
-}
-
-.opp-turn-new-card.play img {
-    animation: newCardGlow calc(1.5s * var(--cinematic-speed, 1)) ease-in-out infinite;
-}
-
-.opp-turn-new-card.discard img {
-    border-color: rgba(139, 26, 26, 0.6);
-    box-shadow: 0 0 30px rgba(139, 26, 26, 0.3), 0 0 60px rgba(139, 26, 26, 0.1);
-}
-
-.opp-turn-new-tag {
-    font-family: 'Cinzel', serif;
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 3px;
-    color: var(--gold);
-    padding: 2px 12px;
-    border: 1px solid rgba(201, 168, 76, 0.3);
-    border-radius: 10px;
-    background: rgba(201, 168, 76, 0.08);
-}
-
-.opp-turn-new-card.discard .opp-turn-new-tag {
-    color: #f08080;
-    border-color: rgba(200, 40, 40, 0.3);
-    background: rgba(200, 40, 40, 0.08);
-}
-
-.opp-turn-new-name {
-    font-family: 'Cinzel', serif;
-    font-size: 16px;
-    color: var(--gold-light);
-    letter-spacing: 2px;
-}
-
-.opp-turn-new-effect {
+.spl-special {
     font-family: 'EB Garamond', serif;
-    font-size: 13px;
-    color: rgba(240, 230, 211, 0.7);
+    font-size: clamp(14px, 1.9vw, 17px);
     font-style: italic;
+    color: var(--gold-light);
     text-align: center;
-    max-width: 300px;
+    max-width: min(480px, 90vw);
+    line-height: 1.4;
+    opacity: 0;
+    animation: spotlightEffectIn calc(0.4s * var(--cinematic-speed, 1)) ease-out calc(0.95s * var(--cinematic-speed, 1)) forwards;
 }
 
-@keyframes newCardIn {
-    from { opacity: 0; transform: scale(0.8) translateY(20px); }
-    to { opacity: 1; transform: scale(1) translateY(0); }
-}
-
-@keyframes newCardGlow {
-    0%, 100% { box-shadow: 0 0 20px rgba(201, 168, 76, 0.3), 0 0 40px rgba(201, 168, 76, 0.1); }
-    50% { box-shadow: 0 0 35px rgba(201, 168, 76, 0.5), 0 0 70px rgba(201, 168, 76, 0.2); }
-}
-
-/* Exit animation for new board view */
-.card-spotlight.exiting .opp-turn-inner {
+/* Exit animation */
+.card-spotlight.exiting .spl-inner {
     animation: spotlightFadeOut calc(0.25s * var(--cinematic-speed, 1)) ease-in forwards;
 }
 
@@ -2688,18 +3728,34 @@ html, body {
        no rubber-banding so hand glides never fight a page scroll. */
     html, body { height: 100dvh; overscroll-behavior: none; }
 
-    /* ── Title screen: fit landscape — shrink cover so Play is on-screen ── */
+    /* ── Title screen: landscape phones keep the side-by-side stage —
+       this IS the landscape design — just denser, all on one screen. ── */
     #title-screen {
         justify-content: center;
-        padding: 8px 20px;
+        padding: 8px 14px;
         overflow-y: auto; /* safety: Play always reachable */
     }
-    .title-cover { width: auto; max-height: 44dvh; margin: 0; }
-    .title-subtitle { margin-top: 8px; font-size: 12px; letter-spacing: 3px; }
-    .title-buttons { margin-top: 12px; gap: 9px; }
-    #title-screen .btn-royal { padding: 9px 26px; min-width: 190px; font-size: 13px; }
-    .prompt-test-toggle { margin-top: 10px; padding: 6px 14px; font-size: 11px; }
-    .title-footer { position: static; margin-top: 8px; bottom: auto; }
+    .title-stage { gap: clamp(18px, 5vw, 48px); padding: 0 3vw; }
+    .title-cover { max-width: 30vw; max-height: 76dvh; }
+    .title-plate { font-size: 10px; }
+    .title-menu { gap: 9px; width: clamp(250px, 40vw, 330px); }
+    .title-subtitle { font-size: 11px; letter-spacing: 3px; }
+    #title-screen .btn-royal.menu-play { padding: 12px 14px; font-size: 16px; letter-spacing: 2px; }
+    .queue-seg { gap: 6px; }
+    .queue-seg button { height: 34px; font-size: 13px; border-radius: 7px; }
+    .menu-pair { gap: 8px; }
+    .menu-pair .btn-royal { padding: 9px 6px; font-size: 12px; min-width: 0; }
+    .menu-quiet { gap: 14px; }
+    .menu-link { font-size: 10px; }
+    .prompt-test-toggle { font-size: 9px; gap: 6px; }
+    .prompt-test-toggle input { width: 13px; height: 13px; }
+    .profile-chip { padding: 5px 12px; gap: 8px; }
+    .pc-name { font-size: 11px; }
+    .pc-rating, .pc-crowns { font-size: 12px; }
+    .lb-inner, .pf-inner { max-height: 94dvh; padding: 12px 16px 10px; }
+    .lb-title, .pf-title { font-size: 14px; letter-spacing: 3px; }
+    .lb-tabs { margin: 8px 0 6px; }
+    .champ-card { padding: 26px 30px 24px; }
 
     /* ── Character select: compact + scrollable ── */
     #character-select { padding: 14px 16px 22px; }
@@ -2737,368 +3793,451 @@ html, body {
         animation: tvGlowBreathe 16s ease-in-out infinite;
     }
 
-    /* Slimmer phase bar, parked top-left so the rival rail owns top-center. */
-    .phase-bar { top: 6px; left: 10px; transform: none; padding: 3px 12px; gap: 8px; }
+    /* ── Z8 · Phase pill — slim, top-center just under the seat chips ── */
+    .phase-bar {
+        top: 52px;
+        padding: 2px 12px;
+        gap: 6px;
+        border-width: 1px;
+        z-index: 6;
+    }
+    .phase-bar .act-tag { font-size: 9px; }
+    .phase-bar .phase-text { font-size: 9px; letter-spacing: 1.5px; }
 
-    /* Your purse rides in the pill — gold readable at all times. */
-    .phase-bar .purse {
+    /* The TEST REALM badge would sit on the mission rail — park it
+       bottom-left, out of every zone's way (build stamp stays legible). */
+    #testRealmBadge {
+        top: auto !important;
+        right: auto !important;
+        bottom: 0;
+        left: 0;
+        border-radius: 0 8px 0 0 !important;
+        padding: 2px 8px !important;
+        opacity: 0.7 !important;
+    }
+
+    /* ── Z1 · Purse — your four currencies, top-left, 2×2 grid of big
+       table-token chips (juicy pass: icons 34px, numbers 26px). ── */
+    .tv-purse {
+        position: absolute;
+        top: 6px;
+        left: max(8px, env(safe-area-inset-left));
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 5px;
+        z-index: 6;
+    }
+    .tv-purse-chip {
         display: inline-flex;
         align-items: center;
-        gap: 4px;
-        margin-left: 6px;
-        padding-left: 10px;
-        border-left: 1px solid rgba(201,168,76,0.3);
-    }
-    .phase-bar .purse img {
-        width: 15px; height: 15px;
-        border-radius: 50%;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.5);
-    }
-    .phase-bar .purse b {
-        font-family: 'Cinzel', serif;
-        font-size: 12px;
-        color: #ffd97a;
-    }
-
-    /* All mats live in an absolute layer, seated around the center. */
-    .tv-seats { position: absolute; inset: 0; z-index: 2; }
-
-    /* ── Player mat (shared: you + opponents) ── */
-    .pmat {
-        position: absolute;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
+        gap: 6px;
+        padding: 4px 10px 4px 5px;
+        border-radius: 17px;
+        background: rgba(10,6,3,0.68);
+        border: 1px solid rgba(201,168,76,0.25);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.5);
         cursor: pointer;
     }
-    .pmat:hover .pmat-boardwrap { border-color: var(--gold); }
-
-    .pmat-boardwrap {
-        position: relative;
-        border: 2px solid var(--gold-dark);
-        border-radius: 6px;
-        overflow: hidden;
-        box-shadow: 0 3px 12px rgba(0,0,0,0.6);
-        z-index: 2;
-        background: var(--wood-deepest);
-        transition: border-color 0.2s;
+    .tv-purse-chip img {
+        width: 34px; height: 34px;
+        object-fit: contain;
+        filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6));
     }
-    .pmat.active .pmat-boardwrap {
-        border-color: var(--gold-light);
-        box-shadow: 0 0 14px rgba(201,168,76,0.55), 0 3px 12px rgba(0,0,0,0.6);
-    }
-    /* Full board (no crop) so the slider track at the bottom is visible.
-       Your board is the only full mat on the table now — give it presence. */
-    .pmat-board { display: block; height: auto; }
-    .pmat.you .pmat-board { width: 174px; }
-
-    /* Gold ring on the slider track (left% set inline per slider slot). */
-    .pmat-ring {
-        position: absolute;
-        top: 88%;
-        width: 11%;
-        aspect-ratio: 1;
-        transform: translate(-50%, -50%);
-        pointer-events: none;
-        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
-        z-index: 3;
-    }
-    .pmat.you .pmat-ring { width: 9.5%; }
-
-    .pmat-name {
-        position: absolute;
-        top: 2px; left: 3px;
+    .tv-purse-chip.prestige img { border-radius: 50%; object-fit: cover; }
+    .tv-purse-chip b {
         font-family: 'Cinzel', serif;
-        font-size: 8px;
-        letter-spacing: 0.5px;
+        font-weight: 900;
+        font-size: 26px;
         color: var(--gold-light);
-        background: rgba(14,7,2,0.72);
-        border-radius: 4px;
-        padding: 1px 6px;
+        line-height: 1;
     }
+    .tv-purse-chip.scorn b { color: #f0a0a0; }
+    .tv-purse-chip.favor b { color: #a9d4ff; }
+    /* Tap-a-chip name label (phones have no hover) */
+    #tvChipTip {
+        position: fixed;
+        z-index: 10500;
+        font-family: 'Cinzel', serif;
+        font-size: 10px;
+        letter-spacing: 1px;
+        color: var(--gold-light);
+        background: rgba(14,7,2,0.92);
+        border: 1px solid var(--gold-dark);
+        border-radius: 8px;
+        padding: 4px 10px;
+        pointer-events: none;
+        white-space: nowrap;
+        transition: opacity 0.25s;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.5);
+    }
+    #tvChipTip.out { opacity: 0; }
 
-    /* ── Tokens laid out on the board (bottom-left corner cluster) ── */
-    .pmat-tokens {
+    /* ── Z3 · Seat chips — every player in one top-center row, YOU first.
+       Chips keep .pmat + data-pi so the delta FX and coach-marks that
+       target #table-view .pmat[data-pi] keep landing. ── */
+    .tv-seats {
         position: absolute;
-        left: 3px; bottom: 3px;
+        top: 3px;
+        left: 50%;
+        transform: translateX(-50%);
         display: flex;
-        gap: 3px;
+        gap: 7px;
+        z-index: 6;
     }
-    .pmat-tok {
-        display: flex;
-        align-items: center;
-        gap: 2px;
-        padding: 1px 4px 1px 1px;
+    .tv-seats .pmat.seat-chip {
+        position: relative;
+        width: 37px; height: 37px;
         border-radius: 9px;
-        background: rgba(10,6,3,0.62);
-        box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        border: 2px solid var(--gold-dark);
+        background: var(--wood-deepest);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.55);
+        cursor: pointer;
+        transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
     }
-    .pmat-tok img {
-        width: 14px; height: 14px; border-radius: 50%;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    .tv-seats .pmat.seat-chip:hover { border-color: var(--gold); }
+    .tv-seats .pmat.seat-chip.active {
+        border-color: var(--gold-light);
+        box-shadow: 0 0 12px rgba(201,168,76,0.65), 0 2px 8px rgba(0,0,0,0.55);
+        transform: translateY(1px) scale(1.07);
     }
-    .pmat-tok-favor {
-        width: 14px; height: 14px; border-radius: 50%;
-        display: flex; align-items: center; justify-content: center;
-        background: radial-gradient(circle at 40% 35%, #8cc8ff, #2f6bb0);
-        color: #fff; font-size: 9px;
-    }
-    .pmat-tok b {
-        font-family: 'Cinzel', serif; font-weight: 900; font-size: 9px;
-        color: var(--gold-light); line-height: 1;
-    }
-    .pmat-tok.scorn b { color: #f0a0a0; }
-    .pmat-tok.favor b { color: #a9d4ff; }
-
-    /* Played cards tucked under the board (deeper tuck — peek less). */
-    .pmat-cards {
-        display: flex;
-        justify-content: center;
-        margin-top: -18px;
-        padding-top: 18px;
-        min-height: 18px;
-        z-index: 1;
-    }
-    .pmat-card {
-        width: 22px;
-        height: 31px;
-        border-radius: 2px;
+    .chip-art {
+        position: absolute;
+        inset: 0;
+        width: 100%; height: 100%;
         object-fit: cover;
-        border: 1px solid rgba(201,168,76,0.3);
-        box-shadow: 0 2px 5px rgba(0,0,0,0.5);
-        margin-left: -13px;
+        border-radius: 7px;
+        display: block;
     }
-    .pmat-card:first-child { margin-left: 0; }
-    .pmat-empty {
+    .chip-crown {
+        position: absolute;
+        top: -8px; right: -6px;
+        pointer-events: none;
+    }
+    .chip-crown .emblem-badge {
+        width: 15px;
+        height: 15px;
+        vertical-align: 0;
+        border-color: var(--gold);
+    }
+    .chip-you {
+        position: absolute;
+        bottom: -7px; left: 50%;
+        transform: translateX(-50%);
+        font-family: 'Cinzel', serif;
+        font-size: 6px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: var(--gold-light);
+        background: rgba(14,7,2,0.85);
+        border: 1px solid rgba(201,168,76,0.4);
+        border-radius: 4px;
+        padding: 0 4px;
+        pointer-events: none;
+    }
+    .chip-count {
+        position: absolute;
+        bottom: -5px; right: -5px;
+        min-width: 13px; height: 13px;
+        border-radius: 7px;
+        background: rgba(14,7,2,0.88);
+        border: 1px solid rgba(201,168,76,0.35);
+        color: var(--gold-dark);
         font-family: 'Cinzel', serif;
         font-size: 7px;
-        letter-spacing: 1px;
-        color: var(--gold-dark);
-        opacity: 0.6;
-        align-self: center;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 2px;
+        pointer-events: none;
     }
 
-    /* ── Center stage — missions are the main event (Wingspan scale).
-       Big readable cards under a plaque, sitting in the pool of light. ── */
-    .tv-center {
+    /* ── Z2 · Skill rail — always-visible icon+number chips, left edge,
+       TWO columns under the purse (juicy pass). --railRows counts GRID
+       rows (set by renderTvSkills = ceil(chips/2)); --tvChipH derives
+       the chip height from the space between purse (104) and hand strip
+       (106), and icon/number sizes scale off it, so everything fits a
+       390px screen and degrades gracefully as flex/special chips appear. */
+    .tv-skills {
         position: absolute;
-        top: 46%; left: 50%;
-        transform: translate(-50%, -50%);
+        top: 104px;
+        bottom: 106px;
+        left: max(8px, env(safe-area-inset-left));
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        align-content: start;
+        gap: 4px;
+        z-index: 5;
+        --railRows: 3;
+        --tvChipH: min(56px, calc((100dvh - 210px - (var(--railRows) - 1) * 4px) / var(--railRows)));
+    }
+    .tv-skill-chip {
         display: flex;
-        flex-direction: column;
         align-items: center;
-        gap: 6px;
-        z-index: 4; /* above .tv-seats (2) so missions are tappable */
+        gap: 5px;
+        padding: 0 8px 0 5px;
+        border-radius: 14px;
+        background: rgba(10,6,3,0.68);
+        border: 1px solid rgba(201,168,76,0.25);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        height: var(--tvChipH);
+        cursor: pointer;
     }
-    .tv-center-label {
+    .tv-skill-chip .skill-svg {
+        width: calc(var(--tvChipH) * 0.7);
+        height: calc(var(--tvChipH) * 0.7);
+        min-width: calc(var(--tvChipH) * 0.7);
+        object-fit: contain;
+    }
+    .tv-skill-chip b {
         font-family: 'Cinzel', serif;
-        font-size: 9px;
-        letter-spacing: 3px;
-        text-transform: uppercase;
-        color: var(--gold);
-        padding: 3px 16px;
-        border: 1px solid rgba(201,168,76,0.35);
-        border-radius: 12px;
-        background: linear-gradient(180deg, rgba(40,22,10,0.85), rgba(20,10,4,0.85));
-        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        font-weight: 900;
+        font-size: calc(var(--tvChipH) * 0.52);
+        color: var(--gold-light);
+        min-width: calc(var(--tvChipH) * 0.4);
+        text-align: center;
+        line-height: 1;
     }
-    .tv-missions { display: flex; gap: 12px; }
-    .tv-mission {
-        width: clamp(78px, 13vw, 100px);
+    .tv-skill-chip.zero { opacity: 0.38; }
+    .tv-skill-chip.flex {
+        border-style: dashed;
+        border-color: rgba(201,168,76,0.5);
+    }
+    /* The flex chip wears BOTH faces of its either/or pair, slightly
+       overlapped — one icon read as a duplicate of the fixed chip. */
+    .tv-skill-chip.flex .flex-pair { display: inline-flex; align-items: center; }
+    .tv-skill-chip.flex .flex-pair .skill-svg {
+        width: calc(var(--tvChipH) * 0.58);
+        height: calc(var(--tvChipH) * 0.58);
+        min-width: calc(var(--tvChipH) * 0.58);
+    }
+    .tv-skill-chip.flex .flex-pair .skill-svg + .skill-svg { margin-left: -4px; }
+    .tv-skill-chip.special { border-color: rgba(176,138,255,0.45); }
+
+    /* ── Z4 · Mission rail — Missions of the Realm + My Missions, top-right ── */
+    .tv-mission-rail {
+        position: absolute;
+        top: 6px;
+        right: max(8px, env(safe-area-inset-right));
+        display: flex;
+        align-items: stretch;
+        gap: 4px;
+        z-index: 6;
+    }
+    .tv-mission-rail .tv-mission {
+        width: 37px;
         aspect-ratio: 46 / 64;
         height: auto;
-        border-radius: 6px;
+        border-radius: 4px;
         object-fit: cover;
         border: 1px solid rgba(201,168,76,0.35);
-        box-shadow: 0 6px 16px rgba(0,0,0,0.55);
+        box-shadow: 0 3px 8px rgba(0,0,0,0.5);
         cursor: pointer;
         transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
     }
-    .tv-mission:hover {
-        transform: translateY(-4px) scale(1.06);
+    .tv-mission-rail .tv-mission:hover {
+        transform: translateY(-2px) scale(1.05);
         border-color: var(--gold);
-        box-shadow: 0 10px 22px rgba(0,0,0,0.6), 0 0 14px rgba(201,168,76,0.35);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.55), 0 0 10px rgba(201,168,76,0.3);
     }
     /* Ghost seat (Wingspan): an empty mission slot still reads as a place. */
-    .tv-mission.ghost {
+    .tv-mission-rail .tv-mission.ghost {
         display: inline-block;
         background: rgba(201,168,76,0.045);
         border: 1.5px dashed rgba(201,168,76,0.3);
         box-shadow: inset 0 0 16px rgba(0,0,0,0.35);
         cursor: default;
     }
-    .tv-mission.ghost:hover { transform: none; border-color: rgba(201,168,76,0.3); }
-
-    /* ── You: full mat anchored bottom-left (the Battlegrounds hero seat).
-       Rivals no longer take table space — they live in the top rail. */
-    .pmat.seat-bottom { bottom: 40px; left: 10px; transform: none; z-index: 46; }
-
-    /* ── Rival rail (Battlegrounds-style): upright portrait plaques along
-       the top edge — same public info the old rotated mats carried
-       (tokens, ring slot, played-card count), a fraction of the space. */
-    .tv-rivals {
-        position: absolute;
-        top: 5px;
-        left: 50%;
-        transform: translateX(-50%);
+    .tv-mission-rail .tv-mission.ghost:hover { transform: none; border-color: rgba(201,168,76,0.3); }
+    .tv-mym {
         display: flex;
-        gap: 8px;
-        z-index: 3;
-        max-width: calc(100vw - 300px); /* clear the phase pill + music/log buttons */
-    }
-    .tv-rivals .pmat.rplq {
-        position: static;              /* rail children flow; not seated absolutely */
-        flex-direction: row;
-        align-items: center;
-        gap: 6px;
-        padding: 4px 9px 4px 4px;
-        border: 2px solid var(--gold-dark);
-        border-radius: 10px;
-        background: linear-gradient(160deg, rgba(46,26,12,0.92), rgba(24,12,5,0.94));
-        box-shadow: 0 3px 10px rgba(0,0,0,0.55);
-        min-width: 0;
-        transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
-    }
-    .tv-rivals .pmat.rplq:hover { border-color: var(--gold); }
-    .tv-rivals .pmat.rplq.active {
-        border-color: var(--gold-light);
-        box-shadow: 0 0 14px rgba(201,168,76,0.6), 0 3px 10px rgba(0,0,0,0.55);
-        transform: translateY(2px) scale(1.04);
-    }
-    .rplq-portrait {
-        width: 42px; height: 42px;
-        border-radius: 7px;
-        overflow: hidden;
-        border: 1px solid rgba(201,168,76,0.45);
-        flex-shrink: 0;
-    }
-    .rplq-portrait img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .rplq-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .rplq-name {
-        font-family: 'Cinzel', serif;
-        font-size: 9px;
-        letter-spacing: 0.5px;
-        color: var(--gold-light);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 104px;
-    }
-    /* .pmat-tokens is absolutely positioned on full mats — flow it in the rail. */
-    .rplq-chips { position: static; left: auto; bottom: auto; }
-    .rplq-foot { display: flex; align-items: center; gap: 7px; }
-    .rplq-ring { display: flex; gap: 2px; align-items: center; }
-    .rplq-ringdot {
-        width: 5px; height: 5px;
-        border-radius: 50%;
-        background: rgba(201,168,76,0.25);
-        display: inline-block;
-    }
-    .rplq-ringdot.on {
-        background: var(--gold-light);
-        box-shadow: 0 0 4px rgba(240,210,120,0.9);
-    }
-    .rplq-cards {
-        font-family: 'Cinzel', serif;
-        font-size: 8px;
-        color: var(--gold-dark);
-        letter-spacing: 0.5px;
-    }
-
-    /* ═══ DRAWERS ═══ */
-    .tv-drawer-tab {
-        position: absolute;
-        display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
-        background: linear-gradient(180deg, var(--wood-dark), var(--wood-deepest));
-        border: 2px solid var(--gold-dark);
-        color: var(--gold);
+        gap: 1px;
+        padding: 2px 6px;
+        border-radius: 8px;
+        background: rgba(10,6,3,0.68);
+        border: 1px solid rgba(201,168,76,0.25);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.5);
         cursor: pointer;
-        z-index: 2;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        font-family: 'Cinzel', serif;
+        line-height: 1.1;
     }
-    .tv-drawer-tab:hover { color: var(--gold-light); border-color: var(--gold); }
+    .tv-mym:hover { border-color: var(--gold); }
+    .tv-mym .mym-icon { width: 16px; height: 16px; object-fit: contain; }
+    .tv-mym .mym-label {
+        font-size: 6px; font-weight: 700; letter-spacing: 0.5px;
+        text-transform: uppercase; color: var(--gold-dark);
+    }
+    .tv-mym .mym-count { font-size: 12px; font-weight: 900; color: var(--gold-light); }
 
-    /* ── Left drawer: your skills / ring / act ── */
-    .tv-left-drawer {
+    /* ── Z5 · Your board, small — right column under the missions.
+       The ring rides the same %-track as the big overlay. ── */
+    .tv-board-thumb {
         position: absolute;
-        top: 58px;
-        bottom: 38px;
-        left: 0;
-        width: 150px;
-        z-index: 45;
-        transform: translateX(-100%);
-        transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+        top: 64px;
+        right: max(8px, env(safe-area-inset-right));
+        /* 2× the original 118px on standard phones (Wyatt 7/8); eases
+           down on narrow viewports so the stage keeps its floor. The
+           stage's right edge tracks this same clamp — change together. */
+        width: clamp(150px, 28vw, 236px);
+        border: 2px solid var(--gold-dark);
+        border-radius: 6px;
+        overflow: hidden;
+        background: var(--wood-deepest);
+        box-shadow: 0 3px 10px rgba(0,0,0,0.55);
+        cursor: pointer;
+        z-index: 5;
+        transition: border-color 0.2s;
     }
-    .tv-left-drawer.open { transform: translateX(0); }
-    .tv-left-content {
-        height: 100%;
-        overflow-y: auto;
-        padding: 8px 8px 10px;
+    .tv-board-thumb:hover { border-color: var(--gold); }
+    .tv-board-thumb .tv-thumb-board {
+        display: block;
+        width: 100%;
+        height: auto;
+    }
+    .tv-board-thumb .thumb-ring {
+        position: absolute;
+        width: 11%;
+        aspect-ratio: 1;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+    }
+
+    /* ── Z6 · Center stage — YOUR played cards as tucked skill stacks.
+       Every focus moment (overlays, action panel, FX) lands over this. ── */
+    .tv-stage {
+        position: absolute;
+        left: 206px;   /* clears the two-column juicy skill rail */
+        right: calc(clamp(150px, 28vw, 236px) + 20px);   /* clears the 2× board thumb */
+        top: 62px;
+        bottom: 100px;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        gap: 10px;
+        z-index: 2;
+        --tvStackCardH: clamp(64px, 24dvh, 96px);
+    }
+    .tv-stack {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+    }
+    .tv-stack-card {
+        width: calc(var(--tvStackCardH) * 0.666);
+        height: var(--tvStackCardH);
+        border-radius: 4px;
+        object-fit: cover;
+        border: 1px solid rgba(201,168,76,0.3);
+        box-shadow: 0 3px 10px rgba(0,0,0,0.55);
+    }
+    .tv-stack-card + .tv-stack-card {
+        margin-top: calc(var(--tvPeek, 20px) - var(--tvStackCardH));
+    }
+    .tv-stack-card.doubled {
+        box-shadow: 0 0 0 2px rgba(255,200,80,0.9), 0 0 12px rgba(255,190,60,0.5), 0 3px 10px rgba(0,0,0,0.55);
+    }
+    .tv-stack-label {
+        font-family: 'Cinzel', serif;
+        font-size: 6.5px;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: var(--typeC, var(--gold-dark));
+        opacity: 0.95;
+        margin-top: 3px;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+    }
+    .tv-stage-empty {
+        font-family: 'EB Garamond', serif;
+        font-style: italic;
+        font-size: 12px;
+        color: var(--gold-dark);
+        opacity: 0.55;
+        align-self: center;
+        letter-spacing: 1px;
+    }
+
+    /* ── Popovers (gear menu / My Missions) ── */
+    .tv-popover-host { display: none; }
+    .tv-popover-host.active {
+        display: block;
+        position: absolute;
+        inset: 0;
+        z-index: 70;
+        background: rgba(8,4,2,0.45);
+    }
+    .tv-pop {
+        position: absolute;
         background: linear-gradient(160deg, var(--wood-darker) 0%, var(--wood-deepest) 100%);
         border: 2px solid var(--gold-dark);
-        border-left: none;
-        border-radius: 0 12px 12px 0;
-        box-shadow: 6px 0 20px rgba(0,0,0,0.5);
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        padding: 8px;
+        max-height: calc(100dvh - 60px);
+        overflow-y: auto;
     }
-    .tv-left-title {
+    .tv-pop.mym {
+        top: 58px;
+        right: max(8px, env(safe-area-inset-right));
+        width: 216px;
+    }
+    .tv-pop-title {
         font-family: 'Cinzel', serif;
         font-size: 9px;
         letter-spacing: 2px;
         text-transform: uppercase;
         color: var(--gold);
         text-align: center;
-        margin-bottom: 4px;
-    }
-    .tv-left-content .act-badge {
-        font-size: 8px; text-align: center; color: var(--gold-dark);
-        padding-bottom: 4px; margin-bottom: 4px; letter-spacing: 2px;
-        text-transform: uppercase;
-        border-bottom: 1px solid rgba(201,168,76,0.12);
-    }
-    .tv-left-content .skills-grid { gap: 1px; }
-    .tv-left-content .skill-row { padding: 1px 3px; gap: 5px; }
-    .tv-left-content .skill-svg { width: 16px; height: 16px; }
-    .tv-left-content .skill-label { font-size: 8px; }
-    .tv-left-content .skill-value { font-size: 12px; }
-    .tv-left-content .ring-indicator { font-size: 8px; margin-top: 6px; }
-    .tv-drawer-tab.left {
-        top: 50%; right: -24px;
-        transform: translateY(-50%);
-        width: 24px; height: 58px;
-        border-left: none;
-        border-radius: 0 10px 10px 0;
-        font-size: 12px;
+        margin-bottom: 6px;
     }
 
-    /* ── Hand drawer: auto/manual, slides up from the bottom ── */
-    .tv-hand-drawer {
+    /* The floating music/log buttons relocate into the ⚙ popover here.
+       The in-game selector must repeat: `body:has(#game-screen.active)
+       .log-toggle { display:flex }` (the desktop slide-aside rule) beats a
+       bare class by specificity, so without it the log button REAPPEARS
+       on phones mid-game — floating over the seat row and eating taps. */
+    .music-toggle, .log-toggle,
+    body:has(#game-screen.active) .music-toggle,
+    body:has(#game-screen.active) .log-toggle { display: none; }
+
+    /* ── Z7 · Hand strip — ALWAYS visible, card bottoms cropped ~18%.
+       The strip hangs 28px past the screen edge and #table-view's
+       overflow:hidden does the cropping — never overflow on the strip
+       itself, or it would clip the bloom. ── */
+    .tv-hand-strip {
         position: absolute;
-        left: 0; right: 0; bottom: 0;
-        height: 142px;
+        left: 0; right: 0;
+        bottom: -28px;
+        height: 148px;
         z-index: 45;
-        transform: translateY(calc(100% - 34px)); /* closed: card-tops peek */
-        transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+        /* Only the cards are interactive — the full-width band must not
+           eat taps aimed at the skill rail's bottom chip or the table. */
+        pointer-events: none;
     }
-    .tv-hand-drawer.open { transform: translateY(0); }
-    .tv-hand-drawer::before {
+    .tv-hand-strip .hand-card { pointer-events: auto; }
+    .tv-hand-strip::before {
         content: '';
         position: absolute; inset: 0;
         background: linear-gradient(0deg,
-            rgba(22,10,3,0.98) 0%, rgba(35,18,7,0.9) 55%, rgba(42,22,10,0.35) 100%);
-        box-shadow: inset 0 6px 18px rgba(0,0,0,0.4);
+            rgba(22,10,3,0.95) 0%, rgba(35,18,7,0.8) 50%, rgba(42,22,10,0) 100%);
+        box-shadow: inset 0 6px 18px rgba(0,0,0,0.3);
         z-index: 0;
     }
-    /* Hand tab parked at the right corner — where a landscape thumb actually
-       rests — instead of mid-screen under the center mission. */
-    .tv-drawer-tab.hand {
-        top: -22px; left: auto; right: 12px;
-        transform: none;
-        width: 64px; height: 22px;
-        border-bottom: none;
-        border-radius: 10px 10px 0 0;
-        font-size: 12px;
+    /* "Your turn" pulse along the strip's top edge (replaces the
+       auto-opening drawer as the signal that you're up). */
+    .tv-hand-strip.your-turn::after {
+        content: '';
+        position: absolute;
+        left: 8%; right: 8%; top: 24px;
+        height: 2px;
+        border-radius: 2px;
+        background: linear-gradient(90deg, transparent, rgba(240,210,120,0.85), transparent);
+        animation: tvTurnPulse 2.2s ease-in-out infinite;
+        pointer-events: none;
     }
     .tv-hand {
         position: relative;
@@ -3117,13 +4256,22 @@ html, body {
         /* Transform is the only animated property, in AND out, and margins
            never change — so gliding across the fan is pure GPU and the tray
            itself never reflows under the finger. */
-        transition: transform 0.15s cubic-bezier(0.33, 1, 0.68, 1);
-        touch-action: none;          /* the glide owns the gesture — no browser pan / pointercancel */
+        transition: transform 0.15s cubic-bezier(0.33, 1, 0.68, 1), opacity 0.2s;
+        touch-action: none;          /* the gesture owns the touch — no browser pan / pointercancel */
         -webkit-touch-callout: none; /* long-press must not summon the image save sheet */
         -webkit-user-select: none;
         user-select: none;
     }
     .tv-hand .hand-card img { -webkit-user-drag: none; }
+    /* Drag-up (Hearthstone pull): the card rides the finger via inline
+       transform — transition off so it tracks 1:1 — while the rest of
+       the fan dims to make room for the decision. */
+    .tv-hand .hand-card.dragging {
+        transition: none !important;
+        z-index: 70;
+        filter: drop-shadow(0 14px 26px rgba(0,0,0,0.65)) drop-shadow(0 0 16px rgba(240,210,120,0.4));
+    }
+    .tv-hand-strip.drag-from .hand-card:not(.dragging) { opacity: 0.45; }
     /* Touch or hover BLOOMS the card in place — the Battlegrounds tray feel.
        Slide along the fan and each card blooms in turn (JS .bloom).
        --bloomScale fits the card to the actual screen height and
@@ -3131,21 +4279,24 @@ html, body {
        both are set by _tvBloomLayout() in ui.js. Touch gets ONLY the
        JS-managed .bloom — sticky mobile :hover next to it showed two
        bloomed cards at once. */
+    /* The strip crops the resting card's bottom ~18% below the screen
+       edge, so the bloom lifts 28px: 22px to clear the crop + the old
+       6px of breathing room. _tvBloomLayout()'s breathe stays honest. */
     .tv-hand .hand-card.bloom {
-        transform: translateX(var(--bloomShift, 0px)) translateY(-6px) scale(var(--bloomScale, 2.8)) !important;
+        transform: translateX(var(--bloomShift, 0px)) translateY(-28px) scale(var(--bloomScale, 2.8)) !important;
         transform-origin: bottom center;
         z-index: 60;
     }
     @media (hover: hover) {
-        .tv-hand-drawer.open .tv-hand .hand-card:hover {
-            transform: translateX(var(--bloomShift, 0px)) translateY(-6px) scale(var(--bloomScale, 2.8)) !important;
+        .tv-hand-strip .tv-hand .hand-card:hover {
+            transform: translateX(var(--bloomShift, 0px)) translateY(-28px) scale(var(--bloomScale, 2.8)) !important;
             transform-origin: bottom center;
             z-index: 60;
         }
     }
     /* Selected keeps a modest lift — the action sheet already shows it big. */
     .tv-hand .hand-card.selected {
-        transform: translateY(-24px) scale(1.16) !important;
+        transform: translateY(-38px) scale(1.16) !important;
         z-index: 30;
         filter: drop-shadow(0 0 10px rgba(240,210,120,0.65));
     }
@@ -3199,67 +4350,7 @@ html, body {
     .action-panel .action-buttons { gap: 6px; margin-top: 4px; }
     .action-panel .action-btn { padding: 8px 14px !important; font-size: 11px !important; }
 
-    /* ── Right drawer: your acquired missions ── */
-    .tv-right-drawer {
-        position: absolute;
-        top: 58px;
-        bottom: 38px;
-        right: 0;
-        width: 168px;
-        z-index: 45;
-        transform: translateX(100%);
-        transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .tv-right-drawer.open { transform: translateX(0); }
-    .tv-right-content {
-        height: 100%;
-        overflow-y: auto;
-        padding: 8px 8px 10px;
-        background: linear-gradient(160deg, var(--wood-darker) 0%, var(--wood-deepest) 100%);
-        border: 2px solid var(--gold-dark);
-        border-right: none;
-        border-radius: 12px 0 0 12px;
-        box-shadow: -6px 0 20px rgba(0,0,0,0.5);
-    }
-    .tv-right-title {
-        font-family: 'Cinzel', serif;
-        font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
-        color: var(--gold); text-align: center; margin-bottom: 6px;
-    }
-    .tv-right-empty {
-        font-family: 'EB Garamond', serif; font-style: italic;
-        font-size: 10px; color: var(--gold-dark); opacity: 0.7;
-        text-align: center; line-height: 1.5; margin-top: 10px;
-    }
-    .tv-mission-row {
-        display: flex; align-items: center; gap: 6px;
-        padding: 4px; margin-bottom: 4px;
-        border-radius: 6px; cursor: pointer;
-        background: rgba(0,0,0,0.22);
-        border: 1px solid rgba(201,168,76,0.12);
-        transition: border-color 0.2s;
-    }
-    .tv-mission-row:hover { border-color: var(--gold); }
-    .tv-mission-row.done { border-color: rgba(76,175,80,0.5); }
-    .tv-mission-row.failed { opacity: 0.55; }
-    .tv-mission-thumb { width: 24px; height: 33px; border-radius: 2px; object-fit: cover; flex-shrink: 0; }
-    .tv-mission-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-    .tv-mission-name {
-        font-family: 'Cinzel', serif; font-size: 8px; color: var(--gold-light);
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .tv-mission-meta { font-size: 7px; color: var(--gold-dark); letter-spacing: 0.3px; }
-    .tv-mission-tag { font-size: 9px; color: var(--gold); }
-    .tv-mission-row.done .tv-mission-tag { color: #6ede82; }
-    .tv-mission-row.failed .tv-mission-tag { color: #e85454; }
-    .tv-drawer-tab.right {
-        top: 50%; left: -24px;
-        transform: translateY(-50%);
-        width: 24px; height: 58px;
-        border-right: none;
-        border-radius: 10px 0 0 10px;
-        font-size: 12px;
-    }
+
 
     /* ── FX layer (token drops / card tucks / mission reveals) ── */
     #tvFx {
@@ -3269,119 +4360,148 @@ html, body {
         overflow: hidden;
     }
 
-    /* ── Card-play reveal: fit the whole thing on a short screen (no scroll) ── */
-    .opp-turn-inner {
-        max-height: 100dvh;
-        overflow: visible;
-        gap: 4px;
-        width: 96vw;
-        padding: 4px 0;
-    }
-    .opp-turn-header { gap: 8px; }
-    .opp-turn-avatar { width: 32px; height: 32px; }
-    .opp-turn-name { font-size: 13px; letter-spacing: 1px; }
-    .opp-turn-char { font-size: 9px; }
-    .opp-turn-ring { margin: 0; }
-    .opp-slot-cell { min-width: 44px; padding: 2px 4px; }
-    .opp-slot-num { font-size: 6px; }
-    .opp-slot-line { font-size: 7px; }
-    .opp-turn-stats .stat-pill { font-size: 9px; padding: 1px 7px; }
-    /* Decluttered AI-turn spotlight: WHO + THE CARD + what it does. Slot
-       strips and played-card history belong in tap-to-inspect, not in a
-       two-second moment — and the card itself gets the screen. */
-    .opp-turn-ring, .opp-turn-played { display: none; }
-    .opp-turn-inner { gap: 8px; }
-    .opp-turn-cards-area { gap: 4px; }
-    .opp-turn-played-card { width: 22px; height: 31px; }
-    .opp-turn-new-card { gap: 3px; }
-    .opp-turn-new-card img { width: 148px; height: 208px; }
-    .opp-turn-new-tag { font-size: 8px; padding: 1px 8px; letter-spacing: 2px; }
-    .opp-turn-new-name { font-size: 13px; letter-spacing: 1px; }
-    .opp-turn-new-effect { font-size: 11px; max-width: 88vw; line-height: 1.35; }
-    .spotlight-player { font-size: 12px !important; letter-spacing: 1px !important; }
-    .spotlight-dismiss { font-size: 9px; }
-    /* Human's own quick banner clears the hand drawer. */
-    .mini-spotlight { bottom: 150px; }
-
-    /* ── Opponent inspect: big readable board + toggle to reveal cards ── */
-    .opp-ov-inner {
+    /* ── Card-play reveal on a short screen: read it left-to-right —
+       who (head) | the card BIG | name + chips. No scroll; the card
+       takes nearly the full height. (.mc-chip compact sizing lives in
+       the ceremony's landscape block — same media condition.) ── */
+    .spl-inner {
+        flex-direction: row;
+        align-items: center;
         justify-content: center;
+        gap: 22px;
+        max-width: 96vw;
+    }
+    .spl-head {
+        flex-direction: column;
+        text-align: center;
+        gap: 7px;
+        width: clamp(150px, 24vw, 220px);
+        flex-shrink: 0;
+    }
+    .spl-head-text { text-align: center; }
+    .spl-avatar { width: 52px; height: 52px; }
+    .spl-title { font-size: 16px; letter-spacing: 1px; }
+    .spl-char { font-size: 11px; }
+    .spotlight-card { height: min(78dvh, 340px); }
+    .spl-payoff {
+        width: clamp(170px, 30vw, 300px);
+        flex-shrink: 0;
         gap: 8px;
+    }
+    .spl-payoff .spotlight-name { font-size: 17px; letter-spacing: 1px; }
+    .spl-chips { gap: 5px; }
+    .spl-special { font-size: 12px; }
+    .spotlight-dismiss { font-size: 9px; bottom: 8px; }
+    /* Human's own quick banner clears the hand strip. */
+    .mini-spotlight { bottom: 128px; }
+
+    /* ── Opponent inspect: header, then their full purse + summed skills
+       as one HUD-language chip rail (the same chips you read your own
+       stats in on phones), then board (ring on its track) + played-card
+       stacks side by side. No stat pills, no reveal toggle. ── */
+    .opp-ov-inner {
+        gap: 6px;
         max-height: 100dvh;
+        max-width: 96vw;
         padding: 6px 0;
     }
-    .opp-ov-header { gap: 10px; margin-bottom: 4px; }
+    .opp-ov-header { justify-content: center; gap: 10px; margin-bottom: 0; }
     .opp-ov-avatar { width: 40px; height: 40px; }
     .opp-ov-name { font-size: 18px; letter-spacing: 2px; }
-    .opp-ov-stats { margin-top: 4px; }
-    .opp-ov-stats .stat-pill { font-size: 10px; padding: 2px 8px; }
-    /* Bigger board — the main readable element. */
-    .opp-ov-board {
-        max-width: 92vw;
-        max-height: 56dvh;
-        width: auto;
-        margin-bottom: 6px;
-    }
-    /* Show the toggle; hide the inline cards panel until opened. */
-    .opp-ov-toggle {
-        display: block;
-        font-family: 'Cinzel', serif;
-        font-size: 12px;
-        letter-spacing: 1px;
-        color: var(--gold-light);
-        background: linear-gradient(180deg, var(--wood-dark), var(--wood-deepest));
-        border: 1px solid var(--gold);
-        border-radius: 10px;
-        padding: 8px 20px;
-        cursor: pointer;
-    }
-    .opp-ov-toggle:hover { box-shadow: 0 0 14px rgba(201,168,76,0.3); }
-    .opp-ov-cards-panel { display: none; }
-
-    /* When opened: cards panel becomes a centered overlay above the board. */
-    .opp-overlay.cards-open .opp-ov-cards-panel {
+    .opp-ov-stats { display: none; }
+    .opp-ov-panel { display: none; }
+    .opp-ov-chips {
         display: flex;
-        position: fixed;
-        inset: 0;
-        z-index: 5;
+        flex-wrap: wrap;
         justify-content: center;
-        align-items: center;
-        gap: 10px;
-        padding: 12px;
-        background: rgba(10,6,3,0.92);
-        backdrop-filter: blur(6px);
+        gap: 4px 6px;
+        max-width: 94vw;
+        --tvChipH: 30px;
+        animation: ovZoom 0.4s cubic-bezier(0.16,1,0.3,1);
     }
-    .opp-overlay.cards-open .opp-ov-section-label {
-        position: absolute; top: 12px; left: 0; right: 0;
-        text-align: center; margin: 0; font-size: 9px;
-    }
-    .opp-overlay.cards-open .opp-ov-cards {
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        max-width: 96vw;
-        gap: 12px;
-        padding: 8px 4px;
-    }
-    .opp-overlay.cards-open .opp-ov-cards .opp-ov-card-wrap img { width: 104px; height: 146px; }
-    .opp-overlay.cards-open .lend-btn { opacity: 1; } /* always visible on touch */
-    .opp-ov-cards-close {
-        display: block;
-        position: absolute;
-        bottom: 12px; left: 50%;
-        transform: translateX(-50%);
-        font-family: 'Cinzel', serif;
+    /* Overlay-sized chips: the rail's purse chips are HUD-large — trim
+       them so purse and skills read as one row here. */
+    .opp-ov-chips .tv-purse-chip { padding: 2px 8px 2px 4px; gap: 4px; }
+    .opp-ov-chips .tv-purse-chip img { width: 22px; height: 22px; }
+    .opp-ov-chips .tv-purse-chip b { font-size: 17px; }
+    .opp-ov-chips .tv-purse-chip.emblem img { border-radius: 50%; object-fit: cover; }
+    .opp-ov-chips .tv-purse-chip.emblem b {
         font-size: 11px;
         letter-spacing: 1px;
-        color: var(--gold);
-        background: rgba(42,22,10,0.9);
-        border: 1px solid var(--gold);
-        border-radius: 10px;
-        padding: 7px 22px;
-        cursor: pointer;
     }
+    .opp-ov-mid {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        margin-bottom: 0;
+    }
+    .opp-ov-boardwrap {
+        display: block;
+        position: relative;
+        flex-shrink: 0;
+        animation: ovZoom 0.45s cubic-bezier(0.16,1,0.3,1);
+    }
+    .opp-ov-board {
+        display: block;
+        max-width: 50vw;
+        max-height: 56dvh;
+        width: auto;
+        margin-bottom: 0;
+        animation: none;   /* the wrapper animates so the ring rides along */
+    }
+    .opp-ov-ring {
+        display: block;
+        position: absolute;
+        width: 11%;
+        aspect-ratio: 1;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+    }
+    .opp-ov-stacks {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        max-width: 40vw;
+        max-height: 74dvh;
+        overflow-x: auto;
+        padding: 4px 2px;
+        --tvStackCardH: clamp(76px, 24dvh, 112px);
+        animation: ovFan 0.45s cubic-bezier(0.16,1,0.3,1);
+    }
+    .opp-ov-toggle,
+    .opp-ov-cards-panel { display: none; }
+
+    /* ── Mission browser on phones: slimmer edge nav, cards fill height ── */
+    .mb-title { margin-bottom: 0; }
+    .mb-card img { height: 64dvh; }
+    .mb-track { padding: 12px 50vw; }
+    .mb-nav { width: 40px; height: 40px; font-size: 26px; }
+    .mb-nav.prev { left: max(8px, env(safe-area-inset-left)); }
+    .mb-nav.next { right: max(8px, env(safe-area-inset-right)); }
+    .mission-lb-label { bottom: 8px; font-size: 12px; letter-spacing: 2px; }
+    .mission-lb-action { bottom: 30px; }
+    .mission-lb-action .btn-royal { padding: 7px 18px; font-size: 11px; }
+
+    /* ── Mission Journal on phones: near-fullscreen ledger ── */
+    .mj-scroll { width: 96vw; max-height: 96dvh; }
+    .mj-head { padding: 6px 14px 5px; }
+    .mj-title { font-size: 13px; letter-spacing: 4px; }
+    .mj-body { padding: 8px 14px 10px; }
+    .mj-section + .mj-section { margin-top: 8px; }
+    .mj-section-title { font-size: 9px; margin-bottom: 8px; }
+    .mj-grid { gap: 10px; }
+    .mj-card img { height: 42dvh; }
+    .mj-due { font-size: 11px; margin-top: 3px; }
+    .mj-roller { height: 9px; }
 }
 
 /* ─── PHASE C ANIMATIONS (global keyframes + FX element styles) ─── */
+@keyframes tvTurnPulse {
+    0%, 100% { opacity: 0.25; }
+    50%      { opacity: 1; }
+}
+
 .tv-token-drop {
     position: fixed;
     transform: translate(-50%, -140%);
@@ -3411,6 +4531,52 @@ html, body {
     100% { transform: translate(-50%, -180%) scale(0.9); opacity: 0; }
 }
 
+/* Mirrored drop for top-edge targets (seat chips): pops out of the chip
+   downward instead of climbing off-screen. */
+.tv-token-drop.below {
+    transform: translate(-50%, 30%);
+    animation-name: tvTokenDropBelow;
+}
+@keyframes tvTokenDropBelow {
+    0%   { transform: translate(-50%, -40%) scale(0.6); opacity: 0; }
+    35%  { transform: translate(-50%, 30%) scale(1.1); opacity: 1; }
+    70%  { transform: translate(-50%, 30%) scale(1); opacity: 1; }
+    100% { transform: translate(-50%, 70%) scale(0.9); opacity: 0; }
+}
+
+/* Stat float — a "+N" pops out just RIGHT of the stat that grew, level
+   with its row, then rises through open air and fades. (Starting the
+   rise ON the anchor drifted it across the row above — a "+3" passing
+   over a "2" read as "+32"; the audit shot caught it.) Body-level fixed
+   element: survives every panel re-render, works on the desktop rail AND
+   the phone chips. `both` fill keeps a staggered float invisible until
+   its turn. */
+.stat-float {
+    position: fixed;
+    transform: translate(0, -50%);
+    z-index: 10500;
+    pointer-events: none;
+    font-family: 'Cinzel', serif;
+    font-weight: 900;
+    font-size: 21px;
+    color: var(--gold-light);
+    text-shadow: 0 0 12px rgba(240,210,120,0.85), 0 2px 4px rgba(0,0,0,0.9);
+    animation: statFloat 1.15s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.stat-float.bad {
+    color: #e2574c;
+    text-shadow: 0 0 12px rgba(226,87,76,0.7), 0 2px 4px rgba(0,0,0,0.9);
+}
+@keyframes statFloat {
+    0%   { transform: translate(0, -30%) scale(0.55); opacity: 0; }
+    18%  { transform: translate(0, -85%) scale(1.2); opacity: 1; }
+    55%  { transform: translate(0, -115%) scale(1); opacity: 1; }
+    100% { transform: translate(0, -215%) scale(0.95); opacity: 0; }
+}
+@media (orientation: landscape) and (max-height: 540px) {
+    .stat-float { font-size: 16px; }
+}
+
 .tv-card-drop {
     position: fixed;
     width: 22px; height: 31px;
@@ -3424,6 +4590,15 @@ html, body {
     0%   { transform: translate(-50%, -260%) scale(2.4) rotate(-6deg); opacity: 0; }
     30%  { opacity: 1; }
     100% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 0; }
+}
+
+/* Chip-rail tuck: the card appears big under the chip and shrinks up
+   into it — same beat, aimed on-screen. */
+.tv-card-drop.below { animation-name: tvCardDropBelow; }
+@keyframes tvCardDropBelow {
+    0%   { transform: translate(-50%, 30%) scale(2.6) rotate(-6deg); opacity: 0; }
+    30%  { opacity: 1; }
+    100% { transform: translate(-50%, -60%) scale(0.7) rotate(0deg); opacity: 0; }
 }
 
 .tv-mission-reveal {
@@ -3559,6 +4734,50 @@ html, body {
     .scoring-table th { font-size: 8px; letter-spacing: 0.5px; }
     .scoring-actions { margin: 12px 0 6px; }
     .scoring-actions .btn-royal { padding: 8px 22px; font-size: 12px; }
+
+    /* Store stall on a short screen: smaller cells, the grid scrolls,
+       the wares counter yields its space to the shelves. */
+    .st-inner { padding-top: 40px; }
+    .st-awning { height: 22px; }
+    .st-awning::after { height: 10px; background-size: 88px 10px; }
+    .st-sign { font-size: 13px; padding: 5px 14px 6px; margin-top: 2px; }
+    .st-sign::before, .st-sign::after { top: -14px; height: 14px; }
+    .st-grid { grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); gap: 24px 12px; margin-top: 10px; padding: 12px 12px 14px; }
+    .st-name { font-size: 10px; padding: 2px 10px; }
+    .st-buy { font-size: 10px; padding: 3px 9px 3px 14px; }
+    .st-owned { width: 38px; height: 38px; font-size: 6.5px; }
+    .st-counter { display: none; }
+
+    /* Mission ceremony on a short screen: tighter stage, smaller chips. */
+    .mc-inner { gap: 2vh; padding: 2vh 3vw; }
+    .mc-stage { gap: clamp(14px, 3.5vw, 34px); }
+    .mc-portrait { width: 62px; height: 62px; }
+    .mc-pname { font-size: 13px; }
+    .mc-pcount { font-size: 10.5px; }
+    .mc-player { min-width: 96px; gap: 5px; }
+    .mc-card { height: clamp(170px, 58vh, 300px); }
+    .mc-stamp { font-size: clamp(15px, 5.4vh, 22px); letter-spacing: 3px; padding: 4px 14px 5px; border-width: 3px; }
+    .mc-rewards { min-width: 138px; gap: 6px; max-height: 68vh; }
+    .mc-chip { font-size: 11px; padding: 3px 10px 3px 6px; gap: 6px; }
+    .mc-chip img { width: 20px; height: 20px; }
+    .mc-banner-icon { width: 22px; height: 22px; vertical-align: -5px; margin-right: 7px; }
+
+    /* Victory ceremony tightens to the same short-screen budget. */
+    .vs-head { padding: 10px 20px 6px; }
+    .vs-headline { font-size: clamp(19px, 4.6vh, 24px); }
+    .vs-personal { font-size: 12px; margin-top: 3px; }
+    .vs-deltas { gap: 8px; margin: 6px 0 2px; }
+    .vs-delta { font-size: 13px; padding: 5px 12px; gap: 6px; }
+    .vs-places { gap: 3px; margin-top: 8px; }
+    .vs-place { padding: 4px 12px 5px; gap: 2px; }
+    .vs-place-row { gap: 8px; }
+    .vs-place .vs-ord { font-size: 10px; width: 26px; }
+    .vs-place .vs-total { font-size: 15px; }
+    .vs-trophy { width: 16px; height: 16px; flex-basis: 16px; }
+    .vs-holdings { padding-left: 34px; gap: 3px 4px; }
+    .vsh-chip { padding: 1px 6px 1px 3px; gap: 3px; }
+    .vsh-chip img, .vsh-chip .skill-svg { width: 13px; height: 13px; }
+    .vsh-chip b { font-size: 10px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -3756,30 +4975,34 @@ html, body {
     animation: peekIn 0.14s cubic-bezier(0.2, 1.3, 0.3, 1);
 }
 
-/* ═══ MELEE SPLASH — end-of-act tournament moment ═══════════════════ */
 
-#meleeSplash {
+/* ═══ MISSION CEREMONY — the missions phase, player by player ═══════ */
+
+#missionCeremony {
     position: fixed;
     inset: 0;
-    z-index: 10600; /* the act's big moment — nothing sits on top of the Melee */
+    z-index: 9500;
     display: none;
     align-items: center;
     justify-content: center;
-    background: radial-gradient(ellipse at center, rgba(30,14,6,0.88), rgba(8,4,2,0.96));
-    backdrop-filter: blur(3px);
+    background: radial-gradient(90% 90% at 50% 42%, rgba(26, 13, 4, 0.88), rgba(10, 5, 2, 0.97));
+    backdrop-filter: blur(6px);
     cursor: pointer;
 }
-#meleeSplash.active { display: flex; animation: msFade 0.3s ease; }
-
-.ms-inner {
+#missionCeremony.active { display: flex; animation: msFade 0.3s ease; }
+.mc-inner {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
-    max-width: 94vw;
-    max-height: 96dvh;
+    gap: 3.4vh;
+    width: 100%;
+    max-height: 100dvh;
+    padding: 3vh 4vw;
 }
-.ms-banner {
+/* The ceremony borrows the old splash's banner/act/hint classes — their
+   rules live HERE now (the melee splash moved to css/melee.css, whose
+   bare .ms-* rules must not restyle the ceremony). */
+.mc-inner .ms-banner {
     font-family: 'Cinzel', serif;
     font-weight: 900;
     letter-spacing: 8px;
@@ -3790,92 +5013,146 @@ html, body {
     display: flex;
     align-items: baseline;
     gap: 14px;
-    animation: msBanner 0.5s cubic-bezier(0.2, 1.4, 0.3, 1);
+    animation: msBanner 0.45s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.ms-act {
+.mc-inner .ms-act {
     font-size: 0.45em;
     letter-spacing: 4px;
     color: var(--gold-dark);
 }
-.ms-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: min(500px, 92vw);
-    overflow-y: auto;
-    overflow-x: hidden;   /* rows slide in from ±46px — no scrollbar flash */
-    padding: 4px;
-}
-.ms-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 5px 14px;
-    border: 1px solid rgba(201,168,76,0.25);
-    border-radius: 10px;
-    background: linear-gradient(90deg, rgba(46,26,12,0.88), rgba(24,12,5,0.92));
-    opacity: 0;
-    transform: translateX(-46px);
-    animation: msRow 0.45s cubic-bezier(0.2, 1.2, 0.3, 1) forwards;
-}
-.ms-row:nth-child(even) { transform: translateX(46px); }
-.ms-row.winner {
-    border-color: var(--gold-light);
-    box-shadow: 0 0 20px rgba(201,168,76,0.45);
-}
-.ms-place {
-    font-family: 'Cinzel', serif;
-    font-size: 11px;
-    color: var(--gold-dark);
-    width: 30px;
-    flex-shrink: 0;
-}
-.ms-row.winner .ms-place { color: var(--gold-light); }
-.ms-portrait {
-    width: 34px; height: 34px;
-    border-radius: 6px;
-    object-fit: cover;
-    border: 1px solid rgba(201,168,76,0.4);
-    flex-shrink: 0;
-}
-.ms-name {
-    font-family: 'Cinzel', serif;
-    font-size: 13px;
-    color: var(--gold);
-    flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.ms-row.winner .ms-name { color: #ffe9ad; }
-.ms-power { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
-.ms-power img { width: 18px; height: 18px; }
-.ms-power b {
-    font-family: 'Cinzel', serif;
-    font-size: 16px;
-    color: #ffd97a;
-    min-width: 26px;
-    text-align: right;
-}
-.ms-prestige {
-    font-family: 'Cinzel', serif;
-    font-size: 10px;
-    color: #8fd4ff;
-    width: 88px;
-    text-align: right;
-    flex-shrink: 0;
-}
-.ms-hint {
+.mc-inner .ms-hint {
+    position: static;
     font-family: 'Cinzel', serif;
     font-size: 10px;
     letter-spacing: 2px;
     text-transform: uppercase;
     color: var(--gold-dark);
     opacity: 0.7;
+    animation: none;
 }
-@keyframes msRow { to { opacity: 1; transform: none; } }
 @keyframes msBanner { from { opacity: 0; transform: scale(1.35); } }
-@keyframes msFade { from { opacity: 0; } }
+.mc-banner-icon {
+    width: 30px; height: 30px;
+    object-fit: contain;
+    margin-right: 10px;
+    vertical-align: -7px;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+}
+.mc-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(20px, 4.5vw, 64px);
+    width: 100%;
+}
+.mc-player {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-width: 140px;
+    animation: mcSlideL 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mc-portrait {
+    width: 96px; height: 96px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 2px solid rgba(201, 168, 76, 0.55);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.6);
+}
+.mc-pname {
+    font-family: 'Cinzel', serif;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--gold-light);
+    text-shadow: 0 0 16px rgba(201, 168, 76, 0.3);
+}
+.mc-pcount {
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: 12px;
+    color: rgba(240, 230, 211, 0.6);
+}
+.mc-cardwrap {
+    position: relative;
+    animation: mcCardIn 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mc-card {
+    display: block;
+    height: clamp(220px, 56vh, 460px);
+    border-radius: 10px;
+    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.7);
+    transition: filter 0.35s;
+}
+.mc-stage.stamped.fail .mc-card { filter: saturate(0.45) brightness(0.78); }
+/* the wax verdict — slams down when the beat reveals */
+.mc-stamp {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: fit-content;
+    height: fit-content;
+    padding: 7px 24px 8px;
+    transform: rotate(-14deg) scale(3);
+    opacity: 0;
+    font-family: 'Cinzel', serif;
+    font-weight: 900;
+    font-size: clamp(22px, 4.6vh, 36px);
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: #ffe9ad;
+    background: rgba(58, 36, 8, 0.4);
+    border: 4px solid #e8c34b;
+    border-radius: 10px;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+    box-shadow: 0 0 34px rgba(232, 195, 75, 0.4), inset 0 0 24px rgba(232, 195, 75, 0.25);
+    backdrop-filter: blur(1.5px);
+    pointer-events: none;
+}
+.mc-stage.stamped .mc-stamp { animation: mcStamp 0.4s cubic-bezier(0.22, 1.5, 0.36, 1) forwards; }
+.mc-stage.stamped.fail .mc-stamp {
+    color: #ffc9bd;
+    border-color: #c0392b;
+    background: rgba(58, 12, 7, 0.45);
+    box-shadow: 0 0 34px rgba(192, 57, 43, 0.45), inset 0 0 24px rgba(192, 57, 43, 0.3);
+}
+.mc-rewards {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 9px;
+    min-width: 180px;
+    max-height: 60vh;
+}
+.mc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-family: 'Cinzel', serif;
+    font-weight: 700;
+    font-size: 14.5px;
+    letter-spacing: 0.5px;
+    color: #f4e6c4;
+    padding: 5px 14px 5px 9px;
+    background: linear-gradient(180deg, rgba(58, 36, 14, 0.92), rgba(30, 17, 6, 0.94));
+    border: 1px solid rgba(201, 168, 76, 0.45);
+    border-radius: 999px;
+    box-shadow: 0 3px 9px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    animation: mcChip 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.mc-chip img { width: 27px; height: 27px; object-fit: contain; }
+.mc-chip.good { color: #ffe9ad; border-color: rgba(232, 195, 75, 0.7); }
+.mc-chip.bad { color: #ffb9a8; border-color: rgba(192, 57, 43, 0.6); }
+@keyframes mcStamp {
+    from { transform: rotate(-14deg) scale(3); opacity: 0; }
+    62%  { transform: rotate(-14deg) scale(0.92); opacity: 1; }
+    to   { transform: rotate(-14deg) scale(1); opacity: 1; }
+}
+@keyframes mcChip { from { opacity: 0; transform: translateX(16px) scale(0.85); } to { opacity: 1; } }
+@keyframes mcSlideL { from { opacity: 0; transform: translateX(-20px); } }
+@keyframes mcCardIn { from { opacity: 0; transform: translateY(16px) scale(0.94); } }
 
 /* ═══ ACTION PANEL — shared body wrapper + table-scene breathing ═════ */
 
@@ -3888,6 +5165,23 @@ html, body {
     align-items: center;
     gap: 10px;
     width: 100%;
+}
+
+/* Final-card chooser: the card lives in pending, not the hand, so nothing
+   blooms beside the panel — the panel itself shows the art (row layout).
+   Phones already show it via the landscape block. */
+.action-panel.final-choice {
+    flex-direction: row;
+    align-items: center;
+    gap: 18px;
+    max-width: min(640px, 94vw);
+}
+.action-panel.final-choice .action-card-img {
+    display: block;
+    height: min(310px, 38vh);
+    width: auto;
+    border-radius: 10px;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.6);
 }
 
 @keyframes tvGlowBreathe { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }
@@ -3966,18 +5260,131 @@ html, body {
     text-shadow: 0 1px 3px rgba(0,0,0,0.8);
 }
 
+/* ═══ RANK-1 BOON — the realm's #1 chooses a skill ════════════════════
+   Rides the #promisePicker overlay: six skill-icon tiles, gold like the
+   royal favor it is. No dismiss path — the Queen does not offer twice. */
+.pp-inner.boon .boon-tiles {
+    display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
+    max-width: min(94vw, 520px); margin: 12px 0 4px;
+}
+.boon-tile {
+    width: 96px; padding: 12px 6px 9px;
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    background: rgba(24,15,7,0.6);
+    border: 1px solid rgba(201,168,76,0.28); border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.boon-tile img {
+    width: 46px; height: 46px; object-fit: contain;
+    filter: drop-shadow(0 3px 7px rgba(0,0,0,0.55));
+}
+.boon-tile span {
+    font-family: 'Cinzel', serif; font-size: 12px; font-weight: 700;
+    letter-spacing: 0.05em; color: var(--gold-light);
+}
+.boon-tile:hover { transform: translateY(-3px); border-color: rgba(232,205,120,0.6); }
+.boon-tile.chosen {
+    transform: translateY(-3px);
+    background: rgba(58,40,14,0.8);
+    border-color: var(--gold-light);
+    box-shadow: 0 0 0 2px rgba(232,205,120,0.55), 0 0 22px rgba(201,168,76,0.45);
+}
+/* Short landscape phones: six tiles must fit beside the title + button. */
+@media (orientation: landscape) and (max-height: 540px) {
+    .boon-tile { width: 76px; padding: 8px 4px 6px; gap: 5px; }
+    .boon-tile img { width: 34px; height: 34px; }
+    .boon-tile span { font-size: 10px; }
+}
+
 /* A doubled adventure card wears its ×2 in the played stacks. */
 .stack-card.doubled {
     box-shadow: 0 0 0 2px rgba(255,225,140,0.9), 0 0 16px rgba(201,168,76,0.5), 0 3px 12px rgba(0,0,0,0.65);
 }
 
-/* ═══ SLIDE CONFIRM — pay gold to slide the ring ═════════════════════ */
-#slideConfirm {
-    position: fixed; z-index: 10560;
-    display: none;
-    transform: translate(-50%, -100%);
+/* ═══ MULTIPLAYER — searching spinner + waiting pill ═════════════════ */
+.mpq-spin {
+    width: 44px; height: 44px; margin: 8px 0 2px;
+    border: 3px solid rgba(201,168,76,0.18);
+    border-top-color: var(--gold-light);
+    border-radius: 50%;
+    animation: mpqSpin 1.1s linear infinite;
 }
-#slideConfirm.active { display: block; }
+@keyframes mpqSpin { to { transform: rotate(360deg); } }
+
+/* Non-modal "waiting on {noble}" pill — top-center, under the phase bar,
+   never eats a click. The clock counts down Wyatt's 2-minute AFK boot. */
+#mpWait {
+    position: fixed; top: 58px; left: 50%;
+    transform: translateX(-50%) translateY(-12px);
+    z-index: 9500; pointer-events: none;
+    padding: 7px 18px; border-radius: 20px;
+    background: rgba(24,14,6,0.92);
+    border: 1px solid rgba(201,168,76,0.5);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+    font-family: 'EB Garamond', serif; font-size: 14px; color: #e8d9bf;
+    opacity: 0; transition: opacity 0.25s, transform 0.25s;
+}
+#mpWait.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+#mpWait b { color: var(--gold-light); font-family: 'Cinzel', serif; font-size: 13px; }
+#mpWait .mpw-clock {
+    margin-left: 8px; color: #8fd4ff; font-variant-numeric: tabular-nums;
+}
+@media (orientation: landscape) and (max-height: 540px) {
+    #mpWait { top: 44px; font-size: 12px; padding: 5px 14px; }
+}
+
+/* ═══ BORROW & PLAY — pick your lender ═══════════════════════════════
+   Rides the #promisePicker overlay: one card per possible lender, the
+   neighbor with nothing to lend sits grayed with the reason. */
+/* Multi-skill borrows can outgrow the screen: the section list scrolls
+   on its own while the title and Confirm/Cancel stay pinned in reach. */
+.pp-inner.bw { flex-wrap: nowrap; }
+.pp-inner.bw .bw-scroll {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    overflow-y: auto;
+    min-height: 0;
+    max-width: 94vw;
+    padding: 8px 16px;   /* room for the selection glow */
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+.bw-section { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.bw-skill-head {
+    font-family: 'Cinzel', serif; font-size: 12px; font-weight: 700;
+    letter-spacing: 2px; color: var(--gold-light); text-transform: uppercase;
+    margin-top: 4px;
+}
+.bw-rows { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+.bw-row {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    width: 168px; padding: 10px 10px 12px; cursor: pointer;
+    border: 1.5px solid rgba(201,168,76,0.45); border-radius: 12px;
+    background: linear-gradient(160deg, rgba(50,28,13,0.9), rgba(26,13,5,0.9));
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+.bw-row:hover { transform: translateY(-3px); box-shadow: 0 0 0 2px rgba(240,210,120,0.8), 0 8px 20px rgba(0,0,0,0.5); }
+.bw-row.on { box-shadow: 0 0 0 2px var(--gold-light), 0 0 20px rgba(201,168,76,0.6); }
+.bw-row.off { opacity: 0.45; filter: grayscale(0.85); cursor: default; pointer-events: none; }
+.bw-art {
+    width: 146px; height: 92px; object-fit: cover; object-position: top;
+    border-radius: 7px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+.bw-tag {
+    font: 700 9px 'Cinzel', serif; letter-spacing: 0.5px; color: #2a1810;
+    background: linear-gradient(180deg, #f0d278, #c9a84c);
+    border: 1px solid #8a6a1f; border-radius: 8px; padding: 2px 8px;
+    margin-top: -14px; position: relative; z-index: 2;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+.bw-name { font-family: 'Cinzel', serif; font-size: 13px; font-weight: 700; color: var(--gold-light); }
+.bw-note { font-family: 'EB Garamond', serif; font-size: 12px; color: #e8d9bf; }
+.bw-row.off .bw-note { color: #c9a06a; font-style: italic; }
+
+/* ═══ SLIDE CONFIRM SKIN — worn by #boardOvConfirm inside the board ══ */
 .sc-bubble {
     background: linear-gradient(160deg, rgba(50,28,13,0.98), rgba(26,13,5,0.98));
     border: 1.5px solid var(--gold);
@@ -3993,10 +5400,3 @@ html, body {
 .sc-actions { display: flex; gap: 8px; margin-top: 2px; }
 .sc-actions .btn-royal { padding: 6px 14px; font-size: 11px; min-width: 0; }
 
-/* Ring affordance: it's grabbable, and lifts while dragging */
-.pmat.you .pmat-ring { cursor: grab; transition: left 0.12s ease-out; }
-.pmat-ring.dragging {
-    transition: none;
-    filter: drop-shadow(0 0 8px rgba(240,210,120,0.9)) drop-shadow(0 3px 4px rgba(0,0,0,0.6));
-    scale: 1.25;
-}
