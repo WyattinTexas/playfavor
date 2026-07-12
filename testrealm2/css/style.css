@@ -207,6 +207,8 @@ html, body {
     transition: color 0.15s;
 }
 .menu-link:hover { color: var(--gold-light); }
+.menu-link.mint-link { color: #ffd97a; text-shadow: 0 0 8px rgba(240, 200, 110, 0.35); }
+.menu-link.mint-link:hover { color: #ffe9ad; }
 
 /* Portrait / narrow: the stage stacks — art above, column below. */
 @media (orientation: portrait), (max-width: 640px) {
@@ -410,6 +412,90 @@ html, body {
     color: #f0a0a0;
     vertical-align: middle;
 }
+
+/* ── The Royal Mint — star bundles under the awning, above the shelves.
+   Four coin-purse plaques; the price button opens a PayPal tab and the
+   box IPN delivers the Stars into the balance on its own. ── */
+.st-mint {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin: 14px 10px 2px;
+}
+.st-pack {
+    flex: 1 1 138px;
+    max-width: 190px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 10px 8px 12px;
+    background:
+        radial-gradient(120% 150% at 50% 0%, rgba(122, 84, 34, 0.55), rgba(38, 22, 8, 0.9) 78%),
+        linear-gradient(#2c1a0a, #1d1106);
+    border: 1.5px solid #a97f38;
+    border-radius: 10px;
+    box-shadow: inset 0 1px 6px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+.st-pack.confirming {
+    border-color: #ffd97a;
+    box-shadow: inset 0 1px 6px rgba(0, 0, 0, 0.6), 0 0 14px rgba(255, 217, 122, 0.35);
+}
+.st-pack-stars {
+    font-family: 'Cinzel', serif;
+    font-weight: 900;
+    font-size: 21px;
+    color: #ffd97a;
+    text-shadow: 0 0 10px rgba(240, 210, 120, 0.5);
+}
+.st-pack-name {
+    font-style: italic;
+    font-size: 11px;
+    color: #cdb08a;
+    letter-spacing: 0.5px;
+}
+.st-pack-buy {
+    margin-top: 4px;
+    padding: 5px 16px;
+    font-family: 'Cinzel', serif;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: #2b1a06;
+    background: linear-gradient(#f4d488, #c99f4b);
+    border: 1px solid #8a6a2a;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.st-pack-buy:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(240, 200, 110, 0.35); }
+.st-pack-buy.confirm { background: linear-gradient(#ffe9ad, #e0b45e); animation: packPulse 1.1s ease-in-out infinite; }
+.st-pack-buy.poor { opacity: 0.4; cursor: default; }
+@keyframes packPulse {
+    50% { box-shadow: 0 0 16px rgba(255, 217, 122, 0.55); }
+}
+.st-pack-wait {
+    flex: 1 1 100%;
+    text-align: center;
+    font-style: italic;
+    font-size: 12.5px;
+    color: #ecd9ae;
+    padding: 8px 12px;
+    background: rgba(60, 38, 14, 0.55);
+    border: 1px dashed #a97f38;
+    border-radius: 8px;
+    animation: waitBreathe 2.2s ease-in-out infinite;
+}
+@keyframes waitBreathe {
+    50% { opacity: 0.65; }
+}
+@media (orientation: landscape) and (max-height: 540px) {
+    .st-pack { flex-basis: 118px; padding: 7px 6px 9px; }
+    .st-pack-stars { font-size: 16px; }
+    .st-pack-buy { font-size: 11px; padding: 4px 12px; }
+}
+
 .st-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));

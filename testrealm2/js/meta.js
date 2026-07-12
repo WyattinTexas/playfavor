@@ -372,17 +372,31 @@
     }
 
     // Congratulations queued for this player — royal overlay on arrival.
+    // Returns how many were shown (the star watcher uses that to avoid
+    // celebrating the same purchase twice).
     async function drainMsgs() {
+        let shown = 0;
         try {
             const msgs = await dbGet(`players/${uid()}/msgQueue`);
-            if (!msgs) return;
+            if (!msgs) return 0;
             const entries = Object.entries(msgs);
             for (const [k, m] of entries) {
-                if (m && m.type === 'daily_champion') await showChampOverlay(m);
+                if (m && m.type === 'daily_champion') { await showChampOverlay(m); shown++; }
+                else if (m && m.type === 'star_purchase') {
+                    // The Mint delivered (possibly while this tab was away):
+                    // the pending watch is settled, whoever was running it.
+                    localStorage.removeItem('favorPendingStars');
+                    if (_starsWatch) { clearTimeout(_starsWatch.timer); _starsWatch = null; }
+                    _me = await dbGet(`players/${uid()}`) || _me;
+                    renderStore();
+                    await showStarsCelebration(m.stars);
+                    shown++;
+                }
                 await dbSet(`players/${uid()}/msgQueue/${k}`, null);
             }
             renderProfileChip();
         } catch (e) { /* non-fatal */ }
+        return shown;
     }
 
     function showChampOverlay(m) {
@@ -588,6 +602,7 @@
         const panel = document.getElementById('storePanel');
         if (panel) panel.classList.remove('active');
         _confirmingBuy = null;
+        _confirmingPack = null;
         _inspecting = null;
         const insp = document.getElementById('storeInspect');
         if (insp) { insp.classList.remove('active'); insp.innerHTML = ''; }
@@ -615,6 +630,7 @@
         const stars = (_me && _me.stars) || 0;
         document.getElementById('storeStars').innerHTML =
             `★ ${stars}${mode !== 'firebase' ? ' <span class="st-local">OFFLINE — BROWSE ONLY</span>' : ''}`;
+        renderStorePacks();   // the Royal Mint row rides every store paint
         const anim = _shelfAnim; _shelfAnim = false;
         body.innerHTML = chars.map((c, i) => {
             const isOwned = owned.includes(c.id);
@@ -721,6 +737,131 @@
         });
     }
 
+    // ═══ The Royal Mint — real-money star bundles via PayPal ═════════
+    // The box (nationgame.live/api/favor/paypal/ipn) verifies every
+    // payment with PayPal's postback and credits favor/players/{uid}/stars
+    // ITSELF — the client only opens the checkout tab and watches its own
+    // balance. Packs must match the box's table EXACTLY or the grant is
+    // refused (never trust the client with money).
+    const STAR_PACKS = [
+        { id: 'favor.stars50',   stars: 50,   usd: '4.00',  name: 'Pouch of Stars' },
+        { id: 'favor.stars100',  stars: 100,  usd: '6.00',  name: 'Purse of Stars' },
+        { id: 'favor.stars500',  stars: 500,  usd: '25.00', name: 'Chest of Stars' },
+        { id: 'favor.stars1000', stars: 1000, usd: '40.00', name: 'Royal Treasury' },
+    ];
+    const PAYPAL_BUSINESS = 'gablewyatt@gmail.com';
+    const IPN_NOTIFY_URL = 'https://nationgame.live/api/favor/paypal/ipn';
+
+    let _confirmingPack = null;
+    let _starsWatch = null;    // { baseline } while a PayPal tab may be paying
+
+    function starCheckoutUrl(pack) {
+        // invoice <uid>.<packId>.<yyyyMMddHHmmss UTC> — the IPN handler's contract
+        const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+        const q = new URLSearchParams({
+            cmd: '_xclick',
+            business: PAYPAL_BUSINESS,
+            item_name: `FAVOR — ${pack.name} (${pack.stars} Stars)`,
+            item_number: pack.id,
+            amount: pack.usd,
+            currency_code: 'USD',
+            invoice: `${uid()}.${pack.id}.${ts}`,
+            no_shipping: '1',
+            no_note: '1',
+            return: 'https://playfavor.net/?paypal=return',
+            cancel_return: 'https://playfavor.net/?paypal=cancel',
+            notify_url: IPN_NOTIFY_URL,
+        });
+        return 'https://www.paypal.com/cgi-bin/webscr?' + q.toString();
+    }
+
+    function askBuyStars(packId) {
+        if (mode !== 'firebase') return;      // Mint is closed offline
+        _confirmingPack = packId;
+        renderStore();
+    }
+
+    function buyStars(packId) {
+        const pack = STAR_PACKS.find(p => p.id === packId);
+        if (!pack || mode !== 'firebase') return;
+        _confirmingPack = null;
+        localStorage.setItem('favorPendingStars', JSON.stringify({
+            packId, stars: pack.stars, at: Date.now(),
+        }));
+        window.open(starCheckoutUrl(pack), '_blank', 'noopener');
+        watchForStars();
+        renderStore();
+    }
+
+    // Poll the balance while a PayPal tab may be completing; the IPN
+    // credits server-side, so the Stars just... arrive.
+    function watchForStars() {
+        let pending = null;
+        try { pending = JSON.parse(localStorage.getItem('favorPendingStars')); } catch (e) { /* ignore */ }
+        if (!pending || Date.now() - pending.at > 30 * 60 * 1000) {
+            localStorage.removeItem('favorPendingStars');
+            _starsWatch = null;
+            return;
+        }
+        if (_starsWatch) return;               // one watcher is plenty
+        _starsWatch = { baseline: (_me && _me.stars) || 0 };
+        const tick = async () => {
+            if (!_starsWatch) return;
+            try {
+                const s = await dbGet(`players/${uid()}/stars`) || 0;
+                if (s > _starsWatch.baseline) {
+                    const gained = s - _starsWatch.baseline;
+                    _me = { ...(_me || {}), stars: s };
+                    localStorage.removeItem('favorPendingStars');
+                    _starsWatch = null;
+                    renderStore();
+                    renderProfileChip();
+                    // The IPN also queued a congrats — prefer that (it
+                    // knows the exact pack); fall back to our own count.
+                    const shown = await drainMsgs();
+                    if (!shown) await showStarsCelebration(gained);
+                    return;
+                }
+            } catch (e) { /* wire hiccup — keep watching */ }
+            _starsWatch.timer = setTimeout(tick, 5000);
+        };
+        tick();
+    }
+
+    function showStarsCelebration(stars) {
+        return new Promise(resolve => {
+            const ov = document.getElementById('champOverlay');
+            if (!ov) { resolve(); return; }
+            document.getElementById('champTitle').textContent = 'The Royal Mint Delivers!';
+            document.getElementById('champSub').innerHTML = `★ ${stars} Stars join your purse`;
+            ov.classList.add('active');
+            const done = () => { ov.classList.remove('active'); resolve(); };
+            ov.onclick = done;
+            document.getElementById('champBtn').onclick = (e) => { e.stopPropagation(); done(); };
+        });
+    }
+
+    function renderStorePacks() {
+        const row = document.getElementById('storePacks');
+        if (!row) return;
+        const online = mode === 'firebase';
+        row.innerHTML = STAR_PACKS.map(p => {
+            const confirming = _confirmingPack === p.id;
+            const btn = !online
+                ? `<button class="st-pack-buy poor" disabled>$${p.usd}</button>`
+                : confirming
+                    ? `<button class="st-pack-buy confirm" onclick="event.stopPropagation(); FLB.buyStars('${p.id}')">PayPal — $${p.usd}?</button>`
+                    : `<button class="st-pack-buy" onclick="event.stopPropagation(); FLB.askBuyStars('${p.id}')">$${p.usd}</button>`;
+            return `<div class="st-pack${confirming ? ' confirming' : ''}" data-pack="${p.id}">
+                <div class="st-pack-stars">★ ${p.stars.toLocaleString()}</div>
+                <div class="st-pack-name">${p.name}</div>
+                ${btn}
+            </div>`;
+        }).join('') + (_starsWatch
+            ? '<div class="st-pack-wait" id="storeWait">Complete the payment in the PayPal tab — your Stars arrive here on their own within a minute.</div>'
+            : '');
+    }
+
     // ── Queue picker persistence (3/4/5-player queues) ───────────────
 
     function queueSize() {
@@ -761,6 +902,18 @@
         tableSeed();           // prefetch the game-start seed (emblem/personas/boon)
         await settleDue();     // pay out any boundary that passed while we were away
         await drainMsgs();     // then deliver congratulations
+
+        // Back from a PayPal tab? Clean the URL, land the player in the
+        // store, and watch for the Stars the IPN is about to credit.
+        // (drainMsgs above already celebrated + cleared the pending mark
+        // if the grant landed while we were away.)
+        const pp = new URLSearchParams(location.search).get('paypal');
+        if (pp) {
+            history.replaceState(null, '', location.pathname);
+            if (pp === 'cancel') localStorage.removeItem('favorPendingStars');
+            else if (pp === 'return') openStore();
+        }
+        if (localStorage.getItem('favorPendingStars')) watchForStars();
     }
 
     if (document.readyState === 'loading') {
@@ -776,6 +929,8 @@
         settleDue, drainMsgs, currentDateKey, ratingDelta, generateName,
         gameStars, ownedIds, buyCharacter, openStore, closeStore, askBuy, confirmBuy,
         inspectChar, closeInspect,
+        askBuyStars, buyStars, starCheckoutUrl, watchForStars,
+        starPacks: () => STAR_PACKS,
         get mode() { return mode; }, uid,
     };
 })();

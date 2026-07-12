@@ -2996,8 +2996,136 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
   });
   ok(pfit.cards === 10 && pfit.innerFits && !pfit.hscroll,
     `phone shelf: 10 heroes, panel fits, no h-scroll (scrolls=${pfit.scrolls})`);
+  ok(await phone.evaluate(() => document.querySelectorAll('.st-pack').length === 4),
+    'phone: the Royal Mint row rides the same panel');
   await phone.screenshot({ path: join(SHOTS, 'store-phone.png') });
   await phone.close();
+}
+
+// ═══ THE ROYAL MINT: packs → PayPal checkout URL → Stars just arrive ═══
+console.log('── Royal Mint: bundle plaques, honest checkout URL, IPN delivery beat');
+{
+  const AUDIT_UID = 'uauditmint' + Math.random().toString(36).slice(2, 8);
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('mint: ' + m.text()); });
+  await page.evaluateOnNewDocument((u) => {
+    localStorage.setItem('favorUid', u);
+    localStorage.setItem('favorName', 'Audit Herald');
+    localStorage.removeItem('favorPendingStars');
+    localStorage.removeItem('favorOwned');
+  }, AUDIT_UID);
+  await page.setViewport({ width: 1280, height: 800 });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+
+  ok(await page.evaluate(() =>
+    !!([...document.querySelectorAll('.menu-link')].find(b => /get stars/i.test(b.textContent)))),
+    'menu quiet row carries ★ Get Stars');
+
+  await page.evaluate(() => FLB.openStore());
+  await sleep(600);
+  const mint = await page.evaluate(() => ({
+    packs: [...document.querySelectorAll('.st-pack')].map(p => ({
+      stars: p.querySelector('.st-pack-stars').textContent.trim(),
+      price: p.querySelector('.st-pack-buy').textContent.trim(),
+    })),
+    aboveShelves: (() => {
+      const m = document.getElementById('storePacks').getBoundingClientRect();
+      const g = document.getElementById('storeBody').getBoundingClientRect();
+      return m.top < g.top;
+    })(),
+  }));
+  ok(mint.packs.length === 4 &&
+     mint.packs.map(p => p.price).join('|') === '$4.00|$6.00|$25.00|$40.00' &&
+     mint.packs.map(p => p.stars).join('|') === '★ 50|★ 100|★ 500|★ 1,000',
+    `four bundles at Nation pricing (${mint.packs.map(p => p.stars + ' ' + p.price).join(', ')})`);
+  ok(mint.aboveShelves, 'the Mint sits above the hero shelves');
+
+  // Buy the ★100 pack: confirm beat, then the checkout tab — intercepted.
+  await page.evaluate(() => {
+    window._openedUrl = null;
+    window.open = (u) => { window._openedUrl = u; return null; };
+    document.querySelector('.st-pack[data-pack="favor.stars100"] .st-pack-buy').click();
+  });
+  await sleep(200);
+  ok(await page.evaluate(() =>
+    /PayPal/.test(document.querySelector('.st-pack[data-pack="favor.stars100"] .st-pack-buy').textContent)),
+    'first tap arms a PayPal confirm beat');
+  await page.evaluate(() => {
+    document.querySelector('.st-pack[data-pack="favor.stars100"] .st-pack-buy').click();
+  });
+  await sleep(300);
+  const checkout = await page.evaluate((u) => {
+    const url = window._openedUrl || '';
+    const q = new URL(url).searchParams;
+    return {
+      host: new URL(url).host,
+      cmd: q.get('cmd'),
+      business: q.get('business'),
+      amount: q.get('amount'),
+      currency: q.get('currency_code'),
+      invoiceOk: new RegExp('^' + u + '\\.favor\\.stars100\\.\\d{14}$').test(q.get('invoice') || ''),
+      notify: q.get('notify_url'),
+      pending: !!localStorage.getItem('favorPendingStars'),
+      waiting: !!document.getElementById('storeWait'),
+    };
+  }, AUDIT_UID);
+  ok(checkout.host === 'www.paypal.com' && checkout.cmd === '_xclick', `checkout is a PayPal _xclick tab (${checkout.host})`);
+  ok(checkout.business === 'gablewyatt@gmail.com', 'payment goes to Wyatt\'s PayPal');
+  ok(checkout.amount === '6.00' && checkout.currency === 'USD', `honest price on the tab (${checkout.amount} ${checkout.currency})`);
+  ok(checkout.invoiceOk, 'invoice carries uid.pack.timestamp — the IPN contract');
+  ok(checkout.notify === 'https://nationgame.live/api/favor/paypal/ipn', 'notify_url points at the box IPN');
+  ok(checkout.pending && checkout.waiting, 'store shows the waiting-for-treasury beat');
+  await page.screenshot({ path: join(SHOTS, 'store-mint.png') });
+
+  // The box IPN delivers: stars + congrats land in Firebase; the watcher
+  // notices within a poll tick and the Mint celebrates.
+  await page.evaluate(async (u) => {
+    await firebase.database().ref(`favor/players/${u}/msgQueue`).push({
+      type: 'star_purchase', stars: 100, item: 'favor.stars100', at: Date.now() });
+    await firebase.database().ref(`favor/players/${u}/stars`).set(100);
+  }, AUDIT_UID);
+  let celebrated = false;
+  try {
+    await page.waitForFunction(() =>
+      document.getElementById('champOverlay').classList.contains('active') &&
+      /Royal Mint Delivers/i.test(document.getElementById('champTitle').textContent), { timeout: 12000 });
+    celebrated = true;
+  } catch (e) { /* asserted below */ }
+  ok(celebrated, 'delivery celebrated — "The Royal Mint Delivers!"');
+  await page.screenshot({ path: join(SHOTS, 'store-mint-delivered.png') });
+  await page.evaluate(() => document.getElementById('champBtn').click());
+  await sleep(400);
+  const after = await page.evaluate(() => ({
+    balance: document.getElementById('storeStars').textContent.trim(),
+    pending: !!localStorage.getItem('favorPendingStars'),
+    waiting: !!document.getElementById('storeWait'),
+  }));
+  ok(/★ 100/.test(after.balance), `balance banner reads the new Stars (${after.balance})`);
+  ok(!after.pending && !after.waiting, 'pending mark + waiting beat cleared after delivery');
+
+  // A cancelled checkout leaves no residue on the next visit.
+  await page.evaluate(() => localStorage.setItem('favorPendingStars',
+    JSON.stringify({ packId: 'favor.stars50', stars: 50, at: Date.now() })));
+  await page.goto(URL + '?paypal=cancel', { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await sleep(600);
+  ok(await page.evaluate(() => !localStorage.getItem('favorPendingStars') &&
+      location.search === ''),
+    'cancel return clears the pending mark and cleans the URL');
+
+  // Leave no trace.
+  const scrub = await page.evaluate(async (u) => {
+    for (let i = 0; i < 6; i++) {
+      await firebase.database().ref(`favor/players/${u}`).remove();
+      await new Promise(r => setTimeout(r, 400));
+      const p = await firebase.database().ref(`favor/players/${u}`).get();
+      if (!p.exists()) return 'clean';
+    }
+    return 'RESIDUE';
+  }, AUDIT_UID);
+  ok(scrub === 'clean', `mint audit player scrubbed from favor/* (${scrub})`);
+  await page.close();
 }
 
 // ═══ MISSION CEREMONY: player-by-player beats, honest payout chips ═══
