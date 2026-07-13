@@ -3555,8 +3555,12 @@ function showActionPanel(cardIndex) {
             if (missingSpecial.length === 0 && missingSkills.length > 0) {
                 const borrowable = game.getBorrowableSkills(0);
                 const canBorrowAll = missingSkills.every(s => borrowable[s] && borrowable[s].length > 0);
+                // The fee goes to the lender BEFORE the card's own cost is paid
+                // (activateCard deducts in that order), so affording the fee
+                // alone isn't enough — a borrow that leaves you short of the
+                // card cost lands right back in the silent-refusal path.
                 const borrowCost = missingSkills.length * 2;
-                if (canBorrowAll && game.players[0].gold >= borrowCost) {
+                if (canBorrowAll && game.players[0].gold >= borrowCost + (card.cost || 0)) {
                     html += `<button class="btn-royal primary action-btn" onclick="playWithBorrow(${cardIndex})"><span>Borrow & Play (\u2212${borrowCost}g)</span></button>`;
                 }
             }
@@ -3632,8 +3636,10 @@ function showFinalCardChoice(card) {
             if (missingSpecial.length === 0 && missingSkills.length > 0) {
                 const borrowable = game.getBorrowableSkills(0);
                 const canBorrowAll = missingSkills.every(s => borrowable[s] && borrowable[s].length > 0);
+                // Fee first, card cost second (see showActionPanel) — the
+                // player must be able to cover both, or the play silently dies.
                 const borrowCost = missingSkills.length * 2;
-                if (canBorrowAll && player.gold >= borrowCost) {
+                if (canBorrowAll && player.gold >= borrowCost + (card.cost || 0)) {
                     html += btn(`Borrow & Play (−${borrowCost}g)`, 'borrow_play', true);
                 }
             }
@@ -4139,16 +4145,29 @@ async function activateAllCards(humanAction) {
             const hadFloats = _statFloatUntil > Date.now();
             await statFloatWait();
 
+            const mine = (pi === 0);
+            const lastOfMine = (cardIdx === cards.length - 1);
+            const rivalsToCome = (round < game.playerCount - 1);
+
             // ...and when the NEXT beat is another player's full-screen
             // takeover, hold a breath of clear table so the gains register
             // (Wyatt: the popup was buried under the rivals' plays).
-            if (hadFloats && cardIdx === cards.length - 1 && round < game.playerCount - 1) {
-                await new Promise(r => setTimeout(r, 350 * window.CINEMATIC_SPEED));
+            //
+            // On the last round of a hand YOUR two cards resolve back-to-back and
+            // the rivals' spotlights used to start the instant the second landed —
+            // Wyatt: "they blur past". So your handoff to the table now ALWAYS
+            // gets a beat (not only when something happened to float), and it's
+            // long enough to read the board you just built.
+            if (lastOfMine && rivalsToCome && (mine || hadFloats)) {
+                await new Promise(r => setTimeout(r, (mine ? 900 : 350) * window.CINEMATIC_SPEED));
             }
 
-            // Brief pause between cards from the same player
+            // Breath between two cards from the SAME player. Yours arrive as a
+            // pair on the final round, so they get room to read as two separate
+            // moves instead of one smear. (Rivals keep the old brisk 300ms —
+            // slowing them down would just make the whole game draggy.)
             if (cardIdx < cards.length - 1) {
-                await new Promise(r => setTimeout(r, 300 * window.CINEMATIC_SPEED));
+                await new Promise(r => setTimeout(r, (mine ? 650 : 300) * window.CINEMATIC_SPEED));
             }
         }
     }
@@ -4432,7 +4451,10 @@ function endActPhases() {
         : () => Promise.resolve();
     // The ceremony narrates every resolution first; the stats it changed
     // repaint before the player is asked to make any follow-up choice.
+    // A resolution that DEALT missions (Midnight Crash) gets its own beat right
+    // after — you see the card you were handed before the act moves on.
     showMissionCeremony(missionResults, actNum)
+        .then(() => showMissionDrawBeat())
         .then(() => renderGameState())
         .then(afterBorrows).then(afterPenalty).then(afterPromise).then(startMelee);
 }
@@ -5480,8 +5502,21 @@ function showMissionCeremony(missionResults, actNum) {
             const m = b.r.mission;
             const d = b.r.deltas || {};
             const goldGain = (d.gold || 0) + (b.r.borrowed || 0); // reward gross of the borrow fee
+            // THE CONSEQUENCE LEADS, at headline size. Wyatt: "the mission phase
+            // needs to highlight what happens when you win and lose MORE — if you
+            // fail and gain 30 Scorn, it should stop the game and show that this
+            // player is getting 30 Scorn." A failure leads with what it cost you;
+            // a success leads with what it paid. Everything else follows as
+            // ordinary chips, and the beat holds longer when a headline lands.
+            const lead = b.r.success
+                ? ((d.favor || 0) > 0 ? 'favor' : null)
+                : ((d.scorn || 0) > 0 ? 'scorn' : null);
+
             const chips = [];
-            if (d.favor > 0) chips.push(chip('favor', `+${d.favor} Favor`, 'good'));
+            if (lead === 'scorn') chips.push(chip('scorn', `+${d.scorn} Scorn`, 'bad big'));
+            if (lead === 'favor') chips.push(chip('favor', `+${d.favor} Favor`, 'good big'));
+
+            if (d.favor > 0 && lead !== 'favor') chips.push(chip('favor', `+${d.favor} Favor`, 'good'));
             if (goldGain > 0) chips.push(chip('gold', `+${goldGain} Gold`, 'good'));
             if (d.prestige > 0) chips.push(chip('prestige', `+${d.prestige} Prestige`, 'good'));
             if (d.scorn < 0) chips.push(chip('scorn', `−${-d.scorn} Scorn`, 'good'));
@@ -5496,7 +5531,7 @@ function showMissionCeremony(missionResults, actNum) {
             if (goldGain < 0) chips.push(chip('gold', `−${-goldGain} Gold`, 'bad'));
             if (d.favor < 0) chips.push(chip('favor', `−${-d.favor} Favor`, 'bad'));
             if (d.prestige < 0) chips.push(chip('prestige', `−${-d.prestige} Prestige`, 'bad'));
-            if (d.scorn > 0) chips.push(chip('scorn', `+${d.scorn} Scorn`, 'bad'));
+            if (d.scorn > 0 && lead !== 'scorn') chips.push(chip('scorn', `+${d.scorn} Scorn`, 'bad'));
             return chips.join('');
         };
 
@@ -5529,7 +5564,10 @@ function showMissionCeremony(missionResults, actNum) {
             const rw = stage.querySelector('.mc-rewards');
             rw.innerHTML = rewardChips(b);
             [...rw.children].forEach((c, i) => { c.style.animationDelay = `${0.12 + i * 0.13}s`; });
-            timer = setTimeout(next, (1700 + rw.children.length * 260) * speed());
+            // A real consequence (the headline chip) gets extra time on screen —
+            // 30 Scorn should land, not scroll by.
+            const heavy = rw.querySelector('.mc-chip.big');
+            timer = setTimeout(next, ((heavy ? 2700 : 1700) + rw.children.length * 260) * speed());
         };
 
         const next = () => {
@@ -5558,6 +5596,75 @@ function showMissionCeremony(missionResults, actNum) {
         el.classList.add('active');
         renderBeat(beats[0]);
     });
+}
+
+// ═══ MISSION DEALT — "wait, what did I just get?" ═════════════════════
+// Some resolutions DEAL missions: failing The Midnight Crash hands every player
+// an Act 3 mission. The engine did that in total silence — the card appeared in
+// your hand and the only trace was one line in the log. Wyatt: "slow the game
+// down… the player should see — what mission did I get? Oh, I got this one.
+// That's cool. A few seconds to look at it, then the game moves on."
+// One beat per dealing card: YOUR card, big, a few seconds, tap to move on.
+// Reuses the ceremony's stage so it looks native and costs no new CSS.
+function showMissionDrawBeat() {
+    const draws = (game && game._missionDraws) || [];
+    const el = document.getElementById('missionCeremony');
+    if (!el || !draws.length) return Promise.resolve();
+    game._missionDraws = [];                        // narrated once, never twice
+
+    const speed = () => (window.CINEMATIC_SPEED || 1);
+
+    return draws.reduce((chain, ev) => chain.then(() => new Promise((resolve) => {
+        const mine = ev.drawn.find(d => d.playerIndex === 0);
+        if (!mine) { resolve(); return; }           // nothing of yours to read
+        const others = ev.drawn.filter(d => d.playerIndex !== 0);
+        const m = mine.mission;
+        const char = game.players[0].character;
+        const portrait = char ? `assets/characters/${char.filename}` : 'assets/ui/cover.jpg';
+
+        let closed = false, timer = null;
+        const close = () => {
+            if (closed) return;
+            closed = true;
+            clearTimeout(timer);
+            el.classList.remove('active');
+            el.onclick = null;
+            setTimeout(resolve, 280);
+        };
+
+        el.innerHTML = `
+            <div class="mc-inner">
+                <div class="ms-banner">
+                    <img class="mc-banner-icon" src="assets/icons/mission.png" alt="">${ev.source}
+                    <span class="ms-act">All Players Draw</span>
+                </div>
+                <div class="mc-stage">
+                    <div class="mc-player">
+                        <img class="mc-portrait" src="${portrait}" alt="">
+                        <div class="mc-pname">You</div>
+                        <div class="mc-pcount">Your new mission</div>
+                    </div>
+                    <div class="mc-cardwrap">
+                        <img class="mc-card" src="assets/cards/missions/${m.filename}" alt="${m.name}">
+                    </div>
+                    <div class="mc-rewards">
+                        <span class="mc-chip good"><img src="assets/icons/mission.png" alt="">${m.name}</span>
+                        ${m.act ? `<span class="mc-chip">Due Act ${m.act}</span>` : ''}
+                        ${others.length ? `<span class="mc-chip">${others.length} rival${others.length > 1 ? 's' : ''} drew one too</span>` : ''}
+                    </div>
+                </div>
+                <div class="ms-hint">tap to continue</div>
+            </div>`;
+        [...el.querySelectorAll('.mc-chip')].forEach((c, i) => {
+            c.style.animationDelay = `${0.25 + i * 0.14}s`;
+        });
+
+        el.classList.add('active');
+        el.onclick = close;
+        // A few seconds to actually read it — Wyatt's ask — then move on by itself
+        // so an unattended seat (or a multiplayer table) can never stall here.
+        timer = setTimeout(close, 4200 * speed());
+    })), Promise.resolve());
 }
 
 // ═══ MELEE — end-of-act battle & coronation cinematic ═════════════════

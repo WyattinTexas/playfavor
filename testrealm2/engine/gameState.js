@@ -30,6 +30,16 @@ const SLIDER_POSITIONS = 5;       // 5 slots (0-4), center = 2
 const SLIDER_CENTER = 2;
 const BORROW_SKILL_COST = 2;
 
+// Slot events that recharge ONCE PER ACT rather than firing on every landing.
+// Everything else on a character board re-fires freely (see applySliderAbilities).
+// These three are the only ones a free discard-slide could farm: repeatable
+// score theft, a mission per landing, and a permanent skill per landing.
+const SLOT_EVENTS_ONCE_PER_ACT = new Set([
+    'steal_3_prestige_each',   // Bandit slot 1 — prestige IS score; 3 × every rival, repeatable
+    'choose_mission',          // Magician slot 2 — a mission is worth up to 30 Favor
+    'pick_one'                 // Magician slot 4 — a permanent skill, every landing
+]);
+
 class FavorGame {
     constructor(playerCount) {
         if (playerCount < 3 || playerCount > 5) {
@@ -77,7 +87,12 @@ class FavorGame {
                 failedMissions: [],
                 hand: [],
                 skills: {},
-                claimedSlots: new Set([SLIDER_CENTER])  // center gold/special pre-claimed at start
+                // Slot events that recharge per act (SLOT_EVENTS_ONCE_PER_ACT).
+                // Coins re-fire on every landing, so nothing tracks them.
+                // You START on center rather than LANDING on it — initPlayers
+                // calls applySlotSkills, never applySliderAbilities, so the
+                // center coin correctly doesn't pay out at setup.
+                _actSlotEvents: new Set()
             };
         });
 
@@ -185,6 +200,9 @@ class FavorGame {
         this.players.forEach((p, i) => {
             p.hand = this.hands[(i + (this._dealOffset || 0)) % this.playerCount];
             p._paidSlideDir = null;
+            // New act — the farmable slot events (steal-prestige / choose-mission
+            // / pick-one) recharge. Coins never needed tracking; they always pay.
+            p._actSlotEvents = new Set();
         });
 
         this.phase = PHASES.GAMEPLAY;
@@ -321,6 +339,17 @@ class FavorGame {
         }
         if (card.reqFavor && player.favor < card.reqFavor) {
             missingSpecial.push(`${card.reqFavor} Favor`);
+        }
+
+        // The card's gold COST (spending, not a floor). activateCard has always
+        // refused an unaffordable play — but canPlay never knew, so the UI lit
+        // the Play button, the engine bailed with success:false (which no call
+        // site checked), and the card evaporated: never played, never discarded,
+        // no refund. 45 of 105 cards carry a cost; Wyatt met it as "Mind Warper
+        // didn't turn my Scorn into Prestige". A map that plays the card free
+        // short-circuits at the top, so this never fires on a map-waived play.
+        if (card.cost && card.cost > 0 && player.gold < card.cost) {
+            missingSpecial.push(`${card.cost} Gold`);
         }
 
         return {
@@ -612,26 +641,41 @@ class FavorGame {
         const slot = char.slots[pos];
         if (!slot) return;
 
-        // One-time bonuses: only if this slot hasn't been claimed before
-        if (!player.claimedSlots) player.claimedSlots = new Set([SLIDER_CENTER]);
+        // DIGITAL RULE (Wyatt's call, 2026-07-13) — a deliberate divergence from
+        // the printed rulebook p.10 ("Gold Coins & Events ... are only activated
+        // once"). A slot now pays out EVERY time you land on it. The old
+        // per-game `claimedSlots` gate is exactly why paying 5 Gold to slide
+        // onto a coin you'd taken earlier did nothing, with nothing said.
+        //
+        // COINS always re-fire. The 5g toll plus one-direction-per-turn keeps
+        // even the Duchess's 12g slot at roughly +1 gold/turn — not a pump worth
+        // playing. Scorn slots re-fire for the same reason (the Bandit's steal
+        // slots each carry 5 Scorn, which is what balances them).
+        if (slot.gold) {
+            player.gold += slot.gold;
+            this.addLog(`${player.name} receives ${slot.gold} Gold from slot ${pos + 1}`);
+        }
+        if (slot.scorn) {
+            player.scorn += slot.scorn;
+            this.addLog(`${player.name} takes ${slot.scorn} Scorn from slot ${pos + 1}`);
+        }
 
-        if (!player.claimedSlots.has(pos)) {
-            player.claimedSlots.add(pos);
-
-            // One-time gold
-            if (slot.gold) {
-                player.gold += slot.gold;
-                this.addLog(`${player.name} receives ${slot.gold} Gold from slot ${pos + 1}`);
-            }
-
-            // One-time scorn
-            if (slot.scorn) {
-                player.scorn += slot.scorn;
-                this.addLog(`${player.name} takes ${slot.scorn} Scorn from slot ${pos + 1}`);
-            }
-
-            // One-time special events
-            if (slot.special) {
+        // EVENTS re-fire too, except the three a free discard-slide could farm
+        // (SLOT_EVENTS_ONCE_PER_ACT) — those recharge once per act. The other 11
+        // events are already safe to repeat: the Mind's Eye / Philosopher's Stone
+        // grants are Math.max no-ops, borrow_any_player and mission_fail_10_gold
+        // are ongoing positional abilities resolved elsewhere, and the steal /
+        // give / convert events are bounded by gold that actually has to exist.
+        if (slot.special) {
+            if (SLOT_EVENTS_ONCE_PER_ACT.has(slot.special)) {
+                if (!player._actSlotEvents) player._actSlotEvents = new Set();
+                if (player._actSlotEvents.has(slot.special)) {
+                    this.addLog(`${player.name}: slot ${pos + 1}'s event already used this act`);
+                } else {
+                    player._actSlotEvents.add(slot.special);
+                    this.resolveSlotSpecial(player, slot.special, slot);
+                }
+            } else {
                 this.resolveSlotSpecial(player, slot.special, slot);
             }
         }
@@ -876,6 +920,14 @@ class FavorGame {
 
             case 'pick_one':
                 // Auto-pick: choose the skill the player has least of from options
+                //
+                // ⚠ This grant NEVER LANDED (found 2026-07-13). It wrote to
+                // player.skills, and applySliderAbilities calls applySlotSkills
+                // immediately afterwards — which zeroes skills and rebuilds them
+                // from slot + played cards + bonusSkills. The +1 was erased
+                // microseconds after it was granted, every single time. Skill
+                // grants have to ride bonusSkills to survive the recalc (same
+                // reason mission skill rewards live there).
                 if (slot.pickOptions && slot.pickOptions.length > 0) {
                     let bestSkill = slot.pickOptions[0];
                     let bestVal = player.skills[bestSkill] || 0;
@@ -883,6 +935,8 @@ class FavorGame {
                         const val = player.skills[s] || 0;
                         if (val < bestVal) { bestSkill = s; bestVal = val; }
                     });
+                    if (!player.bonusSkills) player.bonusSkills = {};
+                    player.bonusSkills[bestSkill] = (player.bonusSkills[bestSkill] || 0) + 1;
                     player.skills[bestSkill] = (player.skills[bestSkill] || 0) + 1;
                     this.addLog(`${player.name} picks ${bestSkill} from board`);
                 }
@@ -1578,6 +1632,11 @@ class FavorGame {
     resolveMissions() {
         const results = [];
 
+        // Missions dealt BY a resolution (The Midnight Crash's failure deals the
+        // whole table an Act 3 mission). Cleared each act so last act's deal
+        // can't narrate twice.
+        this._missionDraws = [];
+
         // What each resolution actually PAID or COST — the mission ceremony
         // shows these honest deltas. Per-asset favor depends on the player's
         // state at this exact moment, so recomputing later would lie.
@@ -1976,12 +2035,27 @@ class FavorGame {
                 player.prestige = 0;
                 player.scorn = 0;
                 break;
-            case 'all_draw_act3_mission':
+            case 'all_draw_act3_mission': {
+                // The Midnight Crash: failing it deals EVERY player an Act 3
+                // mission. This used to happen in total silence — a mission
+                // appeared in your hand and the only trace was one line in the
+                // log (Wyatt: "let the player SEE what mission they got").
+                // Record the deal so the ceremony can give it a real beat.
+                const drawn = [];
                 this.players.forEach(p => {
                     const m = (this.missionDecks[3] || []).shift();
-                    if (m) { p.missions.push(m); this.addLog(`${p.name} draws an Act 3 mission: ${m.name}`); }
+                    if (m) {
+                        p.missions.push(m);
+                        drawn.push({ playerIndex: p.index, mission: m });
+                        this.addLog(`${p.name} draws an Act 3 mission: ${m.name}`);
+                    }
                 });
+                if (drawn.length) {
+                    if (!this._missionDraws) this._missionDraws = [];
+                    this._missionDraws.push({ source: mission.name, drawn });
+                }
                 break;
+            }
         }
     }
 

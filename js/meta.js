@@ -823,6 +823,13 @@
         renderStore();
         if (res.ok) {
             const char = window.FAVOR_DATA.characters.find(c => c.id === charId);
+            // The celebration promises "a new hero enters your select pool", so
+            // she has to actually be able to. The sticky offer (localStorage
+            // favorOffer) is reused for 10 minutes while every id in it stays
+            // owned — which a purchase never invalidates. Without this, a hero
+            // you just paid ★100 for could not be OFFERED to you until the
+            // sticky roll expired. Buying re-opens the roll.
+            try { localStorage.removeItem('favorOffer'); } catch (e) { /* private mode */ }
             await showPurchaseCelebration(char);
         } else if (res.why === 'stars' || res.why === 'offline') {
             // Every refusal says WHY for a beat — a silently reverting

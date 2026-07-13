@@ -7,15 +7,21 @@
  *
  * Each slot can have:
  *   - skills: {} — ongoing skill bonuses while ring is on this slot
- *   - gold: N — one-time gold bonus (activated once when arriving)
+ *   - gold: N — gold bonus, paid EVERY time you land on the slot
  *   - favor: N — end-of-game Favor (blue badge value)
- *   - scorn: N — one-time scorn penalty (activated once when arriving)
- *   - special: "string" — one-time event effect or ongoing ability
+ *   - scorn: N — scorn penalty, taken EVERY time you land on the slot
+ *   - special: "string" — event effect or ongoing ability
  *   - pickOptions: [] — for "pick_one" specials
  *
- * Rules (from rulebook p.10):
+ * Rules — the DIGITAL game diverges from print here (Wyatt's call, 2026-07-13):
  *   - Skills are available every turn while ring is at that position
- *   - Gold, Scorn & Events activate ONLY ONCE (tracked by claimedSlots)
+ *   - Rulebook p.10 says "Gold Coins & Events ... are only activated once".
+ *     The digital game instead pays a slot out EVERY time you land on it:
+ *     the once-per-game gate made a paid slide onto an already-taken coin do
+ *     nothing, with no explanation, and it read as a bug.
+ *   - The three events a free discard-slide could farm (steal_3_prestige_each,
+ *     choose_mission, pick_one) recharge once per ACT — see
+ *     SLOT_EVENTS_ONCE_PER_ACT in engine/gameState.js. Everything else re-fires.
  *   - Favor is tallied at end of game based on final ring position
  *   - "The free skill activates immediately each movement"
  *

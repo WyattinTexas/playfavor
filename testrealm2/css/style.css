@@ -5401,6 +5401,33 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
 .mc-chip img { width: 27px; height: 27px; object-fit: contain; }
 .mc-chip.good { color: #ffe9ad; border-color: rgba(232, 195, 75, 0.7); }
 .mc-chip.bad { color: #ffb9a8; border-color: rgba(192, 57, 43, 0.6); }
+/* THE consequence of the mission — what you won, or what it just cost you.
+   Wyatt: a 30-Scorn failure has to LAND, not read as one chip among six. It
+   leads the list, arrives with a slam, and holds the beat open longer. */
+.mc-chip.big {
+    font-size: 21px;
+    padding: 9px 20px 9px 11px;
+    letter-spacing: 0.8px;
+    animation: mcChipBig 0.52s cubic-bezier(0.22, 1.5, 0.36, 1) forwards;
+}
+.mc-chip.big img { width: 38px; height: 38px; }
+.mc-chip.good.big {
+    color: #fff2c8;
+    border-color: rgba(232, 195, 75, 0.95);
+    background: linear-gradient(180deg, rgba(92, 66, 16, 0.95), rgba(46, 31, 6, 0.96));
+    box-shadow: 0 0 26px rgba(232, 195, 75, 0.42), 0 4px 12px rgba(0, 0, 0, 0.6);
+}
+.mc-chip.bad.big {
+    color: #ffd0c2;
+    border-color: rgba(192, 57, 43, 0.95);
+    background: linear-gradient(180deg, rgba(96, 24, 14, 0.95), rgba(48, 10, 5, 0.96));
+    box-shadow: 0 0 26px rgba(192, 57, 43, 0.5), 0 4px 12px rgba(0, 0, 0, 0.6);
+}
+@keyframes mcChipBig {
+    from { opacity: 0; transform: translateX(22px) scale(0.7); }
+    60%  { opacity: 1; transform: translateX(0) scale(1.08); }
+    to   { opacity: 1; transform: translateX(0) scale(1); }
+}
 @keyframes mcStamp {
     from { transform: rotate(-14deg) scale(3); opacity: 0; }
     62%  { transform: rotate(-14deg) scale(0.92); opacity: 1; }

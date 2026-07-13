@@ -997,5 +997,159 @@ console.log('── Last two cards: the pair stays with its player and plays bac
   ok(played.includes('lt_a_0') && played.includes('lt_b_0'), 'both land on the field for their owner');
 }
 
+// ─── Wyatt's 2026-07-13 playtest bugs ────────────────────────────────────────
+
+console.log("── A card's GOLD COST gates canPlay (Wyatt: 'Mind Warper didn't convert my Scorn')");
+{
+  // The bug: checkRequirements never looked at card.cost, so the UI lit the Play
+  // button, activateCard bailed with success:false (unchecked by every caller),
+  // and the card evaporated — no play, no discard, no refund. 45 of 105 cards
+  // carry a cost, so this could silently eat almost half the deck.
+  const rig = (gold) => {
+    const g = newGame();
+    const p = g.players[0];
+    p.bonusSkills = { alchemy: 6 };
+    g.applySlotSkills(p);
+    p.philosopherStone = 1;
+    p.scorn = 10;
+    p.gold = gold;
+    return { g, p };
+  };
+  const mw = cardByName('Mind Warper');
+  ok(mw.cost === 6, `Mind Warper costs ${mw.cost} Gold`);
+
+  const poor = rig(5);                       // one gold short
+  const chkPoor = poor.g.checkRequirements(0, mw);
+  ok(chkPoor.canPlay === false, 'canPlay is FALSE when short of the cost (was true — the lie)');
+  ok(chkPoor.missingSpecial.includes('6 Gold'), "UI now reads '▶ Need: 6 Gold'", JSON.stringify(chkPoor));
+  ok(chkPoor.missingSkills.length === 0, 'the gap is gold, not skills — so Borrow is not offered');
+
+  const rich = rig(6);                       // exactly affordable
+  ok(rich.g.checkRequirements(0, mw).canPlay === true, 'canPlay TRUE at exactly the cost');
+  const r = playCard(rich.g, 0, 'Mind Warper');
+  ok(r.success === true, 'the play succeeds');
+  ok(rich.p.scorn === 0 && rich.p.prestige === 10,
+    `10 Scorn → 10 Prestige (scorn ${rich.p.scorn}, prestige ${rich.p.prestige})`);
+  ok(rich.p.gold === 0, 'the 6 Gold was actually spent');
+
+  // A map that plays the card free must still bypass the cost gate entirely.
+  const g2 = newGame();
+  const flc = cardByName('Finding the Lost Corridor');
+  g2.players[0].gold = 0;
+  playCard(g2, 0, 'Her Lost Father');                    // grants the map
+  ok(g2.checkRequirements(0, flc).canPlay === true,
+    'a held map still waives BOTH the requirement and the cost at 0 gold');
+}
+
+console.log('── Slot coins pay on EVERY landing (Wyatt: revisiting a slot paid nothing)');
+{
+  // DIGITAL RULE (diverges from print p.10 "activated once"): coins always pay.
+  const g = newGame();
+  const p = g.players[0];                                // Explorer: slot 2 = 4 Gold
+  const leftSlot = p.character.slots[1];
+  ok(leftSlot.gold === 4, `Explorer's left slot pays ${leftSlot.gold} Gold`);
+
+  p.gold = 50;
+  p._paidSlideDir = null;
+  g.moveSlider(0, -1);                                   // center → left, 1st visit
+  ok(p.gold === 49, `1st landing: −5 toll +4 coin = 49 (${p.gold})`);
+
+  p._paidSlideDir = null;
+  g.moveSlider(0, 1);                                    // back to center (no coin)
+  ok(p.gold === 44, `slide back to center: −5, no coin (${p.gold})`);
+
+  p._paidSlideDir = null;
+  g.moveSlider(0, -1);                                   // REVISIT — used to pay nothing
+  ok(p.gold === 43, `REVISIT pays the coin again: −5 +4 = 43 (${p.gold})`, `got ${p.gold}, old rule gave 39`);
+
+  // Skills still track the slot you're actually on.
+  ok((p.skills.prospecting || 0) === 3 && (p.skills.survival || 0) === 0,
+    'skills follow the ring (Prospecting 3 on the left slot, Survival 0)');
+}
+
+console.log('── The three farmable slot events are capped at once per ACT');
+{
+  // Everything else on a board re-fires freely; these three would let a FREE
+  // discard-slide farm score, missions, or permanent skills.
+  const g = new FavorGame(3);
+  g.loadDecks();
+  g.initPlayers([
+    { characterId: 'bandit', playerName: 'You' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'explorer', playerName: 'B' },
+  ]);
+  g.phase = 'gameplay';
+  const p = g.players[0];
+  ok(p.character.slots[0].special === 'steal_3_prestige_each',
+    "Bandit's far-left slot steals 3 Prestige from every player");
+
+  g.players[1].prestige = 30;
+  g.players[2].prestige = 30;
+  p.gold = 60;
+  p.sliderPosition = 1;                                  // sit next to the steal slot
+
+  p._paidSlideDir = null;
+  g.moveSlider(0, -1);                                   // land on it — steal fires
+  const after1 = { me: p.prestige, them: g.players[1].prestige };
+  ok(after1.them === 27, `1st landing steals 3 (rival 30 → ${after1.them})`);
+
+  p._paidSlideDir = null;
+  g.moveSlider(0, 1);                                    // step off
+  p._paidSlideDir = null;
+  g.moveSlider(0, -1);                                   // land AGAIN, same act
+  ok(g.players[1].prestige === 27,
+    `2nd landing in the same act steals NOTHING (rival still ${g.players[1].prestige})`);
+  ok(p.prestige === after1.me, 'and the thief gains nothing the second time');
+
+  // A new act recharges it.
+  g.startAct(2);
+  p.gold = 60;
+  p.sliderPosition = 1;
+  p._paidSlideDir = null;
+  g.moveSlider(0, -1);
+  ok(g.players[1].prestige === 24, `Act 2 recharges the event (rival ${g.players[1].prestige})`);
+
+  // The COINS are never capped, only the event — which is exactly what balances
+  // the Bandit: BOTH his steal slots carry 5 Scorn, so bouncing between them to
+  // re-arm the steal taxes him 5 Scorn every single landing. Four landings here
+  // (slot1 → slot0 → slot1 → slot0, then Act 2's slot0) = 20 Scorn, while the
+  // capped steal only paid out twice.
+  ok(p.scorn === 20, `its 5 Scorn coin bit on EVERY landing — 4 × 5 = ${p.scorn}`);
+}
+
+console.log("── Magician's pick_one grant SURVIVES the skill recalc (it never used to)");
+{
+  // It wrote to player.skills, and applySliderAbilities calls applySlotSkills
+  // immediately after — which zeroes skills and rebuilds from slot + cards +
+  // bonusSkills. The +1 was erased microseconds later, every time.
+  const g = new FavorGame(3);
+  g.loadDecks();
+  g.initPlayers([
+    { characterId: 'magician', playerName: 'You' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'explorer', playerName: 'B' },
+  ]);
+  g.phase = 'gameplay';
+  const p = g.players[0];
+  const pickSlot = p.character.slots.findIndex(s => s.special === 'pick_one');
+  ok(pickSlot >= 0, `Magician has a pick_one slot (slot ${pickSlot + 1})`);
+
+  const before = { ...p.skills };
+  p.gold = 60;
+  p.sliderPosition = pickSlot - 1;
+  p._paidSlideDir = null;
+  g.moveSlider(0, 1);                                    // land on pick_one
+
+  const granted = Object.keys(p.bonusSkills || {}).find(k => (p.bonusSkills[k] || 0) > 0);
+  ok(!!granted, `the pick lands in bonusSkills (${granted})`);
+  ok((p.skills[granted] || 0) > 0, `and shows in the live skill total (${granted}=${p.skills[granted]})`);
+
+  // The real proof: force a recalc and confirm it's still there.
+  g.applySlotSkills(p);
+  ok((p.skills[granted] || 0) > 0,
+    `${granted} SURVIVES applySlotSkills (${p.skills[granted]}) — the old code lost it here`,
+    `before=${JSON.stringify(before)}`);
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);

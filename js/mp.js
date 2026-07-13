@@ -41,7 +41,10 @@
     // Lockstep build version — bump whenever engine RULES or the move
     // stream change shape (both clients must simulate identically). Queue
     // entries and game records carry it; mismatched builds never pair.
-    const MPV = 4;
+    // 5 (7/13): engine RULES changed — slot coins/events now re-fire on every
+    // landing, card gold cost gates canPlay, and pick_one persists. Lockstep
+    // demands identical simulation, so a v4 client must never pair with a v5.
+    const MPV = 5;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

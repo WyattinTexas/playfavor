@@ -2358,7 +2358,10 @@ for (const mode of ['desktop', 'phone']) {
     const p = game.players[0];
     p.gold = 70;                                // Wyatt's scenario: plenty of gold
     p.sliderPosition = 2;
-    p.claimedSlots = new Set([0, 1, 2, 3, 4]);  // pre-claimed: fee math stays pure
+    // Slot coins now pay EVERY landing (claimedSlots is gone — see
+    // applySliderAbilities). This flow slides RIGHT, and the Explorer's slots 4
+    // and 5 carry no coins (Mind's Eye / Philosopher's Stone events only, both
+    // idempotent), so the fee math below stays pure at a clean −5 per space.
     game.pendingActivations = new Array(game.playerCount).fill(null);
     renderGameState();
     document.querySelectorAll('.game-toast').forEach(t => t.remove());
@@ -2478,7 +2481,11 @@ for (const mode of ['desktop', 'phone']) {
     await page.evaluate(() => { document.querySelector('#boardOvConfirm .btn-royal.primary').click(); });
     await sleep(900);
     const after = await page.evaluate(() => ({ pos: game.players[0].sliderPosition, gold: game.players[0].gold }));
-    ok(after.pos === 1 && after.gold === 15, `DRAG: pay & slide lands (slot ${after.pos + 1}, ${after.gold}g)`);
+    // 20g − 5g toll + the 4g coin the Explorer's slot 2 pays = 19g. That coin is
+    // the point: it now pays EVERY landing (Wyatt's report — see
+    // applySliderAbilities), where the old once-per-game rule left this at 15g.
+    ok(after.pos === 1 && after.gold === 19,
+      `DRAG: pay & slide lands and the slot's coin PAYS (slot ${after.pos + 1}, ${after.gold}g)`);
   }
   await page.close();
 }
@@ -2943,11 +2950,23 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
   ok(guards.poor.ok === false && guards.stars === 50 && !guards.scientistOwned,
     `50★ can't buy a 100★ hero — no decrement, no ownership (${guards.stars})`);
 
-  // Hero select draws ONLY from owned — and the Duchess now shows up.
+  // Buying MUST re-open the sticky offer. It's reused for 10 minutes while every
+  // id in it stays owned, and a purchase never invalidated it — so the hero you
+  // just paid ★100 for could not be offered to you until the roll expired, while
+  // the celebration told you she'd "joined your select pool". (Fixed in
+  // FLB.confirmBuy; this is the regression guard.)
+  const sticky = await page.evaluate(() => localStorage.getItem('favorOffer'));
+  ok(sticky === null, 'buying a hero re-opens the sticky offer so she can actually be dealt');
+
+  // Hero select draws ONLY from owned — and the Duchess can now be offered.
   const pool = await page.evaluate(() => {
     const owned = new Set(FLB.ownedIds());
     let allOwned = true, duchessSeen = false;
     for (let i = 0; i < 20; i++) {
+      // The sticky offer pins ONE roll on purpose (no re-rolling by backing out),
+      // so clear it per shuffle — what's under test here is that the ROLL itself
+      // can offer her, which is precisely what ★100 is supposed to buy.
+      localStorage.removeItem('favorOffer');
       showCharacterSelect();
       _offeredHeroes.forEach(c => {
         if (!owned.has(c.id)) allOwned = false;
@@ -3362,14 +3381,25 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
 
   await page.evaluate(() => document.getElementById('missionCeremony').click());   // reveal the failure
   await sleep(500);
-  const verdict2 = await page.evaluate(() => ({
-    stamp: document.querySelector('.mc-stamp').textContent,
-    fail: document.querySelector('.mc-stage').classList.contains('fail'),
-    chips: [...document.querySelectorAll('.mc-chip')].map(c => c.textContent.trim()),
-  }));
+  const verdict2 = await page.evaluate(() => {
+    const chips = [...document.querySelectorAll('.mc-chip')];
+    const lead = chips[0];
+    return {
+      stamp: document.querySelector('.mc-stamp').textContent,
+      fail: document.querySelector('.mc-stage').classList.contains('fail'),
+      chips: chips.map(c => c.textContent.trim()),
+      leadText: lead ? lead.textContent.trim() : '(none)',
+      leadBig: !!lead && lead.classList.contains('big') && lead.classList.contains('bad'),
+      leadPx: lead ? parseFloat(getComputedStyle(lead).fontSize) : 0,
+    };
+  });
   ok(verdict2.stamp === 'Failed' && verdict2.fail, `failure beat stamps FAILED (${verdict2.stamp})`);
   ok(verdict2.chips.some(t => /\+10 Scorn/.test(t)),
     `penalty chip shows +10 Scorn (${verdict2.chips.join(' · ')})`);
+  // Wyatt: a failure's cost has to LAND, not read as one chip among many.
+  ok(verdict2.leadBig && /\+10 Scorn/.test(verdict2.leadText),
+    `the CONSEQUENCE leads the list at headline size ("${verdict2.leadText}")`);
+  ok(verdict2.leadPx >= 20, `headline chip is genuinely bigger (${verdict2.leadPx}px vs 14.5px base)`);
   await page.screenshot({ path: join(SHOTS, 'mission-ceremony-failed.png') });
 
   await page.evaluate(() => document.getElementById('missionCeremony').click());   // past the last beat
@@ -3409,6 +3439,121 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
     `phone ceremony fits 844×390 (card ${pfitc.cardIn}, chips ${pfitc.chipsIn}, hscroll ${pfitc.hscroll})`);
   await phone.screenshot({ path: join(SHOTS, 'mission-ceremony-phone.png') });
   await phone.close();
+}
+
+// ═══ A CARD'S GOLD COST GATES PLAY (Wyatt: "Mind Warper did nothing") ═══
+// checkRequirements never looked at card.cost, so the Play button lit up, the
+// engine refused with success:false (which no caller checked), and the card
+// evaporated — no play, no discard, no refund. 45 of 105 cards carry a cost.
+{
+  console.log('── Gold cost gates the Play button (Wyatt\'s Mind Warper)');
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('cost-gate: ' + m.text()); });
+  await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+
+  // Requirements MET (6 Alchemy + 1 Philosopher's Stone), purse ONE gold short.
+  const short = await page.evaluate(() => {
+    const p = game.players[0];
+    p.bonusSkills = { alchemy: 6 };
+    game.applySlotSkills(p);
+    p.philosopherStone = 1;
+    p.scorn = 10;
+    p.gold = 5;                                    // the card costs 6
+    p.hand = [{ ...window.FAVOR_DATA.cards.find(c => c.name === 'Mind Warper') }];
+    renderGameState();
+    showActionPanel(0);
+    const btn = [...document.querySelectorAll('#actionPanel .action-btn')]
+      .find(b => /Play|Need/.test(b.textContent));
+    const chk = game.checkRequirements(0, p.hand[0]);
+    return {
+      text: btn ? btn.textContent.trim() : '(no button)',
+      disabled: btn ? btn.disabled : false,
+      canPlay: chk.canPlay,
+      borrowOffered: [...document.querySelectorAll('#actionPanel .action-btn')]
+        .some(b => /Borrow/.test(b.textContent)),
+    };
+  });
+  ok(short.canPlay === false, 'engine: canPlay is FALSE one gold short of the cost');
+  ok(short.disabled && /Need/.test(short.text) && /6 Gold/.test(short.text),
+    `Play is disabled and NAMES the gap: "${short.text}"`);
+  ok(!short.borrowOffered, 'and Borrow is not offered — you cannot borrow your way out of being broke');
+  await page.screenshot({ path: join(SHOTS, 'cost-gate-short.png') });
+
+  // One more gold: the same card is playable, and it actually converts.
+  const rich = await page.evaluate(async () => {
+    const p = game.players[0];
+    p.gold = 6;
+    renderGameState();
+    showActionPanel(0);
+    const btn = [...document.querySelectorAll('#actionPanel .action-btn')]
+      .find(b => /Play/.test(b.textContent) && !/Need/.test(b.textContent));
+    const enabled = !!btn && !btn.disabled;
+    // Drive the real engine path and confirm the special fires.
+    const card = p.hand[0];
+    game.pickCard(0, 0);
+    const res = game.activateCard(0, card.id, 'play');
+    return { enabled, text: btn ? btn.textContent.trim() : '', ok: res.success, scorn: p.scorn, prestige: p.prestige };
+  });
+  ok(rich.enabled, `at 6 Gold the Play button lives ("${rich.text}")`);
+  ok(rich.ok && rich.scorn === 0 && rich.prestige === 10,
+    `and Mind Warper converts: 10 Scorn → ${rich.prestige} Prestige, scorn now ${rich.scorn}`);
+  await page.close();
+}
+
+// ═══ MIDNIGHT CRASH DEALS THE TABLE A MISSION — and now you SEE it ═══
+// Its failure hands every player an Act 3 mission. The engine did that in total
+// silence: the card appeared in your hand, and only the log knew.
+{
+  console.log('── The Midnight Crash deals a mission — and the player is shown it');
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('draw-beat: ' + m.text()); });
+  await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+
+  await page.evaluate(() => {
+    game.players.forEach(pl => { pl.missions = []; });
+    const p = game.players[0];
+    p.favor = 0;                                   // needs 4 Favor & 3 Alchemy → fails
+    p.bonusSkills = {};
+    game.applySlotSkills(p);
+    p.skills.alchemy = 0;
+    p.missions = [{ ...window.FAVOR_DATA.missions.find(m => m.name === 'The Midnight Crash'),
+                    activationRound: 1, dueAct: 1 }];
+    endActPhases();
+  });
+  // The ceremony narrates the failure first…
+  await page.waitForFunction(() => document.getElementById('missionCeremony').classList.contains('active'), { timeout: 8000 });
+  await page.evaluate(() => document.getElementById('missionCeremony').click());   // reveal the verdict
+  await sleep(450);
+  await page.evaluate(() => document.getElementById('missionCeremony').click());   // …then past it, into the deal
+  await sleep(900);
+
+  const beat = await page.evaluate(() => {
+    const el = document.getElementById('missionCeremony');
+    const act = el.querySelector('.ms-act');
+    const banner = el.querySelector('.ms-banner');
+    const card = el.querySelector('.mc-card');
+    const pc = el.querySelector('.mc-pcount');
+    return {
+      active: el.classList.contains('active'),
+      act: act ? act.textContent.trim() : '',
+      banner: banner ? banner.textContent.trim() : '',
+      card: card ? card.alt : '',
+      cardIn: card ? (card.getBoundingClientRect().height > 180) : false,
+      pcount: pc ? pc.textContent.trim() : '',
+      myMissions: game.players[0].missions.map(m => m.name),
+      everyoneGotOne: game.players.every(p => p.missions.length > 0),
+    };
+  });
+  ok(beat.active && /All Players Draw/i.test(beat.act), `the deal gets its own beat ("${beat.act}")`);
+  ok(/Midnight Crash/i.test(beat.banner), `the banner names what caused it ("${beat.banner}")`);
+  ok(beat.card && beat.myMissions.includes(beat.card), `it shows YOUR new mission (${beat.card})`);
+  ok(beat.cardIn, 'the card is big enough to actually read');
+  ok(/new mission/i.test(beat.pcount), `and says whose it is ("${beat.pcount}")`);
+  ok(beat.everyoneGotOne, 'every player really was dealt one');
+  await page.screenshot({ path: join(SHOTS, 'mission-draw-beat.png') });
+  await page.close();
 }
 
 // ═══ MELEE CINEMATIC (Skylar's system): forge rows → clash → podium ═══
@@ -3808,8 +3953,13 @@ console.log('── Stat floats: +N rises off the grown stat (desktop rail + pho
     typeof statFloatWait === 'function' && /statFloatWait\(\)/.test(String(activateAllCards))),
     'activation loop awaits the +N beat before the next spotlight');
   ok(await page.evaluate(() => /hadFloats/.test(String(activateAllCards)) &&
-    /350\s*\*\s*window\.CINEMATIC_SPEED/.test(String(activateAllCards))),
-    'a clear-air breather separates your payoff from the next player’s takeover');
+    /\(mine \? 900 : 350\)\s*\*\s*window\.CINEMATIC_SPEED/.test(String(activateAllCards))),
+    'a clear-air breather separates your payoff from the next player’s takeover — and YOURS is the long one (900ms)');
+  // Wyatt 7/13: on the last round your two cards resolve back-to-back and the
+  // rivals used to start the instant the second landed — "they blur past".
+  ok(await page.evaluate(() =>
+    /\(mine \? 650 : 300\)\s*\*\s*window\.CINEMATIC_SPEED/.test(String(activateAllCards))),
+    'your last TWO cards get room between them (650ms) — two moves, not one smear');
   await page.screenshot({ path: join(SHOTS, 'stat-float-desktop.png') });
   await sleep(2400);   // floats live 1750ms + up to 260ms stagger
   ok(await page.evaluate(() => document.querySelectorAll('.stat-float').length === 0),
