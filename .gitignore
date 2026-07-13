@@ -9,3 +9,8 @@ shell/store/trailer/bg.png
 shell/store/__pycache__/
 shell/store/steam-assets/hero_check.png
 shell/store/steam-assets/library_check.png
+
+# Local dev symlink — a committed symlink to /opt/homebrew breaks the GitHub Pages
+# Jekyll build ("No such file or directory @ rb_check_realpath_internal"), which
+# silently froze playfavor.net on a stale build for a full day (7/13).
+node_modules/
