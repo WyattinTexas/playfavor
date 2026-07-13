@@ -1,0 +1,11 @@
+
+# Trailer build artifacts (21MB video + 1000+ frames + the PNG byte-transport)
+shell/store/trailer/frames/
+shell/store/trailer/*.mp4
+shell/store/trailer/trailer_payload.png
+shell/store/trailer/trailer_raw.bin
+shell/store/trailer/check.bin
+shell/store/trailer/bg.png
+shell/store/__pycache__/
+shell/store/steam-assets/hero_check.png
+shell/store/steam-assets/library_check.png

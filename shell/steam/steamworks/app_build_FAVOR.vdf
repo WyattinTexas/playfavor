@@ -1,11 +1,11 @@
 "AppBuild"
 {
 	"AppID" "4959630"
-	"Desc" "FAVOR 1.0 — Electron shell over playfavor.net (win+mac)"
+	"Desc" "FAVOR 1.0 — Electron shell over playfavor.net (per-OS depots)"
 
 	// SetLive EMPTY on purpose: steamcmd blocks setting builds live
 	// (accidental-publish guard, learned on Nation) — commit unattached,
-	// then Set Build Live on 'beta' in the Steamworks web UI.
+	// then Set Build Live on the default branch in the Steamworks web UI.
 	"SetLive" ""
 
 	"ContentRoot" "/Users/drbango/playfavor/shell/steam/dist/"
@@ -13,20 +13,32 @@
 
 	"Depots"
 	{
-		// Single content depot 4959631 (auto-created, already attached to
-		// all 3 packages). Both platform folders live here; the game's
-		// per-OS Launch Options pick the right executable, so a Windows
-		// player runs FAVOR-win32-x64\FAVOR.exe and a Mac player runs
-		// FAVOR-darwin-universal/FAVOR.app.
-		"4959631"
+		// One depot per OS: Steam only downloads the depot matching the
+		// player's platform. A single "All OSes" depot shipped BOTH builds to
+		// everyone (a Windows player fetched the 427MB mac app too) and left
+		// the store's platform list disagreeing with the Steamworks config.
+		//
+		// DepotPath keeps the platform folder, so the published Launch Options
+		// (FAVOR-win32-x64\FAVOR.exe / FAVOR-darwin-universal/FAVOR.app) stay valid.
+		"4959631"   // Windows
 		{
 			"FileMapping"
 			{
-				"LocalPath" "*"
-				"DepotPath" "."
+				"LocalPath" "FAVOR-win32-x64/*"
+				"DepotPath" "FAVOR-win32-x64"
 				"recursive" "1"
 			}
 			"FileExclusion" "*.pdb"
+		}
+
+		"4959632"   // macOS
+		{
+			"FileMapping"
+			{
+				"LocalPath" "FAVOR-darwin-universal/*"
+				"DepotPath" "FAVOR-darwin-universal"
+				"recursive" "1"
+			}
 		}
 	}
 }
