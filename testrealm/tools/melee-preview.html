@@ -6,11 +6,11 @@
 <title>FAVOR — Melee Reveal Preview</title>
 <!-- ?v= stamped by the deploy bump (same as index.html) — without it, GitHub
      Pages' ~10-min cache serves STALE js/css here and fixes look unshipped. -->
-<link rel="stylesheet" href="../css/style.css?v=20260713183547">
+<link rel="stylesheet" href="../css/style.css?v=20260713184556">
 <!-- Melee cinematic styling lives in its own file since the testrealm GAME was
      reset to the testrealm2 build (whose style.css has a different .ms-* splash).
      Loaded AFTER style.css so these .ms-* rules win here in the preview. -->
-<link rel="stylesheet" href="../css/melee.css?v=20260713183547">
+<link rel="stylesheet" href="../css/melee.css?v=20260713184556">
 <style>
   html, body { margin: 0; height: 100%; background: #140a04; font-family: 'Cinzel', serif; }
   .pv-bar {
@@ -56,7 +56,12 @@
     <button class="pv-btn" data-count="4">4 Players</button>
     <button class="pv-btn" data-count="5">5 Players</button>
     <span class="pv-note">|</span>
-    <button class="pv-btn" id="pvTie">Tie for 1st</button>
+    <span class="pv-note">Ties:</span>
+    <button class="pv-btn on" data-tie="none">None</button>
+    <button class="pv-btn" data-tie="first">1st</button>
+    <button class="pv-btn" data-tie="second">2nd</button>
+    <button class="pv-btn" data-tie="both">1st+3rd</button>
+    <button class="pv-btn" data-tie="all">All</button>
     <button class="pv-btn" id="pvReplay">▶ Replay</button>
     <span class="pv-note">|</span>
     <button class="pv-btn on" id="pvSap">Sap FX</button>
@@ -69,7 +74,7 @@
 
   <div id="meleeSplash"></div>
 
-  <script src="../js/melee.js?v=20260713183547"></script>
+  <script src="../js/melee.js?v=20260713184556"></script>
   <script>
     // Mock data mirrors the engine's resolveMelee() output shape exactly:
     // { playerIndex, name, power, placement, prestige }, sorted power-desc.
@@ -102,7 +107,7 @@
     // A real mission whose success reward grants power (missions art folder).
     const POWER_MISSION = { name: 'Mounted Champion', filename: 'Act 2_To Believe in Someone Card.jpg', pips: 3 };
 
-    let count = 3, speed = 1, tie = false, sapFx = true, cardsFx = true;
+    let count = 3, speed = 1, tieMode = 'none', sapFx = true, cardsFx = true;
 
     function portraitFor(pi) { return '../assets/characters/' + CHARS[pi].file; }
     // Mock slider slots so the ring shows at varied positions per fighter.
@@ -138,7 +143,15 @@
         }
         plan.push(p);
       }
-      if (tie && count >= 2) plan[1].ownRaw = plan[0].ownRaw + 3;  // co-champions after the wound
+      // Tie modes sculpt FINAL powers (non-casters carry the −3 wound, the
+      // caster doesn't): equal finals = shared placement in the builder below.
+      if (tieMode === 'first' && count >= 2) plan[1].ownRaw = plan[0].ownRaw + 3;      // co-champions
+      if (tieMode === 'second' && count >= 3) plan[2].ownRaw = plan[1].ownRaw;         // shared silver
+      if (tieMode === 'both') {                                                        // 1st AND 3rd tied
+        if (count >= 2) plan[1].ownRaw = plan[0].ownRaw + 3;
+        if (count >= 4) plan[3].ownRaw = plan[2].ownRaw;
+      }
+      if (tieMode === 'all') plan.forEach(p => { if (p.pi !== 0) p.ownRaw = plan[0].ownRaw + 3; });
 
       // raw + floored power
       plan.forEach(p => {
@@ -241,7 +254,10 @@
       document.querySelectorAll('[data-speed]').forEach(x => x.classList.remove('on'));
       b.classList.add('on'); speed = +b.dataset.speed; play();
     });
-    document.getElementById('pvTie').onclick = (e) => { tie = !tie; e.target.classList.toggle('on', tie); play(); };
+    document.querySelectorAll('[data-tie]').forEach(b => b.onclick = () => {
+      document.querySelectorAll('[data-tie]').forEach(x => x.classList.remove('on'));
+      b.classList.add('on'); tieMode = b.dataset.tie; play();
+    });
     document.getElementById('pvSap').onclick = (e) => { sapFx = !sapFx; e.target.classList.toggle('on', sapFx); play(); };
     document.getElementById('pvCards').onclick = (e) => { cardsFx = !cardsFx; e.target.classList.toggle('on', cardsFx); play(); };
     document.getElementById('pvReplay').onclick = play;
