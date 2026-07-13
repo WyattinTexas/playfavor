@@ -689,6 +689,57 @@ class FavorGame {
      * Called whenever slider moves or skills need recalculating.
      */
     /**
+     * Chemical X's free move: put the ring on ANY slot, no toll. The slot then
+     * pays out exactly as if you'd slid there (coin + event), because you landed
+     * on it. THE single mutation point — the local board picker, a remote seat's
+     * streamed slot, and the AI heuristic all land here, so every client moves
+     * the ring identically at the same point in the stream.
+     *
+     * A move onto the slot you already occupy is refused: it would re-collect
+     * that slot's coin for free, and "move the slider" has to actually move it.
+     * An out-of-range slot falls back to the deterministic AI pick rather than
+     * dropping the card's effect.
+     *
+     * NOT subject to the one-direction-per-turn lock — that governs paid slides
+     * (Wyatt's ruling); the card says ANY slot, and it pays no toll.
+     */
+    applyFreeSliderMove(playerIndex, pos) {
+        const player = this.players[playerIndex];
+        player._pendingSliderMove = false;
+
+        const valid = Number.isInteger(pos) && pos >= 0 && pos < SLIDER_POSITIONS
+            && pos !== player.sliderPosition;
+        const target = valid ? pos : this.aiFreeSliderPos(playerIndex);
+        if (target === player.sliderPosition) return { success: false, error: 'Nowhere to move' };
+
+        player.sliderPosition = target;
+        this.applySliderAbilities(player);   // the landing pays out, as any landing does
+        const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
+        this.addLog(`${player.name}'s Chemical X: ring moves to ${posNames[target]} (free)`);
+        return { success: true, pos: target };
+    }
+
+    /**
+     * The AI's destination — and the fallback EVERY client computes identically
+     * when a human's pick never arrives (AFK boot). Values the slot's end-game
+     * Favor first, then its purse and skills. Pure: reads state, mutates nothing.
+     */
+    aiFreeSliderPos(playerIndex) {
+        const player = this.players[playerIndex];
+        const slots = (player.character && player.character.slots) || [];
+        let best = player.sliderPosition;
+        let bestScore = -Infinity;
+        slots.forEach((s, i) => {
+            if (i === player.sliderPosition) return;      // it has to move
+            let score = (s.favor || 0) * 3 + (s.gold || 0) - (s.scorn || 0) * 2;
+            if (s.skills) Object.values(s.skills).forEach(v => { score += v; });
+            if (s.special) score += 2;
+            if (score > bestScore) { bestScore = score; best = i; }
+        });
+        return best;
+    }
+
+    /**
      * The skills the player's CURRENT slot offers to "Pick One" from — empty
      * unless they're standing on a pick_one slot (the Magician's 4th).
      */
@@ -1176,17 +1227,20 @@ class FavorGame {
             // --- Slider manipulation ---
 
             case 'move_slider_any':
-                // Chemical X: move slider to any position for free, then apply abilities
-                // Auto-pick: move to the end with best unclaimed rewards (prefer slot 4/favor)
-                {
-                    const oldPos = player.sliderPosition;
-                    let newPos;
-                    if (oldPos <= 2) newPos = 4;  // move toward favor end
-                    else newPos = 0;               // if already right, go left
-                    player.sliderPosition = newPos;
-                    this.applySliderAbilities(player);
-                    const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
-                    this.addLog(`${player.name}'s Chemical X: moved slider to ${posNames[newPos]} for free`);
+                // Chemical X: "Move Character Slider to ANY slot." Any slot — so
+                // the PLAYER picks (rules fidelity: where the box gives a choice,
+                // build the choice). It used to shove you to slot 5 — or slot 1 if
+                // you were already right — which is not a choice at all, and could
+                // dump you somewhere you'd never have gone.
+                // applyFreeSliderMove() is THE single mutation point for local,
+                // remote and AI alike, so every client lands the ring identically.
+                if (player.index === 0 || player._remoteHuman) {
+                    // Human (local OR remote) — the flag pauses for a choice:
+                    // local opens the board, remote awaits the owner's streamed
+                    // slot. Never auto-decided.
+                    player._pendingSliderMove = true;
+                } else {
+                    this.applyFreeSliderMove(player.index, this.aiFreeSliderPos(player.index));
                 }
                 break;
 

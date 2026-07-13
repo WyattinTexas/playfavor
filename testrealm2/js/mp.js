@@ -48,7 +48,10 @@
     // "Pick One" is now the player's choice, not an auto-take). A v5 client
     // would never publish it and would auto-decide instead, so the two
     // simulations diverge the moment a Magician lands on that slot.
-    const MPV = 6;
+    // 7 (7/13): 'slider_move' — Chemical X ("move to ANY slot") is the player's
+    // choice too. A v6 client would auto-shove the ring to slot 5 instead of
+    // awaiting the pick, so the boards diverge the moment Chemical X is played.
+    const MPV = 7;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

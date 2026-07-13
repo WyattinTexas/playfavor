@@ -1215,5 +1215,105 @@ console.log("── The Magician's PICK ONE is the player's choice (and it final
   ok(Array.isArray(c.p._pendingSlotPick), 'a new act recharges the pick');
 }
 
+console.log('── Chemical X: "move to ANY slot" is the PLAYER\'s choice, not the engine\'s');
+{
+  // It used to shove you to slot 5 (or slot 1 if you were already right) with no
+  // say in it. Now the human picks. applyFreeSliderMove() is the single mutation
+  // point for local / remote / AI, and the landing pays out like any other.
+  const rig = (charId, who) => {
+    const g = new FavorGame(3);
+    g.loadDecks();
+    const roster = ['knight', 'knight', 'knight'];
+    roster[who] = charId;
+    g.initPlayers(roster.map((c, i) => ({ characterId: c, playerName: 'P' + i })));
+    g.phase = 'gameplay';
+    const p = g.players[who];
+    p.bonusSkills = { alchemy: 3 };     // Chemical X needs 3 Alchemy
+    g.applySlotSkills(p);
+    p.gold = 20;                        // …and 2 Gold
+    return { g, p };
+  };
+
+  const cx = cardByName('Chemical X');
+  ok(cx.special === 'move_slider_any' && cx.cost === 2,
+    `Chemical X: cost ${cx.cost}g, special '${cx.special}'`);
+
+  // ── The HUMAN pauses. The ring does not move on its own.
+  const h = rig('explorer', 0);
+  const posBefore = h.p.sliderPosition;
+  playCard(h.g, 0, 'Chemical X');
+  ok(h.p._pendingSliderMove === true, 'playing it PAUSES for the human');
+  ok(h.p.sliderPosition === posBefore,
+    `the ring has NOT moved yet (still slot ${h.p.sliderPosition + 1}) — the auto-shove is gone`);
+
+  // Their choice: Far LEFT (slot 1). The AI — and the old auto-pick — take slot 5.
+  const aiWould = h.g.aiFreeSliderPos(0);
+  ok(aiWould === 4, `the AI/auto-pick would take slot ${aiWould + 1} (Favor 15 end)`);
+  const goldBefore = h.p.gold;
+  const res = h.g.applyFreeSliderMove(0, 0);
+  ok(res.success && h.p.sliderPosition === 0,
+    `the PLAYER's slot is honoured (slot ${h.p.sliderPosition + 1}) — a slot the auto-pick never would`);
+  ok(!h.p._pendingSliderMove, 'the pause flag is cleared');
+  ok(h.p.gold === goldBefore, `the move is FREE — no 5g toll (gold ${h.p.gold})`);
+  ok((h.p.skills.power || 0) === 3, `the slot's skills apply (Power ${h.p.skills.power})`);
+  ok(!h.p._paidSlideDir, "a free move doesn't burn the turn's paid-slide direction");
+
+  // ── The landing PAYS, exactly like any other landing (Explorer slot 2 = 4 Gold).
+  const c = rig('explorer', 0);
+  playCard(c.g, 0, 'Chemical X');
+  const g0 = c.p.gold;
+  c.g.applyFreeSliderMove(0, 1);
+  ok(c.p.gold === g0 + 4, `the slot's coin pays on landing (${g0} → ${c.p.gold}, +4 Gold)`);
+
+  // ── Junk input falls back to the deterministic AI pick — never dropped.
+  const j = rig('explorer', 0);
+  playCard(j.g, 0, 'Chemical X');
+  const want = j.g.aiFreeSliderPos(0);
+  const jres = j.g.applyFreeSliderMove(0, 99);
+  ok(jres.success && jres.pos === want,
+    `an out-of-range slot falls back to the deterministic AI choice (slot ${jres.pos + 1})`);
+
+  // ── "Moving" onto the slot you already stand on would re-collect its coin free.
+  const s = rig('explorer', 0);
+  playCard(s.g, 0, 'Chemical X');
+  const here = s.p.sliderPosition;
+  const sres = s.g.applyFreeSliderMove(0, here);
+  ok(sres.success && sres.pos !== here,
+    'staying put is refused — it would re-collect the slot coin for free');
+
+  // ── A REMOTE human pauses too; the AI decides inline and never stalls the table.
+  const r = rig('explorer', 1);
+  r.g.players[1]._remoteHuman = true;
+  const rPos = r.p.sliderPosition;
+  playCard(r.g, 1, 'Chemical X');
+  ok(r.p._pendingSliderMove === true && r.p.sliderPosition === rPos,
+    'a REMOTE human pauses as well — their slot streams, it is never auto-taken');
+
+  const a = rig('explorer', 2);
+  const aPos = a.p.sliderPosition;
+  playCard(a.g, 2, 'Chemical X');
+  ok(!a.p._pendingSliderMove && a.p.sliderPosition !== aPos,
+    `the AI moves itself inline (slot ${a.p.sliderPosition + 1}) and never pauses the table`);
+
+  // ── THE CASCADE: Chemical X can drop the Magician on his CHOICE slots, which
+  // must then pause in turn. The old code skipped this entirely — the mission was
+  // silently never granted and the stale flag fired on a later, unrelated slide.
+  const m = rig('magician', 0);
+  const missionSlot = m.p.character.slots.findIndex(s => s.special === 'choose_mission');
+  playCard(m.g, 0, 'Chemical X');
+  m.g.applyFreeSliderMove(0, missionSlot);
+  ok(m.p._pendingSlotMission === true,
+    `landing on the Magician's mission slot pauses for the mission pick (slot ${missionSlot + 1})`);
+
+  const m2 = rig('magician', 0);
+  const pickSlot = m2.p.character.slots.findIndex(s => s.special === 'pick_one');
+  playCard(m2.g, 0, 'Chemical X');
+  m2.g.applyFreeSliderMove(0, pickSlot);
+  ok(Array.isArray(m2.p._pendingSlotPick),
+    `landing on his Pick One slot pauses for the skill pick (slot ${pickSlot + 1})`);
+  ok(Object.keys(m2.p.bonusSkills).length === 1,
+    'and nothing is granted until that pick is made (only the rig\'s Alchemy)');
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);

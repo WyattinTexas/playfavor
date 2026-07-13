@@ -3672,6 +3672,110 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   await page.close();
 }
 
+// ═══ CHEMICAL X — "move to ANY slot" is the PLAYER's choice ══════════════════
+// It used to shove the ring to slot 5 (or slot 1 if you were already right)
+// without asking. The BOARD is the picker: every circle lights up, the move is
+// free, and it is MANDATORY — a stray backdrop tap must not strand the round.
+{
+  console.log('── Chemical X: the player moves the ring to ANY slot (was auto-shoved)');
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('chemx: ' + m.text()); });
+  await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+
+  await page.evaluate(() => {
+    window.CINEMATIC_SPEED = 0.05;
+    const p = game.players[0];
+    p.bonusSkills = { alchemy: 3 };              // Chemical X needs 3 Alchemy…
+    game.applySlotSkills(p);
+    p.gold = 20;                                 // …and 2 Gold
+    p.sliderPosition = 2;                        // centre
+    p.hand = [{ ...window.FAVOR_DATA.cards.find(c => c.name === 'Chemical X') }];
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    renderGameState();
+    document.querySelectorAll('.game-toast').forEach(t => t.remove());
+    playSelectedCard(0);                         // the REAL path: play → round → drain
+  });
+  await page.waitForFunction(() =>
+    document.getElementById('boardOverlay').classList.contains('active'), { timeout: 20000 });
+  await sleep(450);
+
+  const board = await page.evaluate(() => {
+    const slots = [...document.querySelectorAll('.board-ov-slot')];
+    return {
+      hint: document.getElementById('boardOvHint').textContent,
+      pickable: slots.filter(s => s.classList.contains('pickable')).length,
+      pos: game.players[0].sliderPosition,
+    };
+  });
+  ok(/any circle/i.test(board.hint), `the board itself becomes the picker ("${board.hint}")`);
+  ok(board.pickable === 4,
+    `EVERY other circle is live — not just the neighbours (${board.pickable} of 4)`);
+  ok(board.pos === 2, 'and the ring has not moved yet — no more auto-shove');
+  await page.screenshot({ path: join(SHOTS, 'chem-x-any-slot.png') });
+
+  // The move is mandatory. An unresolved modal chooser is exactly how a round
+  // silently freezes, so closing must be refused while it is pending.
+  const guard = await page.evaluate(() => {
+    closeBoardOverlay();
+    return document.getElementById('boardOverlay').classList.contains('active');
+  });
+  ok(guard, 'a stray backdrop tap CANNOT close it — the move is mandatory (no silent freeze)');
+
+  // Take slot 1: TWO spaces away (a normal slide could never reach it in one go)
+  // and the opposite end from where the auto-pick always went.
+  const after = await page.evaluate(async () => {
+    const aiWould = game.aiFreeSliderPos(0);
+    const goldBefore = game.players[0].gold;
+    document.querySelectorAll('.board-ov-slot')[0].click();
+    await new Promise(r => setTimeout(r, 450));
+    const p = game.players[0];
+    return {
+      aiWould, goldBefore, pos: p.sliderPosition, gold: p.gold,
+      power: p.skills.power || 0,
+      closed: !document.getElementById('boardOverlay').classList.contains('active'),
+      pending: !!p._pendingSliderMove,
+    };
+  });
+  ok(after.pos === 0, `the ring lands on the slot YOU chose (slot ${after.pos + 1})`);
+  ok(after.aiWould !== 0,
+    `and it is genuinely your pick — the old auto-shove took slot ${after.aiWould + 1}`);
+  ok(after.gold === after.goldBefore, `the move is FREE — no toll (gold ${after.gold})`);
+  ok(after.power === 3, `the slot's skills apply immediately (Power ${after.power})`);
+  ok(after.closed && !after.pending, 'the board closes and the round moves on');
+
+  // ── MULTIPLAYER: the slot must STREAM, or the two clients' boards diverge the
+  // moment Chemical X is played. Stub the wire and prove the publish fires.
+  const streamed = await page.evaluate(async () => {
+    const p = game.players[0];
+    p.sliderPosition = 2;
+    p._pendingSliderMove = true;
+    const sent = [];
+    const realFMP = window.FMP;
+    window.FMP = { active: () => true, publish: (type, data) => { sent.push({ type, data }); } };
+
+    const done = showChemXPicker();
+    await new Promise(r => setTimeout(r, 350));
+    document.querySelectorAll('.board-ov-slot')[4].click();   // Far Right
+    await done;
+
+    window.FMP = realFMP;
+    return { sent, pos: p.sliderPosition };
+  });
+  ok(streamed.sent.length === 1 && streamed.sent[0].type === 'slider_move',
+    `the move publishes a 'slider_move' (${JSON.stringify(streamed.sent.map(s => s.type))})`);
+  ok(streamed.sent[0] && streamed.sent[0].data && streamed.sent[0].data.pos === 4,
+    `the streamed move carries the chosen slot (${streamed.sent[0] && streamed.sent[0].data.pos})`);
+  ok(streamed.pos === 4, 'and the same engine call lands the ring locally');
+
+  ok(await page.evaluate(() =>
+    /waitFor\(cs, 'slider_move'\)/.test(String(mpActivateRemote)) &&
+    /aiFreeSliderPos/.test(String(mpActivateRemote)) &&
+    /applyFreeSliderMove/.test(String(mpActivateRemote))),
+    "a remote seat awaits 'slider_move' from the stream, with the AI fallback on boot");
+  await page.close();
+}
+
 // ═══ MELEE CINEMATIC (Skylar's system): forge rows → clash → podium ═══
 console.log('── Melee cinematic: forge rows, live coin, podium + prestige tokens');
 {

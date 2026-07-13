@@ -1579,6 +1579,35 @@ async function mpActivateRemote(pi, card, cardIdx) {
         }
     }
 
+    // Chemical X fired for a remote human — their slot, streamed. FIRST, because
+    // where they land is what can set the two slot choosers below.
+    if (p._pendingSliderMove) {
+        p._pendingSliderMove = false;
+        mpWaitShow(pi, 'moving their ring');
+        const mv = await FMP.waitFor(cs, 'slider_move');
+        mpWaitHide();
+        const pos = (mv && Number.isInteger(mv.pos)) ? mv.pos : game.aiFreeSliderPos(pi);
+        const res = game.applyFreeSliderMove(pi, pos);
+        if (res && res.success) {
+            const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
+            addLogEntry(`${p.name}'s Chemical X moves their ring to ${posNames[res.pos]}`);
+        }
+    }
+
+    // …and if that landed them on the Magician's mission slot, their mission pick
+    // streams too. (The discard-slide branch drains this itself and clears the
+    // flag, so this is the catch-all for the card routes.)
+    if (p._pendingSlotMission) {
+        p._pendingSlotMission = false;
+        mpWaitShow(pi, 'choosing a mission');
+        const pick = await FMP.waitFor(cs, 'slot_mission');
+        mpWaitHide();
+        const idx = pick && Number.isInteger(pick.missionIdx)
+            && pick.missionIdx >= 0 && pick.missionIdx < game.visibleMissions.length
+            ? pick.missionIdx : aiBestMission(pi);
+        game.chooseMission(pi, idx);
+    }
+
     // The Magician's "Pick One" fired for a remote human — their skill, streamed.
     // Drained after the whole action chain so it covers every branch that can move
     // their ring onto the slot (discard-slide, or Chemical X moving it for free).
@@ -2833,6 +2862,11 @@ function openBoardOverlay() {
 }
 
 function closeBoardOverlay() {
+    // Chemical X's move is MANDATORY and the round is awaiting it — a stray
+    // backdrop tap or Escape must not strand that promise. Same guard as
+    // window._finalChoicePending on the panel: an unresolved modal chooser is
+    // exactly how the round silently freezes.
+    if (_slidePick && _slidePick.mode === 'free') return;
     _ovSlideTarget = null;
     _ovDragging = false;
     document.getElementById('boardOverlay').classList.remove('active');
@@ -2875,6 +2909,16 @@ function openSlidePickerFinal(onPick) {
     _slidePick = { mode: 'final', onPick };
     // Direct class toggle — hideActionPanel() is guarded while the final
     // choice is pending, and that guard must stay for stray clicks.
+    document.getElementById('actionPanel').classList.remove('active');
+    openBoardOverlay();
+}
+
+// Chemical X's free move: EVERY circle is live (the card says "any slot"), the
+// ring pays no toll, and the pick is mandatory — closeBoardOverlay refuses to
+// close until a circle is chosen. onPick receives an ABSOLUTE slot index, not a
+// step, which is what tells boardOvSlotClick these two modes apart.
+function openSlidePickerFree(onPick) {
+    _slidePick = { mode: 'free', onPick };
     document.getElementById('actionPanel').classList.remove('active');
     openBoardOverlay();
 }
@@ -2948,14 +2992,18 @@ function renderBoardOvSlots() {
     const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
     const holder = document.getElementById('boardOvSlots');
     if (!holder) return;
+    // Chemical X ("move to ANY slot") lights every circle and charges nothing.
+    const freeMove = picking && _slidePick.mode === 'free';
     holder.innerHTML = BOARD_OV_TRACK.lefts.map((L, i) => {
         const steps = Math.abs(i - cur);
-        const pickable = picking && steps === 1;
+        const pickable = picking && (freeMove ? i !== cur : steps === 1);
         const reachable = reach.has(i);
         const tip = i === cur
             ? 'Your ring is here'
             : picking
-                ? (pickable ? `Slide to ${posNames[i]} \u2014 the discard pays` : 'One space per discard')
+                ? (freeMove
+                    ? `Move to ${posNames[i]} \u2014 free`
+                    : (pickable ? `Slide to ${posNames[i]} \u2014 the discard pays` : 'One space per discard'))
                 : (reachable ? `Slide to ${posNames[i]} \u2014 ${steps * 5} Gold` : _ovWhyBlocked(i));
         const cls = 'board-ov-slot'
             + (i === cur ? ' current' : '')
@@ -2973,7 +3021,9 @@ function renderBoardOvSlots() {
 
     const hint = document.getElementById('boardOvHint');
     if (hint) hint.textContent = picking
-        ? 'Pick a glowing circle \u2014 the discarded card pays the toll'
+        ? (freeMove
+            ? 'Chemical X \u2014 move your ring to ANY circle, free'
+            : 'Pick a glowing circle \u2014 the discarded card pays the toll')
         : (target !== null
             ? ''
             : (reach.size
@@ -2987,9 +3037,18 @@ function boardOvSlotClick(i) {
     // A drag that ends over a circle also fires its click \u2014 one beat, not two.
     if (_ovDragJustEnded && Date.now() - _ovDragJustEnded < 300) return;
 
-    // Pick-a-slot mode: the discard pays the toll, one space only.
+    // Pick-a-slot mode. Chemical X reaches ANY circle (free move); the
+    // discard-to-slide modes reach one space, and the discard pays the toll.
     if (_slidePick) {
         const step = i - player.sliderPosition;
+        if (_slidePick.mode === 'free') {
+            if (step === 0) return;                   // the ring has to actually move
+            const pick = _slidePick;
+            _slidePick = null;
+            closeBoardOverlay();                      // guard is off now — mode is cleared
+            pick.onPick(i);                           // ABSOLUTE slot index
+            return;
+        }
         if (Math.abs(step) !== 1) return;
         const pick = _slidePick;
         _slidePick = null;
@@ -4121,6 +4180,28 @@ async function activateAllCards(humanAction) {
                 await showLifeEssencePicker();
             }
 
+            // Chemical X: YOU move the ring, to any slot. This must run BEFORE the
+            // two slot choosers below, because LANDING is what sets them — drop the
+            // Magician on his mission slot or his Pick One slot and those fire next.
+            if (pi === 0 && game.players[0]._pendingSliderMove) {
+                game.players[0]._pendingSliderMove = false;
+                renderGameState();
+                await showChemXPicker();
+            }
+
+            // A slot event can fire from a CARD, not just a slide — Chemical X can
+            // land the Magician on his mission slot. The discard-slide paths drain
+            // this themselves (clearing the flag first, so this can't double-fire);
+            // this is the catch-all for every other route. Without it the mission
+            // was silently never granted, and the stale flag would then fire on a
+            // later, unrelated slide.
+            if (pi === 0 && game.players[0]._pendingSlotMission) {
+                game.players[0]._pendingSlotMission = false;
+                renderGameState();
+                if (mpActive()) window._mpMissionCtx = 'slot_mission';
+                await showMissionSelectAsync();
+            }
+
             // The Magician's "Pick One" slot: YOU choose the skill, right where
             // every client applies it. Drained here rather than in one branch, so
             // it covers every path that can move your ring onto the slot — a
@@ -4856,6 +4937,36 @@ function showChemYPicker() {
         };
         render();
         ov.classList.add('active');
+    });
+}
+
+// ═══ CHEMICAL X — move your ring to ANY slot ══════════════════════════
+// The card says "Move Character Slider to any slot", so the player picks the
+// slot. It used to shove you to slot 5 (or slot 1 if you were already right)
+// without asking. The BOARD is the picker — the art already explains every
+// slot, so no widget re-explains it: every circle lights up, tapping one lands
+// the ring there for free, and the slot pays out like any other landing.
+// Mandatory: closeBoardOverlay() refuses to close while this is pending, so a
+// stray backdrop tap can't strand the round. Publishes 'slider_move' so a
+// multiplayer table applies YOUR slot, in stream order, on every client.
+function showChemXPicker() {
+    return new Promise((resolve) => {
+        const player = game.players[0];
+        if (!player.character || !player.character.slots) { player._pendingSliderMove = false; resolve(); return; }
+        showNotification('Chemical X — move your ring to any slot', 'play');
+        openSlidePickerFree((pos) => {
+            // Publish BEFORE mutating: every client applies the same move through
+            // the same engine call, in stream order.
+            mpPub('slider_move', { pos });
+            const res = game.applyFreeSliderMove(0, pos);
+            const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
+            if (res && res.success) {
+                addLogEntry(`Chemical X moves your ring to ${posNames[res.pos]}`);
+                showNotification(`Ring moves to ${posNames[res.pos]} — free`, 'play');
+            }
+            renderGameState();
+            resolve();
+        });
     });
 }
 
