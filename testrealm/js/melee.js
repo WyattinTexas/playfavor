@@ -678,7 +678,32 @@
           });
           el.appendChild(tuck);
           void tuck.offsetWidth;
-          tuck.querySelectorAll('.ms-tuckcard').forEach(t => t.classList.add('go'));
+          // A big row must not invade the neighbors: if the fan is wider than
+          // the fighter's column, tuck the cards closer (uniformly deeper
+          // overlap), floored so every card still peeks ~5px.
+          const tucked = Array.from(tuck.querySelectorAll('.ms-tuckcard'));
+          if (tucked.length > 1) {
+            // cap the fan at the fighter's own board width (and never closer
+            // than 18px to the nearest neighbor's column) — adjacent fans need
+            // REAL daylight or five 9-card fans read as one continuous strip.
+            // MEASURE WITH offsetWidth/offsetLeft: the cards still wear their
+            // entrance transform (scale 0.55) and the fighter its active raise
+            // (scale 1.12) here — getBoundingClientRect returns those phantom
+            // sizes and the tighten math silently computes garbage.
+            let maxW = el.offsetWidth;
+            const pitches = combatantEls
+              .filter(s => s !== el)
+              .map(s => Math.abs(s.offsetLeft - el.offsetLeft));
+            if (pitches.length) maxW = Math.min(maxW, Math.min(...pitches) - 18);
+            const fanW = tuck.offsetWidth;
+            if (fanW > maxW) {
+              const shrink = (fanW - maxW) / (tucked.length - 1);
+              tucked.slice(1).forEach(t => {
+                t.style.marginLeft = Math.max(-(t.offsetWidth - 5), -9 - shrink) + 'px';
+              });
+            }
+          }
+          tucked.forEach(t => t.classList.add('go'));
           rowEl.classList.add('out');
           await delay(300); if (run.killed) return;
           rowEl.innerHTML = '';
