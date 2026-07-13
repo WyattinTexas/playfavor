@@ -202,7 +202,7 @@
 
       const tierHTML = (t, podiumIdx) => {
         const champ = podiumIdx === 0;
-        return `<div class="ms-tier ${POS[podiumIdx]}${champ ? ' champ' : ''}">
+        return `<div class="ms-tier ${POS[podiumIdx]}${champ ? ' champ' : ''}${t.members.length > 1 ? ' multi' : ''}">
           <div class="ms-fighters">${t.members.map(m => fighterHTML(m, champ)).join('')}</div>
           ${prestigeHTML(t.prestige)}
           <div class="ms-plinth"><span class="ms-numeral">${t.placement}</span></div>
@@ -733,6 +733,21 @@
       // Center the 4th/5th column in the gutter between the 3rd plinth and
       // the screen edge (equal distance to both, per Wyatt) — measured at
       // runtime since the podium's width varies with players/ties.
+      // A tie widens its tier (co-champions share one grown plinth) — if the
+      // podium row then outgrows the stage, shrink the WHOLE row uniformly.
+      // scrollWidth is layout width (transform-independent), so this is
+      // idempotent; placeAlsoRans measures rects AFTER the scale, so the
+      // 4th/5th column still centers in the true visual gutter.
+      const fitPodium = () => {
+        const pod = host.querySelector('.ms-podium');
+        if (!pod) return;
+        const reserve = alsoRans.length ? Math.min(150, stage.clientWidth * 0.17) : 14;
+        const avail = stage.clientWidth - 2 * reserve;
+        if (pod.scrollWidth > avail) {
+          pod.style.transform = 'scale(' + (avail / pod.scrollWidth).toFixed(3) + ')';
+          pod.style.transformOrigin = '50% 100%';
+        }
+      };
       const placeAlsoRans = () => {
         if (!alsoEl) return;
         const pod = host.querySelector('.ms-podium');
@@ -744,6 +759,7 @@
       };
       const showResults = () => {
         arenaEl.classList.add('gone');
+        fitPodium();
         if (alsoEl) { placeAlsoRans(); alsoEl.classList.add('show'); }
       };
 
@@ -764,6 +780,7 @@
         stage.querySelectorAll('.ms-feature').forEach(x => x.remove());
         const pendingBtn = stage.querySelector('.ms-continue');
         if (pendingBtn) pendingBtn.remove();
+        fitPodium();
         if (alsoEl) { placeAlsoRans(); alsoEl.classList.add('show'); }
         podium.forEach((t, idx) => {
           const el = tierEls[idx];

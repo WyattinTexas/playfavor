@@ -140,6 +140,15 @@
 /* Fighters standing on a tier (usually one; ties stack side-by-side) */
 .ms-fighters { display: flex; gap: 6px; align-items: flex-end; margin-bottom: 8px; }
 
+/* A tie: the tier (and its plinth, width:100%) GROWS to seat every member
+   at full size instead of cramming them into a one-board column. If the
+   grown row overflows the stage, fitPodium() scales the whole podium. */
+.ms-tier.multi, .ms-tier.champ.multi { width: auto; }
+.ms-tier.multi .ms-fighters { gap: 10px; }
+.ms-tier.multi .ms-fighter { width: auto; }
+.ms-tier.multi .ms-name { max-width: clamp(84px, 14vw, 128px); }
+.ms-tier.champ.multi .ms-name { max-width: clamp(110px, 20vw, 168px); }
+
 .ms-fighter { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; width: 100%; }
 
 .ms-portrait-wrap { position: relative; }
