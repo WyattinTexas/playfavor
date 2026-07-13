@@ -1578,6 +1578,22 @@ async function mpActivateRemote(pi, card, cardIdx) {
             addLogEntry(`${p.name}'s Life Essence blesses ${target.name} — no requirement`);
         }
     }
+
+    // The Magician's "Pick One" fired for a remote human — their skill, streamed.
+    // Drained after the whole action chain so it covers every branch that can move
+    // their ring onto the slot (discard-slide, or Chemical X moving it for free).
+    // A booted/silent seat falls back to game.aiSlotPick, which every client
+    // computes identically from the same state — so lockstep holds either way.
+    if (p._pendingSlotPick) {
+        p._pendingSlotPick = null;
+        mpWaitShow(pi, 'choosing a skill from their board');
+        const pick = await FMP.waitFor(cs, 'slot_pick');
+        mpWaitHide();
+        const opts = game.slotPickOptions(pi);
+        const skill = (pick && opts.includes(pick.skill)) ? pick.skill : game.aiSlotPick(pi, opts);
+        const res = game.applySlotPick(pi, skill);
+        if (res && res.success) addLogEntry(`${p.name} picks +1 ${res.skill} from their board`);
+    }
 }
 
 // \u2500\u2500 End-of-act stages, canonical order \u2014 every client applies every
@@ -3947,6 +3963,14 @@ async function payToSlide(direction) {
             renderGameState();
             renderBoardOvSlots();
         }
+
+        // Magician slot 4: "Pick One" — the player chooses which skill.
+        if (player._pendingSlotPick) {
+            player._pendingSlotPick = null;
+            await showSlotSkillPicker();
+            renderGameState();
+            renderBoardOvSlots();
+        }
     } else {
         showNotification(result.error, 'error');
     }
@@ -4095,6 +4119,16 @@ async function activateAllCards(humanAction) {
                 game.players[0]._pendingLifeEssencePick = false;
                 renderGameState();
                 await showLifeEssencePicker();
+            }
+
+            // The Magician's "Pick One" slot: YOU choose the skill, right where
+            // every client applies it. Drained here rather than in one branch, so
+            // it covers every path that can move your ring onto the slot — a
+            // discard-slide, the final-card chooser, or Chemical X moving it free.
+            if (pi === 0 && game.players[0]._pendingSlotPick) {
+                game.players[0]._pendingSlotPick = null;
+                renderGameState();
+                await showSlotSkillPicker();
             }
 
             if (pi !== 0 && game.players[pi]._remoteHuman) {
@@ -4815,6 +4849,63 @@ function showChemYPicker() {
                 card._favorDoubled = true;
                 addLogEntry(`Chemical Y doubles ${card.name} (+${card.favor} Favor at scoring)`);
                 showNotification(`${card.name} is now worth ${card.favor * 2} Favor`, 'play');
+                ov.classList.remove('active');
+                renderGameState();
+                resolve();
+            };
+        };
+        render();
+        ov.classList.add('active');
+    });
+}
+
+// ═══ THE MAGICIAN'S PICK ONE — choose a skill from your board ═════════
+// Slot 4 of the Magician's board reads "Pick One". The box hands the player a
+// choice, so we build the choice (rules fidelity) — it used to silently take
+// whichever skill you had least of, and the grant didn't even survive the next
+// skill recalc. Publishes 'slot_pick' so a multiplayer table applies YOUR pick,
+// in stream order, on every client. Resolves when the grant has landed.
+function showSlotSkillPicker() {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        const player = game.players[0];
+        const opts = game.slotPickOptions(0);
+        if (!ov || !opts.length) { player._pendingSlotPick = null; resolve(); return; }
+
+        const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+        let chosen = opts[0];
+
+        const render = () => {
+            const tiles = opts.map(s => {
+                const have = player.skills[s] || 0;
+                return `
+                <div class="pp-skill${chosen === s ? ' chosen' : ''}" data-s="${s}">
+                    <img src="assets/icons/${s}.png" alt="${cap(s)}">
+                    <span class="pp-skill-name">${cap(s)}</span>
+                    <span class="pp-skill-have">${have} <b>➜ ${have + 1}</b></span>
+                </div>`;
+            }).join('');
+            ov.innerHTML = `
+                <div class="pp-inner chemy">
+                    <div class="pp-title">Pick One</div>
+                    <div class="pp-sub">Your board grants <b>one skill</b> — choose which</div>
+                    <div class="pp-cards skills">${tiles}</div>
+                    <div class="pp-actions">
+                        <button class="btn-royal primary" id="slotPickConfirm">
+                            <span>Take +1 ${cap(chosen)}</span>
+                        </button>
+                    </div>
+                </div>`;
+            ov.querySelectorAll('.pp-skill').forEach(el => {
+                el.onclick = () => { chosen = el.dataset.s; render(); };
+            });
+            ov.querySelector('#slotPickConfirm').onclick = () => {
+                // Publish BEFORE mutating: every client applies the same grant
+                // through the same engine call, in stream order.
+                mpPub('slot_pick', { skill: chosen });
+                game.applySlotPick(0, chosen);
+                addLogEntry(`You pick +1 ${cap(chosen)} from your board`);
+                showNotification(`+1 ${cap(chosen)} from your board`, 'play');
                 ov.classList.remove('active');
                 renderGameState();
                 resolve();

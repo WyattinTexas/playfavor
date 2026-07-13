@@ -5508,6 +5508,34 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     display: flex; gap: 10px; flex-wrap: nowrap; overflow-x: auto;
     max-width: 94vw; padding: 10px 6px;
 }
+/* The Magician's "Pick One": skill tiles instead of card scans — the icon IS
+   the label, with your current total and what it becomes. Sized to fit four
+   across a 390px-tall phone in landscape without scrolling. */
+.pp-cards.skills { flex-wrap: wrap; justify-content: center; gap: 12px; }
+.pp-skill {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    cursor: pointer; flex-shrink: 0;
+    width: clamp(84px, 13vw, 108px);
+    padding: 10px 6px 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(201, 168, 76, 0.32);
+    background: linear-gradient(180deg, rgba(58, 36, 14, 0.55), rgba(30, 17, 6, 0.66));
+    transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s, background 0.15s;
+}
+.pp-skill img { width: clamp(42px, 6.4vw, 58px); height: auto; display: block; }
+.pp-skill-name {
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: 13px;
+    letter-spacing: 0.4px; color: #f4e6c4;
+}
+.pp-skill-have { font-size: 12px; color: #c9a84c; }
+.pp-skill-have b { color: #ffe9ad; }
+.pp-skill:hover { transform: translateY(-3px); border-color: rgba(232, 195, 75, 0.6); }
+.pp-skill.chosen {
+    border-color: rgba(232, 195, 75, 0.95);
+    background: linear-gradient(180deg, rgba(92, 66, 16, 0.85), rgba(46, 31, 6, 0.9));
+    box-shadow: 0 0 22px rgba(232, 195, 75, 0.4), inset 0 0 14px rgba(232, 195, 75, 0.14);
+    transform: translateY(-3px);
+}
 .pp-card {
     position: relative; cursor: pointer; flex-shrink: 0;
     border-radius: 6px; transition: transform 0.15s, box-shadow 0.15s;

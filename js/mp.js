@@ -44,7 +44,11 @@
     // 5 (7/13): engine RULES changed — slot coins/events now re-fire on every
     // landing, card gold cost gates canPlay, and pick_one persists. Lockstep
     // demands identical simulation, so a v4 client must never pair with a v5.
-    const MPV = 5;
+    // 6 (7/13): the MOVE STREAM gained a type — 'slot_pick' (the Magician's
+    // "Pick One" is now the player's choice, not an auto-take). A v5 client
+    // would never publish it and would auto-decide instead, so the two
+    // simulations diverge the moment a Magician lands on that slot.
+    const MPV = 6;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

@@ -3556,6 +3556,122 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   await page.close();
 }
 
+// ═══ THE MAGICIAN'S PICK ONE — the player chooses (was a silent auto-take) ═══
+// The board reads "Pick One". It used to take whichever skill you had least of,
+// without asking — and the grant didn't even survive the next skill recalc.
+{
+  console.log("── Magician's Pick One: the player chooses, and the grant sticks");
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('slotpick: ' + m.text()); });
+  await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+
+  await page.evaluate(() => {
+    const p = game.players[0];
+    p.character = window.FAVOR_DATA.characters.find(c => c.id === 'magician');
+    const slot = p.character.slots.findIndex(s => s.special === 'pick_one');
+    p.sliderPosition = slot - 1;          // one step short of it
+    p.gold = 40;
+    p._paidSlideDir = null;
+    p.bonusSkills = {};
+    game.applySlotSkills(p);
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    renderGameState();
+    document.querySelectorAll('.game-toast').forEach(t => t.remove());
+    payToSlide(1);                        // NOT awaited — it blocks on the picker
+  });
+  await sleep(700);
+
+  const pick = await page.evaluate(() => {
+    const ov = document.getElementById('promisePicker');
+    const tiles = [...ov.querySelectorAll('.pp-skill')];
+    return {
+      active: ov.classList.contains('active'),
+      title: (ov.querySelector('.pp-title') || {}).textContent || '',
+      options: tiles.map(e => e.dataset.s),
+      iconsLoaded: tiles.every(e => { const i = e.querySelector('img'); return i && i.complete && i.naturalWidth > 0; }),
+      inView: tiles.every(e => { const r = e.getBoundingClientRect();
+        return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth; }),
+      grantedYet: JSON.stringify(game.players[0].bonusSkills || {}),
+    };
+  });
+  ok(pick.active && /Pick One/i.test(pick.title), `the picker takes the stage ("${pick.title}")`);
+  ok(pick.options.length === 4, `all four board options offered (${pick.options.join(', ')})`);
+  ok(pick.iconsLoaded, 'each option wears its real skill icon');
+  ok(pick.inView, 'every tile is on-screen and tappable');
+  ok(pick.grantedYet === '{}', 'NOTHING is granted until you choose (the old auto-take is gone)');
+  await page.screenshot({ path: join(SHOTS, 'slot-pick-one.png') });
+
+  // Choose CHARISMA — deliberately NOT the weakest, so an auto-picker would have
+  // taken something else. This is what proves the choice is actually yours.
+  const after = await page.evaluate(async () => {
+    const aiWouldTake = game.aiSlotPick(0);
+    [...document.querySelectorAll('.pp-skill')].find(e => e.dataset.s === 'charisma').click();
+    const btn = document.getElementById('slotPickConfirm');
+    const label = btn.textContent.trim();
+    btn.click();
+    await new Promise(r => setTimeout(r, 80));
+    const p = game.players[0];
+    const chaAfterPick = p.skills.charisma || 0;
+    game.applySlotSkills(p);              // THE recalc that used to erase the grant
+    return {
+      aiWouldTake,
+      label,
+      closed: !document.getElementById('promisePicker').classList.contains('active'),
+      bonus: p.bonusSkills.charisma || 0,
+      cha: p.skills.charisma || 0,
+      survives: (p.skills.charisma || 0) === chaAfterPick && chaAfterPick >= 1,
+      pending: !!p._pendingSlotPick,
+    };
+  });
+  ok(/Take \+1 Charisma/i.test(after.label), `the button names the pick ("${after.label}")`);
+  ok(after.closed, 'confirming closes the picker');
+  ok(after.bonus === 1 && after.cha >= 1, `Charisma granted (bonusSkills ${after.bonus}, total ${after.cha})`);
+  ok(after.aiWouldTake !== 'charisma',
+    `and it is genuinely YOUR pick — the old auto-take would have grabbed '${after.aiWouldTake}'`);
+  ok(after.survives, `the grant SURVIVES applySlotSkills (charisma ${after.cha}) — it never used to`);
+  ok(!after.pending, 'the pause flag is cleared');
+
+  // ── MULTIPLAYER: the pick must STREAM, or two clients' engines diverge the
+  // moment a Magician lands here. Stub the wire and prove the publish fires with
+  // the chosen skill. (mpPub reads window.FMP live, so stubbing it is enough.)
+  const streamed = await page.evaluate(async () => {
+    const p = game.players[0];
+    const slot = p.character.slots.findIndex(s => s.special === 'pick_one');
+    p.sliderPosition = slot;                  // stand on it; the picker reads the slot
+    p.bonusSkills = {};
+    p._pendingSlotPick = null;
+    game.applySlotSkills(p);
+
+    const sent = [];
+    const realFMP = window.FMP;
+    window.FMP = { active: () => true, publish: (type, data) => { sent.push({ type, data }); } };
+
+    const done = showSlotSkillPicker();
+    await new Promise(r => setTimeout(r, 60));
+    [...document.querySelectorAll('.pp-skill')].find(e => e.dataset.s === 'alchemy').click();
+    document.getElementById('slotPickConfirm').click();
+    await done;
+
+    window.FMP = realFMP;
+    return { sent, alchemy: p.bonusSkills.alchemy || 0 };
+  });
+  ok(streamed.sent.length === 1 && streamed.sent[0].type === 'slot_pick',
+    `the pick publishes a 'slot_pick' move (${JSON.stringify(streamed.sent.map(s => s.type))})`);
+  ok(streamed.sent[0] && streamed.sent[0].data && streamed.sent[0].data.skill === 'alchemy',
+    `the streamed move carries the chosen skill (${streamed.sent[0] && streamed.sent[0].data.skill})`);
+  ok(streamed.alchemy === 1, 'and the same engine call applies it locally');
+
+  // The receiving end: a remote seat awaits that move in stream order, and a
+  // booted seat falls back to the deterministic AI pick every client computes.
+  ok(await page.evaluate(() =>
+    /waitFor\(cs, 'slot_pick'\)/.test(String(mpActivateRemote)) &&
+    /aiSlotPick/.test(String(mpActivateRemote)) &&
+    /applySlotPick/.test(String(mpActivateRemote))),
+    "a remote seat awaits 'slot_pick' from the stream, with the AI fallback on boot");
+  await page.close();
+}
+
 // ═══ MELEE CINEMATIC (Skylar's system): forge rows → clash → podium ═══
 console.log('── Melee cinematic: forge rows, live coin, podium + prestige tokens');
 {

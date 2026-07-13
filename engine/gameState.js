@@ -688,6 +688,58 @@ class FavorGame {
      * Set player skills = current slot skills + all card-based skills.
      * Called whenever slider moves or skills need recalculating.
      */
+    /**
+     * The skills the player's CURRENT slot offers to "Pick One" from — empty
+     * unless they're standing on a pick_one slot (the Magician's 4th).
+     */
+    slotPickOptions(playerIndex) {
+        const p = this.players[playerIndex];
+        const slot = (p && p.character && p.character.slots)
+            ? p.character.slots[p.sliderPosition] : null;
+        return (slot && slot.special === 'pick_one' && Array.isArray(slot.pickOptions))
+            ? slot.pickOptions.slice()
+            : [];
+    }
+
+    /**
+     * The AI's choice — and the fallback EVERY client computes identically when a
+     * human's pick never arrives (AFK boot / silent seat). Shore up your weakest
+     * option. Pure: reads state, mutates nothing.
+     */
+    aiSlotPick(playerIndex, options) {
+        const opts = (options && options.length) ? options : this.slotPickOptions(playerIndex);
+        if (!opts.length) return null;
+        const p = this.players[playerIndex];
+        let best = opts[0];
+        opts.forEach(s => {
+            if ((p.skills[s] || 0) < (p.skills[best] || 0)) best = s;
+        });
+        return best;
+    }
+
+    /**
+     * Grant the chosen "Pick One" skill. THE single mutation point: the local
+     * picker, a remote seat's streamed move, and the AI heuristic all land here,
+     * so every client mutates identically at the same point in the move stream.
+     * An unknown or absent skill falls back to the deterministic AI pick rather
+     * than silently dropping the grant.
+     */
+    applySlotPick(playerIndex, skill) {
+        const player = this.players[playerIndex];
+        const opts = this.slotPickOptions(playerIndex);
+        player._pendingSlotPick = null;
+        if (!opts.length) return { success: false, error: 'No pick available here' };
+
+        const chosen = opts.includes(skill) ? skill : this.aiSlotPick(playerIndex, opts);
+        // bonusSkills, NOT player.skills — applySlotSkills rebuilds skills from
+        // slot + played cards + bonusSkills, and would erase a raw write.
+        if (!player.bonusSkills) player.bonusSkills = {};
+        player.bonusSkills[chosen] = (player.bonusSkills[chosen] || 0) + 1;
+        this.applySlotSkills(player);
+        this.addLog(`${player.name} picks ${chosen} from the board`);
+        return { success: true, skill: chosen };
+    }
+
     applySlotSkills(player) {
         const char = player.character;
         if (!char || !char.slots) return;
@@ -919,26 +971,27 @@ class FavorGame {
                 break;
 
             case 'pick_one':
-                // Auto-pick: choose the skill the player has least of from options
+                // The Magician's board reads "Pick One" — so the PLAYER picks.
+                // Rules fidelity: where the box gives a choice, build the choice.
+                // This used to silently auto-take whichever skill you had least of.
                 //
-                // ⚠ This grant NEVER LANDED (found 2026-07-13). It wrote to
-                // player.skills, and applySliderAbilities calls applySlotSkills
-                // immediately afterwards — which zeroes skills and rebuilds them
-                // from slot + played cards + bonusSkills. The +1 was erased
-                // microseconds after it was granted, every single time. Skill
-                // grants have to ride bonusSkills to survive the recalc (same
-                // reason mission skill rewards live there).
+                // ⚠ And the grant never even LANDED: it wrote to player.skills,
+                // and applySliderAbilities calls applySlotSkills immediately after
+                // this, which zeroes player.skills and rebuilds it from slot +
+                // played cards + bonusSkills. The +1 was erased microseconds after
+                // it was granted, every single time. Skill grants must ride
+                // bonusSkills to survive the recalc — applySlotPick() is now the
+                // ONE mutation point for local, remote and AI alike, so every
+                // client applies the identical change at the identical moment.
                 if (slot.pickOptions && slot.pickOptions.length > 0) {
-                    let bestSkill = slot.pickOptions[0];
-                    let bestVal = player.skills[bestSkill] || 0;
-                    slot.pickOptions.forEach(s => {
-                        const val = player.skills[s] || 0;
-                        if (val < bestVal) { bestSkill = s; bestVal = val; }
-                    });
-                    if (!player.bonusSkills) player.bonusSkills = {};
-                    player.bonusSkills[bestSkill] = (player.bonusSkills[bestSkill] || 0) + 1;
-                    player.skills[bestSkill] = (player.skills[bestSkill] || 0) + 1;
-                    this.addLog(`${player.name} picks ${bestSkill} from board`);
+                    if (player.index === 0 || player._remoteHuman) {
+                        // Human (local OR remote) — the flag pauses for a choice:
+                        // local shows the picker, remote awaits the owner's
+                        // streamed pick. Never auto-decided.
+                        player._pendingSlotPick = slot.pickOptions.slice();
+                    } else {
+                        this.applySlotPick(player.index, this.aiSlotPick(player.index));
+                    }
                 }
                 break;
         }

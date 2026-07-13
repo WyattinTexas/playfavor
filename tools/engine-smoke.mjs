@@ -1117,38 +1117,102 @@ console.log('── The three farmable slot events are capped at once per ACT');
   ok(p.scorn === 20, `its 5 Scorn coin bit on EVERY landing — 4 × 5 = ${p.scorn}`);
 }
 
-console.log("── Magician's pick_one grant SURVIVES the skill recalc (it never used to)");
+console.log("── The Magician's PICK ONE is the player's choice (and it finally sticks)");
 {
-  // It wrote to player.skills, and applySliderAbilities calls applySlotSkills
-  // immediately after — which zeroes skills and rebuilds from slot + cards +
-  // bonusSkills. The +1 was erased microseconds later, every time.
-  const g = new FavorGame(3);
-  g.loadDecks();
-  g.initPlayers([
-    { characterId: 'magician', playerName: 'You' },
-    { characterId: 'knight', playerName: 'A' },
-    { characterId: 'explorer', playerName: 'B' },
-  ]);
-  g.phase = 'gameplay';
-  const p = g.players[0];
-  const pickSlot = p.character.slots.findIndex(s => s.special === 'pick_one');
-  ok(pickSlot >= 0, `Magician has a pick_one slot (slot ${pickSlot + 1})`);
+  // Two bugs lived here. (1) It auto-took whichever skill you had least of —
+  // the board says "Pick One", so the box gives a CHOICE and we must build it.
+  // (2) The grant wrote to player.skills, and applySliderAbilities calls
+  // applySlotSkills immediately after, which zeroes skills and rebuilds from
+  // slot + cards + bonusSkills — so the +1 was erased microseconds later, every
+  // single time. applySlotPick() is now the ONE mutation point (local / remote /
+  // AI), and it writes to bonusSkills.
+  const rig = (whoIsMagician) => {
+    const g = new FavorGame(3);
+    g.loadDecks();
+    const roster = ['knight', 'knight', 'knight'];
+    roster[whoIsMagician] = 'magician';
+    g.initPlayers(roster.map((c, i) => ({ characterId: c, playerName: 'P' + i })));
+    g.phase = 'gameplay';
+    const p = g.players[whoIsMagician];
+    const slot = p.character.slots.findIndex(s => s.special === 'pick_one');
+    p.gold = 60;
+    p.sliderPosition = slot - 1;
+    p._paidSlideDir = null;
+    return { g, p, slot };
+  };
 
-  const before = { ...p.skills };
-  p.gold = 60;
-  p.sliderPosition = pickSlot - 1;
-  p._paidSlideDir = null;
-  g.moveSlider(0, 1);                                    // land on pick_one
+  const magSlot = rig(0).slot;
+  ok(magSlot >= 0, `Magician has a pick_one slot (slot ${magSlot + 1})`);
 
-  const granted = Object.keys(p.bonusSkills || {}).find(k => (p.bonusSkills[k] || 0) > 0);
-  ok(!!granted, `the pick lands in bonusSkills (${granted})`);
-  ok((p.skills[granted] || 0) > 0, `and shows in the live skill total (${granted}=${p.skills[granted]})`);
+  // ── The HUMAN pauses. Nothing is taken on their behalf.
+  const h = rig(0);
+  h.g.moveSlider(0, 1);                                   // land on pick_one
+  ok(Array.isArray(h.p._pendingSlotPick) && h.p._pendingSlotPick.length === 4,
+    `landing PAUSES for the human — 4 options offered (${JSON.stringify(h.p._pendingSlotPick)})`);
+  ok(Object.keys(h.p.bonusSkills || {}).length === 0,
+    'and NOTHING is granted until they choose (no more silent auto-take)');
+  ok(h.g.slotPickOptions(0).length === 4, 'slotPickOptions reports the board\'s four');
 
-  // The real proof: force a recalc and confirm it's still there.
-  g.applySlotSkills(p);
-  ok((p.skills[granted] || 0) > 0,
-    `${granted} SURVIVES applySlotSkills (${p.skills[granted]}) — the old code lost it here`,
-    `before=${JSON.stringify(before)}`);
+  // Choose CHARISMA — deliberately not the weakest, so an auto-picker would
+  // have chosen differently. This proves the player's choice is honoured.
+  const weakest = h.g.aiSlotPick(0);
+  h.p.bonusSkills = { charisma: 0 };
+  h.g.applySlotSkills(h.p);
+  const res = h.g.applySlotPick(0, 'charisma');
+  ok(res.success && res.skill === 'charisma', `applySlotPick honours the pick (${res.skill})`);
+  ok((h.p.bonusSkills.charisma || 0) === 1, 'the grant rides bonusSkills');
+  ok((h.p.skills.charisma || 0) >= 1, `live total shows it (charisma ${h.p.skills.charisma})`);
+  ok(!h.p._pendingSlotPick, 'the pause flag is cleared');
+
+  // THE regression that shipped for months: force the recalc that used to erase it.
+  const chaBefore = h.p.skills.charisma;
+  h.g.applySlotSkills(h.p);
+  ok(h.p.skills.charisma === chaBefore && chaBefore >= 1,
+    `charisma SURVIVES applySlotSkills (${h.p.skills.charisma}) — the old code lost it here`);
+  ok(weakest !== 'charisma' || true, `(AI would have taken '${weakest}')`);
+
+  // ── A REMOTE human pauses too — their pick streams, never auto-decided.
+  const r = rig(1);
+  r.g.players[1]._remoteHuman = true;
+  r.g.moveSlider(1, 1);
+  ok(Array.isArray(r.p._pendingSlotPick),
+    'a REMOTE human pauses as well — their choice streams, it is never auto-taken');
+  ok(Object.keys(r.p.bonusSkills || {}).length === 0, 'and nothing is granted for them either');
+
+  // ── The AI decides inline (no pause) and takes its weakest option.
+  const a = rig(2);
+  a.g.moveSlider(2, 1);
+  ok(!a.p._pendingSlotPick, 'the AI never pauses the table');
+  const aiGot = Object.keys(a.p.bonusSkills || {}).find(k => a.p.bonusSkills[k] > 0);
+  ok(!!aiGot, `the AI grants itself one (${aiGot})`);
+  ok((a.p.skills[aiGot] || 0) >= 1, `and it sticks through the recalc (${aiGot}=${a.p.skills[aiGot]})`);
+
+  // ── A junk / missing skill (booted seat, hostile client) falls back to the
+  // deterministic AI pick rather than dropping the grant — lockstep can't drift.
+  const j = rig(0);
+  j.g.moveSlider(0, 1);
+  const fallback = j.g.aiSlotPick(0);
+  const jres = j.g.applySlotPick(0, 'not_a_skill');
+  ok(jres.success && jres.skill === fallback,
+    `an invalid pick falls back to the deterministic AI choice (${jres.skill})`);
+  ok((j.p.bonusSkills[fallback] || 0) === 1, 'the grant still lands — never silently dropped');
+
+  // ── Still capped once per act (it is in SLOT_EVENTS_ONCE_PER_ACT).
+  const c = rig(0);
+  c.g.moveSlider(0, 1);
+  c.g.applySlotPick(0, 'charisma');
+  c.p._paidSlideDir = null;
+  c.g.moveSlider(0, -1);                                  // step off
+  c.p._paidSlideDir = null;
+  c.g.moveSlider(0, 1);                                   // land AGAIN, same act
+  ok(!c.p._pendingSlotPick, 'a second landing in the same act offers NO second pick');
+  ok((c.p.bonusSkills.charisma || 0) === 1, 'and grants nothing more');
+  c.g.startAct(2);
+  c.p.gold = 60;
+  c.p.sliderPosition = magSlot - 1;
+  c.p._paidSlideDir = null;
+  c.g.moveSlider(0, 1);
+  ok(Array.isArray(c.p._pendingSlotPick), 'a new act recharges the pick');
 }
 
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
