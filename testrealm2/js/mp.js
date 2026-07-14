@@ -4,18 +4,26 @@
 // Real players match through favor/mp/* on the same Firebase RTDB the
 // leaderboard lives on. The design is HOST-FORMED, LOCKSTEP-PLAYED:
 //
-//   favor/mp/queue/{size}/{uid}   { name, rating, hero, at, hb }
+//   favor/mp/queue/{size}/{uid}   { name, rating, offer[], at, hb }
 //   favor/mp/games/{gid}          { created, size, seed, hostUid, status,
-//                                   roster[], emblemSeat, boonSeat }
+//                                   roster[], emblemSeat, boonSeat,
+//                                   accept{uid:bool}, picks{uid:hero},
+//                                   pickStart, dropped[] }
 //   favor/mp/games/{gid}/moves    push-ordered command stream
 //   favor/mp/games/{gid}/presence/{uid} = heartbeat ms
 //
-// MATCHING (Wyatt's spec): Play Now queues you with your chosen hero.
-// While queued you match with anyone else in the same-size queue — the
-// EARLIEST entry is the host and forms the game. Each client also rolls
-// a random wait window (Nation's pattern); if it expires with nobody
-// else queued, you fall into a classic solo table where the persona
-// rivals present as people — indistinguishable from a slow lobby.
+// MATCHING (Wyatt's 7/14 spec): PLAY NOW queues you in the BACKGROUND —
+// you keep the menu (leaderboard, store) while a 9–25s window waits for
+// real players. The EARLIEST live entry hosts and forms the game record
+// as a PROPOSAL; every human gets a MATCH FOUND popup. All accept within
+// the window → hero picks open (20s, auto-pick at 0:00) → the host seals
+// the roster and the record goes LIVE. Any decline or lapse aborts the
+// table: the decliner leaves the queue, survivors keep their entries —
+// and their elapsed-time priority. A window that expires alone hands the
+// UI a 'solo' event and the SAME theater runs against the persona fill.
+//
+//   record: proposed ──all accept──▶ picking ──seal──▶ live
+//                    └─decline/lapse─▶ aborted
 //
 // LOCKSTEP: the game record carries one seed + a canonical roster. Every
 // client runs the SAME engine over the SAME shuffles; the only entropy
@@ -64,19 +72,30 @@
     // paid TO them). A v8 client sends no lenders and would re-pick the first
     // available itself, so the fee would land in a different purse on different
     // tables and the gold columns fork.
-    const MPV = 9;
+    // 10 (7/14): the MATCHMAKING HANDSHAKE inverted — records are born
+    // 'proposed' (accept/decline popup) and heroes are picked AFTER the accept,
+    // so queue entries drop the pre-pick `hero` and rosters carry offers until
+    // the host seals them at 'live'. A v9 client would refuse a 'proposed'
+    // record outright (its joinGame demanded status 'live') and would wait
+    // forever for entry.hero to matter — the ver gate keeps the eras apart.
+    const MPV = 10;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.
     const T = {
         hb: 5000,           // queue heartbeat period
         fresh: 15000,       // queue entry considered live within this
-        windowMin: 6000,    // solo-fallback window: min wait
-        windowSpread: 12000,//   + random spread (6–18s total)
+        windowMin: 9000,    // "waiting for real players": min wait
+        windowSpread: 16000,//   + random spread (9–25s total)
+        accept: 10000,      // MATCH FOUND: answer within this or you lapse
+        acceptGrace: 2500,  // host waits this past the window for writes in flight
+        pick: 20000,        // Choose Your Hero clock
+        pickGrace: 2000,    // host fills stragglers this long after 0:00
         afk: 120000,        // 2 min without a required input → boot
         presence: 10000,    // in-game presence heartbeat period
         staleBoot: 45000,   // presence older than this → fast boot
         cleanupAge: 6 * 3600 * 1000, // abandoned game records sweep
+        limboAge: 10 * 60 * 1000,    // proposed/aborted records sweep
     };
 
     let db = null;
@@ -97,28 +116,20 @@
 
     // ── Queue ────────────────────────────────────────────────────────
 
-    let q = null;   // { size, ref, hbTimer, windowTimer, watchOff, done }
+    let q = null;   // queue controller — see enterQueue for the state machine
 
     function queueRef(size) { return fdb().ref(`${NS}/queue/${size}`); }
+    function gameRef(gid) { return fdb().ref(`${NS}/games/${gid}`); }
 
-    /**
-     * Enter the matchmaking queue. Resolves exactly once:
-     *   { solo: true }                       — window expired, play the bots
-     *   { game, gid, mySeat }                — matched into a live game
-     * onState(kind, detail) narrates for the menu ('searching', 'found').
-     *
-     * COMMIT-FIRST (Wyatt): Play Now queues you BEFORE you see a hero —
-     * the entry carries your 3-hero OFFER; your pick lands later via
-     * setQueueHero. A match that forms before you confirm draws your
-     * seat's hero from that offer, so backing out can never re-roll.
-     */
-    function enterQueue({ size, offer, onState }) {
-        if (q) cancelQueue();
-        const me = uid();
+    function emit(kind, d) {
+        if (!q || !q.onState) return;
+        try { q.onState(kind, d || {}); } catch (e) { /* UI's problem */ }
+    }
+
+    function buildEntry(offer) {
         const entry = {
             name: (window.FLB && localStorage.getItem('favorName')) || 'A Noble',
             rating: 0,
-            hero: null,
             offer: Array.isArray(offer) && offer.length ? offer : null,
             avatar: localStorage.getItem('favorAvatar') || null,
             at: firebase.database.ServerValue.TIMESTAMP,
@@ -130,112 +141,302 @@
             const snap = (window.FLB && typeof FLB.snapshot === 'function') ? FLB.snapshot() : null;
             if (snap) entry.rating = snap.rating || 0;
         } catch (e) { /* rating stays 0 */ }
-
-        return new Promise((resolve) => {
-            const ref = queueRef(size).child(me);
-            q = { size, ref, done: false };
-            const finish = (result) => {
-                if (!q || q.done) return;
-                q.done = true;
-                cancelQueue();
-                resolve(result);
-            };
-
-            ref.set(entry);
-            ref.onDisconnect().remove();
-            q.hbTimer = setInterval(() => {
-                ref.child('hb').set(firebase.database.ServerValue.TIMESTAMP);
-            }, T.hb);
-
-            // Nation's window: if nobody shows before it closes, the fake
-            // humans get you. A real match forming cancels it.
-            const windowMs = T.windowMin + Math.random() * T.windowSpread;
-            q.windowTimer = setTimeout(() => finish({ solo: true }), windowMs);
-
-            // Watch the whole size-pool: my entry gaining a gameId means a
-            // host took me; being the earliest live entry with company
-            // means I do the forming.
-            let forming = false;
-            const watchRef = queueRef(size);
-            const onValue = async (snap) => {
-                if (!q || q.done) return;
-                const pool = snap.val() || {};
-                const mine = pool[me];
-                if (mine && mine.gameId) {
-                    // A host claimed me — join their table.
-                    const rec = await joinGame(mine.gameId);
-                    if (rec) finish(rec);
-                    return;
-                }
-                const live = Object.entries(pool)
-                    .filter(([, e]) => e && !e.gameId && e.ver === MPV
-                        && (typeof e.hb !== 'number' || now() - e.hb < T.fresh))
-                    .sort((a, b) => (a[1].at - b[1].at) || (a[0] < b[0] ? -1 : 1));
-                if (onState) onState('searching', { others: Math.max(0, live.length - 1) });
-                if (live.length >= 2 && live[0][0] === me && !forming) {
-                    forming = true;
-                    try {
-                        const rec = await formGame(size, live);
-                        if (rec) { finish(rec); return; }
-                    } catch (e) {
-                        console.warn('[FMP] form failed:', e.message);
-                    }
-                    forming = false;
-                }
-            };
-            watchRef.on('value', onValue);
-            q.watchOff = () => watchRef.off('value', onValue);
-        });
+        return entry;
     }
 
-    // The player picked (or re-picked) a hero while queued — the live
-    // entry carries it so the host seats them with their choice. No-op
-    // once matched/expired.
-    function setQueueHero(heroId) {
-        if (!q || q.done || !q.ref) return;
-        try { q.ref.child('hero').set(heroId || null); } catch (e) { /* best effort */ }
+    /**
+     * Enter the matchmaking queue and STAY there — no promise; the queue
+     * narrates through onState(kind, detail) and the UI answers through
+     * accept()/decline()/publishPick(). Events on the happy path:
+     *
+     *   'searching' {others}             — pool narration for the chip
+     *   'found'     {gid, rec}           — a table is PROPOSED: MATCH FOUND
+     *   'accepts'   {n, of}              — court roll-call under the popup
+     *   'picking'   {gid, rec, pickStart}— all accepted: hero pick is open
+     *   'live'      {game, gid, mySeat}  — roster sealed, lockstep attached
+     *
+     * And off it:
+     *   'solo'      {}        — window expired alone; entry already removed,
+     *                           the UI runs the SAME theater against bots
+     *   'requeued'  {}        — someone ELSE declined/lapsed; my entry keeps
+     *                           its original `at` (elapsed priority), the
+     *                           window re-arms, the chip ticks on
+     *   'removed'   {reason}  — I'm out: 'declined' (my choice), 'lapse'
+     *                           (the popup outwaited me), or 'dissolved'
+     *                           (host vanished mid-pick). Queue over.
+     */
+    function enterQueue({ size, offer, onState }) {
+        if (q) cancelQueue();
+        const me = uid();
+        q = {
+            size, me, onState,
+            offer: Array.isArray(offer) ? offer : null,
+            ref: queueRef(size).child(me),
+            state: 'searching',     // searching | proposed | picking
+            startedAt: now(),
+            prop: null,             // live proposal — see adoptProposal
+            forming: false,
+        };
+        q.ref.set(buildEntry(offer));
+        q.ref.onDisconnect().remove();
+        startHb();
+        armWindow();
+
+        const watchRef = queueRef(size);
+        const onValue = (snap) => poolChanged(snap);
+        watchRef.on('value', onValue);
+        q.watchOff = () => watchRef.off('value', onValue);
+    }
+
+    function startHb() {
+        if (!q) return;
+        clearInterval(q.hbTimer);
+        q.hbTimer = setInterval(() => {
+            q.ref.child('hb').set(firebase.database.ServerValue.TIMESTAMP);
+        }, T.hb);
+    }
+
+    // The solo window: 9–25s of honestly waiting for real players. Expiring
+    // alone means the realm itself answers — leave the queue and hand the
+    // UI its 'solo' event; the MATCH FOUND theater runs the same from here.
+    function armWindow() {
+        if (!q) return;
+        clearTimeout(q.windowTimer);
+        const ms = T.windowMin + Math.random() * T.windowSpread;
+        q.windowTimer = setTimeout(() => {
+            if (!q || q.state !== 'searching') return;
+            const fire = q.onState;
+            teardownQueue();
+            q = null;
+            if (fire) try { fire('solo', {}); } catch (e) {}
+        }, ms);
+    }
+
+    // Watch the whole size-pool: my entry gaining a gameId means a host
+    // proposed me a table (I may BE that host — formGame tags its own
+    // entry too, so one path serves both); being the earliest live entry
+    // with company means I do the forming.
+    function poolChanged(snap) {
+        if (!q || q.state !== 'searching') return;
+        const pool = snap.val() || {};
+        const mine = pool[q.me];
+        if (mine && mine.gameId) { adoptProposal(mine.gameId); return; }
+        const live = Object.entries(pool)
+            .filter(([, e]) => e && !e.gameId && e.ver === MPV
+                && (typeof e.hb !== 'number' || now() - e.hb < T.fresh))
+            .sort((a, b) => (a[1].at - b[1].at) || (a[0] < b[0] ? -1 : 1));
+        emit('searching', { others: Math.max(0, live.length - 1) });
+        if (live.length >= 2 && live[0][0] === q.me && !q.forming) {
+            q.forming = true;
+            formGame(q.size, live)
+                .then(() => { if (q) q.forming = false; })
+                .catch((e) => {
+                    console.warn('[FMP] form failed:', e.message);
+                    if (q) q.forming = false;
+                });
+        }
+    }
+
+    // A gameId landed on my entry — read the proposal and put it to the
+    // player. Everything after this is driven by the RECORD's status.
+    async function adoptProposal(gid) {
+        if (!q || q.state !== 'searching') return;
+        q.state = 'proposed';
+        clearTimeout(q.windowTimer);
+        let rec = null;
+        try { rec = (await gameRef(gid).get()).val(); } catch (e) { rec = null; }
+        if (!q || q.state !== 'proposed' || q.prop) return;   // withdrawn mid-read
+        if (!rec || rec.status !== 'proposed' || rec.ver !== MPV) {
+            // Stale or foreign-build record — shed the tag, keep searching.
+            await untagOwnEntry(gid);
+            if (!q) return;
+            q.state = 'searching';
+            armWindow();
+            return;
+        }
+        const prop = q.prop = { gid, accepted: false, answered: false };
+        emit('found', { gid, rec });
+        const recRef = gameRef(gid);
+        const onRec = (snap) => proposalChanged(prop, snap.val());
+        recRef.on('value', onRec);
+        prop.recOff = () => recRef.off('value', onRec);
+        // My accept window: silence = decline. The host runs the same clock
+        // (+ grace) server-side, so a dead client can't hold the table.
+        prop.lapseT = setTimeout(() => {
+            if (q && q.prop === prop && !prop.answered) declineProposal('lapse');
+        }, T.accept);
+        // Host-vanished watchdog: a record stuck 'proposed' unsticks into a
+        // requeue — my entry survives, my priority holds.
+        prop.watchdogT = setTimeout(() => {
+            if (q && q.prop === prop && q.state === 'proposed') requeueFromProposal();
+        }, T.accept + T.acceptGrace + 4000);
+    }
+
+    function proposalChanged(prop, rec) {
+        if (!q || q.prop !== prop) return;
+        if (!rec) {
+            // Record vanished under us (abort already swept) — requeue.
+            if (q.state === 'proposed' || q.state === 'picking') requeueFromProposal();
+            return;
+        }
+        if (rec.status === 'proposed') {
+            const humans = (rec.roster || []).filter(r => r.human);
+            const n = humans.filter(r => rec.accept && rec.accept[r.uid] === true).length;
+            emit('accepts', { n, of: humans.length });
+            return;
+        }
+        if (rec.status === 'aborted') {
+            const droppedMe = Array.isArray(rec.dropped) && rec.dropped.includes(q.me);
+            if (droppedMe) {
+                // The host's clock beat mine (or my accept write was still in
+                // flight) — either way the table moved on without me.
+                removeMe('lapse');
+            } else {
+                requeueFromProposal();
+            }
+            return;
+        }
+        if (rec.status === 'picking' && q.state === 'proposed') {
+            q.state = 'picking';
+            clearTimeout(prop.lapseT);
+            clearTimeout(prop.watchdogT);
+            // Entries are consumed at picking (the host removed them) — a
+            // heartbeat now would resurrect mine as a ghost {hb} row.
+            clearInterval(q.hbTimer);
+            // Host gone mid-pick → the table dissolves honestly.
+            prop.pickWatchdogT = setTimeout(() => {
+                if (q && q.prop === prop && q.state === 'picking') removeMe('dissolved');
+            }, T.pick + T.pickGrace + 6000);
+            emit('picking', { gid: prop.gid, rec, pickStart: rec.pickStart || now() });
+            return;
+        }
+        if (rec.status === 'live' && (q.state === 'picking' || q.state === 'proposed')) {
+            // Sealed. Retire the queue machinery, attach the lockstep game.
+            const fire = q.onState;
+            teardownQueue();
+            q = null;
+            const res = attachGame(prop.gid, rec);
+            if (res && fire) try { fire('live', res); } catch (e) {}
+            return;
+        }
+    }
+
+    // ACCEPT — the popup's gold button. The record watcher drives the rest.
+    function accept() {
+        if (!q || !q.prop || q.prop.answered) return;
+        q.prop.answered = true;
+        q.prop.accepted = true;
+        clearTimeout(q.prop.lapseT);
+        try { gameRef(q.prop.gid).child(`accept/${q.me}`).set(true); } catch (e) {}
+    }
+
+    // DECLINE — by choice or by lapse. Out of the queue, no penalty; the
+    // host sees the false (or my missing accept) and aborts for the rest.
+    async function declineProposal(reason) {
+        if (!q || !q.prop) return;
+        const prop = q.prop;
+        prop.answered = true;
+        clearTimeout(prop.lapseT);
+        try { await gameRef(prop.gid).child(`accept/${q.me}`).set(false); } catch (e) {}
+        removeMe(reason);
+    }
+
+    function removeMe(reason) {
+        if (!q) return;
+        const fire = q.onState;
+        teardownQueue();
+        q = null;
+        if (fire) try { fire('removed', { reason }); } catch (e) {}
+    }
+
+    // Someone else sank the proposal — my entry (and its original `at`)
+    // survives, so the earliest live entry still hosts the next table.
+    async function requeueFromProposal() {
+        if (!q || !q.prop) return;
+        const prop = q.prop;
+        q.prop = null;
+        clearTimeout(prop.lapseT);
+        clearTimeout(prop.watchdogT);
+        clearTimeout(prop.pickWatchdogT);
+        if (prop.recOff) prop.recOff();
+        q.state = 'searching';
+        await untagOwnEntry(prop.gid);
+        if (!q || q.state !== 'searching') return;
+        // Crash-window insurance: if the entry itself was lost, re-assert it
+        // (fresh `at` only in that edge — the normal path never lands here).
+        try {
+            const cur = (await q.ref.get()).val();
+            if (!q || q.state !== 'searching') return;
+            if (!cur) {
+                q.ref.set(buildEntry(q.offer));
+                q.ref.onDisconnect().remove();
+            }
+        } catch (e) { /* best effort */ }
+        startHb();
+        armWindow();
+        emit('requeued', {});
+    }
+
+    // Shed a proposal tag without clobbering a NEWER host's claim. (A get
+    // + conditional remove, not a transaction: the RTDB null-guess trap
+    // makes remove-if-equal transactions cancel on an empty local cache.)
+    async function untagOwnEntry(gid) {
+        if (!q) return;
+        try {
+            const tag = (await q.ref.child('gameId').get()).val();
+            if (tag === gid) await q.ref.child('gameId').remove();
+        } catch (e) { /* best effort */ }
     }
 
     function cancelQueue() {
+        if (!q) return;
+        if (q.prop) { declineProposal('declined'); return; }   // safety — UI hides Withdraw mid-popup
+        teardownQueue();
+        q = null;
+    }
+
+    function teardownQueue() {
         if (!q) return;
         try {
             if (q.watchOff) q.watchOff();
             clearInterval(q.hbTimer);
             clearTimeout(q.windowTimer);
+            if (q.prop) {
+                clearTimeout(q.prop.lapseT);
+                clearTimeout(q.prop.watchdogT);
+                clearTimeout(q.prop.pickWatchdogT);
+                if (q.prop.recOff) q.prop.recOff();
+            }
             q.ref.onDisconnect().cancel();
+            // Also mops up any ghost {hb} row a final heartbeat left behind.
             q.ref.remove();
         } catch (e) { /* best effort */ }
-        q = null;
     }
 
     // ── Forming a game (host side) ───────────────────────────────────
 
-    // The host owns every random of game setup: seat order, hero
-    // collisions, persona fill, the Emblem seat and the boon seat. The
-    // record is the single source of truth every client builds from.
+    // The host owns every random of game setup EXCEPT heroes: seat order,
+    // persona fill, the Emblem seat and the boon seat are fixed at the
+    // proposal; heroes are picked by their players AFTER everyone accepts
+    // and sealed by the host when the pick window closes. The record is
+    // the single source of truth every client builds from.
     async function formGame(size, liveEntries) {
         const takes = liveEntries.slice(0, size);   // humans, earliest first
         const gid = fdb().ref(`${NS}/games`).push().key;
-        const takenHeroes = new Set();
         const roster = [];
 
         for (const [huid, e] of takes) {
-            let hero = e.hero;
-            if (!hero || takenHeroes.has(hero)) hero = null;   // collision → offer/fill below
-            if (!hero && Array.isArray(e.offer)) {
-                // Still browsing (or their pick collided): seat them from
-                // their OWN offer — never a hero they don't own.
-                const fromOffer = e.offer.filter(h => !takenHeroes.has(h));
-                if (fromOffer.length) hero = fromOffer[Math.floor(Math.random() * fromOffer.length)];
-            }
-            if (hero) takenHeroes.add(hero);
-            roster.push({ uid: huid, name: e.name || 'A Noble', hero, rating: e.rating || 0,
-                          avatar: e.avatar || null, human: true });
+            roster.push({
+                uid: huid, name: e.name || 'A Noble', hero: null,
+                offer: Array.isArray(e.offer) && e.offer.length ? e.offer : null,
+                rating: e.rating || 0, avatar: e.avatar || null, human: true,
+            });
         }
 
         // Fill the rest of the table exactly like solo: persona rivals by
         // the same odds, generic bots after. Host's tableSeed supplies the
-        // live persona ratings.
+        // live persona ratings. Signature heroes wait for the seal (a
+        // human's pick outranks a persona's wardrobe).
         let seed = null;
         try {
             seed = await Promise.race([
@@ -250,25 +451,15 @@
         for (let i = 0; i < personaCount; i++) {
             const p = personas.splice(Math.floor(Math.random() * personas.length), 1)[0];
             roster.push({
-                name: p.name, hero: (!takenHeroes.has(p.hero)) ? p.hero : null,
+                name: p.name, hero: null, sigHero: p.hero || null,
                 persona: p.key, personaUid: p.uid, strong: p.strong, rating: p.rating || 0,
             });
-            if (roster[roster.length - 1].hero) takenHeroes.add(p.hero);
         }
         const aiNames = ['Prince Aldric', 'Princess Sera', 'Lord Cassius', 'Lady Elara'];
         let ai = 0;
         while (roster.length < size) {
             roster.push({ name: aiNames[ai++ % aiNames.length], hero: null, rating: null });
         }
-
-        // Hero fills: anyone without one draws from the unclaimed roster.
-        const allHeroes = window.FAVOR_DATA.characters.map(c => c.id);
-        const free = allHeroes.filter(h => !takenHeroes.has(h));
-        for (let i = free.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [free[i], free[j]] = [free[j], free[i]];
-        }
-        roster.forEach(r => { if (!r.hero) { r.hero = free.pop(); } });
 
         // Emblem: highest rating at the table (humans + personas). Ties →
         // humans before personas, then the lower canonical seat.
@@ -290,30 +481,154 @@
         }
 
         const rec = {
-            created: now(), size, status: 'live', ver: MPV,
+            created: now(), size, status: 'proposed', ver: MPV,
             seed: Math.floor(Math.random() * 0x7fffffff) || 1,
             hostUid: uid(), roster, emblemSeat, boonSeat,
         };
         await fdb().ref(`${NS}/games/${gid}`).set(rec);
 
-        // Tag every taken human's queue entry so their client joins, then
-        // clear the entries (mine included — cancelQueue would double-do).
+        // Tag EVERY taken entry — self included. Tagged entries are
+        // invisible to other formers, and each client (this host included)
+        // adopts the proposal from its own tag: one path for everyone.
         for (const [huid] of takes) {
-            if (huid === uid()) continue;
             await queueRef(size).child(huid).child('gameId').set(gid);
         }
-        return attachGame(gid, rec);
+        refereeAccepts(gid, rec);
+        return gid;
     }
 
-    // A host tagged my queue entry — read the record and attach.
-    async function joinGame(gid) {
-        const snap = await fdb().ref(`${NS}/games/${gid}`).get();
-        const rec = snap.val();
-        // A stale-build host (no ver / old ver) simulates different rules —
-        // refuse the seat; our solo-window timer still lands us a table,
-        // and their side AFK-boots the ghost seat to AI.
-        if (!rec || rec.status !== 'live' || rec.ver !== MPV) return null;
-        return attachGame(gid, rec);
+    // ── The host referees the handshake ──────────────────────────────
+
+    // Accept phase: every human answers within the window (+ grace for
+    // writes in flight) or the table aborts — decliners and the silent
+    // leave the queue, survivors are untagged with their priority intact.
+    function refereeAccepts(gid, rec) {
+        const humans = rec.roster.filter(r => r.human).map(r => r.uid);
+        const accRef = gameRef(gid).child('accept');
+        let done = false;
+        const finish = () => { done = true; accRef.off('value', onAcc); clearTimeout(deadline); };
+        const onAcc = (snap) => {
+            if (done) return;
+            const acc = snap.val() || {};
+            const declined = humans.filter(u => acc[u] === false);
+            if (declined.length) { finish(); abortProposal(gid, rec, declined); return; }
+            if (humans.every(u => acc[u] === true)) {
+                finish();
+                (async () => {
+                    try {
+                        await gameRef(gid).update({
+                            status: 'picking',
+                            pickStart: firebase.database.ServerValue.TIMESTAMP,
+                        });
+                        // Entries are consumed — these seats are committed.
+                        for (const u of humans) await queueRef(rec.size).child(u).remove();
+                    } catch (e) { /* clients' watchdogs cover a half-write */ }
+                    refereePicks(gid, rec);
+                })();
+            }
+        };
+        const deadline = setTimeout(async () => {
+            if (done) return;
+            let acc = {};
+            try { acc = (await accRef.get()).val() || {}; } catch (e) {}
+            if (done) return;
+            const dropped = humans.filter(u => acc[u] !== true);
+            if (!dropped.length) return;   // all accepted — onAcc is flipping to picking
+            finish();
+            abortProposal(gid, rec, dropped);
+        }, T.accept + T.acceptGrace);
+        accRef.on('value', onAcc);
+    }
+
+    async function abortProposal(gid, rec, dropped) {
+        try {
+            await gameRef(gid).update({ status: 'aborted', dropped });
+            for (const r of rec.roster) {
+                if (!r.human) continue;
+                const eref = queueRef(rec.size).child(r.uid);
+                if (dropped.includes(r.uid)) {
+                    await eref.remove();   // decliners/silents leave the queue
+                } else {
+                    // Survivors keep their place and their elapsed priority —
+                    // shed only the tag (conditionally: a faster next host
+                    // may already have re-claimed them).
+                    const tag = (await eref.child('gameId').get()).val();
+                    if (tag === gid) await eref.child('gameId').remove();
+                }
+            }
+        } catch (e) { /* sweepStale collects the wreck */ }
+        // The record outlives the abort long enough for every client to
+        // read the verdict, then goes.
+        setTimeout(() => { gameRef(gid).remove().catch(() => {}); }, 15000);
+    }
+
+    // Pick phase: everyone answered early → seal now (no dead air);
+    // otherwise 0:00 + grace, stragglers fill from their own offers.
+    function refereePicks(gid, rec) {
+        const humans = rec.roster.filter(r => r.human).map(r => r.uid);
+        const picksRef = gameRef(gid).child('picks');
+        let sealed = false;
+        const trySeal = async (picks) => {
+            if (sealed) return;
+            sealed = true;
+            picksRef.off('value', onPicks);
+            clearTimeout(deadline);
+            try { await sealRoster(gid, rec, picks || {}); }
+            catch (e) { console.warn('[FMP] seal failed:', e.message); }
+        };
+        const onPicks = (snap) => {
+            const picks = snap.val() || {};
+            if (humans.every(u => picks[u])) trySeal(picks);
+        };
+        const deadline = setTimeout(async () => {
+            let picks = {};
+            try { picks = (await picksRef.get()).val() || {}; } catch (e) {}
+            trySeal(picks);
+        }, T.pick + T.pickGrace);
+        picksRef.on('value', onPicks);
+    }
+
+    // Seal: turn picks into the final roster. Canonical seat order resolves
+    // hero collisions (two offers CAN share a hero — the earlier seat keeps
+    // it, the later seat falls back to its own offer, then the free pool);
+    // personas take their signature when it survived; everyone left draws
+    // from the unclaimed shuffle.
+    async function sealRoster(gid, rec, picks) {
+        const allHeroes = window.FAVOR_DATA.characters.map(c => c.id);
+        const taken = new Set();
+        const roster = rec.roster.map(r => ({ ...r }));
+        for (const r of roster) {
+            if (!r.human) continue;
+            let hero = picks[r.uid];
+            if (!hero || !allHeroes.includes(hero) || taken.has(hero)) hero = null;
+            if (!hero && Array.isArray(r.offer)) {
+                const fromOffer = r.offer.filter(h => allHeroes.includes(h) && !taken.has(h));
+                if (fromOffer.length) hero = fromOffer[0];
+            }
+            if (hero) { r.hero = hero; taken.add(hero); }
+        }
+        for (const r of roster) {
+            if (r.human || !r.persona) continue;
+            if (r.sigHero && !taken.has(r.sigHero)) { r.hero = r.sigHero; taken.add(r.sigHero); }
+        }
+        const free = allHeroes.filter(h => !taken.has(h));
+        for (let i = free.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [free[i], free[j]] = [free[j], free[i]];
+        }
+        roster.forEach(r => {
+            if (!r.hero) { r.hero = free.pop() || allHeroes[0]; taken.add(r.hero); }
+            delete r.offer;      // the sealed roster carries no scaffolding
+            delete r.sigHero;
+        });
+        await gameRef(gid).update({ status: 'live', roster });
+    }
+
+    // The player picked (or the 20s clock picked for them) — the record
+    // carries it; the host seals from these.
+    function publishPick(heroId) {
+        if (!q || !q.prop || q.state !== 'picking') return;
+        try { gameRef(q.prop.gid).child(`picks/${q.me}`).set(heroId || null); } catch (e) {}
     }
 
     // ── Live game runtime — stream, presence, AFK ────────────────────
@@ -503,15 +818,20 @@
         leaveGame();
     }
 
-    // Abandoned records from crashed sessions — swept on boot, cheap.
+    // Abandoned records from crashed sessions — swept on boot, cheap. A
+    // record that never went live (proposal wreckage) goes on the short
+    // clock; finished/live wrecks keep the long one.
     async function sweepStale() {
         if (!available()) return;
         try {
             const snap = await fdb().ref(`${NS}/games`).get();
             const games = snap.val() || {};
-            const cutoff = now() - T.cleanupAge;
+            const tNow = now();
             for (const [gid, rec] of Object.entries(games)) {
-                if (rec && rec.created && rec.created < cutoff) {
+                if (!rec || !rec.created) continue;
+                const age = tNow - rec.created;
+                if (age > T.cleanupAge
+                    || (rec.status !== 'live' && rec.status !== 'done' && age > T.limboAge)) {
                     await fdb().ref(`${NS}/games/${gid}`).remove();
                 }
             }
@@ -526,7 +846,10 @@
     // ── Public surface ───────────────────────────────────────────────
 
     window.FMP = {
-        available, enterQueue, cancelQueue, setQueueHero,
+        available, enterQueue, cancelQueue,
+        accept, decline: () => declineProposal('declined'), publishPick,
+        queuePhase: () => (q ? q.state : null),
+        queueStartedAt: () => (q ? q.startedAt : 0),
         active, mySeat, isHost, record, localIdx, canonSeat,
         publish, waitFor, onBroadcast, markBooted,
         leaveGame, gameOver,

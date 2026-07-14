@@ -426,40 +426,376 @@ document.addEventListener('click', function initMusic() {
 
 // ─── TITLE SCREEN ──────────────────────────────────────────
 
+// The queue flow (Wyatt's 7/14 spec): PLAY NOW queues you in the
+// BACKGROUND and hands the menu right back — browse the leaderboard or
+// the store while the chip ticks. 9–25 seconds of honest waiting later a
+// MATCH FOUND ring lands over whatever you're looking at; ACCEPT opens
+// the 20-second hero pick, DECLINE (or a lapse) costs nothing. The offer
+// is still rolled AT the pledge (sticky per commit) so nothing re-rolls.
+let _queueUx = null;   // { size, offer, startedAt, state, solo, accepted, tickT, acceptT, ringT, pick }
+
 function startGame() {
-    // PLAY NOW is the COMMIT (Wyatt): you pledge to the match BEFORE any
-    // hero is seen. The queue entry (with your 3-hero OFFER) is written
-    // here; hero select is post-pledge browsing — and the offer is sticky
-    // per commit, so backing out can never re-roll it.
-    const offer = rollStickyOffer();
     window._mpConsumed = false;
-    window._mpQueueP = null;
-    if (window._pinEmblemSeed === undefined && !window._mpSkipQueue
-        && window.FMP && FMP.available()) {
-        const size = (window.FLB && FLB.queueSize()) || 3;
-        window._mpQueueSize = size;
-        window._mpQueueP = FMP.enterQueue({
-            size,
-            offer: offer.map(c => c.id),
-            onState: (kind, d) => mpQueueTicker(kind, d, size),
-        });
-        // A table can form WHILE you browse — real humans are waiting, so
-        // the match claims you: your entry's hero (or an offer draw) is
-        // already sealed in the record.
-        window._mpQueueP.then(res => {
-            if (!res || !res.game || res.cancelled) return;
-            if (window._confirmBusy || window._mpConsumed) return;   // Begin path owns it
+    // Straight-to-the-heroes seam: pinned/skip-queue builds (the audit's
+    // ~600 title→select→game checks) and offline play take the classic
+    // path — no queue, no window, no popup, no clock.
+    const skip = window._pinEmblemSeed !== undefined || window._mpSkipQueue
+        || !(window.FMP && FMP.available());
+    const offer = rollStickyOffer();
+    if (skip) {
+        document.getElementById('title-screen').classList.add('hidden');
+        setTimeout(() => {
+            document.getElementById('title-screen').style.display = 'none';
+            showCharacterSelect(offer);
+        }, 1200);
+        return;
+    }
+    // Already pledged? The chip IS the state — nudge it, don't double-queue.
+    if (_queueUx) { pulseQueueChip(); return; }
+    _queueUx = {
+        size: (window.FLB && FLB.queueSize()) || 3,
+        offer, startedAt: Date.now(), state: 'searching',
+    };
+    FMP.enterQueue({
+        size: _queueUx.size,
+        offer: offer.map(c => c.id),
+        onState: mpQueueEvent,
+    });
+    showQueueChip();
+}
+
+// ── Queue events — js/mp.js narrates, this runs the theater ─────────
+function mpQueueEvent(kind, d) {
+    if (!_queueUx) return;
+    switch (kind) {
+        case 'searching':
+            // Pool narration — but never stomp a verdict line mid-hold
+            // (the requeue notice must outlive the next heartbeat event).
+            if (Date.now() < (_queueUx.subHold || 0)) return;
+            queueChipSub(d.others > 0
+                ? `<b>${d.others}</b> noble${d.others > 1 ? 's' : ''} found — forming the table…`
+                : 'Calling for challengers…');
+            return;
+        case 'found':
+            _queueUx.state = 'found';
+            _queueUx.solo = false;
+            showMatchFound({ solo: false, size: (d.rec && d.rec.size) || _queueUx.size });
+            return;
+        case 'accepts':
+            matchFoundProgress(d.n, d.of);
+            return;
+        case 'solo':
+            // The window closed alone — the realm itself answers. Same
+            // ring, same stakes; the fill presents as people.
+            _queueUx.state = 'found';
+            _queueUx.solo = true;
+            showMatchFound({ solo: true, size: _queueUx.size });
+            return;
+        case 'requeued':
+            // Someone else sank the table — my wait (and my priority) carry on.
+            _queueUx.state = 'searching';
+            _queueUx.solo = false;
+            _queueUx.accepted = false;
+            clearInterval(_queueUx.ringT);
+            hideMatchFound();
+            leavePickPhase();
+            showQueueChip();
+            _queueUx.subHold = Date.now() + 6000;
+            queueChipSub('A noble declined — the search continues…');
+            pulseQueueChip();
+            return;
+        case 'picking':
+            enterPickPhase({ mp: true, pickStart: d.pickStart });
+            return;
+        case 'live':
+            // Sealed! The queue theater retires; the lockstep table builds.
+            if (window._mpConsumed) return;
             window._mpConsumed = true;
             localStorage.removeItem('favorOffer');
-            document.getElementById('character-select').classList.remove('active');
-            startMpGame(res);
-        });
+            leavePickPhase({ keepScreen: true });
+            teardownQueueUx();
+            startMpGame(d);
+            return;
+        case 'removed':
+            if (d.reason === 'lapse') {
+                showNotification('The table moved on without you.', 'info');
+            } else if (d.reason === 'dissolved') {
+                showNotification('The table dissolved — the realm apologizes.', 'info');
+            }
+            leavePickPhase();
+            teardownQueueUx();
+            return;
     }
-    document.getElementById('title-screen').classList.add('hidden');
-    setTimeout(() => {
-        document.getElementById('title-screen').style.display = 'none';
-        if (!window._mpConsumed) showCharacterSelect(offer);
-    }, 1200);
+}
+
+// ── The queue chip — the pledge made visible ────────────────────────
+// A ROOT body child riding ABOVE the leaderboard/store panels (they live
+// in their own stacking contexts), so the player can browse any menu
+// surface while the realm searches. Elapsed clock + honest Withdraw.
+function ensureQueueChip() {
+    let chip = document.getElementById('queueChip');
+    if (!chip) {
+        chip = document.createElement('div');
+        chip.id = 'queueChip';
+        chip.innerHTML = `
+            <span class="qc-dot"></span>
+            <span class="qc-main">In Queue <b class="qc-time" id="qcTime">0:00</b></span>
+            <span class="qc-sub" id="qcSub">Calling for challengers…</span>
+            <button type="button" class="qc-x" id="qcWithdraw">Withdraw</button>`;
+        document.body.appendChild(chip);
+        chip.querySelector('#qcWithdraw').onclick = withdrawQueue;
+    }
+    return chip;
+}
+function showQueueChip() {
+    if (!_queueUx) return;
+    ensureQueueChip().classList.add('on');
+    paintQueueChip();
+    clearInterval(_queueUx.tickT);
+    _queueUx.tickT = setInterval(paintQueueChip, 1000);
+}
+function paintQueueChip() {
+    if (!_queueUx) return;
+    const el = document.getElementById('qcTime');
+    if (!el) return;
+    const s = Math.max(0, Math.floor((Date.now() - _queueUx.startedAt) / 1000));
+    el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+function queueChipSub(line) {
+    const el = document.getElementById('qcSub');
+    if (el) el.innerHTML = line;
+}
+function pulseQueueChip() {
+    const chip = document.getElementById('queueChip');
+    if (!chip) return;
+    chip.classList.remove('pulse');
+    void chip.offsetWidth;
+    chip.classList.add('pulse');
+}
+
+function withdrawQueue() {
+    if (window.FMP && FMP.cancelQueue) FMP.cancelQueue();
+    teardownQueueUx();
+}
+
+function teardownQueueUx() {
+    if (_queueUx) {
+        clearInterval(_queueUx.tickT);
+        clearTimeout(_queueUx.acceptT);
+        clearInterval(_queueUx.ringT);
+        if (_queueUx.pick) clearInterval(_queueUx.pick.tickT);
+        _queueUx = null;
+    }
+    const chip = document.getElementById('queueChip');
+    if (chip) chip.classList.remove('on');
+    hideMatchFound();
+}
+
+// ── MATCH FOUND — the LoL accept ring, FAVOR-skinned ────────────────
+// A ROOT body child above every menu surface (nested popups get buried
+// by the panels' own stacking contexts). The gold ring drains with the
+// accept window, your crest rides the center, gold ACCEPT above a
+// quieter crimson DECLINE. Art IS the UI — no grey modal.
+function ensureMatchFound() {
+    let mf = document.getElementById('matchFound');
+    if (!mf) {
+        mf = document.createElement('div');
+        mf.id = 'matchFound';
+        document.body.appendChild(mf);
+    }
+    return mf;
+}
+
+function showMatchFound({ solo, size }) {
+    if (!_queueUx) return;
+    const mf = ensureMatchFound();
+    const acceptMs = (window.FMP && FMP._T && FMP._T.accept) || 10000;
+    let crest = '';
+    try {
+        crest = (window.FLB && FLB.avatarDisc) ? FLB.avatarDisc(FLB.myAvatar(), 'mf-crest') : '';
+    } catch (e) { /* ring stands alone */ }
+    mf.innerHTML = `
+        <div class="mf-stage">
+            <div class="mf-ringwrap">
+                <div class="mf-countring" id="mfCountRing"></div>
+                <img class="mf-ringart" src="assets/ui/slider-ring.png" alt="">
+                <div class="mf-core">
+                    ${crest}
+                    <div class="mf-headline">A Table Awaits</div>
+                    <div class="mf-sub">${size} Players &bull; The Realm</div>
+                    <div class="mf-clock" id="mfClock"></div>
+                </div>
+            </div>
+            <div class="mf-actions" id="mfActions">
+                <button type="button" class="btn-royal primary mf-accept" id="mfAccept"><span>Accept</span></button>
+                <button type="button" class="mf-decline" id="mfDecline">Decline</button>
+            </div>
+        </div>`;
+    mf.classList.add('on');
+    mf.querySelector('#mfAccept').onclick = acceptMatch;
+    mf.querySelector('#mfDecline').onclick = declineMatch;
+    // The chip yields the stage to the ring.
+    const chip = document.getElementById('queueChip');
+    if (chip) chip.classList.remove('on');
+
+    // The ring drains over the accept window. MP's authoritative lapse
+    // clock lives in js/mp.js — this one paints; solo owns its own.
+    const t0 = Date.now();
+    const ring = document.getElementById('mfCountRing');
+    const clock = document.getElementById('mfClock');
+    clearInterval(_queueUx.ringT);
+    const paint = () => {
+        const left = Math.max(0, acceptMs - (Date.now() - t0));
+        const deg = (left / acceptMs) * 360;
+        if (ring) ring.style.background =
+            `conic-gradient(var(--gold-light) ${deg}deg, rgba(201,168,76,0.13) ${deg}deg)`;
+        if (clock) clock.textContent = Math.ceil(left / 1000);
+        if (!left && _queueUx) clearInterval(_queueUx.ringT);
+    };
+    paint();
+    _queueUx.ringT = setInterval(paint, 100);
+    if (solo) {
+        clearTimeout(_queueUx.acceptT);
+        _queueUx.acceptT = setTimeout(() => {
+            if (_queueUx && _queueUx.state === 'found' && _queueUx.solo && !_queueUx.accepted) {
+                showNotification('The table moved on without you.', 'info');
+                teardownQueueUx();
+            }
+        }, acceptMs);
+    }
+}
+
+function hideMatchFound() {
+    const mf = document.getElementById('matchFound');
+    if (mf) mf.classList.remove('on');
+}
+
+function matchFoundProgress(n, of) {
+    if (!_queueUx || !_queueUx.accepted) return;
+    const acts = document.getElementById('mfActions');
+    if (acts) acts.innerHTML =
+        `<div class="mf-wait">The court assembles — <b>${n}</b> of <b>${of}</b> answered…</div>`;
+}
+
+function acceptMatch() {
+    if (!_queueUx || _queueUx.state !== 'found' || _queueUx.accepted) return;
+    _queueUx.accepted = true;
+    clearTimeout(_queueUx.acceptT);
+    if (_queueUx.solo) {
+        // The realm's own table needs no counter-signatures.
+        clearInterval(_queueUx.ringT);
+        hideMatchFound();
+        enterPickPhase({ mp: false });
+    } else {
+        FMP.accept();
+        const acts = document.getElementById('mfActions');
+        if (acts) acts.innerHTML =
+            '<div class="mf-wait">You answer the call — the court assembles…</div>';
+    }
+}
+
+function declineMatch() {
+    if (!_queueUx || _queueUx.state !== 'found' || _queueUx.accepted) return;
+    clearTimeout(_queueUx.acceptT);
+    if (_queueUx.solo) {
+        teardownQueueUx();   // already out of the queue — just go home
+    } else {
+        FMP.decline();       // its 'removed' event tears the theater down
+    }
+}
+
+// ── The 20-second hero pick ─────────────────────────────────────────
+// Post-accept there is no back — the clock in the ribbon counts to the
+// auto-pick (the ringed center hero), Begin commits early. MP measures
+// from the record's server-stamped pickStart so every court hits 0:00
+// together; the host fills true stragglers from their own offers.
+function enterPickPhase({ mp, pickStart }) {
+    if (!_queueUx) return;
+    _queueUx.state = 'picking';
+    _queueUx.solo = !mp;
+    hideMatchFound();
+    const chip = document.getElementById('queueChip');
+    if (chip) chip.classList.remove('on');
+    clearInterval(_queueUx.tickT);
+    // The menu steps aside for the hero screen.
+    if (window.FLB) { try { FLB.closeLeaderboard(); FLB.closeStore(); } catch (e) {} }
+    const t = document.getElementById('title-screen');
+    t.classList.add('hidden');
+    t.style.display = 'none';
+
+    const pickMs = (window.FMP && FMP._T && FMP._T.pick) || 20000;
+    let deadline = Date.now() + pickMs;
+    if (mp && typeof pickStart === 'number') {
+        const remain = pickMs - (Date.now() - pickStart);
+        deadline = Date.now() + Math.max(2500, Math.min(pickMs, remain));
+    }
+    _queueUx.pick = { mp: !!mp, deadline, committed: false };
+
+    showCharacterSelect(_queueUx.offer);
+
+    // Pre-highlight the ringed (center) hero so 0:00 always has a target.
+    const cards = [...document.querySelectorAll('#characterGrid .character-card')];
+    const center = cards[Math.floor(cards.length / 2)] || cards[0];
+    if (center) selectCharacter(center.dataset.id, center);
+
+    paintPickClock();
+    _queueUx.pick.tickT = setInterval(() => {
+        if (!_queueUx || !_queueUx.pick) return;
+        paintPickClock();
+        if (Date.now() >= _queueUx.pick.deadline) commitHeroPick(true);
+    }, 250);
+}
+
+function paintPickClock() {
+    if (!_queueUx || !_queueUx.pick) return;
+    const el = document.getElementById('pickClock');
+    if (!el) return;
+    const left = Math.max(0, _queueUx.pick.deadline - Date.now());
+    const s = Math.ceil(left / 1000);
+    el.textContent = `0:${String(s).padStart(2, '0')}`;
+    el.classList.toggle('hot', left <= 5000);
+}
+
+// One commit per pick — Begin and the 0:00 auto-pick land here together.
+function commitHeroPick(auto) {
+    if (!_queueUx || !_queueUx.pick || _queueUx.pick.committed) return;
+    const pick = _queueUx.pick;
+    pick.committed = true;
+    clearInterval(pick.tickT);
+    const offer = _queueUx.offer;
+    const fallback = offer[Math.floor(offer.length / 2)] || offer[0];
+    const hero = selectedCharacter || (fallback && fallback.id);
+    if (pick.mp) {
+        selectedCharacter = hero;
+        FMP.publishPick(hero);
+        if (auto) showNotification('The clock decides — your hero answers.', 'act');
+        const ribbon = document.getElementById('queuePledge');
+        if (ribbon) ribbon.innerHTML =
+            '<span class="qp-dot"></span> You answer the call — the court assembles…';
+        const btn = document.getElementById('confirmBtn');
+        if (btn) { btn.disabled = true; btn.style.opacity = 0.45; }
+        // The record's seal ('live') starts the table from here.
+    } else {
+        selectedCharacter = hero;
+        teardownQueueUx();
+        buildSoloTable();
+    }
+}
+
+// Exiting the pick phase without a table (decline chains, dissolves).
+function leavePickPhase(opts) {
+    if (_queueUx && _queueUx.pick) {
+        clearInterval(_queueUx.pick.tickT);
+        _queueUx.pick = null;
+    }
+    if (opts && opts.keepScreen) return;
+    const sel = document.getElementById('character-select');
+    if (sel && sel.classList.contains('active')) {
+        sel.classList.remove('active');
+        const t = document.getElementById('title-screen');
+        t.style.display = '';
+        requestAnimationFrame(() => t.classList.remove('hidden'));
+    }
 }
 
 // One offer per pledge: rolled at Play Now, reused for 10 minutes (or
@@ -485,31 +821,15 @@ function rollStickyOffer() {
     return offer;
 }
 
-// Withdrawing the pledge (or solo Back) lands you home again.
+// The way home from the hero screen (skip-queue/offline paths) — and the
+// safety net under every queue teardown.
 function backToMenu() {
     if (window.FMP && FMP.cancelQueue) FMP.cancelQueue();
-    window._mpQueueP = null;
+    teardownQueueUx();
     document.getElementById('character-select').classList.remove('active');
     const t = document.getElementById('title-screen');
     t.style.display = '';
     requestAnimationFrame(() => t.classList.remove('hidden'));
-}
-
-// Queue narration — feeds the pledge ribbon on the select screen AND the
-// Searching overlay after Begin, whichever is on stage.
-function mpQueueTicker(kind, d, size) {
-    if (kind !== 'searching') return;
-    const line = d.others > 0
-        ? `<b>${d.others}</b> noble${d.others > 1 ? 's' : ''} in queue — forming the table…`
-        : 'searching the realm…';
-    const qp = document.getElementById('qpStatus');
-    if (qp) qp.innerHTML = line;
-    const sub = document.getElementById('mpqSub');
-    if (sub) {
-        sub.innerHTML = d.others > 0
-            ? `<b>${d.others}</b> noble${d.others > 1 ? 's' : ''} found — forming the table…`
-            : `Calling for challengers to a ${size}-player table…`;
-    }
 }
 
 // \u2550\u2550\u2550 HOW TO PLAY \u2014 card-deck tutorial (Prong 1) \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
@@ -868,9 +1188,9 @@ function showCharacterSelect(offer) {
         return;
     }
 
-    // The pledge ribbon: post-commit there is no Back — only an honest
-    // Withdraw (which keeps the sticky offer, so nothing re-rolls). Solo
-    // paths get a plain return home in the same slot.
+    // The ribbon above the heroes: an accepted match shows the pick clock
+    // and offers NO way back (the 20s throws you in — Wyatt's call, v1);
+    // the classic/offline path keeps its plain return home.
     let pledge = document.getElementById('queuePledge');
     if (!pledge) {
         pledge = document.createElement('div');
@@ -878,15 +1198,23 @@ function showCharacterSelect(offer) {
         pledge.className = 'queue-pledge';
         screen.insertBefore(pledge, grid);
     }
-    if (window._mpQueueP) {
+    if (_queueUx && _queueUx.state === 'picking') {
         pledge.innerHTML = `<span class="qp-dot"></span>
-            Pledged to a ${window._mpQueueSize || 3}-player match —
-            <span id="qpStatus">searching the realm…</span>
-            <button type="button" class="menu-link" id="qpWithdraw">Withdraw</button>`;
-        pledge.querySelector('#qpWithdraw').onclick = backToMenu;
+            The table is set — choose your hero
+            <b class="qp-clock" id="pickClock">0:20</b>`;
     } else {
         pledge.innerHTML = `<button type="button" class="menu-link" id="qpBack">← Return to the Menu</button>`;
         pledge.querySelector('#qpBack').onclick = backToMenu;
+    }
+
+    // A fresh visit starts unpicked — a lingering selection (or a Begin
+    // button left disabled by an MP wait) must not leak between visits.
+    selectedCharacter = null;
+    const confirmBtn = document.getElementById('confirmBtn');
+    if (confirmBtn) {
+        confirmBtn.style.display = 'none';
+        confirmBtn.disabled = false;
+        confirmBtn.style.opacity = '';
     }
 
     // The offer was rolled AT THE PLEDGE (sticky — see rollStickyOffer);
@@ -946,9 +1274,6 @@ function selectCharacter(id, cardEl) {
     document.querySelectorAll('.character-card').forEach(c => c.classList.remove('selected'));
     cardEl.classList.add('selected');   // cardEl now holds the center slot
     selectedCharacter = id;
-    // Already pledged: the live queue entry carries every (re-)pick, so a
-    // match that forms mid-browse seats you with your latest choice.
-    if (window.FMP && FMP.setQueueHero) FMP.setQueueHero(id);
     const btn = document.getElementById('confirmBtn');
     btn.style.display = 'inline-block';
     // Begin Your Journey sits below the fold on phones — picking a hero
@@ -991,36 +1316,23 @@ function seatPersonas(seed, botCount) {
 
 async function confirmCharacter() {
     if (!selectedCharacter) return;
-    if (window._mpConsumed) return;   // a formed match already claimed this pledge
+    if (window._mpConsumed) return;   // a sealed match already claimed this pledge
 
+    // Queue-flow pick phase: Begin = the commit. MP publishes the pick and
+    // waits for the host's seal; the solo theater falls straight through
+    // commitHeroPick into the classic build below.
+    if (_queueUx && _queueUx.pick) { commitHeroPick(false); return; }
+
+    await buildSoloTable();
+}
+
+// The classic table — solo builds land here from Begin (skip-queue and
+// offline paths) and from the queue theater's accepted solo pick.
+async function buildSoloTable() {
     // Table size = the queue you joined on the menu (persisted; the old
     // in-select dropdown moved there so Play Now can never skip past it).
     const playerCount = (window.FLB && FLB.queueSize()) || 3;
 
-    // MULTIPLAYER: the pledge was made at PLAY NOW (commit before heroes —
-    // Wyatt); Begin just seals your pick on the live entry and waits out
-    // whatever remains of the window. A real match starts a lockstep
-    // table; the expired window falls through to the classic game where
-    // the persona rivals present as people (indistinguishable from a slow
-    // lobby — Wyatt's spec).
-    if (window._mpQueueP) {
-        if (window._confirmBusy) return;
-        window._confirmBusy = true;
-        if (window.FMP && FMP.setQueueHero) FMP.setQueueHero(selectedCharacter);
-        let mpRes = null;
-        try { mpRes = await mpSearch(playerCount); } catch (e) { mpRes = { solo: true }; }
-        window._confirmBusy = false;
-        if (window._mpConsumed) return;                   // auto-start won the race
-        if (mpRes && mpRes.cancelled) { backToMenu(); return; }   // withdraw = pledge released
-        if (mpRes && mpRes.game) {
-            window._mpConsumed = true;
-            localStorage.removeItem('favorOffer');
-            await startMpGame(mpRes);
-            return;
-        }
-        window._mpQueueP = null;
-        // window expired → the classic table below
-    }
     localStorage.removeItem('favorOffer');   // this pledge becomes a real table
 
     // One leaderboard read seeds the rated Emblem start, persona seating,
@@ -1236,47 +1548,18 @@ function showBoonPicker() {
 const mpActive = () => !!(window.FMP && FMP.active());
 const mpPub = (type, data) => { if (mpActive()) FMP.publish(type, data); };
 
-// \u2500\u2500 Searching the realm \u2014 the post-Begin beat on the standing pledge \u2500\u2500
-// The queue entry was written at PLAY NOW; this overlay just waits out
-// whatever remains of the window. A short minimum hold keeps an already-
-// expired window from flashing a one-frame overlay.
-function mpSearch(size) {
-    return new Promise((resolve) => {
-        const ov = document.getElementById('promisePicker');
-        let cancelled = false;
-        ov.innerHTML = `
-            <div class="pp-inner boon">
-                <div class="pp-title">Searching the Realm</div>
-                <div class="pp-sub" id="mpqSub">Calling for challengers to a ${size}-player table\u2026</div>
-                <div class="mpq-spin"></div>
-                <div class="pp-actions">
-                    <button class="btn-royal" id="mpqCancel"><span>Withdraw</span></button>
-                </div>
-            </div>`;
-        ov.querySelector('#mpqCancel').onclick = () => {
-            cancelled = true;
-            FMP.cancelQueue();
-            ov.classList.remove('active');
-            resolve({ cancelled: true });
-        };
-        ov.classList.add('active');
-        const minHold = new Promise(r => setTimeout(r, 700));
-        Promise.all([window._mpQueueP || Promise.resolve({ solo: true }), minHold])
-            .then(([res]) => {
-                if (cancelled) return;
-                ov.classList.remove('active');
-                resolve(res);
-            });
-    });
-}
+// (The old post-Begin "Searching the Realm" overlay is gone \u2014 searching
+// happens in the BACKGROUND now, narrated by the queue chip, and the
+// MATCH FOUND ring is the beat that interrupts you.)
 
 // \u2500\u2500 Build the table from the match record \u2500\u2500
 async function startMpGame({ game: rec, mySeat }) {
     const n = rec.size;
+    teardownQueueUx();   // belt-and-suspenders \u2014 the 'live' event already did
 
-    // The record is truth: if the table formed before your pick landed
-    // (mid-browse match, or the write raced the host), your seat carries
-    // an offer-drawn hero \u2014 say so instead of surprising silently.
+    // The record is truth: if your pick collided with an earlier seat's
+    // (or your write raced the seal), your seat carries an offer-drawn
+    // hero \u2014 say so instead of surprising silently.
     const sealed = rec.roster[mySeat];
     if (sealed && sealed.hero && selectedCharacter && sealed.hero !== selectedCharacter) {
         const hc = window.FAVOR_DATA.characters.find(c => c.id === sealed.hero);

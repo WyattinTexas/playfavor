@@ -4632,10 +4632,11 @@ console.log('── Commit-first: Play pledges, the offer sticks, backing out re
   await page.close();
 }
 
-// ═══ MULTIPLAYER — queue window, real 2-client match, lockstep, AFK boot ═══
+// ═══ MULTIPLAYER — background queue, MATCH FOUND ring, timed pick,
+//     real 2-client accept handshake, lockstep, AFK boot ═══
 // Two ISOLATED browser contexts play each other through the real Firebase
 // queue. Timers are shrunk via FMP._T so the whole story runs in seconds.
-console.log('── Multiplayer: solo window, 2-client match, lockstep round, AFK boot');
+console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client handshake, AFK boot');
 {
   // Leave no stale matchmaking state behind OR in front.
   const purgeMp = async (pg) => pg.evaluate(async () => {
@@ -4643,8 +4644,11 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
     return true;
   });
 
-  // ── Beat 1: nobody else queued — the window expires into the classic
-  //    table (the fake humans get you; Wyatt's Nation pattern). ──
+  // ── Beat 1: the SOLO theater — Play Now queues in the background (the
+  //    menu stays), the chip rides the leaderboard AND the store, the
+  //    window expires into the MATCH FOUND ring over whatever's open.
+  //    Decline goes home free; a lapse gets the quiet toast; Accept opens
+  //    the 20s pick and 0:00 auto-picks the ringed hero into a table. ──
   {
     const page = await browser.newPage();
     page.on('console', m => { if (m.type() === 'error') consoleErrors.push('mp-solo: ' + m.text()); });
@@ -4652,51 +4656,151 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
     await page.goto(URL, { waitUntil: 'networkidle2' });
     await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
     await purgeMp(page);
-    await page.evaluate(() => {
-      window.shuffleArray = (a) => [...a];
-      localStorage.setItem('favorQueue', '3');
-      // Window long enough for the pledge asserts below (entry is read
-      // ~1.3-2.5s after Play), short enough to expire into the solo table.
-      FMP._T.windowMin = 5000; FMP._T.windowSpread = 1;
+    const clickPlay = () => page.evaluate(() => {
       const b = [...document.querySelectorAll('#title-screen .btn-royal')]
         .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
       b.click();
     });
-    await page.waitForFunction(() => document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent, { timeout: 20000 });
-    // COMMIT-FIRST: the pledge ribbon rides the select screen — you were
-    // queued at Play Now, before any hero was seen (Wyatt's re-roll fix).
-    const pledge = await page.evaluate(() => ({
-      queued: !!document.getElementById('qpWithdraw'),
-      dot: !!document.querySelector('#queuePledge .qp-dot'),
+    const chipOn = () => page.waitForFunction(() => {
+      const c = document.getElementById('queueChip');
+      return c && c.classList.contains('on');
+    }, { timeout: 8000 });
+    const popupOn = (t = 12000) => page.waitForFunction(() => {
+      const m = document.getElementById('matchFound');
+      return m && m.classList.contains('on');
+    }, { timeout: t });
+    // Real hit-testing (synthetic clicks bypass stacking): the point at the
+    // chip's center must actually BE the chip, panels open or not.
+    const chipHit = () => page.evaluate(() => {
+      const c = document.getElementById('queueChip');
+      if (!c) return false;
+      const r = c.getBoundingClientRect();
+      const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return !!(el && el.closest('#queueChip'));
+    });
+
+    // 1a — Play Now queues in the BACKGROUND: menu keeps the stage.
+    await page.evaluate(() => {
+      window.shuffleArray = (a) => [...a];
+      localStorage.setItem('favorQueue', '3');
+      FMP._T.windowMin = 30000; FMP._T.windowSpread = 1;   // no expiry during the chip beats
+    });
+    await clickPlay();
+    await chipOn();
+    const bg = await page.evaluate(() => ({
+      titleUp: !document.getElementById('title-screen').classList.contains('hidden'),
+      selectUp: document.getElementById('character-select').classList.contains('active'),
     }));
-    ok(pledge.queued && pledge.dot, 'select screen shows the pledge (Withdraw + live dot)');
+    ok(bg.titleUp && !bg.selectUp, 'Play Now returns the MENU (queue rides in the background)');
     ok(await page.evaluate(async () =>
       !!(await firebase.database().ref('favor/mp/queue/3').get()).val()),
-      'the queue entry was written AT Play Now — before any hero was seen');
-    await page.evaluate(() => {
-      selectedCharacter = FAVOR_DATA.characters[0].id;
-      document.querySelector('.character-card').classList.add('selected');
-      document.getElementById('confirmBtn').style.display = 'inline-block';
+      'the queue entry was written at Play Now — before any hero was seen');
+    ok(await chipHit(), 'the queue chip (timer + Withdraw) is up and truly on top');
+
+    // 1b — Withdraw is honest: chip gone, entry gone, still home.
+    await page.evaluate(() => document.getElementById('qcWithdraw').click());
+    await page.waitForFunction(() => !document.getElementById('queueChip').classList.contains('on'), { timeout: 6000 });
+    ok(await page.evaluate(async () =>
+      !(await firebase.database().ref('favor/mp/queue/3').get()).exists()),
+      'Withdraw removes the entry — no ghost seat left behind');
+
+    // 1c — the chip persists across the Leaderboard AND the Store, and the
+    // MATCH FOUND ring lands over the open store.
+    await page.evaluate(() => { FMP._T.windowMin = 4500; FMP._T.windowSpread = 1; });
+    await clickPlay();
+    await chipOn();
+    await page.evaluate(() => FLB.openLeaderboard());
+    await sleep(450);
+    ok(await chipHit(), 'chip stays visible (and hit-testable) OVER the leaderboard');
+    await page.evaluate(() => { FLB.closeLeaderboard(); FLB.openStore(); });
+    await sleep(450);
+    ok(await chipHit(), 'chip stays visible OVER the store');
+    await page.screenshot({ path: join(SHOTS, 'queue-chip-store.png') });
+    await popupOn();
+    await sleep(600);   // let the ring's landing animation finish — shots mid-flight read as "dimmed"
+    const mfLook = await page.evaluate(() => {
+      const mf = document.getElementById('matchFound');
+      const mid = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+      return {
+        court: /A Table Awaits/i.test(mf.textContent) && /3 Players/.test(mf.textContent),
+        buttons: !!(document.getElementById('mfAccept') && document.getElementById('mfDecline')),
+        onTop: !!(mid && mid.closest('#matchFound')),
+        storeStill: document.getElementById('storePanel').classList.contains('active'),
+        chipYielded: !document.getElementById('queueChip').classList.contains('on'),
+      };
     });
-    await page.evaluate(() => document.getElementById('confirmBtn').click());
+    ok(mfLook.court && mfLook.buttons, 'MATCH FOUND ring: court copy + ACCEPT/DECLINE');
+    ok(mfLook.onTop && mfLook.storeStill, 'the ring lands OVER the open store (root stacking)');
+    ok(mfLook.chipYielded, 'the chip yields the stage to the ring');
+    await page.screenshot({ path: join(SHOTS, 'queue-matchfound-store.png') });
+    ok(await page.evaluate(async () =>
+      !(await firebase.database().ref('favor/mp/queue/3').get()).exists()),
+      'the solo window leaves the queue the moment the ring shows');
+
+    // Decline: home free, no penalty, store untouched beneath.
+    await page.evaluate(() => document.getElementById('mfDecline').click());
+    await page.waitForFunction(() => !document.getElementById('matchFound').classList.contains('on'), { timeout: 6000 });
+    const afterDecline = await page.evaluate(() => ({
+      chip: document.getElementById('queueChip').classList.contains('on'),
+      store: document.getElementById('storePanel').classList.contains('active'),
+      game: typeof game !== 'undefined' && !!game,
+    }));
+    ok(!afterDecline.chip && !afterDecline.game, 'Decline = out of the queue, back to browsing, no table');
+    ok(afterDecline.store, 'the store never flinched');
+    await page.evaluate(() => FLB.closeStore());
+
+    // 1d — a LAPSE is a decline with an apology.
+    await page.evaluate(() => { FMP._T.windowMin = 1200; FMP._T.accept = 900; });
+    await clickPlay();
+    await popupOn(9000);
+    await page.waitForFunction(() => !document.getElementById('matchFound').classList.contains('on'), { timeout: 6000 });
+    ok(await page.evaluate(() =>
+      /moved on without you/i.test(document.getElementById('notifications').textContent)),
+      'the lapse toast: "The table moved on without you."');
+    ok(await page.evaluate(() => !document.getElementById('queueChip').classList.contains('on')),
+      'and the lapse leaves the queue (chip gone)');
+
+    // 1e — ACCEPT → the 20-second pick (shrunk): clock in the ribbon, the
+    // ringed CENTER hero pre-highlighted, no way back; 0:00 auto-picks and
+    // the table forms (the fill presents as people — Wyatt's pattern).
+    await page.evaluate(() => { FMP._T.windowMin = 1200; FMP._T.accept = 10000; FMP._T.pick = 2600; });
+    await clickPlay();
+    await popupOn(9000);
+    await page.evaluate(() => document.getElementById('mfAccept').click());
     await page.waitForFunction(() =>
-      document.getElementById('promisePicker').classList.contains('active')
-      && /Searching the Realm/i.test(document.getElementById('promisePicker').textContent), { timeout: 8000 });
-    ok(true, 'confirming a hero opens the Searching the Realm beat');
-    await page.screenshot({ path: join(SHOTS, 'mp-searching.png') });
+      document.getElementById('character-select').classList.contains('active')
+      && !!document.getElementById('pickClock'), { timeout: 8000 });
+    // Robot-speed accepts land here while the chip's 0.3s fade-out (begun
+    // at the ring) is still in flight — settle so the shot shows the truth
+    // a human sees, and the hero paintings finish decoding.
+    await sleep(500);
+    const pickLook = await page.evaluate(() => ({
+      preselected: (document.querySelector('.character-card.selected') || {}).dataset?.id || null,
+      centerId: FAVOR_DATA.characters[1].id,
+      begin: document.getElementById('confirmBtn').offsetParent !== null,
+      noBack: !document.getElementById('qpBack'),
+      clock: document.getElementById('pickClock').textContent,
+    }));
+    ok(pickLook.preselected === pickLook.centerId,
+      `the ringed center hero is pre-highlighted (${pickLook.preselected})`);
+    ok(pickLook.begin && pickLook.noBack, 'Begin is armed and there is NO way back (v1)');
+    ok(/^0:\d\d$/.test(pickLook.clock), `the pick clock ticks in the ribbon (${pickLook.clock})`);
+    await page.screenshot({ path: join(SHOTS, 'queue-pick-clock.png') });
+    // Touch nothing — 0:00 must throw you in with the ringed hero.
     await page.waitForFunction(() => typeof game !== 'undefined' && game
       && game.players.length === 3 && game.players[0].character, { timeout: 15000 });
     const solo = await page.evaluate(() => ({
       active: FMP.active(),
+      hero: game.players[0].character.id,
+      centerId: FAVOR_DATA.characters[1].id,
       rivals: game.players.slice(1).map(p => p.name),
-      queueLeft: null,
+      offerLeft: !!localStorage.getItem('favorOffer'),
     }));
-    ok(!solo.active, 'window expired → NOT a network game');
+    ok(!solo.active, 'solo theater → NOT a network game');
+    ok(solo.hero === solo.centerId, `auto-pick took the ringed hero (${solo.hero})`);
     ok(solo.rivals.length === 2 && solo.rivals.every(n => n && n !== 'You'),
       `the fake humans fill the table (${solo.rivals.join(' & ')})`);
-    const qleft = await page.evaluate(async () =>
-      (await firebase.database().ref('favor/mp/queue').get()).val());
-    ok(!qleft, 'queue entry cleaned up after the window expired');
+    ok(!solo.offerLeft, 'the sticky offer is consumed by the real table');
     await page.close();
   }
 
@@ -4733,53 +4837,82 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
           .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
         b.click();
       }, extra || {});
-      // 40 minutes into a run Chrome can swallow the first paint after the
-      // title fade — a formed match may ALSO have auto-consumed the select
-      // (commit-first). Accept either; re-tap Play once before giving up.
-      const selectOrGame = () => pg.waitForFunction(() =>
-        (document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent)
-        || (typeof game !== 'undefined' && game && game.players && game.players[0].character),
-        { timeout: 12000 });
-      try { await selectOrGame(); } catch (e) {
-        console.log(`   (mp-${name}: select slow — re-tapping Play)`);
-        await pg.evaluate(() => {
-          if (typeof game !== 'undefined' && game) return;
-          const t = document.getElementById('title-screen');
-          t.classList.remove('hidden'); t.style.display = '';
-          startGame();
-        });
-        await selectOrGame();
-      }
-      // If the table already formed (auto-start), there is nothing to pick.
-      const inSelect = await pg.evaluate(() =>
-        !!(document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent));
-      if (inSelect) {
-        await pg.evaluate(() => {
-          selectedCharacter = FAVOR_DATA.characters[0].id;
-          document.querySelector('.character-card').classList.add('selected');
-          document.getElementById('confirmBtn').style.display = 'inline-block';
-        });
-        await pg.evaluate(() => document.getElementById('confirmBtn').click());
-      }
+      // Queued = the chip is up; the menu keeps the stage (background queue).
+      await pg.waitForFunction(() => {
+        const c = document.getElementById('queueChip');
+        return c && c.classList.contains('on');
+      }, { timeout: 12000 });
       return pg;
     };
+    const ringOn = (pg, t = 25000) => pg.waitForFunction(() => {
+      const m = document.getElementById('matchFound');
+      return m && m.classList.contains('on');
+    }, { timeout: t });
+    const acceptRing = (pg) => pg.evaluate(() => document.getElementById('mfAccept').click());
+    const onPickScreen = (pg) => pg.waitForFunction(() =>
+      document.getElementById('character-select').classList.contains('active')
+      && !!document.getElementById('pickClock'), { timeout: 15000 });
+    const pickAndBegin = (pg, idx) => pg.evaluate((i) => {
+      const c = [...document.querySelectorAll('#characterGrid .character-card')];
+      selectCharacter(c[i].dataset.id, c[i]);
+      document.getElementById('confirmBtn').click();
+    }, idx);
 
-    // A hosts (earliest entry, 4s AFK clock for beat 4); B joins.
+    // A queues first (earliest entry, 4s AFK clock for the boot beat); B joins.
     const pA = await boot(ctxA, A_UID, 'Audit MpA', { afk: 4500 });
     await sleep(900);
     const pB = await boot(ctxB, B_UID, 'Audit MpB', {});
     pB.on('pageerror', e => { pB.evaluate((m) => { (window.__bErrs = window.__bErrs || []).push(m); }, 'PAGEERROR: ' + e.message).catch(() => {}); });
     pB.on('console', m => { if (m.type() === 'error') { const t = m.text(); pB.evaluate((x) => { (window.__bErrs = window.__bErrs || []).push(x); }, t).catch(() => {}); } });
 
+    // ── Beat 2a: the proposal reaches BOTH clients as a MATCH FOUND ring. ──
+    await Promise.all([ringOn(pA), ringOn(pB)]);
+    ok(true, 'two queued clients — the proposal rings BOTH');
+
+    // ── Beat 2b: B declines. A requeues KEEPING its elapsed priority; B is
+    //    out with no penalty. ──
+    await pB.evaluate(() => document.getElementById('mfDecline').click());
+    await pA.waitForFunction(() =>
+      !document.getElementById('matchFound').classList.contains('on')
+      && document.getElementById('queueChip').classList.contains('on'), { timeout: 15000 });
+    ok(true, "B's decline sinks the table — A is re-queued (ring down, chip back)");
+    ok(await pA.evaluate(() =>
+      /declined/i.test((document.getElementById('qcSub') || {}).textContent || '')),
+      "A's chip says why: a noble declined, the search continues");
+    const aEntry = await pA.evaluate(async (u) =>
+      (await firebase.database().ref('favor/mp/queue/3/' + u).get()).val(), A_UID);
+    ok(!!aEntry && !aEntry.gameId, "A's entry SURVIVED the abort, untagged (priority kept)");
+    await pB.waitForFunction(() => !document.getElementById('matchFound').classList.contains('on'), { timeout: 8000 });
+    ok(await pB.evaluate(async (u) =>
+      !(await firebase.database().ref('favor/mp/queue/3/' + u).get()).exists(), B_UID),
+      "B's entry is gone — declined out of the queue, no penalty");
+    ok(await pB.evaluate(() => !document.getElementById('queueChip').classList.contains('on')
+      && !document.getElementById('title-screen').classList.contains('hidden')),
+      'B is back on the plain menu');
+
+    // ── Beat 2c: B re-enters; A (older entry) hosts the second proposal;
+    //    both ACCEPT → both land on the 20s pick → picks seal → LIVE. ──
+    await pB.evaluate(() => startGame());
+    await Promise.all([ringOn(pA), ringOn(pB)]);
+    ok(true, 'B re-queues and the second table rings both');
+    await Promise.all([acceptRing(pA), acceptRing(pB)]);
+    await Promise.all([onPickScreen(pA), onPickScreen(pB)]);
+    ok(true, 'both accepts land on the Choose Your Hero clock');
+    await pA.screenshot({ path: join(SHOTS, 'mp-pick-hostA.png') });
+    await Promise.all([pickAndBegin(pA, 0), pickAndBegin(pB, 2)]);
+
     const inGame = (pg) => pg.waitForFunction(() => typeof game !== 'undefined' && game
       && game.players.length === 3 && game.players[0].character && FMP.active(), { timeout: 25000 });
     await Promise.all([inGame(pA), inGame(pB)]);
-    ok(true, 'two queued clients matched into one live table');
+    ok(true, 'all accepted + picked → the sealed table goes live on both clients');
 
     const stateOf = (pg) => pg.evaluate(() => ({
       seat: FMP.mySeat(),
       host: FMP.isHost(),
       seed: FMP.record().seed,
+      hero: game.players[0].character.id,
+      hero0: FAVOR_DATA.characters[0].id,
+      hero2: FAVOR_DATA.characters[2].id,
       names: game.players.map(p => p.name),
       handsCanon: [0, 1, 2].map(cs =>
         game.players[FMP.localIdx(cs)].hand.map(c => c.id).join(',')).join(';'),
@@ -4788,7 +4921,9 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
     }));
     const sA = await stateOf(pA), sB = await stateOf(pB);
     ok(sA.host && !sB.host && sA.seat === 0 && sB.seat === 1,
-      `first in queue hosts (A seat ${sA.seat}, B seat ${sB.seat})`);
+      `the SURVIVOR's older entry hosts (A seat ${sA.seat}, B seat ${sB.seat})`);
+    ok(sA.hero === sA.hero0 && sB.hero === sB.hero2,
+      `each client got ITS OWN pick (A ${sA.hero}, B ${sB.hero})`);
     ok(sA.seed === sB.seed, 'both clients build from one seed');
     ok(sA.names.includes('Audit MpB') && sB.names.includes('Audit MpA'),
       'each client sees the other by name at the table');
@@ -5120,30 +5255,37 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
         [...document.querySelectorAll('#title-screen .btn-royal')]
           .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent)).click();
       });
-      await pg.waitForFunction(() =>
-        (document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent)
-        || (typeof game !== 'undefined' && game && game.players && game.players[0].character),
-        { timeout: 20000 });
-      const inSelect = await pg.evaluate(() =>
-        !!(document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent));
-      if (inSelect) {
-        await pg.evaluate(() => {
-          selectedCharacter = FAVOR_DATA.characters[0].id;
-          document.querySelector('.character-card').classList.add('selected');
-          document.getElementById('confirmBtn').style.display = 'inline-block';
-        });
-        await pg.evaluate(() => document.getElementById('confirmBtn').click());
-      }
+      await pg.waitForFunction(() => {
+        const c = document.getElementById('queueChip');
+        return c && c.classList.contains('on');
+      }, { timeout: 12000 });
       return pg;
+    };
+    // The new handshake: ring → accept → 20s pick → Begin.
+    const throughTheRing = async (pg, cardIdx) => {
+      await pg.waitForFunction(() => {
+        const m = document.getElementById('matchFound');
+        return m && m.classList.contains('on');
+      }, { timeout: 25000 });
+      await pg.evaluate(() => document.getElementById('mfAccept').click());
+      await pg.waitForFunction(() =>
+        document.getElementById('character-select').classList.contains('active')
+        && !!document.getElementById('pickClock'), { timeout: 15000 });
+      await pg.evaluate((i) => {
+        const c = [...document.querySelectorAll('#characterGrid .character-card')];
+        selectCharacter(c[i].dataset.id, c[i]);
+        document.getElementById('confirmBtn').click();
+      }, cardIdx);
     };
 
     const pA = await boot(ctxA, A_UID, 'A');
     await sleep(900);
     const pB = await boot(ctxB, B_UID, 'B');
+    await Promise.all([throughTheRing(pA, 0), throughTheRing(pB, 2)]);
     const inGame = (pg) => pg.waitForFunction(() => typeof game !== 'undefined' && game
       && game.players.length === 3 && game.players[0].character && FMP.active(), { timeout: 25000 });
     await Promise.all([inGame(pA), inGame(pB)]);
-    ok(true, 'two clients matched for the held-mission table');
+    ok(true, 'two clients matched for the held-mission table (through the new handshake)');
 
     // Let the host's START-OF-GAME desync stamp land FIRST. It carries the
     // pre-rig hash; if we mutate the table before B consumes it, B sees a
