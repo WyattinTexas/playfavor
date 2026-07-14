@@ -1626,6 +1626,49 @@ async function mpActivateRemote(pi, card, cardIdx) {
     }
 }
 
+// \u2500\u2500 Held missions, canonical order \u2014 runs BEFORE resolveMissions \u2500\u2500
+// A mission inside its window but not yet due is the holder's call every act
+// until it is forced. In multiplayer that is one more act-boundary decision, so
+// it stages exactly like the borrow and penalty choosers: every client walks the
+// seats in canonical order and applies the SAME decision for each one, so
+// `_attemptNow` is identical on every table before resolveMissions runs.
+//
+// This has to come BEFORE resolveMissions (unlike mpEndActStages, which runs
+// after) or an attempt could not ride the same two-pass ordering \u2014 every check
+// happening before any failure penalty lands \u2014 that a due mission gets.
+async function mpHeldMissionStages() {
+    const n = game.playerCount;
+    for (let cs = 0; cs < n; cs++) {
+        const li = FMP.localIdx(cs);
+        const p = game.players[li];
+        // Snapshot: nothing may shift the list under the loop.
+        const held = game.postponableMissions(li).slice();
+        for (const m of held) {
+            if (li === 0) {
+                const attempt = await showEarlyMissionChoice(m);   // publishes inside
+                if (attempt) m._attemptNow = true;
+                else addLogEntry(`You hold ${m.name} \u2014 due at the end of Act ${game.missionDueAct(m)}`);
+            } else if (p._remoteHuman) {
+                mpWaitShow(li, `deciding ${m.name}`);
+                const mv = await FMP.waitFor(cs, 'mission_hold');
+                mpWaitHide();
+                if (mv) {
+                    if (mv.attempt) m._attemptNow = true;
+                    addLogEntry(`${p.name} ${mv.attempt ? 'attempts' : 'holds'} ${m.name}`);
+                }
+                // mv === null: BOOTED mid-decision. Deliberately leave the flag
+                // unset and let resolveMissions' AI rule take the seat (bank only
+                // what is already met, never throw a mission away). A client that
+                // saw the boot BEFORE reaching this seat skips straight to that
+                // same rule \u2014 so both land in exactly the same place.
+                renderGameState();
+            }
+            // else: a genuine AI seat. resolveMissions banks a met mission for it
+            // identically on every client \u2014 nothing to decide, nothing to stream.
+        }
+    }
+}
+
 // \u2500\u2500 End-of-act stages, canonical order \u2014 every client applies every
 // seat's choices at the same point. Local seat uses the real choosers
 // (and publishes); remote seats stream; booted seats fall back to AI.
@@ -4464,10 +4507,11 @@ async function endActPhases() {
     // attempt then rides the same road as a due mission (checked before any
     // failure penalty lands, same borrow rescue, same ceremony line) instead of
     // bolting a second resolution path on afterwards.
-    // Solo only for now — in multiplayer this is an extra act-boundary decision
-    // that would have to be streamed in canonical seat order or the clients fork
-    // (the same reason early turn-ins already sit out of MP v1).
-    if (!mpActive()) {
+    // Multiplayer stages every seat's decision in canonical order first, so all
+    // clients enter resolveMissions with identical _attemptNow flags.
+    if (mpActive()) {
+        await mpHeldMissionStages();
+    } else {
         for (const m of game.postponableMissions(0)) {
             const attempt = await showEarlyMissionChoice(m);
             if (attempt) m._attemptNow = true;
@@ -4760,6 +4804,10 @@ function showEarlyMissionChoice(mission) {
             </div>`;
 
         const close = (attempt) => {
+            // Stream it: every other client applies the SAME decision for this
+            // seat, in canonical order, BEFORE resolveMissions runs — so
+            // _attemptNow is identical everywhere and the tables cannot fork.
+            mpPub('mission_hold', { attempt, missionName: mission.name });   // no-op solo
             ov.classList.remove('active');
             ov.innerHTML = '';
             resolve(attempt);

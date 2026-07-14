@@ -1703,5 +1703,62 @@ console.log('── A single-act mission is never offered a choice');
     'due the same act it activates — nothing to postpone, it just resolves');
 }
 
+// ── LOCKSTEP: a REMOTE human's held mission is never auto-resolved for them
+console.log("── Lockstep: a remote human's held mission is theirs to decide, on every client");
+{
+  // The fork this fixes: a remote human is seat 0 on their OWN client (held)
+  // but pi !== 0 on everyone else's. The old `pi !== 0` rule banked their met,
+  // not-yet-due mission on every other table while their own table held it —
+  // same state, two outcomes, clients diverged.
+  const lou = () => ({ ...missionByName('Wanted: Crazy Lou') });   // Act 1 -> due Act 3
+
+  // Their OWN client: they are seat 0.
+  const own = newGame();
+  own.players[0].missions = [lou()];
+  own.players[0].bonusSkills = { power: 15 };            // requirement MET
+  own.applySlotSkills(own.players[0]);
+  own.currentAct = 1;
+  own.resolveMissions();
+  ok(own.players[0].missions.length === 1 && !own.players[0].completedMissions.length,
+    'on their own client it is HELD, waiting for their choice');
+
+  // EVERY OTHER client: same human, now a remote seat.
+  const other = newGame();
+  const rp = other.players[1];
+  rp._remoteHuman = true;
+  rp.missions = [lou()];
+  rp.bonusSkills = { power: 15 };                        // identical state
+  other.applySlotSkills(rp);
+  other.currentAct = 1;
+  other.resolveMissions();
+  ok(rp.missions.length === 1 && !rp.completedMissions.length,
+    'and on every OTHER client it is held too — the tables agree');
+
+  // A genuine AI seat still banks a met mission for itself, as before.
+  const ai = newGame();
+  const ap = ai.players[1];                              // no _remoteHuman
+  ap.missions = [lou()];
+  ap.bonusSkills = { power: 15 };
+  ai.applySlotSkills(ap);
+  ai.currentAct = 1;
+  ai.resolveMissions();
+  ok(ap.completedMissions.some(m => m.name === 'Wanted: Crazy Lou'),
+    'a real AI seat still banks its met mission — that rule is unchanged');
+
+  // And a remote human who DID choose to attempt resolves like anyone else.
+  const chose = newGame();
+  const cp = chose.players[1];
+  cp._remoteHuman = true;
+  const m = lou();
+  m._attemptNow = true;                                  // their streamed choice
+  cp.missions = [m];
+  cp.bonusSkills = { power: 15 };
+  chose.applySlotSkills(cp);
+  chose.currentAct = 1;
+  chose.resolveMissions();
+  ok(cp.completedMissions.some(x => x.name === 'Wanted: Crazy Lou'),
+    'their streamed "attempt" resolves it — identically on every client');
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);

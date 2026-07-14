@@ -13,13 +13,13 @@
  *   3. CLASH  — all charge the center; one collision resolves the field.
  *   4. PODIUM — the three who earned Prestige ascend; placements pay in
  *               PRESTIGE TOKENS (the physical game's token art), the champion
- *               is crowned (rays + laurels + fanfare). Losers remain as the
+ *               is crowned (rays + laurels). Losers remain as the
  *               defeated court. A "Skip ▸▸" chip jumps to the result at any
  *               time; tap on the result continues.
  *
  * playMeleeCinematic(host, results, actNum, opts) → Promise (resolves on continue)
  *   results : [{ playerIndex, name, power, placement, prestige }]  (power-desc)
- *   opts    : { speed, portraitFor(pi), powerIcon, sound, sapFx, cardsFx,
+ *   opts    : { speed, portraitFor(pi), powerIcon, sapFx, cardsFx,
  *               herald, autoCloseMs, breakdownFor(pi), cardImgFor(filename,
  *               mission)→url, prestigeTokenFor(denom)→url }
  *
@@ -67,47 +67,9 @@
       </g>
     </svg>`;
 
-  // ── Synthesised audio (no assets, offline) ─────────────────────────────
-  let _actx = null;
-  function audioCtx() {
-    if (_actx) { if (_actx.state === 'suspended') _actx.resume().catch(() => {}); return _actx; }
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return null;
-    try { _actx = new AC(); } catch (e) { return null; }
-    if (_actx.state === 'suspended') _actx.resume().catch(() => {});
-    return _actx;
-  }
-  function playFanfare() {
-    const ctx = audioCtx();
-    if (!ctx) return;
-    const now = ctx.currentTime + 0.03;
-    const comp = ctx.createDynamicsCompressor();
-    const master = ctx.createGain();
-    master.gain.value = 0.9;
-    master.connect(comp); comp.connect(ctx.destination);
-    const note = (freq, start, dur, peak, detune) => {
-      const t = now + start;
-      const o1 = ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = freq;
-      const o2 = ctx.createOscillator(); o2.type = 'square'; o2.frequency.value = freq; o2.detune.value = detune || -7;
-      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.min(7000, freq * 6);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(peak, t + 0.025);
-      g.gain.exponentialRampToValueAtTime(peak * 0.7, t + dur * 0.5);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(master);
-      o1.start(t); o2.start(t); o1.stop(t + dur + 0.05); o2.stop(t + dur + 0.05);
-    };
-    const C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5;
-    const C4 = 261.63, E4 = 329.63, G4 = 392.00, C3 = 130.81;
-    note(C5, 0.00, 0.13, 0.42); note(E5, 0.13, 0.13, 0.42); note(G5, 0.26, 0.15, 0.46);
-    [C4, E4, G4, C5, E5, G5, C6].forEach(f => note(f, 0.42, 1.5, 0.12));
-    note(C3, 0.42, 1.6, 0.34);
-  }
-
   function playMeleeCinematic(host, results, actNum, opts) {
     // Cancel any prior run still animating on this host — its timers would
-    // clobber the fresh run (auto-close wiping DOM, scheduled sounds).
+    // clobber the fresh run (auto-close wiping DOM).
     if (host && host._meleeCancel) { try { host._meleeCancel(); } catch (e) {} }
     return new Promise((resolve) => {
       opts = opts || {};
@@ -118,9 +80,6 @@
       const cardImgFor = opts.cardImgFor || (() => null);
       const prestigeTokenFor = opts.prestigeTokenFor || null;
       const fallback = 'assets/ui/cover.jpg';
-      // Sound is OFF unless explicitly enabled (Wyatt found the battle
-      // ticks annoying). opts.sound === true re-enables the crown fanfare.
-      const soundOn = opts.sound === true;
       const sapFx = opts.sapFx !== false;
       const cardsFx = opts.cardsFx !== false;
       const heraldOn = opts.herald !== false;
@@ -202,7 +161,7 @@
 
       const tierHTML = (t, podiumIdx) => {
         const champ = podiumIdx === 0;
-        return `<div class="ms-tier ${POS[podiumIdx]}${champ ? ' champ' : ''}">
+        return `<div class="ms-tier ${POS[podiumIdx]}${champ ? ' champ' : ''}${t.members.length > 1 ? ' multi' : ''}">
           <div class="ms-fighters">${t.members.map(m => fighterHTML(m, champ)).join('')}</div>
           ${prestigeHTML(t.prestige)}
           <div class="ms-plinth"><span class="ms-numeral">${t.placement}</span></div>
@@ -678,7 +637,32 @@
           });
           el.appendChild(tuck);
           void tuck.offsetWidth;
-          tuck.querySelectorAll('.ms-tuckcard').forEach(t => t.classList.add('go'));
+          // A big row must not invade the neighbors: if the fan is wider than
+          // the fighter's column, tuck the cards closer (uniformly deeper
+          // overlap), floored so every card still peeks ~5px.
+          const tucked = Array.from(tuck.querySelectorAll('.ms-tuckcard'));
+          if (tucked.length > 1) {
+            // cap the fan at the fighter's own board width (and never closer
+            // than 18px to the nearest neighbor's column) — adjacent fans need
+            // REAL daylight or five 9-card fans read as one continuous strip.
+            // MEASURE WITH offsetWidth/offsetLeft: the cards still wear their
+            // entrance transform (scale 0.55) and the fighter its active raise
+            // (scale 1.12) here — getBoundingClientRect returns those phantom
+            // sizes and the tighten math silently computes garbage.
+            let maxW = el.offsetWidth;
+            const pitches = combatantEls
+              .filter(s => s !== el)
+              .map(s => Math.abs(s.offsetLeft - el.offsetLeft));
+            if (pitches.length) maxW = Math.min(maxW, Math.min(...pitches) - 18);
+            const fanW = tuck.offsetWidth;
+            if (fanW > maxW) {
+              const shrink = (fanW - maxW) / (tucked.length - 1);
+              tucked.slice(1).forEach(t => {
+                t.style.marginLeft = Math.max(-(t.offsetWidth - 5), -9 - shrink) + 'px';
+              });
+            }
+          }
+          tucked.forEach(t => t.classList.add('go'));
           rowEl.classList.add('out');
           await delay(300); if (run.killed) return;
           rowEl.innerHTML = '';
@@ -724,7 +708,6 @@
           flashEl.classList.add('go');
           stage.classList.add('shake');
           setTimeout(() => stage.classList.remove('shake'), 450 * speed);
-          if (soundOn) playFanfare();
           heraldSay(championLine());
         }
         fillTier(el, false);
@@ -733,6 +716,21 @@
       // Center the 4th/5th column in the gutter between the 3rd plinth and
       // the screen edge (equal distance to both, per Wyatt) — measured at
       // runtime since the podium's width varies with players/ties.
+      // A tie widens its tier (co-champions share one grown plinth) — if the
+      // podium row then outgrows the stage, shrink the WHOLE row uniformly.
+      // scrollWidth is layout width (transform-independent), so this is
+      // idempotent; placeAlsoRans measures rects AFTER the scale, so the
+      // 4th/5th column still centers in the true visual gutter.
+      const fitPodium = () => {
+        const pod = host.querySelector('.ms-podium');
+        if (!pod) return;
+        const reserve = alsoRans.length ? Math.min(150, stage.clientWidth * 0.17) : 14;
+        const avail = stage.clientWidth - 2 * reserve;
+        if (pod.scrollWidth > avail) {
+          pod.style.transform = 'scale(' + (avail / pod.scrollWidth).toFixed(3) + ')';
+          pod.style.transformOrigin = '50% 100%';
+        }
+      };
       const placeAlsoRans = () => {
         if (!alsoEl) return;
         const pod = host.querySelector('.ms-podium');
@@ -744,6 +742,7 @@
       };
       const showResults = () => {
         arenaEl.classList.add('gone');
+        fitPodium();
         if (alsoEl) { placeAlsoRans(); alsoEl.classList.add('show'); }
       };
 
@@ -764,6 +763,7 @@
         stage.querySelectorAll('.ms-feature').forEach(x => x.remove());
         const pendingBtn = stage.querySelector('.ms-continue');
         if (pendingBtn) pendingBtn.remove();
+        fitPodium();
         if (alsoEl) { placeAlsoRans(); alsoEl.classList.add('show'); }
         podium.forEach((t, idx) => {
           const el = tierEls[idx];

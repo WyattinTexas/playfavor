@@ -4802,10 +4802,16 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
     const aLog = await pA.evaluate(() => document.getElementById('logEntries').innerText);
     ok(round2, 'the table plays on with the AI in the empty seat');
     ok(/removed for inactivity/i.test(aLog), 'the boot is announced at the table');
+    // 30s, not 15: B is waiting on an afk_boot BROADCAST to round-trip through
+    // Firebase, and by this point the suite is deep into a long browser run with
+    // two live MP matches behind it. The assertion is unchanged — B must still be
+    // told and sent back to the menu — this is only patience. A tight window here
+    // flaked 3 runs in 5 on unrelated commits, with no error on B and the seat
+    // still in the match: it simply had not heard yet.
     const bBooted = await pB.waitForFunction(() =>
       document.getElementById('champOverlay').classList.contains('active')
       && /Removed for Inactivity/i.test(document.getElementById('champTitle').textContent),
-      { timeout: 15000 }).then(() => true, () => false);
+      { timeout: 30000 }).then(() => true, () => false);
     if (!bBooted) {
       const diag = await pB.evaluate(() => ({
         errs: (window.__bErrs || []).slice(0, 5),
@@ -5052,6 +5058,164 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
     'your Letter lands on YOUR turn, last in seat order — the pair is not split');
   await page.screenshot({ path: join(SHOTS, 'letter-seat-order.png') });
   await page.close();
+}
+
+// ═══ MULTIPLAYER: a HELD MISSION is streamed, not decided for you ════════
+// A mission inside its window but not yet due is the holder's call at every act
+// boundary. In MP that is one more decision that must be staged in canonical
+// seat order — the holder chooses, everyone else applies the SAME choice — or
+// the tables fork. Its own match, because it drives an act boundary to the end.
+{
+  console.log('── MP: held mission — the holder decides, the stream carries it');
+  try {
+    const mkContext = async () => (browser.createBrowserContext
+      ? browser.createBrowserContext() : browser.createIncognitoBrowserContext());
+    const ctxA = await mkContext();
+    const ctxB = await mkContext();
+    const A_UID = 'uaudithma' + Math.random().toString(36).slice(2, 6);
+    const B_UID = 'uaudithmb' + Math.random().toString(36).slice(2, 6);
+
+    const boot = async (ctx, uid, name) => {
+      const pg = await ctx.newPage();
+      pg.on('console', m => { if (m.type() === 'error') consoleErrors.push(`mphm-${name}: ` + m.text()); });
+      pg.on('pageerror', e => consoleErrors.push(`mphm-${name} pageerror: ` + e.message));
+      await pg.evaluateOnNewDocument((u, n) => {
+        localStorage.setItem('favorUid', u);
+        localStorage.setItem('favorName', n);
+        localStorage.setItem('favorQueue', '3');
+      }, uid, name);
+      await pg.setViewport({ width: 1280, height: 800 });
+      await pg.goto(URL, { waitUntil: 'networkidle2' });
+      await pg.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+      await pg.evaluate(() => {
+        window.shuffleArray = (a) => [...a];
+        window.CINEMATIC_SPEED = 0.05;
+        FMP._T.windowMin = 30000;
+        FMP._T.windowSpread = 1;
+        [...document.querySelectorAll('#title-screen .btn-royal')]
+          .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent)).click();
+      });
+      await pg.waitForFunction(() =>
+        (document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent)
+        || (typeof game !== 'undefined' && game && game.players && game.players[0].character),
+        { timeout: 20000 });
+      const inSelect = await pg.evaluate(() =>
+        !!(document.querySelector('.character-card') && document.querySelector('.character-card').offsetParent));
+      if (inSelect) {
+        await pg.evaluate(() => {
+          selectedCharacter = FAVOR_DATA.characters[0].id;
+          document.querySelector('.character-card').classList.add('selected');
+          document.getElementById('confirmBtn').style.display = 'inline-block';
+        });
+        await pg.evaluate(() => document.getElementById('confirmBtn').click());
+      }
+      return pg;
+    };
+
+    const pA = await boot(ctxA, A_UID, 'A');
+    await sleep(900);
+    const pB = await boot(ctxB, B_UID, 'B');
+    const inGame = (pg) => pg.waitForFunction(() => typeof game !== 'undefined' && game
+      && game.players.length === 3 && game.players[0].character && FMP.active(), { timeout: 25000 });
+    await Promise.all([inGame(pA), inGame(pB)]);
+    ok(true, 'two clients matched for the held-mission table');
+
+    // Let the host's START-OF-GAME desync stamp land FIRST. It carries the
+    // pre-rig hash; if we mutate the table before B consumes it, B sees a
+    // mismatch against its own (rigged) state, calls leaveGame() and drops to
+    // solo — and then nothing streams. Rig only once both tables agree.
+    await sleep(2500);
+    const hashOf = (pg) => pg.evaluate(() => mpStateHash());
+    const [h0A, h0B] = await Promise.all([hashOf(pA), hashOf(pB)]);
+    ok(h0A === h0B, `the fresh table already agrees (${h0A} vs ${h0B})`);
+    const stillMp = await pB.evaluate(() => FMP.active());
+    ok(stillMp, 'and B is still in the match (it did not fall back to solo)');
+
+    // Rig Crazy Lou (activates Act 1, due Act 3, 15 Power) on CANONICAL SEAT 0,
+    // MET, on BOTH clients. Empty every hand so the act ends when we drive it.
+    const rig = (pg) => pg.evaluate(() => {
+      const li = FMP.localIdx(0);
+      const p = game.players[li];
+      p.missions = [{ ...FAVOR_DATA.missions.find(m => m.name === 'Wanted: Crazy Lou') }];
+      p.bonusSkills = { power: 15 };
+      game.applySlotSkills(p);
+      game.players.forEach(x => { x.hand = []; });
+      game.pendingActivations = game.players.map(() => null);
+    });
+    await Promise.all([rig(pA), rig(pB)]);
+
+    const seat0 = (pg) => pg.evaluate(() => {
+      const p = game.players[FMP.localIdx(0)];
+      return { held: (p.missions || []).map(m => m.name), done: (p.completedMissions || []).map(m => m.name),
+               favor: p.favor, gold: p.gold };
+    });
+    ok((await seat0(pA)).held.includes('Wanted: Crazy Lou'), 'canonical seat 0 holds a not-yet-due mission');
+    const [h1A, h1B] = await Promise.all([hashOf(pA), hashOf(pB)]);
+    ok(h1A === h1B, `and the rig itself is symmetric — both tables still agree (${h1A} vs ${h1B})`);
+
+    await Promise.all([ pA.evaluate(() => { endActPhases(); }), pB.evaluate(() => { endActPhases(); }) ]);
+
+    const chooserA = await pA.waitForFunction(() =>
+      document.getElementById('promisePicker').classList.contains('active')
+      && /Crazy Lou/i.test(document.getElementById('promisePicker').textContent),
+      { timeout: 20000 }).then(() => true, () => false);
+    ok(chooserA, 'the HOLDER is asked (chooser up on their client)');
+    const chooserB = await pB.evaluate(() =>
+      document.getElementById('promisePicker').classList.contains('active')
+      && /Crazy Lou/i.test(document.getElementById('promisePicker').textContent));
+    ok(!chooserB, 'and NOT on the other client — nobody decides it for them');
+    ok(/deciding/i.test(await pB.evaluate(() => document.body.innerText)),
+      'the other client is told they are deciding, not left hanging');
+    await pA.screenshot({ path: join(SHOTS, 'mp-held-mission-holder.png') });
+    await pB.screenshot({ path: join(SHOTS, 'mp-held-mission-peer.png') });
+
+    // They attempt it. It is MET, so it must COMPLETE — on BOTH tables.
+    await pA.evaluate(() => document.getElementById('emAttempt').click());
+    const settled = (pg) => pg.waitForFunction(() =>
+      (game.players[FMP.localIdx(0)].completedMissions || []).some(m => m.name === 'Wanted: Crazy Lou'),
+      { timeout: 25000 }).then(() => true, () => false);
+    const [dA, dB] = await Promise.all([settled(pA), settled(pB)]);
+    ok(dA, 'the holder\'s table completes the mission they attempted');
+    ok(dB, 'and the PEER table completes it too — the streamed decision was applied');
+
+    const [aA, aB] = await Promise.all([seat0(pA), seat0(pB)]);
+    ok(aA.gold === aB.gold && aA.favor === aB.favor,
+      `LOCKSTEP: the payout agrees (gold ${aA.gold}/${aB.gold}, favor ${aA.favor}/${aB.favor})`);
+    ok(!aA.held.length && !aB.held.length, 'and it leaves both hands');
+
+    // Ride it all the way through the act boundary and compare the host's own
+    // desync hash. If this diverges the real game would drop to solo.
+    const advanced = (pg) => pg.waitForFunction(() => game.currentAct === 2, { timeout: 30000 })
+      .then(() => true, () => false);
+    await Promise.all([advanced(pA), advanced(pB)]);
+    await sleep(1500);
+    const rowsOf = (pg) => pg.evaluate(() => {
+      const n = game.playerCount;
+      const rows = [];
+      for (let cs = 0; cs < n; cs++) {
+        const p = game.players[FMP.localIdx(cs)];
+        rows.push([p.gold, p.prestige, p.scorn, p.favor,
+          (p.hand || []).map(c => c.id).join(','),
+          (p.playedCards || []).map(c => c.id).join(','),
+          (p.missions || []).map(m => m.id || m.name).join(',')].join('|'));
+      }
+      rows.push((game.visibleMissions || []).map(m => m.id || m.name).join(','));
+      rows.push(String(FMP.canonSeat(game.emblemHolder)));
+      return { rows, hash: mpStateHash() };
+    });
+    const [rA, rB] = await Promise.all([rowsOf(pA), rowsOf(pB)]);
+    if (rA.hash !== rB.hash) {
+      rA.rows.forEach((row, i) => {
+        if (row !== rB.rows[i]) console.log(`    [desync row ${i}]\n      A: ${row}\n      B: ${rB.rows[i]}`);
+      });
+    }
+    ok(rA.hash === rB.hash,
+      `LOCKSTEP: the tables still agree after the act advances (${rA.hash} vs ${rB.hash})`);
+
+    await ctxA.close(); await ctxB.close();
+  } catch (e) {
+    ok(false, 'MP held-mission flow crashed', e.message);
+  }
 }
 
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));

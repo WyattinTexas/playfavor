@@ -51,7 +51,15 @@
     // 7 (7/13): 'slider_move' — Chemical X ("move to ANY slot") is the player's
     // choice too. A v6 client would auto-shove the ring to slot 5 instead of
     // awaiting the pick, so the boards diverge the moment Chemical X is played.
-    const MPV = 7;
+    // 8 (7/14): 'mission_hold' — a mission inside its window but not yet due is
+    // now the holder's call at EVERY act boundary (attempt it, or hold it), and
+    // that decision is staged in canonical seat order before missions resolve.
+    // Two reasons a v7 client cannot sit at this table: it publishes no
+    // 'mission_hold' move (so a v8 peer waits on it until the AFK clock boots
+    // them), and it still runs the old `pi !== 0` rule — which auto-banked a
+    // remote human's met, not-yet-due mission on everyone else's client while
+    // their own client held it. That was already a live fork; v8 fixes it.
+    const MPV = 8;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

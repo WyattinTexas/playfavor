@@ -1862,9 +1862,18 @@ class FavorGame {
                 const due = forced || mission._attemptNow === true;
 
                 if (!due) {
-                    // In its window but not due, and not attempted. The AI banks
-                    // a met mission now; an unmet one is HELD, never auto-failed.
-                    if (pi !== 0) {
+                    // In its window but not due, and not attempted. A HUMAN seat
+                    // decides this at the act boundary — never auto-resolved for
+                    // them. Only a true AI seat banks a met mission for itself;
+                    // an unmet one is HELD, never auto-failed.
+                    //
+                    // ⚠ The old test here was a bare `pi !== 0`, which was a
+                    // LOCKSTEP FORK: a remote human is seat 0 on their OWN client
+                    // (held) but pi !== 0 on everyone else's (auto-banked). The
+                    // same act-boundary state resolved two different ways and the
+                    // clients diverged. `_remoteHuman` is what tells them apart.
+                    const humanSeat = pi === 0 || player._remoteHuman;
+                    if (!humanSeat) {
                         const { success, details } = this.checkMissionRequirements(pi, mission);
                         if (success) {
                             const deltas = measure(pi, () => this.applyMissionRewards(pi, mission));
