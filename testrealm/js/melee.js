@@ -13,13 +13,13 @@
  *   3. CLASH  — all charge the center; one collision resolves the field.
  *   4. PODIUM — the three who earned Prestige ascend; placements pay in
  *               PRESTIGE TOKENS (the physical game's token art), the champion
- *               is crowned (rays + laurels + fanfare). Losers remain as the
+ *               is crowned (rays + laurels). Losers remain as the
  *               defeated court. A "Skip ▸▸" chip jumps to the result at any
  *               time; tap on the result continues.
  *
  * playMeleeCinematic(host, results, actNum, opts) → Promise (resolves on continue)
  *   results : [{ playerIndex, name, power, placement, prestige }]  (power-desc)
- *   opts    : { speed, portraitFor(pi), powerIcon, sound, sapFx, cardsFx,
+ *   opts    : { speed, portraitFor(pi), powerIcon, sapFx, cardsFx,
  *               herald, autoCloseMs, breakdownFor(pi), cardImgFor(filename,
  *               mission)→url, prestigeTokenFor(denom)→url }
  *
@@ -67,47 +67,9 @@
       </g>
     </svg>`;
 
-  // ── Synthesised audio (no assets, offline) ─────────────────────────────
-  let _actx = null;
-  function audioCtx() {
-    if (_actx) { if (_actx.state === 'suspended') _actx.resume().catch(() => {}); return _actx; }
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return null;
-    try { _actx = new AC(); } catch (e) { return null; }
-    if (_actx.state === 'suspended') _actx.resume().catch(() => {});
-    return _actx;
-  }
-  function playFanfare() {
-    const ctx = audioCtx();
-    if (!ctx) return;
-    const now = ctx.currentTime + 0.03;
-    const comp = ctx.createDynamicsCompressor();
-    const master = ctx.createGain();
-    master.gain.value = 0.9;
-    master.connect(comp); comp.connect(ctx.destination);
-    const note = (freq, start, dur, peak, detune) => {
-      const t = now + start;
-      const o1 = ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = freq;
-      const o2 = ctx.createOscillator(); o2.type = 'square'; o2.frequency.value = freq; o2.detune.value = detune || -7;
-      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.min(7000, freq * 6);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(peak, t + 0.025);
-      g.gain.exponentialRampToValueAtTime(peak * 0.7, t + dur * 0.5);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(master);
-      o1.start(t); o2.start(t); o1.stop(t + dur + 0.05); o2.stop(t + dur + 0.05);
-    };
-    const C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5;
-    const C4 = 261.63, E4 = 329.63, G4 = 392.00, C3 = 130.81;
-    note(C5, 0.00, 0.13, 0.42); note(E5, 0.13, 0.13, 0.42); note(G5, 0.26, 0.15, 0.46);
-    [C4, E4, G4, C5, E5, G5, C6].forEach(f => note(f, 0.42, 1.5, 0.12));
-    note(C3, 0.42, 1.6, 0.34);
-  }
-
   function playMeleeCinematic(host, results, actNum, opts) {
     // Cancel any prior run still animating on this host — its timers would
-    // clobber the fresh run (auto-close wiping DOM, scheduled sounds).
+    // clobber the fresh run (auto-close wiping DOM).
     if (host && host._meleeCancel) { try { host._meleeCancel(); } catch (e) {} }
     return new Promise((resolve) => {
       opts = opts || {};
@@ -118,9 +80,6 @@
       const cardImgFor = opts.cardImgFor || (() => null);
       const prestigeTokenFor = opts.prestigeTokenFor || null;
       const fallback = 'assets/ui/cover.jpg';
-      // Sound is OFF unless explicitly enabled (Wyatt found the battle
-      // ticks annoying). opts.sound === true re-enables the crown fanfare.
-      const soundOn = opts.sound === true;
       const sapFx = opts.sapFx !== false;
       const cardsFx = opts.cardsFx !== false;
       const heraldOn = opts.herald !== false;
@@ -749,7 +708,6 @@
           flashEl.classList.add('go');
           stage.classList.add('shake');
           setTimeout(() => stage.classList.remove('shake'), 450 * speed);
-          if (soundOn) playFanfare();
           heraldSay(championLine());
         }
         fillTier(el, false);
