@@ -51,6 +51,18 @@ for (const c of CARDS) {
   const label = `${c.name} [${c.type}]`;
   const textSpecial = CARD_TEXT_SPECIALS[c.name];
 
+  // ── GOLD — runs for EVERY card, so it must sit ABOVE the early `continue`s
+  // below. Cards with a textual ability or an OR-grant used to skip every
+  // remaining check, and that blind spot is exactly where a batch of phantom
+  // gold costs hid: `cost` had been copied from the first requirement's count
+  // badge. A real gold cost is a standalone coin on the art and ALWAYS appears
+  // in the audit text ("Cost N Gold to play" or "Req: N Gold"). If the card
+  // names no gold anywhere, it must not charge any.
+  if (cost !== null && cost !== (c.cost || 0))
+    flag(label, `cost: audit ${cost} vs data ${c.cost || 0}`);
+  if (cost === null && reqs.gold === 0 && (c.cost || 0) > 0)
+    flag(label, `PHANTOM COST: data charges ${c.cost} gold but the card names no gold at all`);
+
   // Textual ability → must carry its assigned engine special.
   if (grants.textual.length || textSpecial) {
     if (textSpecial && c.special !== textSpecial)
@@ -79,8 +91,7 @@ for (const c of CARDS) {
   if (grants.prestige !== (r.prestige || 0)) flag(label, `prestige: audit ${grants.prestige} vs data ${r.prestige || 0}`);
   const dataFavor = (c.favor || 0) + (r.favor || 0);
   if (grants.favor !== dataFavor) flag(label, `favor: audit ${grants.favor} vs data ${dataFavor}`);
-  if (cost !== null && cost !== (c.cost || 0)) flag(label, `cost: audit ${cost} vs data ${c.cost || 0}`);
-  if (grants.mindsEye && !['minds_eye', 'minds_eye_x5', 'The Shadow Guide', 'minds_eye_x2_philosopher_stone_x5'].includes(c.special))
+  if (grants.mindsEye && !['minds_eye', 'minds_eye_x2', 'minds_eye_x3', 'minds_eye_x5', 'The Shadow Guide', 'minds_eye_x2_philosopher_stone_x5'].includes(c.special))
     flag(label, `grants ${grants.mindsEye} Mind's Eye but special is '${c.special}'`);
   if (!grants.mindsEye && c.special === 'minds_eye')
     flag(label, `special 'minds_eye' GRANTS a Mind's Eye the audit doesn't give`);

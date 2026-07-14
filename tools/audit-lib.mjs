@@ -50,16 +50,16 @@ export const MISSION_FAIL_SPECIALS = {
   'Protecting Family': 'discard_weapons_gain_5_prestige',
   "Cameron's Expedition": 'discard_wisdom_gain_8_gold',
   'Wanted: Crazy Lou': 'discard_5_played',
-  'Testament to Courage': 'others_gain_3_prestige',
+  'Testament to Courage': 'others_gain_3_gold',            // art: failure coin is GOLD
   'Golden Fiddle': 'others_gain_3_gold',
   'The Midnight Crash': 'all_draw_act3_mission',
   'Tunnel of Trinkets': 'all_gain_2_gold',
   'Tavern Legend': 'scorn_2_per_charisma',
-  'Trust of the Elders': 'scorn_10_per_knowledge',
+  'Trust of the Elders': 'scorn_5_per_knowledge',          // art reads 5, not 10
   "The Falls' Dark Sussurus": 'you_gain_1_gold',
   'Great Scholar': 'prestige_2_per_knowledge',
-  'A Promise': 'discard_any_gain_10_prestige_each',
-  'Secret Grotto': 'discard_power_gain_15_prestige',
+  'A Promise': 'discard_any_gain_8_prestige_each',         // art reads 8, not 10
+  'Secret Grotto': 'discard_power_gain_10_prestige',       // art reads 10, not 15
   'Alchemic Seige': 'gain_20_prestige',
   'Mercy': 'others_remove_15_scorn',
   'Passing the Mirror Gate': 'discard_1_artifact',
@@ -148,19 +148,46 @@ export function parseCardAudit(audit) {
   const reqM = work.match(/Req:\s*([^.]*)/i);
   if (reqM) { reqText = reqM[1]; work = work.slice(0, reqM.index); }
 
-  reqText = reqText.replace(/,?\s*Act \d(\s*OR\s*Act \d)?\s*$/i, '');
-  const reqMaps = [];
-  const baseSegs = [];
-  reqText.split(/\s+OR\s+/i).forEach(seg => {
-    const mm = seg.trim().replace(/[,.]$/, '').match(/^(.+?)\s+Map$/i);
-    if (mm) reqMaps.push(unalias(mm[1].trim()));
-    else if (seg.trim()) baseSegs.push(seg.trim());
-  });
-
   const grants = parseTokens(work);
-  const reqs = parseTokens(baseSegs.join(', '));
-  reqs.maps = reqMaps;
+  const reqs = parseReqClause(reqText);
   return { grants, reqs, cost };
+}
+
+/**
+ * Parse a requirement clause: "7 Power & 7 Knowledge OR Guardian Map".
+ *
+ * The OR binds to the WHOLE clause — (7 Power AND 7 Knowledge) OR (Guardian Map)
+ * — so map alternatives MUST be split off before tokenising. Feeding the raw
+ * string to parseTokens instead splits on "&" first, leaving "7 Knowledge OR
+ * Guardian Map" as one token, which then falls through to the `<name> Map`
+ * branch and is swallowed whole as a map called "7 Knowledge OR Guardian".
+ * The Knowledge requirement vanishes. That is exactly how Defend the Throne and
+ * King of the Sky shipped with a whole requirement shield missing and a green
+ * checker: the audit text HAD the requirement, the parser ate it, so the data
+ * (which had also dropped it) matched. Shared by cards and missions now.
+ */
+export function parseReqClause(reqText) {
+  const cleaned = (reqText || '').replace(/,?\s*Act \d(\s*OR\s*Act \d)?\s*$/i, '');
+  // Split on OR FIRST so an alternative can never be glued onto the token in
+  // front of it, then hand each alternative to parseTokens — which already
+  // classifies "<name> Map" correctly at TOKEN level. Doing the map match on
+  // the whole segment instead breaks the other shape, where a map is ANDed in
+  // rather than ORed: The Shadow Guide's "4 Knowledge & 3 Prospecting & 1
+  // Mind's Eye & A Hidden Door Map" ends in "Map", so the entire requirement
+  // list would be eaten as one absurd map name.
+  const out = parseTokens('');
+  cleaned.split(/\s+OR\s+/i).forEach(seg => {
+    const s = seg.trim().replace(/[,.]$/, '');
+    if (!s) return;
+    const t = parseTokens(s);
+    for (const [k, v] of Object.entries(t.skills)) out.skills[k] = (out.skills[k] || 0) + v;
+    out.gold += t.gold; out.scorn += t.scorn; out.favor += t.favor;
+    out.prestige += t.prestige; out.mindsEye += t.mindsEye; out.philStone += t.philStone;
+    out.maps.push(...t.maps);
+    out.or.push(...t.or);
+    out.textual.push(...t.textual);
+  });
+  return out;
 }
 
 /** Parse a mission audit: "Success Req: X, Act N Success Reward: Y Failure Reward: Z" */
@@ -168,5 +195,7 @@ export function parseMissionAudit(audit) {
   const sr = audit.match(/Success Req:\s*(.*?)(?:,?\s*Act \d(?:\s*OR\s*Act \d)?)?\s*Success Reward:\s*(.*?)\s*Failure Reward:\s*(.*)$/i);
   if (!sr) return null;
   const [, reqTxt, rewTxt, failTxt] = sr;
-  return { reqs: parseTokens(reqTxt), rew: parseTokens(rewTxt), fail: parseTokens(failTxt) };
+  // parseReqClause, NOT parseTokens — missions carry "... OR <X> Map" alternatives
+  // and the raw tokeniser silently eats the requirement in front of them.
+  return { reqs: parseReqClause(reqTxt), rew: parseTokens(rewTxt), fail: parseTokens(failTxt) };
 }

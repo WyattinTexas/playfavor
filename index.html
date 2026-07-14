@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — A Game of Royal Succession</title>
-    <link rel="stylesheet" href="css/style.css?v=20260713181608">
+    <link rel="stylesheet" href="css/style.css?v=20260713232048">
     <!-- Skylar's melee cinematic — loaded AFTER style.css so its .ms-* rules win. -->
-    <link rel="stylesheet" href="css/melee.css?v=20260713181608">
+    <link rel="stylesheet" href="css/melee.css?v=20260713232048">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
@@ -66,6 +66,7 @@
                 </div>
 
                 <div class="menu-quiet">
+                    <button type="button" class="menu-link" onclick="FACH.openGallery()" title="Your achievements">Achievements</button>
                     <button type="button" class="menu-link mint-link" onclick="FLB.openStore()" title="Star bundles — the Royal Mint">★ Get Stars</button>
                     <button type="button" class="menu-link" onclick="showRules()">How to Play</button>
                     <label class="prompt-test-toggle" title="Replay the in-game tutorial prompts on your next game">
@@ -369,6 +370,7 @@
 
     <!-- ═══ A PROMISE — sacrifice picker ═══ -->
     <div id="promisePicker"></div>
+    <div id="achGallery" class="ach-gallery"></div>
 
     <!-- ═══ SCORING SCREEN ═══ -->
     <div id="scoring-screen">
@@ -389,13 +391,15 @@
          falls back to local standings if these can't reach the project) -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="data/cards.js?v=20260713181608"></script>
-    <script src="data/missions.js?v=20260713181608"></script>
-    <script src="data/characters.js?v=20260713181608"></script>
-    <script src="engine/gameState.js?v=20260713181608"></script>
-    <script src="js/melee.js?v=20260713181608"></script>
-    <script src="js/ui.js?v=20260713181608"></script>
-    <script src="js/meta.js?v=20260713181608"></script>
-    <script src="js/mp.js?v=20260713181608"></script>
+    <script src="data/cards.js?v=20260713232048"></script>
+    <script src="data/missions.js?v=20260713232048"></script>
+    <script src="data/characters.js?v=20260713232048"></script>
+    <script src="data/achievements.js?v=20260713232048"></script>
+    <script src="engine/gameState.js?v=20260713232048"></script>
+    <script src="js/melee.js?v=20260713232048"></script>
+    <script src="js/ui.js?v=20260713232048"></script>
+    <script src="js/meta.js?v=20260713232048"></script>
+    <script src="js/achievements.js?v=20260713232048"></script>
+    <script src="js/mp.js?v=20260713232048"></script>
 </body>
 </html>

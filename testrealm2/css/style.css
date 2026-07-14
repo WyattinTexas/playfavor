@@ -5711,3 +5711,110 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
 .sc-actions { display: flex; gap: 8px; margin-top: 2px; }
 .sc-actions .btn-royal { padding: 6px 14px; font-size: 11px; min-width: 0; }
 
+
+/* ═══ ACHIEVEMENTS ═══════════════════════════════════════════════════
+   Tier colour is the only thing that varies — it derives from the Stars
+   reward, exactly as in Nation (Bronze 10 / Silver 20 / Gold 30 /
+   Platinum 50 / Legendary 200). Seal + rule pick it up via --tc.        */
+.ach-bronze    { --tc: #d18a4e; --tc2: #8a5526; }
+.ach-silver    { --tc: #cdd3dd; --tc2: #8a929d; }
+.ach-gold      { --tc: #ffca40; --tc2: #b07f10; }
+.ach-platinum  { --tc: #8ceded; --tc2: #3f9c9c; }
+.ach-legendary { --tc: #cc73ff; --tc2: #7a2eb0; }
+
+/* ── Unlock celebration ── */
+.ach-pop {
+    position: fixed; inset: 0; z-index: 10000;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(8, 5, 2, 0.78);
+    opacity: 0; transition: opacity .26s ease;
+}
+.ach-pop.in { opacity: 1; }
+.ach-card {
+    position: relative; width: min(420px, 88vw);
+    padding: 30px 26px 24px; text-align: center;
+    background: linear-gradient(#2a2012, #17110a);
+    border: 2px solid var(--tc); border-radius: 10px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 18px 60px rgba(0,0,0,.65),
+                0 0 46px -8px var(--tc);
+    transform: translateY(14px) scale(.96);
+    transition: transform .3s cubic-bezier(.2,.9,.3,1.2);
+}
+.ach-pop.in .ach-card { transform: none; }
+.ach-tier {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--tc);
+}
+.ach-seal {
+    width: 66px; height: 66px; margin: 10px auto 14px;
+    display: grid; place-items: center; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--tc), var(--tc2));
+    box-shadow: 0 0 22px -4px var(--tc), inset 0 -3px 8px rgba(0,0,0,.35);
+    font-size: 30px; color: #2a1c06;
+}
+.ach-kicker {
+    font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    color: #b39a6a; margin-bottom: 6px;
+}
+.ach-name { margin: 0 0 8px; font-size: 24px; color: #f4e6c8; }
+.ach-desc { margin: 0 0 16px; font-size: 14px; color: #c3ae86; line-height: 1.5; }
+.ach-stars {
+    font-size: 20px; font-weight: 700; color: var(--tc);
+    margin-bottom: 18px; font-variant-numeric: tabular-nums;
+}
+
+/* ── Gallery ── */
+.ach-gallery {
+    position: fixed; inset: 0; z-index: 9500; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(8, 5, 2, 0.82);
+}
+.ach-gallery.open { display: flex; }
+.ach-inner {
+    width: min(880px, 94vw); max-height: 88vh; display: flex; flex-direction: column;
+    background: linear-gradient(#241b0f, #14100a);
+    border: 2px solid #8a6a1f; border-radius: 10px;
+    box-shadow: 0 24px 70px rgba(0,0,0,.7);
+}
+.ach-head {
+    position: relative; padding: 18px 22px 14px;
+    border-bottom: 1px solid #3a2d17;
+}
+.ach-title { font-size: 22px; color: #f0dfb8; }
+.ach-sub { font-size: 12.5px; color: #a8926a; margin-top: 3px; font-variant-numeric: tabular-nums; }
+.ach-x {
+    position: absolute; top: 14px; right: 14px;
+    background: none; border: none; color: #a8926a; font-size: 18px; cursor: pointer;
+}
+.ach-x:hover, .ach-x:focus-visible { color: #f0dfb8; outline: none; }
+.ach-grid {
+    padding: 16px; overflow-y: auto;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px;
+}
+.ach-cell {
+    display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 11px;
+    padding: 11px 13px; border-radius: 7px;
+    background: #1c150c; border: 1px solid #3a2d17;
+    border-left: 3px solid var(--tc);
+}
+.ach-cell.locked { opacity: .48; border-left-color: #4a3c22; }
+.ach-cell-seal {
+    width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%;
+    background: #2c2213; color: var(--tc); font-size: 16px;
+}
+.ach-cell.got .ach-cell-seal {
+    background: radial-gradient(circle at 35% 30%, var(--tc), var(--tc2)); color: #2a1c06;
+}
+.ach-cell-body { min-width: 0; }
+.ach-cell-body b { display: block; font-size: 14px; color: #ecdcb6; }
+.ach-cell-body span { display: block; font-size: 12px; color: #9c8a68; line-height: 1.4; }
+.ach-cell.secret .ach-cell-body b { letter-spacing: .12em; }
+.ach-cell-stars {
+    font-size: 13px; font-weight: 700; color: var(--tc);
+    font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ach-pop, .ach-card { transition: none; }
+}

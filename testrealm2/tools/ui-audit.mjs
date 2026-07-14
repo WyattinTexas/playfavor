@@ -3441,26 +3441,27 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   await phone.close();
 }
 
-// ═══ A CARD'S GOLD COST GATES PLAY (Wyatt: "Mind Warper did nothing") ═══
+// ═══ A CARD'S GOLD COST GATES PLAY ═══════════════════════════════════
 // checkRequirements never looked at card.cost, so the Play button lit up, the
 // engine refused with success:false (which no caller checked), and the card
-// evaporated — no play, no discard, no refund. 45 of 105 cards carry a cost.
+// evaporated — no play, no discard, no refund.
+// Re-rigged 7/13 PM: this used to be driven with Mind Warper, but the art audit
+// found Mind Warper never had a gold cost — its `cost: 6` was the count badge
+// off its 6-Alchemy REQUIREMENT. The gate is now proven on Father's Lab, which
+// really does print a 3-gold coin, and Mind Warper gets its own free-play check
+// below (that phantom cost, not the silent bail, was Wyatt's actual bug).
 {
-  console.log('── Gold cost gates the Play button (Wyatt\'s Mind Warper)');
+  console.log('── Gold cost gates the Play button (Father\'s Lab — a REAL 3-gold coin)');
   const page = await browser.newPage();
   page.on('console', m => { if (m.type() === 'error') consoleErrors.push('cost-gate: ' + m.text()); });
   await page.setViewport({ width: 1280, height: 800 });
   await startGame(page);
 
-  // Requirements MET (6 Alchemy + 1 Philosopher's Stone), purse ONE gold short.
+  // Father's Lab has no skill requirement — so the ONLY gap is the purse.
   const short = await page.evaluate(() => {
     const p = game.players[0];
-    p.bonusSkills = { alchemy: 6 };
-    game.applySlotSkills(p);
-    p.philosopherStone = 1;
-    p.scorn = 10;
-    p.gold = 5;                                    // the card costs 6
-    p.hand = [{ ...window.FAVOR_DATA.cards.find(c => c.name === 'Mind Warper') }];
+    p.gold = 2;                                    // the card costs 3
+    p.hand = [{ ...window.FAVOR_DATA.cards.find(c => c.name === "Father's Lab") }];
     renderGameState();
     showActionPanel(0);
     const btn = [...document.querySelectorAll('#actionPanel .action-btn')]
@@ -3475,29 +3476,68 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
     };
   });
   ok(short.canPlay === false, 'engine: canPlay is FALSE one gold short of the cost');
-  ok(short.disabled && /Need/.test(short.text) && /6 Gold/.test(short.text),
+  ok(short.disabled && /Need/.test(short.text) && /3 Gold/.test(short.text),
     `Play is disabled and NAMES the gap: "${short.text}"`);
   ok(!short.borrowOffered, 'and Borrow is not offered — you cannot borrow your way out of being broke');
   await page.screenshot({ path: join(SHOTS, 'cost-gate-short.png') });
 
-  // One more gold: the same card is playable, and it actually converts.
+  // One more gold: the same card is playable, and it actually grants.
   const rich = await page.evaluate(async () => {
     const p = game.players[0];
-    p.gold = 6;
+    p.gold = 3;
     renderGameState();
     showActionPanel(0);
     const btn = [...document.querySelectorAll('#actionPanel .action-btn')]
       .find(b => /Play/.test(b.textContent) && !/Need/.test(b.textContent));
     const enabled = !!btn && !btn.disabled;
-    // Drive the real engine path and confirm the special fires.
     const card = p.hand[0];
     game.pickCard(0, 0);
     const res = game.activateCard(0, card.id, 'play');
-    return { enabled, text: btn ? btn.textContent.trim() : '', ok: res.success, scorn: p.scorn, prestige: p.prestige };
+    return { enabled, text: btn ? btn.textContent.trim() : '', ok: res.success,
+             gold: p.gold, alchemy: p.skills.alchemy || 0 };
   });
-  ok(rich.enabled, `at 6 Gold the Play button lives ("${rich.text}")`);
-  ok(rich.ok && rich.scorn === 0 && rich.prestige === 10,
-    `and Mind Warper converts: 10 Scorn → ${rich.prestige} Prestige, scorn now ${rich.scorn}`);
+  ok(rich.enabled, `at 3 Gold the Play button lives ("${rich.text}")`);
+  ok(rich.ok && rich.gold === 0 && rich.alchemy === 3,
+    `and Father's Lab pays its 3 Gold for 3 Alchemy (gold ${rich.gold}, alchemy ${rich.alchemy})`);
+  await page.close();
+}
+
+// ═══ MIND WARPER PLAYS FOR FREE — the REAL fix for Wyatt's report ═══════
+// "Mind Warper didn't turn my Scorn into Prestige." It was blamed on the silent
+// cost bail, but the deeper cause is that the printed card has NO gold coin at
+// all. With the phantom cost gone it simply works, at zero gold.
+{
+  console.log('── Mind Warper converts Scorn at ZERO gold (phantom cost removed)');
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('mind-warper: ' + m.text()); });
+  await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+
+  const r = await page.evaluate(() => {
+    const p = game.players[0];
+    p.bonusSkills = { alchemy: 6 };
+    game.applySlotSkills(p);
+    p.philosopherStone = 1;
+    p.scorn = 10;
+    p.gold = 0;                                    // broke — and it must not matter
+    const mw = window.FAVOR_DATA.cards.find(c => c.name === 'Mind Warper');
+    p.hand = [{ ...mw }];
+    renderGameState();
+    showActionPanel(0);
+    const btn = [...document.querySelectorAll('#actionPanel .action-btn')]
+      .find(b => /Play|Need/.test(b.textContent));
+    const canPlay = game.checkRequirements(0, p.hand[0]).canPlay;
+    const card = p.hand[0];
+    game.pickCard(0, 0);
+    const res = game.activateCard(0, card.id, 'play');
+    return { cost: mw.cost || 0, canPlay, text: btn ? btn.textContent.trim() : '',
+             ok: res.success, scorn: p.scorn, prestige: p.prestige, gold: p.gold };
+  });
+  ok(!r.cost, `Mind Warper carries no gold cost (cost=${r.cost})`);
+  ok(r.canPlay === true, `playable at 0 gold — Play reads "${r.text}"`);
+  ok(r.ok && r.scorn === 0 && r.prestige === 10,
+    `and it converts: 10 Scorn → ${r.prestige} Prestige (scorn ${r.scorn})`);
+  ok(r.gold === 0, 'and no gold was taken');
   await page.close();
 }
 
@@ -4703,6 +4743,8 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
     const pA = await boot(ctxA, A_UID, 'Audit MpA', { afk: 4500 });
     await sleep(900);
     const pB = await boot(ctxB, B_UID, 'Audit MpB', {});
+    pB.on('pageerror', e => { pB.evaluate((m) => { (window.__bErrs = window.__bErrs || []).push(m); }, 'PAGEERROR: ' + e.message).catch(() => {}); });
+    pB.on('console', m => { if (m.type() === 'error') { const t = m.text(); pB.evaluate((x) => { (window.__bErrs = window.__bErrs || []).push(x); }, t).catch(() => {}); } });
 
     const inGame = (pg) => pg.waitForFunction(() => typeof game !== 'undefined' && game
       && game.players.length === 3 && game.players[0].character && FMP.active(), { timeout: 25000 });
@@ -4764,6 +4806,15 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
       document.getElementById('champOverlay').classList.contains('active')
       && /Removed for Inactivity/i.test(document.getElementById('champTitle').textContent),
       { timeout: 15000 }).then(() => true, () => false);
+    if (!bBooted) {
+      const diag = await pB.evaluate(() => ({
+        errs: (window.__bErrs || []).slice(0, 5),
+        mpActive: typeof mpActive === 'function' ? mpActive() : 'n/a',
+        ovClass: document.getElementById('champOverlay').className,
+        title: document.getElementById('champTitle').textContent,
+      })).catch(e => ({ evalFailed: e.message }));
+      console.log('    [diag B]', JSON.stringify(diag));
+    }
     ok(bBooted, 'the booted player is told and returned to the menu path');
     await pB.screenshot({ path: join(SHOTS, 'mp-afk-booted.png') });
 
@@ -4790,6 +4841,95 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
   } catch (e) {
     ok(false, 'MP match story crashed — treat as latency-first, rerun', e.message.slice(0, 160));
   }
+}
+
+// ═══ ACHIEVEMENTS: grant → celebration → gallery ════════════════════════
+// The DB layer is STUBBED for this flow. FACH.sync() writes to players/{uid},
+// and the real board must never carry an audit account's achievements — the
+// scrubs would have to chase yet another node. Stubbing readRow/mergeRow keeps
+// the whole flow on the client while still driving the real UI.
+{
+  console.log('── Achievements: unlock celebration + gallery');
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('achievements: ' + m.text()); });
+  await page.setViewport({ width: 1280, height: 900 });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FACH && window.FLB, { timeout: 20000 });
+
+  // NOTE: fire sync with BRACES — do NOT await it. FACH.sync() awaits its own
+  // celebration overlay, which only resolves on a click, so awaiting it here
+  // deadlocks the CDP protocol and kills the whole suite (learned the hard way).
+  await page.evaluate(() => {
+    // Stub the row: nothing earned yet, nine heroes already beaten.
+    window._achRow = { stars: 0, achievements: {}, charWins: {
+      explorer: true, knight: true, bandit: true, merchant: true, fisherman: true,
+      duchess: true, scientist: true, doctor: true, fiddler: true,
+    }, champs: {} };
+    window.FLB.readRow = async () => JSON.parse(JSON.stringify(window._achRow));
+    window.FLB.mergeRow = async (fn) => {
+      window._achRow = fn(window._achRow);
+      return { committed: true, value: window._achRow };
+    };
+    // Beat the tenth hero: The Magician's Victory AND The Master, together.
+    window.FACH.sync({ won: true, characterId: 'magician', peakPower: 0,
+                       peakGold: 0, potionsPlayed: 0, foretoldDoom: false });
+  });
+
+  // The celebration is on screen and NAMES the achievement.
+  await page.waitForSelector('.ach-pop.in .ach-card', { timeout: 8000 });
+  const wrote = await page.evaluate(() => ({
+    ids: Object.keys(window._achRow.achievements), stars: window._achRow.stars,
+  }));
+  ok(wrote.ids.includes('win_magician') && wrote.ids.includes('master_of_all'),
+    'the 10th win grants that victory AND The Master', wrote.ids.join(','));
+  ok(wrote.stars === 220, `and pays 20★ + 200★ = ${wrote.stars}★ into the store purse`);
+  const pop = await page.evaluate(() => {
+    const c = document.querySelector('.ach-pop .ach-card');
+    return {
+      name: c.querySelector('.ach-name').textContent,
+      stars: c.querySelector('.ach-stars').textContent.trim(),
+      tier: c.querySelector('.ach-tier').textContent.trim(),
+      legendary: c.classList.contains('ach-legendary'),
+    };
+  });
+  ok(/Victory|Master/.test(pop.name), `the celebration names it ("${pop.name}")`);
+  ok(/\d+/.test(pop.stars), `and shows its Stars ("${pop.stars}")`);
+  await page.screenshot({ path: join(SHOTS, 'achievement-unlock.png') });
+
+  // Claim dismisses it (and the second one queues behind — sequential, never stacked).
+  const stacked = await page.evaluate(() => document.querySelectorAll('.ach-pop').length);
+  ok(stacked === 1, 'only ONE celebration on screen at a time (they queue)', String(stacked));
+  // Claim the first; the second (The Master) queues in behind it.
+  await page.evaluate(() => document.querySelector('.ach-ok').click());
+  await page.waitForFunction(
+    () => document.querySelectorAll('.ach-pop').length === 1
+       && /Master/.test(document.querySelector('.ach-pop .ach-name').textContent),
+    { timeout: 8000 });
+  ok(true, 'and the second celebration follows it, one at a time');
+  await page.evaluate(() => document.querySelector('.ach-ok').click());
+  await page.waitForFunction(() => document.querySelectorAll('.ach-pop').length === 0,
+    { timeout: 8000 });
+
+  // Gallery: 17 cells, the secret still masked.
+  await page.evaluate(() => window.FACH.openGallery());
+  await page.waitForSelector('#achGallery.open .ach-cell', { timeout: 8000 });
+  const gal = await page.evaluate(() => {
+    const cells = [...document.querySelectorAll('#achGallery .ach-cell')];
+    const secret = document.querySelector('#achGallery .ach-cell.secret');
+    return {
+      count: cells.length,
+      got: cells.filter(c => c.classList.contains('got')).length,
+      secretMasked: secret ? secret.querySelector('b').textContent : '(none)',
+      sub: document.querySelector('#achGallery .ach-sub').textContent,
+    };
+  });
+  ok(gal.count === 17, `the gallery lists all 17 achievements (${gal.count})`);
+  ok(gal.got === 2, `and marks the 2 just earned as unlocked (${gal.got})`);
+  ok(gal.secretMasked === '???', `the SECRET stays hidden until it fires ("${gal.secretMasked}")`);
+  await page.screenshot({ path: join(SHOTS, 'achievement-gallery.png') });
+
+  await page.evaluate(() => window.FACH.closeGallery());
+  await page.close();
 }
 
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));

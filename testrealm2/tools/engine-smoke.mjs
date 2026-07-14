@@ -17,8 +17,30 @@ const src = (p) => readFileSync(join(root, p), 'utf8');
 const window = {};
 const FavorGame = new Function('window',
   src('data/cards.js') + '\n' + src('data/missions.js') + '\n' +
-  src('data/characters.js') + '\n' + src('engine/gameState.js') + '\nreturn FavorGame;'
+  src('data/characters.js') + '\n' + src('data/achievements.js') + '\n' +
+  src('engine/gameState.js') + '\nreturn FavorGame;'
 )(window);
+
+// Achievements evaluate() is pure — rebuild it here rather than load the whole
+// browser module (which reaches for FLB / the DOM).
+const ACH = () => window.FAVOR_DATA.achievements;
+function achEvaluate(row, gameSnap) {
+  const r = row || {};
+  const have = r.achievements || {};
+  const champs = r.champs || {};
+  const charWins = { ...(r.charWins || {}) };
+  if (gameSnap && gameSnap.won && gameSnap.characterId) charWins[gameSnap.characterId] = true;
+  const snap = {
+    won: false, characterId: null, peakPower: 0, peakGold: 0,
+    potionsPlayed: 0, foretoldDoom: false,
+    ...(gameSnap || {}),
+    charWins,
+    dailyCrowns: champs.gold || 0,
+    dailyPodiums: (champs.gold || 0) + (champs.silver || 0) + (champs.bronze || 0),
+  };
+  const earned = ACH().filter(d => !have[d.id] && d.check(snap));
+  return { earned, ids: earned.map(d => d.id), stars: earned.reduce((n, d) => n + d.stars, 0) };
+}
 
 const cardByName = (n) => window.FAVOR_DATA.cards.find(c => c.name === n);
 const missionByName = (n) => window.FAVOR_DATA.missions.find(m => m.name === n);
@@ -213,14 +235,17 @@ console.log('── Mission failure specials: discard + payouts');
   ok(g3.players[1].gold === a + 5, 'others gain 5 Gold');
 }
 
-console.log('── A Promise (AI): trades junk cards for 10 Prestige each');
+console.log(`── A Promise (AI): trades junk cards for ${window.PROMISE_PRESTIGE} Prestige each`);
 {
   const g = newGame();
   playCard(g, 1, 'Trapping'); // junk: 1 survival, 0 favor
   const m = { ...missionByName('A Promise') };
   const prestige = g.players[1].prestige;
   g.applyMissionFailure(1, m);
-  ok(g.players[1].prestige === prestige + 10, `AI sacrificed 1 junk card (+10 prestige)`);
+  // Art audit 7/13: the card reads 8 Prestige per discard, not 10.
+  ok(window.PROMISE_PRESTIGE === 8, 'A Promise pays 8 Prestige per card (art)');
+  ok(g.players[1].prestige === prestige + window.PROMISE_PRESTIGE,
+    `AI sacrificed 1 junk card (+${window.PROMISE_PRESTIGE} prestige)`);
   ok(g.players[1].playedCards.length === 0, 'junk card discarded');
   // Human path defers to the picker UI:
   const g2 = newGame();
@@ -999,38 +1024,60 @@ console.log('── Last two cards: the pair stays with its player and plays bac
 
 // ─── Wyatt's 2026-07-13 playtest bugs ────────────────────────────────────────
 
-console.log("── A card's GOLD COST gates canPlay (Wyatt: 'Mind Warper didn't convert my Scorn')");
+console.log("── A card's GOLD COST gates canPlay (rigged on Father's Lab — a REAL cost)");
 {
-  // The bug: checkRequirements never looked at card.cost, so the UI lit the Play
-  // button, activateCard bailed with success:false (unchecked by every caller),
-  // and the card evaporated — no play, no discard, no refund. 45 of 105 cards
-  // carry a cost, so this could silently eat almost half the deck.
+  // The 7/13 bug: checkRequirements never looked at card.cost, so the UI lit the
+  // Play button, activateCard bailed with success:false (unchecked by every
+  // caller), and the card evaporated — no play, no discard, no refund.
+  // Re-rigged 7/13 PM: this used to be rigged on Mind Warper, but the art audit
+  // showed Mind Warper never had a gold cost at all — its `cost: 6` was the count
+  // badge from its 6-Alchemy REQUIREMENT, copied into the cost field. So the gate
+  // is now proven on Father's Lab, which really does print a 3-gold coin.
+  const fl = cardByName("Father's Lab");
+  ok(fl.cost === 3, `Father's Lab costs ${fl.cost} Gold`);
+
   const rig = (gold) => {
     const g = newGame();
     const p = g.players[0];
-    p.bonusSkills = { alchemy: 6 };
-    g.applySlotSkills(p);
-    p.philosopherStone = 1;
-    p.scorn = 10;
     p.gold = gold;
     return { g, p };
   };
-  const mw = cardByName('Mind Warper');
-  ok(mw.cost === 6, `Mind Warper costs ${mw.cost} Gold`);
 
-  const poor = rig(5);                       // one gold short
-  const chkPoor = poor.g.checkRequirements(0, mw);
+  const poor = rig(2);                       // one gold short
+  const chkPoor = poor.g.checkRequirements(0, fl);
   ok(chkPoor.canPlay === false, 'canPlay is FALSE when short of the cost (was true — the lie)');
-  ok(chkPoor.missingSpecial.includes('6 Gold'), "UI now reads '▶ Need: 6 Gold'", JSON.stringify(chkPoor));
+  ok(chkPoor.missingSpecial.includes('3 Gold'), "UI reads '▶ Need: 3 Gold'", JSON.stringify(chkPoor));
   ok(chkPoor.missingSkills.length === 0, 'the gap is gold, not skills — so Borrow is not offered');
 
-  const rich = rig(6);                       // exactly affordable
-  ok(rich.g.checkRequirements(0, mw).canPlay === true, 'canPlay TRUE at exactly the cost');
-  const r = playCard(rich.g, 0, 'Mind Warper');
+  const rich = rig(3);                       // exactly affordable
+  ok(rich.g.checkRequirements(0, fl).canPlay === true, 'canPlay TRUE at exactly the cost');
+  const r = playCard(rich.g, 0, "Father's Lab");
   ok(r.success === true, 'the play succeeds');
-  ok(rich.p.scorn === 0 && rich.p.prestige === 10,
-    `10 Scorn → 10 Prestige (scorn ${rich.p.scorn}, prestige ${rich.p.prestige})`);
-  ok(rich.p.gold === 0, 'the 6 Gold was actually spent');
+  ok(rich.p.gold === 0, 'the 3 Gold was actually spent');
+  ok((rich.p.skills.alchemy || 0) === 3, 'and it grants its 3 Alchemy', String(rich.p.skills.alchemy));
+}
+
+console.log("── Mind Warper plays for FREE (the REAL fix for Wyatt's 'it didn't convert my Scorn')");
+{
+  // Wyatt's original report was blamed on the silent cost bail. But the deeper
+  // cause was that Mind Warper should never have cost gold: the printed card has
+  // no coin. With the phantom cost gone it just works, at zero gold.
+  const mw = cardByName('Mind Warper');
+  ok(!mw.cost, 'Mind Warper has NO gold cost (phantom removed)', String(mw.cost));
+
+  const g = newGame();
+  const p = g.players[0];
+  p.bonusSkills = { alchemy: 6 };
+  g.applySlotSkills(p);
+  p.philosopherStone = 1;
+  p.scorn = 10;
+  p.gold = 0;                                // broke — and it must not matter
+  ok(g.checkRequirements(0, mw).canPlay === true, 'playable at 0 gold');
+  const r = playCard(g, 0, 'Mind Warper');
+  ok(r.success === true, 'the play succeeds');
+  ok(p.scorn === 0 && p.prestige === 10,
+    `10 Scorn → 10 Prestige (scorn ${p.scorn}, prestige ${p.prestige})`);
+  ok(p.gold === 0, 'and no gold was taken');
 
   // A map that plays the card free must still bypass the cost gate entirely.
   const g2 = newGame();
@@ -1235,8 +1282,10 @@ console.log('── Chemical X: "move to ANY slot" is the PLAYER\'s choice, not 
   };
 
   const cx = cardByName('Chemical X');
-  ok(cx.special === 'move_slider_any' && cx.cost === 2,
-    `Chemical X: cost ${cx.cost}g, special '${cx.special}'`);
+  // Art audit 7/13: Chemical X has NO gold coin — its old `cost: 2` was the
+  // count badge on its 2-Alchemy requirement, copied into the cost field.
+  ok(cx.special === 'move_slider_any' && !cx.cost,
+    `Chemical X: no gold cost, special '${cx.special}'`);
 
   // ── The HUMAN pauses. The ring does not move on its own.
   const h = rig('explorer', 0);
@@ -1313,6 +1362,226 @@ console.log('── Chemical X: "move to ANY slot" is the PLAYER\'s choice, not 
     `landing on his Pick One slot pauses for the skill pick (slot ${pickSlot + 1})`);
   ok(Object.keys(m2.p.bonusSkills).length === 1,
     'and nothing is granted until that pick is made (only the rig\'s Alchemy)');
+}
+
+// ── 2026-07-13 art audit: three cards whose data disagreed with their printed face.
+console.log('── Deadeye (art audit): REQUIRES 5 Survival, GRANTS 2 Mind\'s Eye + 1 Power');
+{
+  const g = newGame();
+  const p = g.players[0];
+  const deadeye = cardByName('Deadeye');
+  ok((deadeye.requirements || []).filter(s => s === 'survival').length === 5,
+    'requires 5 Survival (was inverted into a grant)', JSON.stringify(deadeye.requirements));
+  ok((deadeye.skills || []).join() === 'power', 'grants 1 Power', JSON.stringify(deadeye.skills));
+
+  // Explorer's centre slot already grants 2 Survival — short of the 5 required.
+  ok(g.checkRequirements(0, deadeye).canPlay === false,
+    'blocked at the Explorer\'s starting 2 Survival');
+  p.bonusSkills = { survival: 3 };   // survives the slot recalc; 2 + 3 = 5
+  g.applySlotSkills(p);               // bonusSkills only fold in on a recalc
+  ok(g.checkRequirements(0, deadeye).canPlay === true, 'playable once Survival reaches 5');
+
+  const meBefore = g.getMindsEyeCount(0);
+  const powBefore = p.skills.power || 0;
+  playCard(g, 0, 'Deadeye');
+  ok(g.getMindsEyeCount(0) === meBefore + 2,
+    `grants 2 Mind's Eye (${meBefore} → ${g.getMindsEyeCount(0)})`);
+  ok((p.skills.power || 0) === powBefore + 1, 'and 1 Power', String(p.skills.power));
+}
+
+console.log('── Hermit\'s Lab (art audit): 1 Alchemy OR 1 Survival — never both');
+{
+  const g = newGame();
+  const p = g.players[0];
+  p.gold = 20;
+  // Baseline: the Explorer's slot already pays 2 Survival, so assert the DELTA.
+  const base = { alc: p.skills.alchemy || 0, sur: p.skills.survival || 0 };
+  playCard(g, 0, "Hermit's Lab");
+  ok((p.flexSkills || []).some(f => f.includes('alchemy') && f.includes('survival')),
+    'flex unit registered', JSON.stringify(p.flexSkills));
+  ok((p.skills.alchemy || 0) === base.alc && (p.skills.survival || 0) === base.sur,
+    'does NOT hand out both skills outright (this is the bug that shipped)',
+    `alc ${base.alc}→${p.skills.alchemy}, sur ${base.sur}→${p.skills.survival}`);
+  // The flex covers ONE of them. Ask for 1 Alchemy + 3 Survival: the slot's 2
+  // Survival covers two, so the flex must choose — Alchemy or the 3rd Survival.
+  ok(Object.keys(g.unmetSkillReqs(0, { alchemy: 1 })).length === 0, 'covers 1 Alchemy alone');
+  ok(Object.keys(g.unmetSkillReqs(0, { survival: base.sur + 1 })).length === 0,
+    `covers a ${base.sur + 1}th Survival alone`);
+  const both = g.unmetSkillReqs(0, { alchemy: 1, survival: base.sur + 1 });
+  ok(Object.values(both).reduce((a, b) => a + b, 0) === 1,
+    'CANNOT cover both at once', JSON.stringify(both));
+}
+
+console.log('── Forbidden Lab (art audit): Knowledge is a REQUIREMENT, not a grant');
+{
+  const g = newGame();
+  const p = g.players[0];
+  // applySlotSkills rebuilds `skills` from slot + played cards, so a hand-set
+  // value would be wiped. Requirement comes from bonusSkills, which survives.
+  p.bonusSkills = { knowledge: 1 };
+  g.applySlotSkills(p);               // bonusSkills only fold in on a recalc
+  const before = p.skills.knowledge || 0;
+  const scornBefore = p.scorn || 0;
+  playCard(g, 0, 'Forbidden Lab');
+  ok((p.skills.knowledge || 0) === before,
+    'grants no phantom Knowledge (it is a REQUIREMENT on the card)',
+    `${before} → ${p.skills.knowledge || 0}`);
+  ok((p.flexSkills || []).some(f => f.includes('alchemy') && f.includes('prospecting')),
+    'still registers its Alchemy-OR-Prospecting flex unit');
+  ok((p.scorn || 0) === scornBefore + 2, 'and still pays its 2 Scorn', String(p.scorn));
+}
+
+// ── 2026-07-13 art audit: the value/requirement fixes, locked in.
+console.log('── Art audit: no card charges gold it never asks for');
+{
+  // A real gold cost is a standalone coin on the art and ALWAYS shows up in the
+  // audit text ("Cost N Gold to play" / "Req: N Gold"). 17 cards carried a cost
+  // copied from a requirement's count badge. These are the ones that DO pay.
+  const REAL = new Set(['Dark Cauldron', 'Herbal Remedies', "Maester's Favor", "Hermit's Lab",
+    "Father's Lab", 'Mining Guild', 'Gemstone Mine', 'Generous Donations',
+    'Mystery Intrigue Club', 'Great Vault Key', 'Sacred Chest', 'Shark Tooth', 'Wild Steel']);
+  const charging = window.FAVOR_DATA.cards
+    .filter(c => c.cost && c.type !== 'mission_letter')
+    .map(c => c.name);
+  const phantom = charging.filter(n => !REAL.has(n));
+  ok(phantom.length === 0, 'no phantom gold costs remain', phantom.join(', '));
+  ok(REAL.size === new Set(charging).size, `${charging.length} cards charge gold, all of them printed`);
+  // Every gold-costing card must also name that gold in its audit text.
+  const silent = window.FAVOR_DATA.cards.filter(c => c.cost && c.type !== 'mission_letter' &&
+    !/Cost\s+\d+\s+Gold to play|Req:.*?\d+\s+Gold/i.test(c.audit)).map(c => c.name);
+  ok(silent.length === 0, 'and every one of them names its gold in the audit text', silent.join(', '));
+}
+
+console.log('── Art audit: requirements that had been dropped or copy-pasted');
+{
+  const tally = (l) => (l || []).reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {});
+  const req = (n) => tally(missionByName(n).requirements);
+  ok(JSON.stringify(req('Quest for the Stones')) === JSON.stringify({ philosopher_stone: 3 }),
+    'Quest for the Stones wants 3 Philosopher\'s Stone (was Usurper\'s 6 Power + 6 Knowledge)',
+    JSON.stringify(req('Quest for the Stones')));
+  const dt = req('Defend the Throne');
+  ok(dt.power === 7 && dt.knowledge === 7, 'Defend the Throne wants 7 Power AND 7 Knowledge', JSON.stringify(dt));
+  const ks = req('King of the Sky');
+  ok(ks.survival === 4 && ks.power === 12, 'King of the Sky wants 4 Survival AND 12 Power', JSON.stringify(ks));
+  const tl = req('Tavern Legend');
+  ok(tl.charisma === 7 && !tl.survival, 'Tavern Legend wants 7 CHARISMA (feather), not Survival', JSON.stringify(tl));
+}
+
+console.log('── Art audit: Shattering the Mirror Prison grants 3 Mind\'s Eye');
+{
+  const g = newGame();
+  const p = g.players[0];
+  p.bonusSkills = { knowledge: 9 };
+  g.applySlotSkills(p);
+  const before = g.getMindsEyeCount(0);
+  playCard(g, 0, 'Shattering the Mirror Prison');
+  ok(g.getMindsEyeCount(0) === before + 3,
+    `grants 3 Mind's Eye (${before} → ${g.getMindsEyeCount(0)})`);
+}
+
+console.log("── Art audit: The Alchemist's Daughter can be played via its map");
+{
+  // The card prints a map scroll the data never carried, so the map route to
+  // playing it did not exist — you could only ever hard-cast 5/5/5.
+  const g = newGame();
+  const tad = cardByName("The Alchemist's Daughter");
+  ok((tad.reqMaps || []).length > 0, 'it has a map alternative at all', JSON.stringify(tad.reqMaps));
+  ok(g.checkRequirements(0, tad).canPlay === false, 'blocked with no map and no skills');
+  // Maps are derived from played cards + completed missions that carry grantsMap.
+  // "A Day With the Birds" grants "The Alchemist's Daughter" — that IS this map.
+  g.players[0].completedMissions = [{ ...missionByName('A Day With the Birds') }];
+  ok(g.checkRequirements(0, tad).canPlay === true,
+    'playable once you have completed the mission that grants the map');
+}
+
+// ── Achievements (mirrors Nation: Stars reward → tier)
+console.log('── Achievements: hero victories, feats, The Master, the secret');
+{
+  const HEROES = ['explorer','knight','bandit','merchant','fisherman','duchess','scientist','doctor','fiddler','magician'];
+  ok(ACH().length === 17, '17 achievements (10 heroes + The Master + 2 daily + 3 feats + 1 secret)', String(ACH().length));
+
+  // Tier derives purely from the Stars number, same thresholds as Nation.
+  const tier = window.FAVOR_DATA.achievementTier;
+  ok(tier(10) === 'bronze' && tier(20) === 'silver' && tier(30) === 'gold'
+     && tier(50) === 'platinum' && tier(200) === 'legendary', 'tiers derive from Stars');
+
+  // A Knight's victory — and nothing else.
+  const win = achEvaluate({}, { won: true, characterId: 'knight' });
+  ok(win.ids.includes('win_knight'), "a Knight's win grants A Knight's Victory", win.ids.join(','));
+  ok(!win.ids.includes('win_explorer'), 'and not another hero\'s');
+  ok(win.stars === 20, 'paying 20★ (Silver)', String(win.stars));
+
+  // Losing with the Knight grants nothing.
+  ok(achEvaluate({}, { won: false, characterId: 'knight' }).ids.length === 0, 'a LOSS grants nothing');
+
+  // Already-granted is never re-paid.
+  ok(achEvaluate({ achievements: { win_knight: 1 } }, { won: true, characterId: 'knight' }).ids.length === 0,
+    'an already-earned achievement is not re-granted');
+
+  // The Master: the tenth victory lands it in the same breath.
+  const nine = {};
+  HEROES.slice(0, 9).forEach(h => { nine[h] = true; });
+  const master = achEvaluate({ charWins: nine }, { won: true, characterId: 'magician' });
+  ok(master.ids.includes('win_magician') && master.ids.includes('master_of_all'),
+    'the 10th hero win grants BOTH that victory and The Master', master.ids.join(','));
+  ok(master.stars === 220, 'paying 20★ + 200★ Legendary', String(master.stars));
+  // ...but not at nine.
+  const eight = {};
+  HEROES.slice(0, 8).forEach(h => { eight[h] = true; });
+  ok(!achEvaluate({ charWins: eight }, { won: true, characterId: 'fiddler' }).ids.includes('master_of_all'),
+    'and NOT at nine heroes');
+
+  // Single-game feats — strictly "over", per the card text.
+  ok(achEvaluate({}, { peakPower: 11 }).ids.includes('power_10'), 'over 10 Power grants Force of Arms');
+  ok(!achEvaluate({}, { peakPower: 10 }).ids.includes('power_10'), 'exactly 10 does NOT');
+  ok(achEvaluate({}, { peakGold: 31 }).ids.includes('gold_30'), "over 30 Gold grants A Merchant's Purse");
+  ok(!achEvaluate({}, { peakGold: 30 }).ids.includes('gold_30'), 'exactly 30 does NOT');
+  ok(achEvaluate({}, { potionsPlayed: 5 }).ids.includes('potions_5'), 'five potions grants The Apothecary');
+  ok(!achEvaluate({}, { potionsPlayed: 4 }).ids.includes('potions_5'), 'four does NOT');
+
+  // Daily board — read straight off the champs counters settle already writes.
+  ok(achEvaluate({ champs: { bronze: 1 } }, null).ids.includes('daily_podium'), 'a 3rd place counts as a podium');
+  ok(achEvaluate({ champs: { gold: 5 } }, null).ids.includes('daily_crown_5'), 'five crowns grants Five-Time Champion');
+  ok(!achEvaluate({ champs: { gold: 4 } }, null).ids.includes('daily_crown_5'), 'four crowns does NOT');
+
+  // The secret.
+  const sec = ACH().find(d => d.id === 'foretold_doom');
+  ok(sec.secret === true, 'the Labyrinth achievement is marked secret');
+  ok(achEvaluate({}, { foretoldDoom: true }).ids.includes('foretold_doom'),
+    'failing The Labyrinth with the Fortune Teller grants it');
+  ok(!achEvaluate({}, { foretoldDoom: false }).ids.includes('foretold_doom'), 'and not otherwise');
+
+  // The economy has to actually unlock the roster: 5 locked heroes x 100★.
+  const total = ACH().reduce((n, d) => n + d.stars, 0);
+  ok(total >= 500, `${total}★ on offer covers the 500★ of locked heroes`, String(total));
+}
+
+console.log('── Achievements: the engine actually feeds them');
+{
+  // peakGold survives spending, peakPower survives a discard, potions counted.
+  const g = newGame();
+  const p = g.players[0];
+  p.gold = 40;
+  g.applySlotSkills(p);                     // sampler runs on every recalc
+  ok(p.peakGold >= 40, 'peak gold recorded', String(p.peakGold));
+  p.gold = 1;                               // spend it all
+  g.applySlotSkills(p);
+  ok(p.peakGold >= 40, 'and SURVIVES spending it (peaks, not end-state)', String(p.peakGold));
+
+  const g2 = newGame();
+  playCard(g2, 0, 'Concoction');            // a potion
+  ok(g2.players[0].potionsPlayed === 1, 'potions counted', String(g2.players[0].potionsPlayed));
+
+  // The secret's engine hook: The Labyrinth failing while Fortune Teller is down.
+  const g3 = newGame();
+  const p3 = g3.players[0];
+  p3.playedCards.push({ ...cardByName('Fortune Teller') });
+  g3.applyMissionFailure(0, { ...missionByName('The Labyrinth') });
+  ok(p3.foretoldDoom === true, 'failing The Labyrinth with the Fortune Teller sets foretoldDoom');
+
+  const g4 = newGame();
+  g4.applyMissionFailure(0, { ...missionByName('The Labyrinth') });
+  ok(!g4.players[0].foretoldDoom, 'and does NOT without her');
 }
 
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);

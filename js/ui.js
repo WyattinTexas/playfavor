@@ -108,6 +108,7 @@ const animationQueue = new AnimationQueue();
 const SPOTLIGHT_FLEX = {
     charisma_or_prospecting: ['charisma', 'prospecting'],
     alchemy_or_prospecting:  ['alchemy', 'prospecting'],
+    alchemy_or_survival:     ['alchemy', 'survival'],
 };
 
 function spotlightChips(card, action) {
@@ -1703,8 +1704,8 @@ async function mpEndActStages(borrowsPendingLocal) {
             const ids = (mv && Array.isArray(mv.cardIds)) ? mv.cardIds : [];
             if (ids.length) {
                 const nDone = game.discardPlayedCards(li, c => ids.includes(c.id));
-                p.prestige += 10 * nDone;
-                addLogEntry(`${p.name} honors A Promise: ${nDone} card(s), +${10 * nDone} Prestige`);
+                p.prestige += PROMISE_PRESTIGE * nDone;
+                addLogEntry(`${p.name} honors A Promise: ${nDone} card(s), +${PROMISE_PRESTIGE * nDone} Prestige`);
             }
             renderGameState();
         }
@@ -4487,7 +4488,7 @@ function endActPhases() {
     }
 
     // A PROMISE — the player chooses how many played cards to sacrifice
-    // (+10 Prestige each) before the Melee begins. In multiplayer the
+    // (+8 Prestige each) before the Melee begins. In multiplayer the
     // canonical-order stage loop owns the flag instead (mpEndActStages).
     const promisePending = mpActive() ? false : game.players[0]._pendingPromiseDiscard;
     if (promisePending) game.players[0]._pendingPromiseDiscard = false;
@@ -4834,7 +4835,7 @@ function showPenaltyDiscardPicker(n) {
 }
 
 // ═══ A PROMISE — choose any number of played cards to sacrifice ═══════
-// Faithful to the card: "Discard at least 1 Card, gain 10 Prestige for
+// Faithful to the card: "Discard at least 1 Card, gain 8 Prestige for
 // each discarded Card." The player taps cards to mark them, then confirms.
 function showPromiseDiscardPicker() {
     return new Promise((resolve) => {
@@ -4852,12 +4853,12 @@ function showPromiseDiscardPicker() {
             ov.innerHTML = `
                 <div class="pp-inner">
                     <div class="pp-title">A Promise Broken</div>
-                    <div class="pp-sub">Sacrifice any of your played cards — <b>+10 Prestige each</b></div>
+                    <div class="pp-sub">Sacrifice any of your played cards — <b>+${PROMISE_PRESTIGE} Prestige each</b></div>
                     <div class="pp-cards">${cards}</div>
                     <div class="pp-actions">
                         <button class="btn-royal" id="ppKeep"><span>Keep All</span></button>
                         <button class="btn-royal primary" id="ppConfirm">
-                            <span>${chosen.size ? `Sacrifice ${chosen.size} — +${chosen.size * 10} Prestige` : 'Sacrifice none'}</span>
+                            <span>${chosen.size ? `Sacrifice ${chosen.size} — +${chosen.size * PROMISE_PRESTIGE} Prestige` : 'Sacrifice none'}</span>
                         </button>
                     </div>
                 </div>`;
@@ -4874,9 +4875,9 @@ function showPromiseDiscardPicker() {
                 if (chosen.size) {
                     const picked = [...chosen].map(i => player.playedCards[i]);
                     const n = game.discardPlayedCards(0, c => picked.includes(c));
-                    player.prestige += 10 * n;
-                    showNotification(`A Promise: sacrificed ${n} card${n > 1 ? 's' : ''} for +${10 * n} Prestige`, 'melee');
-                    addLogEntry(`You sacrifice ${n} card(s) to A Promise: +${10 * n} Prestige`);
+                    player.prestige += PROMISE_PRESTIGE * n;
+                    showNotification(`A Promise: sacrificed ${n} card${n > 1 ? 's' : ''} for +${PROMISE_PRESTIGE * n} Prestige`, 'melee');
+                    addLogEntry(`You sacrifice ${n} card(s) to A Promise: +${PROMISE_PRESTIGE * n} Prestige`);
                 }
                 ov.classList.remove('active');
                 renderGameState();
@@ -5124,6 +5125,16 @@ function showScoring() {
         : [];
     if (window.FLB) FLB.postGameResult(scores, personaPlaces);
     if (mpActive()) FMP.gameOver();   // host tidies the record; everyone detaches
+
+    // Achievements: hero victories, single-game feats, The Master. Runs AFTER
+    // postGameResult so the row exists on a first-ever game (lazy join), and is
+    // deliberately un-awaited — a slow grant must never hold up the victory
+    // screen. It celebrates itself when it lands.
+    if (window.FACH && window.FLB) {
+        const meFirst = scores.length && scores[0].name === 'You';
+        const snap = FACH.seatSnapshot(game, meFirst);
+        if (snap) Promise.resolve(FLB.postGameResult).then(() => FACH.sync(snap));
+    }
 
     document.getElementById('game-screen').classList.remove('active');
     document.getElementById('scoring-screen').classList.add('active');

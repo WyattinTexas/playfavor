@@ -1036,6 +1036,9 @@
         tableSeed();           // prefetch the game-start seed (emblem/personas/boon)
         await settleDue();     // pay out any boundary that passed while we were away
         await drainMsgs();     // then deliver congratulations
+        // A crown won overnight advances the podium/champion achievements —
+        // settle wrote the champs counters, this turns them into awards.
+        if (window.FACH) await window.FACH.sync();
 
         // Back from a PayPal tab? Clean the URL, land the player in the
         // store, and watch for the Stars the IPN is about to credit.
@@ -1056,8 +1059,23 @@
         boot();
     }
 
+    // The player's own row, read + whole-row merge. Exposed so achievements
+    // (js/achievements.js) can grant and pay Stars in ONE transaction on the
+    // SAME row postGameResult writes — a second node would let a tab close
+    // drop a leg and hand out an achievement that never paid.
+    const readRow = () => dbGet(`players/${uid()}`);
+    const mergeRow = (fn) => dbTxn(`players/${uid()}`, (cur) => {
+        // The RTDB null-guess trap: with no listener attached the first pass
+        // runs on a local guess of null. Returning undefined there CANCELS the
+        // whole transaction, so hand back a provisional row and let the server
+        // compare reject it — fn then re-runs against the truth.
+        if (cur === null) return fn(null);
+        return fn(cur);
+    });
+
     // Public surface
     window.FLB = {
+        readRow, mergeRow,
         postGameResult, openLeaderboard, closeLeaderboard, openProfile, closeProfile,
         queueSize, rename, renderProfileChip, snapshot, tableSeed,
         settleDue, drainMsgs, currentDateKey, ratingDelta, generateName,

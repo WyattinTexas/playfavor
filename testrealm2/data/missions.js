@@ -20,11 +20,11 @@ window.FAVOR_DATA.missions = [
 
     // Art-verified 7/9: reward shields are Philosopher's Stone + Mind's Eye
     // (transcription said Prospecting + Mind's Eye).
-    { id: mid(), name: "The Minister's Plan", reqGold: 15, grantsMap: "Facing the River Fiend", audit: "Success Req: 15 Gold & 1 Prospecting, Act 2 OR Act 1 Success Reward: 1 Philosopher's Stone, 1 Mind's Eye, Facing the River Fiend Map Failure Reward: 5 Gold & 20 Scorn", filename: "Act 1_The Minister_s Plan Card.jpg",
+    { id: mid(), name: "The Minister's Plan", reqGold: 15, grantsMap: "Facing the River Fiend", audit: "Success Req: 15 Gold & 1 Prospecting, Act 2 OR Act 1 Success Reward: 1 Philosopher's Stone, 1 Mind's Eye, Facing the River Fiend Map Failure Reward: 5 Gold & 5 Scorn", filename: "Act 1_The Minister_s Plan Card.jpg",
       act: 1, activationRound: 2, favorValue: 0,
       requirements: ["prospecting"],
       successRewards: { mindsEye: 1, philosopherStone: 1 },
-      failurePenalties: { scorn: 20, gold: 5 },
+      failurePenalties: { scorn: 5, gold: 5 },
       flavorText: "Facing the River Fiend" },
 
     { id: mid(), name: "A Day With the Birds", grantsMap: "The Alchemist's Daughter", audit: "Success Req: 3 Knowledge, Act 1 Success Reward: 3 Charisma, The Alchemist's Daughter Map Failure Reward: 10 Scorn", filename: "Act 1_A Day With the Birds Card.jpg",
@@ -33,9 +33,10 @@ window.FAVOR_DATA.missions = [
       successRewards: { skills: { charisma: 3 } },
       failurePenalties: { scorn: 10 } },
 
-    { id: mid(), name: "Man's Best Friend", failSpecial: "others_gain_5_gold", placeholderName: "Burst of Fulfillment", grantsMap: "Lost North Map", audit: "Success Req: 3 Survival & 2 Charisma, Act 1 Success Reward: 10 Favor, 1 Knowledge, Lost North Map Map Failure Reward: 4 Gold & All other players receive 5 Gold", filename: "Act 1_Burst of Fulfillment Card.jpg",
+    // Art v6 (2026-07-13): requirement changed 2 Charisma -> 1 Knowledge.
+    { id: mid(), name: "Man's Best Friend", failSpecial: "others_gain_5_gold", placeholderName: "Burst of Fulfillment", grantsMap: "Lost North Map", audit: "Success Req: 3 Survival & 1 Knowledge, Act 1 Success Reward: 10 Favor, 1 Knowledge, Lost North Map Map Failure Reward: 4 Gold & All other players receive 5 Gold", filename: "Act 1_Burst of Fulfillment Card.jpg",
       act: 1, activationRound: 1, favorValue: 10,
-      requirements: ["survival", "survival", "survival", "charisma", "charisma"],
+      requirements: ["survival", "survival", "survival", "knowledge"],
       successRewards: { skills: { knowledge: 1 } },
       failurePenalties: { gold: 4 } },
 
@@ -52,8 +53,9 @@ window.FAVOR_DATA.missions = [
       failurePenalties: {} },
 
     // Art-verified 7/9: the blue medallion reads 5 Favor (transcription said 10).
-    { id: mid(), name: "Cameron's Expedition", failSpecial: "discard_wisdom_gain_8_gold", placeholderName: "Talking Thomas", grantsMap: "Lost South Map", audit: "Success Req: 4 Survival & 1 Charisma & 1 Prospecting, Act 1 Success Reward: 5 Favor, 1 Philosopher's Stone, Lost South Map Map Failure Reward: Discard all Wisdom Cards, Gain 8 Gold for Each Discarded Card", filename: "Act 1_Talking Thomas Card.jpg",
-      act: 1, activationRound: 1, favorValue: 5,
+    // Art v6 (2026-07-13): Favor medallion raised 5 -> 10.
+    { id: mid(), name: "Cameron's Expedition", failSpecial: "discard_wisdom_gain_8_gold", placeholderName: "Talking Thomas", grantsMap: "Lost South Map", audit: "Success Req: 4 Survival & 1 Charisma & 1 Prospecting, Act 1 Success Reward: 10 Favor, 1 Philosopher's Stone, Lost South Map Map Failure Reward: Discard all Wisdom Cards, Gain 8 Gold for Each Discarded Card", filename: "Act 1_Talking Thomas Card.jpg",
+      act: 1, activationRound: 1, favorValue: 10,
       requirements: ["survival", "survival", "survival", "survival", "charisma", "prospecting"],
       successRewards: { philosopherStone: 1 },
       failurePenalties: {} },
@@ -64,10 +66,13 @@ window.FAVOR_DATA.missions = [
       successRewards: { gold: 15 },
       failurePenalties: {} },
 
-    { id: mid(), name: "Testament to Courage", failSpecial: "others_gain_3_prestige", audit: "Success Req: 2 Knowledge & 2 Charisma & 2 Power, Act 1 Success Reward: 10 Favor, 2 Knowledge Failure Reward: All other players receive 3 Prestige", filename: "Act 1_Testament to Courage Card.jpg",
+    // AUDIT FIX 2026-07-13: reward shield is bare (1 Knowledge, not 2), and the
+    // failure pays GOLD — it's the same scalloped gold coin used everywhere else.
+    // Prestige is always spelled out in text on this deck, never drawn as a coin.
+    { id: mid(), name: "Testament to Courage", failSpecial: "others_gain_3_gold", audit: "Success Req: 2 Knowledge & 2 Charisma & 2 Power, Act 1 Success Reward: 10 Favor, 1 Knowledge Failure Reward: All other players receive 3 Gold", filename: "Act 1_Testament to Courage Card.jpg",
       act: 1, activationRound: 1, favorValue: 10,
       requirements: ["knowledge", "knowledge", "charisma", "charisma", "power", "power"],
-      successRewards: { skills: { knowledge: 2 } },
+      successRewards: { skills: { knowledge: 1 } },
       failurePenalties: {} },
 
     { id: mid(), name: "Golden Fiddle", failSpecial: "others_gain_3_gold", successSpecial: "favor_per_charisma_x2", placeholderName: "The Door Knob", grantsMap: "Finding the Lost Corridor", audit: "Success Req: 3 Survival & 1 Knowledge, Act 1 Success Reward: 2 Favor for Each Charisma you have, Finding the Lost Corridor Map Failure Reward: All other players receive 3 Gold", filename: "Act 1_The Door Knob Card.jpg",
@@ -77,22 +82,27 @@ window.FAVOR_DATA.missions = [
       failurePenalties: {} },
 
     // Art-verified 7/9: the prospecting shield badge reads ×2 (transcription said 3).
-    { id: mid(), name: "The Midnight Crash", failSpecial: "all_draw_act3_mission", reqFavor: 4, audit: "Success Req: 4 Favor & 3 Alchemy, Act 1 Success Reward: 2 Favor, 2 Prospecting Failure Reward: All Players Draw One Act 3 Mission", filename: "Act 1_The Midnight Crash Card.jpg",
+    // Art v6 (2026-07-13): Prospecting reward raised 2 -> 3.
+    { id: mid(), name: "The Midnight Crash", failSpecial: "all_draw_act3_mission", reqFavor: 4, audit: "Success Req: 4 Favor & 3 Alchemy, Act 1 Success Reward: 2 Favor, 3 Prospecting Failure Reward: All Players Draw One Act 3 Mission", filename: "Act 1_The Midnight Crash Card.jpg",
       act: 1, activationRound: 1, favorValue: 2,
       requirements: ["alchemy", "alchemy", "alchemy"],
-      successRewards: { skills: { prospecting: 2 } },
+      successRewards: { skills: { prospecting: 3 } },
       failurePenalties: {} },
 
-    { id: mid(), name: "Trust of the Elders", failSpecial: "scorn_10_per_knowledge", successSpecial: "favor_per_knowledge_x1", reqFavor: 5, audit: "Success Req: 5 Favor & 2 Prospecting, Act 1 Success Reward: 1 Favor for Each Knowledge you have, 2 Knowledge Failure Reward: Gain 10 Scorn per Knowledge you have", filename: "Act 1_Trust of the Elders Card.jpg",
+    // AUDIT FIX 2026-07-13: reward shield is bare (1 Knowledge, not 2) and the
+    // failure bar reads "Gain 5 SCORN per Knowledge you have", not 10.
+    { id: mid(), name: "Trust of the Elders", failSpecial: "scorn_5_per_knowledge", successSpecial: "favor_per_knowledge_x1", reqFavor: 5, audit: "Success Req: 5 Favor & 2 Prospecting, Act 1 Success Reward: 1 Favor for Each Knowledge you have, 1 Knowledge Failure Reward: Gain 5 Scorn per Knowledge you have", filename: "Act 1_Trust of the Elders Card.jpg",
       act: 1, activationRound: 1, favorValue: 0,
       requirements: ["prospecting", "prospecting"],
-      successRewards: { skills: { knowledge: 2 } },
+      successRewards: { skills: { knowledge: 1 } },
       failurePenalties: {} },
 
-    { id: mid(), name: "Tunnel of Trinkets", failSpecial: "all_gain_2_gold", reqFavor: 5, grantsMap: "Lost South Map", audit: "Success Req: 5 Favor & 1 Charisma & 1 Knowledge & 1 Survival, Act 1 Success Reward: 6 Gold, Lost South Map Map Failure Reward: All players receive 2 Gold", filename: "Act 1_Tunnel of Trinkets Card.jpg",
+    // Art v6 (2026-07-13): gold coin reads 8. Supersedes the 7/9 "art-verified 6" —
+    // that read the OLD art; the original transcription (8) was right all along.
+    { id: mid(), name: "Tunnel of Trinkets", failSpecial: "all_gain_2_gold", reqFavor: 5, grantsMap: "Lost South Map", audit: "Success Req: 5 Favor & 1 Charisma & 1 Knowledge & 1 Survival, Act 1 Success Reward: 8 Gold, Lost South Map Map Failure Reward: All players receive 2 Gold", filename: "Act 1_Tunnel of Trinkets Card.jpg",
       act: 1, activationRound: 1, favorValue: 0,
       requirements: ["charisma", "knowledge", "survival"],
-      successRewards: { gold: 6 }, // art-verified 7/9: coin reads 6 (transcription said 8)
+      successRewards: { gold: 8 },
       failurePenalties: {} },
 
     // ═══════════════════════════════════════════════════════════
@@ -105,9 +115,12 @@ window.FAVOR_DATA.missions = [
       successRewards: {},
       failurePenalties: { scorn: 10 } },
 
-    { id: mid(), name: "Tavern Legend", failSpecial: "scorn_2_per_charisma", placeholderName: "A Surprise Light in the Night", audit: "Success Req: 7 Survival, Act 2 Success Reward: 5 Favor & 6 Charisma & 4 Alchemy Failure Reward: Gain 2 Scorn for Each Charisma you have", filename: "Act 2_A Surprise Light in the Night Card.jpg",
+    // AUDIT FIX 2026-07-13: the requirement icon is a WHITE FEATHER (Charisma),
+    // not a green leaf. Wrong skill entirely — and it made the card's own
+    // "2 Scorn per Charisma" failure clause incoherent with its requirement.
+    { id: mid(), name: "Tavern Legend", failSpecial: "scorn_2_per_charisma", placeholderName: "A Surprise Light in the Night", audit: "Success Req: 7 Charisma, Act 2 Success Reward: 5 Favor & 6 Charisma & 4 Alchemy Failure Reward: Gain 2 Scorn for Each Charisma you have", filename: "Act 2_A Surprise Light in the Night Card.jpg",
       act: 2, activationRound: 2, favorValue: 5,
-      requirements: ["survival", "survival", "survival", "survival", "survival", "survival", "survival"],
+      requirements: ["charisma", "charisma", "charisma", "charisma", "charisma", "charisma", "charisma"],
       successRewards: { skills: { charisma: 6, alchemy: 4 } },
       failurePenalties: {} },
 
@@ -147,9 +160,12 @@ window.FAVOR_DATA.missions = [
       successRewards: { gold: 8, skills: { prospecting: 1 } }, // art-verified 7/9: coin reads 8 (transcription said 10)
       failurePenalties: {} },
 
-    { id: mid(), name: "Quest for the Stones", successSpecial: "scorn_to_prestige_all", placeholderName: "Protecting Family II", audit: "Success Req: 6 Power & 6 Knowledge, Act 2 OR Act 3 Success Reward: Turn all your Scorn into Prestige Failure Reward: 15 Scorn", filename: "Act 2_Protecting Family Card copy.jpg",
+    // AUDIT FIX 2026-07-13: the card carries exactly ONE requirement shield —
+    // 3 Philosopher's Stone. "6 Power & 6 Knowledge" is Usurper's requirement,
+    // copy-pasted in from the neighbouring row.
+    { id: mid(), name: "Quest for the Stones", successSpecial: "scorn_to_prestige_all", placeholderName: "Protecting Family II", audit: "Success Req: 3 Philosopher's Stone, Act 2 OR Act 3 Success Reward: Turn all your Scorn into Prestige Failure Reward: 15 Scorn", filename: "Act 2_Protecting Family Card copy.jpg",
       act: 2, activationRound: 2, favorValue: 0,
-      requirements: ["power", "power", "power", "power", "power", "power", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge"],
+      requirements: ["philosopher_stone", "philosopher_stone", "philosopher_stone"],
       successRewards: {},
       failurePenalties: { scorn: 15 } },
 
@@ -159,10 +175,12 @@ window.FAVOR_DATA.missions = [
       successRewards: { skills: { survival: 5 } },
       failurePenalties: { scorn: 5 } },
 
-    { id: mid(), name: "A Promise", failSpecial: "discard_any_gain_10_prestige_each", placeholderName: "Teaching a Natural", audit: "Success Req: 1 Knowledge, Act 2 Success Reward: 5 Favor, 2 Knowledge Failure Reward: Discard at least 1 Card. Gain 10 Prestige for each discarded Card", filename: "Act 2_Teaching a Natural Card.jpg",
+    // AUDIT FIX 2026-07-13: reward shield is bare (1 Knowledge, not 2) and the
+    // failure bar reads "Gain 8 PRESTIGE for each discarded card", not 10.
+    { id: mid(), name: "A Promise", failSpecial: "discard_any_gain_8_prestige_each", placeholderName: "Teaching a Natural", audit: "Success Req: 1 Knowledge, Act 2 Success Reward: 5 Favor, 1 Knowledge Failure Reward: Discard at least 1 Card. Gain 8 Prestige for each discarded Card", filename: "Act 2_Teaching a Natural Card.jpg",
       act: 2, activationRound: 2, favorValue: 5,
       requirements: ["knowledge"],
-      successRewards: { skills: { knowledge: 2 } },
+      successRewards: { skills: { knowledge: 1 } },
       failurePenalties: {} },
 
     { id: mid(), name: "Mounted Champion", placeholderName: "To Believe in Someone", audit: "Success Req: 7 Survival, Act 2 Success Reward: 3 Power Failure Reward: 5 Scorn", filename: "Act 2_To Believe in Someone Card.jpg",
@@ -171,7 +189,8 @@ window.FAVOR_DATA.missions = [
       successRewards: { skills: { power: 3 } },
       failurePenalties: { scorn: 5 } },
 
-    { id: mid(), name: "Secret Grotto", failSpecial: "discard_power_gain_15_prestige", placeholderName: "Facing the Hard Truth (copy)", audit: "Success Req: 6 Survival & 3 Knowledge, Act 2 Success Reward: 3 Prospecting, 1 Philosopher's Stone Failure Reward: Discard all Power Cards, Gain 15 Prestige for each discarded Card", filename: "Act 2_Facing the Hard Truth Card copy.jpg",
+    // AUDIT FIX 2026-07-13: failure bar reads "Gain 10 PRESTIGE", not 15.
+    { id: mid(), name: "Secret Grotto", failSpecial: "discard_power_gain_10_prestige", placeholderName: "Facing the Hard Truth (copy)", audit: "Success Req: 6 Survival & 3 Knowledge, Act 2 Success Reward: 3 Prospecting, 1 Philosopher's Stone Failure Reward: Discard all Power Cards, Gain 10 Prestige for each discarded Card", filename: "Act 2_Facing the Hard Truth Card copy.jpg",
       act: 2, activationRound: 2, favorValue: 0,
       requirements: ["survival", "survival", "survival", "survival", "survival", "survival", "knowledge", "knowledge", "knowledge"],
       successRewards: { philosopherStone: 1, skills: { prospecting: 3 } },
@@ -181,10 +200,13 @@ window.FAVOR_DATA.missions = [
     // ACT 3 MISSIONS (12 cards) — Activate Round 3
     // ═══════════════════════════════════════════════════════════
 
-    { id: mid(), name: "Royal Ball", placeholderName: "Burst of Fulfillment III", audit: "Success Req: 10 Charisma, Act 3 Success Reward: 15 Favor, 2 Mind's Eye Failure Reward: 5 Scorn", filename: "Act 3_Burst of Fulfillment Card.jpg",
+    // Art v6 (2026-07-13): Charisma req 10 -> 7, Mind's Eye reward 2 -> 1.
+    // (Printed title is "The Royal Ball" — name left as-is with the other
+    // title mismatches, pending a rename decision.)
+    { id: mid(), name: "Royal Ball", placeholderName: "Burst of Fulfillment III", audit: "Success Req: 7 Charisma, Act 3 Success Reward: 15 Favor, 1 Mind's Eye Failure Reward: 5 Scorn", filename: "Act 3_Burst of Fulfillment Card.jpg",
       act: 3, activationRound: 3, favorValue: 15,
-      requirements: ["charisma", "charisma", "charisma", "charisma", "charisma", "charisma", "charisma", "charisma", "charisma", "charisma"],
-      successRewards: { mindsEye: 2 },
+      requirements: ["charisma", "charisma", "charisma", "charisma", "charisma", "charisma", "charisma"],
+      successRewards: { mindsEye: 1 },
       failurePenalties: { scorn: 5 } },
 
     { id: mid(), name: "Ice Caverns", placeholderName: "Capturing the Golden Horcrux", audit: "Success Req: 6 Survival & 2 Mind's Eyes, Act 3 Success Reward: 10 Favor, 15 Prospecting Failure Reward: 10 Scorn", filename: "Act 3_Capturing of the Golden Horcrux Card.jpg",
@@ -218,9 +240,12 @@ window.FAVOR_DATA.missions = [
       successRewards: {},
       failurePenalties: { scorn: 10 } },
 
+    // AUDIT FIX 2026-07-13: the 7-Knowledge shield had been dropped from
+    // `requirements` — this row's OWN audit text says "7 Power & 7 Knowledge".
     { id: mid(), name: "Defend the Throne", placeholderName: "Singing a Farewell Together", reqMaps: ["Guardian"], audit: "Success Req: 7 Power & 7 Knowledge OR Guardian Map, Act 3 Success Reward: 18 Favor Failure Reward: 5 Scorn", filename: "Act 3_Singing a Farewell Together Card.jpg",
       act: 3, activationRound: 3, favorValue: 18,
-      requirements: ["power", "power", "power", "power", "power", "power", "power"],
+      requirements: ["power", "power", "power", "power", "power", "power", "power",
+                     "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge", "knowledge"],
       successRewards: {},
       failurePenalties: { scorn: 5 } },
 
@@ -242,9 +267,14 @@ window.FAVOR_DATA.missions = [
       successRewards: {},
       failurePenalties: { scorn: 15 } },
 
+    // AUDIT FIX 2026-07-13: the 12-Power shield had been dropped from
+    // `requirements` — this row's OWN audit text says "4 Survival & 12 Power".
+    // Same bug shape as Defend the Throne.
     { id: mid(), name: "King of the Sky", successSpecial: "favor_per_philstone_x10", placeholderName: "Taking on Wizard Outlaws", reqMaps: ["Dawnharbinger"], audit: "Success Req: 4 Survival & 12 Power OR Dawn Harbinger Map, Act 3 Success Reward: 10 Favor for each Philosopher's Stone you have Failure Reward: 10 Scorn", filename: "Act 3_Taking on Wizard Outlaws Card.jpg",
       act: 3, activationRound: 3, favorValue: 0,
-      requirements: ["survival", "survival", "survival", "survival"],
+      requirements: ["survival", "survival", "survival", "survival",
+                     "power", "power", "power", "power", "power", "power",
+                     "power", "power", "power", "power", "power", "power"],
       successRewards: {},
       failurePenalties: { scorn: 10 } },
 

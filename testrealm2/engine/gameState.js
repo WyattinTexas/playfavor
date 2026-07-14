@@ -24,6 +24,11 @@ const MELEE_REWARDS = {
 };
 
 const CARDS_PER_HAND = 7;
+// A Promise pays this much Prestige per sacrificed card. The number lives in one
+// place because it is awarded from FOUR call sites (engine AI path + the human's
+// picker + the remote-player path in ui.js) — it used to be a hardcoded 10 in
+// each, and the printed card actually reads 8.
+const PROMISE_PRESTIGE = 8;
 const STARTING_GOLD = 3;
 const SLIDER_MOVE_COST = 5;
 const SLIDER_POSITIONS = 5;       // 5 slots (0-4), center = 2
@@ -374,7 +379,8 @@ class FavorGame {
         for (const c of player.playedCards) {
             if (c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_and_philosopher') count += 1;
             if (c.special === 'minds_eye_x5') count += 5;
-            if (c.special === 'minds_eye_x2_philosopher_stone_x5') count += 2;
+            if (c.special === 'minds_eye_x2' || c.special === 'minds_eye_x2_philosopher_stone_x5') count += 2;
+            if (c.special === 'minds_eye_x3') count += 3;
         }
         count += player.bonusMindsEye || 0; // mission success rewards
         return count;
@@ -534,6 +540,11 @@ class FavorGame {
             player.playedCards.push(card);
             this.applyCardEffects(playerIndex, card);
             this.removePendingCard(playerIndex, cardId);
+
+            // A plain card (no special) never triggers a slot recalc, so the
+            // achievement sampler has to fire here too — otherwise Potions are
+            // never counted and peak Gold misses a card that paid out.
+            this.sampleSeatStats(player);
 
             this.addLog(`${player.name} plays ${card.name}`);
             return { success: true };
@@ -853,6 +864,9 @@ class FavorGame {
             if (c.special === 'alchemy_or_prospecting') {
                 player.flexSkills.push(['alchemy', 'prospecting']);
             }
+            if (c.special === 'alchemy_or_survival') {
+                player.flexSkills.push(['alchemy', 'survival']);
+            }
         });
 
         // Mission success rewards ("3 Prospecting") persist for the rest of
@@ -864,6 +878,27 @@ class FavorGame {
                 }
             });
         }
+
+        this.sampleSeatStats(player);
+    }
+
+    /**
+     * Achievement telemetry for one seat. PEAKS, not end-state: gold you earn
+     * and then spend still counts toward "hold more than 30 Gold", and Power
+     * you later lose to a penalty discard still counts toward "reach 10 Power".
+     * Sampled from applySlotSkills (the universal recalc, so it fires on every
+     * card play, slot move and mission reward) and again after melee, which
+     * pays out without touching skills.
+     *
+     * Pure bookkeeping — it must never gate a rule or change a score.
+     */
+    sampleSeatStats(player) {
+        if (!player) return;
+        const i = this.players.indexOf(player);
+        if (i < 0) return;
+        player.peakGold = Math.max(player.peakGold || 0, player.gold || 0);
+        player.peakPower = Math.max(player.peakPower || 0, this.calculatePower(i) || 0);
+        player.potionsPlayed = (player.playedCards || []).filter(c => c.type === 'potion').length;
     }
 
     /**
@@ -1113,6 +1148,12 @@ class FavorGame {
                 this.addLog(`${player.name}'s ${card.name}: +1 Alchemy OR Prospecting (chosen when needed)`);
                 break;
 
+            case 'alchemy_or_survival':
+                // Hermit's Lab: flex — Alchemy OR Survival per check.
+                this.applySlotSkills(player);
+                this.addLog(`${player.name}'s ${card.name}: +1 Alchemy OR Survival (chosen when needed)`);
+                break;
+
             // --- Philosopher's Stone variants (end-of-game gold→favor) ---
 
             case 'philosopher_stone':
@@ -1153,6 +1194,16 @@ class FavorGame {
                 // +1 Knowledge bonus
                 player.skills.knowledge = (player.skills.knowledge || 0) + 1;
                 this.addLog(`${player.name}'s ${card.name}: +1 Knowledge (Mind's Eye)`);
+                break;
+
+            case 'minds_eye_x2':
+                // Deadeye: grants 2 Mind's Eye (counted in getMindsEyeCount)
+                this.addLog(`${player.name}'s ${card.name}: +2 Mind's Eye`);
+                break;
+
+            case 'minds_eye_x3':
+                // Shattering the Mirror Prison: grants 3 Mind's Eye
+                this.addLog(`${player.name}'s ${card.name}: +3 Mind's Eye`);
                 break;
 
             // --- Knowledge multipliers ---
@@ -1300,12 +1351,14 @@ class FavorGame {
                 }
                 break;
 
-            case 'others_5_scorn':
-                // Chemical Z: all other players gain 5 Scorn
+            case 'others_15_scorn':
+                // Chemical Z: all other players gain 15 Scorn. The art and the
+                // card's own audit text both read 15 — the old `others_5_scorn`
+                // was the outlier (you still take 5 yourself, via rewards.scorn).
                 for (let i = 0; i < this.playerCount; i++) {
                     if (i !== playerIndex) {
-                        this.players[i].scorn += 5;
-                        this.addLog(`${this.players[i].name} gains 5 Scorn from ${player.name}'s Chemical Z`);
+                        this.players[i].scorn += 15;
+                        this.addLog(`${this.players[i].name} gains 15 Scorn from ${player.name}'s Chemical Z`);
                     }
                 }
                 break;
@@ -2094,6 +2147,7 @@ class FavorGame {
             case 'gain_20_prestige': player.prestige += 20; break;
             case 'scorn_2_per_charisma': player.scorn += 2 * (player.skills.charisma || 0); break;
             case 'scorn_10_per_knowledge': player.scorn += 10 * (player.skills.knowledge || 0); break;
+            case 'scorn_5_per_knowledge':  player.scorn += 5  * (player.skills.knowledge || 0); break;   // Trust of the Elders (art: 5, not 10)
             case 'prestige_2_per_knowledge': player.prestige += 2 * (player.skills.knowledge || 0); break;
             case 'discard_1_played': this.penaltyDiscard(playerIndex, 1); break;
             case 'discard_5_played': this.penaltyDiscard(playerIndex, 5); break;
@@ -2108,15 +2162,16 @@ class FavorGame {
                 player.gold += 8 * n;
                 break;
             }
-            case 'discard_power_gain_15_prestige': {
+            case 'discard_power_gain_10_prestige': {
+                // Secret Grotto — art reads 10 Prestige per discarded Power card.
                 const n = this.discardPlayedCards(playerIndex, c => c.type === 'weapon');
-                player.prestige += 15 * n;
+                player.prestige += 10 * n;
                 break;
             }
-            case 'discard_any_gain_10_prestige_each':
+            case 'discard_any_gain_8_prestige_each':
                 // A Promise: discard AS MANY of your played cards as you like,
-                // +10 Prestige each. The human picks via UI after mission
-                // resolution; the AI trades away its low-value cards.
+                // +8 Prestige each (art reads 8). The human picks via UI after
+                // mission resolution; the AI trades away its low-value cards.
                 if (playerIndex === 0 || player._remoteHuman) {
                     player._pendingPromiseDiscard = true;
                 } else {
@@ -2126,14 +2181,15 @@ class FavorGame {
                         ? this.discardPlayedCards(playerIndex, c => cheap.includes(c))
                         : 0;
                     if (n) {
-                        player.prestige += 10 * n;
-                        this.addLog(`${player.name} honors A Promise: ${n} card(s) discarded, +${10 * n} Prestige`);
+                        player.prestige += PROMISE_PRESTIGE * n;
+                        this.addLog(`${player.name} honors A Promise: ${n} card(s) discarded, +${PROMISE_PRESTIGE * n} Prestige`);
                     }
                 }
                 break;
             case 'fortune_teller_50_prestige':
                 if (player.playedCards.some(c => c.name === 'Fortune Teller')) {
                     player.prestige += 50;
+                    player.foretoldDoom = true;   // secret achievement: "She Saw It Coming"
                     this.addLog(`${player.name}'s Fortune Teller foresaw this: +50 Prestige!`);
                 }
                 break;
@@ -2224,6 +2280,7 @@ class FavorGame {
             const prestReward = rewards[placement] || 0;
             tied.forEach(t => {
                 this.players[t.playerIndex].prestige += prestReward;
+                this.sampleSeatStats(this.players[t.playerIndex]);   // melee pays without touching skills
                 results.push({
                     playerIndex: t.playerIndex,
                     name: t.name,
@@ -2618,4 +2675,7 @@ class FavorGame {
 
 // Export for both browser and Node
 if (typeof module !== 'undefined') module.exports = { FavorGame, PHASES, SKILLS, MELEE_REWARDS };
-if (typeof window !== 'undefined') window.FavorGame = FavorGame;
+if (typeof window !== 'undefined') {
+    window.FavorGame = FavorGame;
+    window.PROMISE_PRESTIGE = PROMISE_PRESTIGE;   // ui.js awards A Promise too
+}
