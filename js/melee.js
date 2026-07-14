@@ -202,7 +202,7 @@
 
       const tierHTML = (t, podiumIdx) => {
         const champ = podiumIdx === 0;
-        return `<div class="ms-tier ${POS[podiumIdx]}${champ ? ' champ' : ''}">
+        return `<div class="ms-tier ${POS[podiumIdx]}${champ ? ' champ' : ''}${t.members.length > 1 ? ' multi' : ''}">
           <div class="ms-fighters">${t.members.map(m => fighterHTML(m, champ)).join('')}</div>
           ${prestigeHTML(t.prestige)}
           <div class="ms-plinth"><span class="ms-numeral">${t.placement}</span></div>
@@ -678,7 +678,32 @@
           });
           el.appendChild(tuck);
           void tuck.offsetWidth;
-          tuck.querySelectorAll('.ms-tuckcard').forEach(t => t.classList.add('go'));
+          // A big row must not invade the neighbors: if the fan is wider than
+          // the fighter's column, tuck the cards closer (uniformly deeper
+          // overlap), floored so every card still peeks ~5px.
+          const tucked = Array.from(tuck.querySelectorAll('.ms-tuckcard'));
+          if (tucked.length > 1) {
+            // cap the fan at the fighter's own board width (and never closer
+            // than 18px to the nearest neighbor's column) — adjacent fans need
+            // REAL daylight or five 9-card fans read as one continuous strip.
+            // MEASURE WITH offsetWidth/offsetLeft: the cards still wear their
+            // entrance transform (scale 0.55) and the fighter its active raise
+            // (scale 1.12) here — getBoundingClientRect returns those phantom
+            // sizes and the tighten math silently computes garbage.
+            let maxW = el.offsetWidth;
+            const pitches = combatantEls
+              .filter(s => s !== el)
+              .map(s => Math.abs(s.offsetLeft - el.offsetLeft));
+            if (pitches.length) maxW = Math.min(maxW, Math.min(...pitches) - 18);
+            const fanW = tuck.offsetWidth;
+            if (fanW > maxW) {
+              const shrink = (fanW - maxW) / (tucked.length - 1);
+              tucked.slice(1).forEach(t => {
+                t.style.marginLeft = Math.max(-(t.offsetWidth - 5), -9 - shrink) + 'px';
+              });
+            }
+          }
+          tucked.forEach(t => t.classList.add('go'));
           rowEl.classList.add('out');
           await delay(300); if (run.killed) return;
           rowEl.innerHTML = '';
@@ -733,6 +758,21 @@
       // Center the 4th/5th column in the gutter between the 3rd plinth and
       // the screen edge (equal distance to both, per Wyatt) — measured at
       // runtime since the podium's width varies with players/ties.
+      // A tie widens its tier (co-champions share one grown plinth) — if the
+      // podium row then outgrows the stage, shrink the WHOLE row uniformly.
+      // scrollWidth is layout width (transform-independent), so this is
+      // idempotent; placeAlsoRans measures rects AFTER the scale, so the
+      // 4th/5th column still centers in the true visual gutter.
+      const fitPodium = () => {
+        const pod = host.querySelector('.ms-podium');
+        if (!pod) return;
+        const reserve = alsoRans.length ? Math.min(150, stage.clientWidth * 0.17) : 14;
+        const avail = stage.clientWidth - 2 * reserve;
+        if (pod.scrollWidth > avail) {
+          pod.style.transform = 'scale(' + (avail / pod.scrollWidth).toFixed(3) + ')';
+          pod.style.transformOrigin = '50% 100%';
+        }
+      };
       const placeAlsoRans = () => {
         if (!alsoEl) return;
         const pod = host.querySelector('.ms-podium');
@@ -744,6 +784,7 @@
       };
       const showResults = () => {
         arenaEl.classList.add('gone');
+        fitPodium();
         if (alsoEl) { placeAlsoRans(); alsoEl.classList.add('show'); }
       };
 
@@ -764,6 +805,7 @@
         stage.querySelectorAll('.ms-feature').forEach(x => x.remove());
         const pendingBtn = stage.querySelector('.ms-continue');
         if (pendingBtn) pendingBtn.remove();
+        fitPodium();
         if (alsoEl) { placeAlsoRans(); alsoEl.classList.add('show'); }
         podium.forEach((t, idx) => {
           const el = tierEls[idx];
