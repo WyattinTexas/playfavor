@@ -3890,39 +3890,23 @@ async function playMissionLetter(cardIndex) {
     const card = game.players[0].hand[cardIndex];
     if (!card || game.players[0].gold < 1) return;
 
-    if (mpActive()) {
-        // Lockstep: letters resolve at ACTIVATION in seat order (the
-        // physical rule) — never early, or two same-round letters could
-        // race for one mission and fork the clients.
-        game.pickCard(0, cardIndex);
-        hideActionPanel();
-        game.players[0]._letterNext = true;
-        mpPub('pick', { cardId: card.id, action: 'mission_letter' });
-        addLogEntry('You play a Mission Letter');
-        processRound('mission_letter');
-        return;
-    }
-
+    // A Mission Letter resolves at ACTIVATION, in seat order — the physical
+    // rule, and the same road every other card already takes.
+    //
+    // Solo used to fire the letter IMMEDIATELY, which jumped it ahead of the
+    // whole table. On the last two cards of an act that read as a broken turn:
+    // if you did not hold the Emblem, your letter went off, THEN everyone else
+    // played both of their cards, and only then did your second card come back
+    // to you. Your pair was split around the rest of the table.
+    //
+    // Multiplayer always staged it correctly — lockstep forced the issue — so
+    // the two modes disagreed about the rules. Now there is one path.
     game.pickCard(0, cardIndex);
     hideActionPanel();
-
+    game.players[0]._letterNext = true;
+    mpPub('pick', { cardId: card.id, action: 'mission_letter' });   // no-op solo
     addLogEntry('You play a Mission Letter');
-
-    // Immediately activate the mission letter (deducts 1g, discards the card)
-    const result = game.activateCard(0, card.id, 'mission_letter');
-
-    // Show mini spotlight for visual feedback
-    await showMiniSpotlight(card, 'play');
-
-    if (result && result.chooseMission) {
-        // Show mission select immediately and wait for the player's choice
-        renderGameState();
-        await showMissionSelectAsync();
-    }
-
-    // Now continue the round (AI picks, hand passing, activations)
-    // pendingActivations[0] is already null since the letter was activated above
-    processRound('mission_letter_done');
+    processRound('mission_letter');
 }
 
 // Borrow & Play is TWO beats: the button first, THEN "from whom?" \u2014 the
@@ -4050,11 +4034,9 @@ async function processRound(humanAction) {
         }
     }
 
-    // For mission_letter_done, player 0's pending is already null (activated immediately).
-    // Check that all OTHER players have picked.
-    const allReady = humanAction === 'mission_letter_done'
-        ? game.pendingActivations.every((a, i) => i === 0 || a !== null)
-        : game.allPlayersPicked();
+    // Every seat, player 0 included, now has a pending pick — a Mission Letter
+    // no longer activates itself early, so there is no seat to special-case.
+    const allReady = game.allPlayersPicked();
 
     if (!allReady) {
         renderGameState();
@@ -4139,11 +4121,11 @@ async function activateAllCards(humanAction) {
                         window._mpMissionCtx = 'mission_pick';
                         await showMissionSelectAsync();
                     }
-                } else if (cardIdx > 0 || humanAction === 'mission_letter_done') {
-                    // The auto-activated FINAL card: the player still chooses
-                    // its fate — play / borrow / letter / discard / slide.
-                    // (After a Mission Letter pick the leftover card arrives at
-                    // index 0, but it was never explicitly chosen either.)
+                } else if (cardIdx > 0) {
+                    // The auto-paired FINAL card: the player still chooses its
+                    // fate — play / borrow / letter / discard / slide. It always
+                    // sits at index 1 now, right behind the card you picked, so
+                    // your two cards resolve back-to-back on your seat's turn.
                     renderGameState();
                     await resolveFinalCardChoice(card);
                 } else {
@@ -4465,13 +4447,34 @@ function aiPickCard(playerIndex) {
 
 // ─── END OF ACT ────────────────────────────────────────────
 
-function endActPhases() {
+// async since 7/14: the held-mission chooser below has to be awaited BEFORE
+// resolveMissions runs. The tail is still the same promise chain (ceremony →
+// borrows → penalty → promise → melee), and the single caller fires this and
+// forgets it, so returning a promise changes nothing for anyone.
+async function endActPhases() {
     const actNum = game.currentAct;
 
     // MISSIONS PHASE — resolve everything, then let the ceremony tell it
     // player by player (toast spam used to blow past in a blur).
     game.phase = 'missions';
     renderGameState();
+
+    // HELD MISSIONS — a mission inside its window but not yet due is YOUR call,
+    // every act until it is forced. Asked BEFORE resolveMissions on purpose: an
+    // attempt then rides the same road as a due mission (checked before any
+    // failure penalty lands, same borrow rescue, same ceremony line) instead of
+    // bolting a second resolution path on afterwards.
+    // Solo only for now — in multiplayer this is an extra act-boundary decision
+    // that would have to be streamed in canonical seat order or the clients fork
+    // (the same reason early turn-ins already sit out of MP v1).
+    if (!mpActive()) {
+        for (const m of game.postponableMissions(0)) {
+            const attempt = await showEarlyMissionChoice(m);
+            if (attempt) m._attemptNow = true;
+            else addLogEntry(`You hold ${m.name} — due at the end of Act ${game.missionDueAct(m)}`);
+        }
+    }
+
     const missionResults = game.resolveMissions();
 
     let hasMissionResults = false;
@@ -4714,6 +4717,70 @@ function resolveBorrowPlan(card, chosen) {
 // The physical-table move: a neighbor lends the skill for 2g a unit.
 // Entirely OPTIONAL — failing on purpose is a real strategy, so the
 // chooser always offers both doors and nothing is ever auto-borrowed.
+// ═══ HELD MISSION — attempt it now, or hold it for a later act ═══════════
+// A mission inside its window but not yet DUE is the player's call. Wanted:
+// Crazy Lou activates in Act 1 and is only forced at the end of Act 3, so it
+// asks at every act boundary until then: cash it in on what you have (pass OR
+// fail — failing on purpose is a legitimate play), or hold it and be asked
+// again. Asked BEFORE resolveMissions so an attempt rides exactly the same
+// road as a due mission: checked before any failure penalty lands, and offered
+// the same borrow rescue.
+function showEarlyMissionChoice(mission) {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        const mi = game.players[0].missions.indexOf(mission);
+        if (!ov || mi < 0) { resolve(false); return; }
+
+        const due = game.missionDueAct(mission);
+        // PURE probe — checkMissionRequirements would CONSUME a held Life
+        // Essence just to label a button the player might not even press.
+        const { success } = game.probeMissionRequirements(0, mission);
+        const plan = success ? null : game.missionBorrowPlan(0, mission);
+
+        const verdict = success
+            ? 'Requirements <b>met</b> — turn it in and it succeeds.'
+            : plan
+                ? `You're short, but a neighbour can lend the gap for <b>${plan.cost} Gold</b>.`
+                : 'Requirements <b>not met</b> — attempting it now would FAIL it.';
+
+        ov.innerHTML = `
+            <div class="pp-inner">
+                <div class="pp-title">${mission.name}</div>
+                <div class="pp-sub">Due at the end of <b>Act ${due}</b> — you may attempt it in any act until then. ${verdict}</div>
+                <div class="pp-cards"><div class="pp-card" style="cursor:default">
+                    <img src="assets/cards/missions/${mission.filename}" alt="${mission.name}"
+                         style="width:auto;height:min(42vh,340px)">
+                </div></div>
+                <div class="pp-actions">
+                    <button class="btn-royal${success || plan ? ' primary' : ''}" id="emAttempt">
+                        <span>${success ? '✓ Attempt Now' : (plan ? 'Attempt Now — borrow the gap' : 'Attempt Now (you would FAIL)')}</span>
+                    </button>
+                    <button class="btn-royal" id="emHold"><span>Hold until Act ${due}</span></button>
+                </div>
+            </div>`;
+
+        const close = (attempt) => {
+            ov.classList.remove('active');
+            ov.innerHTML = '';
+            resolve(attempt);
+        };
+        // Throwing a mission away on purpose is legitimate — but never on one
+        // stray click. Same two-click arm as the mission lightbox's Turn In.
+        let armed = success || !!plan;
+        const btn = ov.querySelector('#emAttempt');
+        btn.onclick = () => {
+            if (!armed) {
+                armed = true;
+                btn.querySelector('span').textContent = 'Click again to attempt it and FAIL';
+                return;
+            }
+            close(true);
+        };
+        ov.querySelector('#emHold').onclick = () => close(false);
+        ov.classList.add('active');
+    });
+}
+
 function showMissionBorrowChooser(mission) {
     return new Promise((resolve) => {
         const ov = document.getElementById('promisePicker');

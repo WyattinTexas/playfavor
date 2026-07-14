@@ -1626,5 +1626,82 @@ console.log('── Art v7: Generous Donations, Lost South Map, and the map-pair
   ok(sheet.advFavor >= 10, `both halves' printed 5 Favor still scores (advFavor ${sheet.advFavor})`);
 }
 
+// ── Held missions: attempt now, or hold until due (Wyatt 7/14)
+console.log('── Held mission: in its window but not due — the holder chooses');
+{
+  const g = newGame();
+  const p = g.players[0];
+  const lou = { ...missionByName('Wanted: Crazy Lou') };   // activates Act 1, due Act 3
+  ok(g.missionDueAct(lou) === 3, 'Crazy Lou is due at the end of Act 3', String(g.missionDueAct(lou)));
+  ok(lou.activationRound === 1, 'but activates in Act 1');
+
+  p.missions = [lou];
+  g.currentAct = 1;
+  ok(g.postponableMissions(0).length === 1,
+    'so in Act 1 it is offered as a choice, not forced');
+
+  // HOLD: resolving Act 1 must leave it untouched — never auto-failed.
+  g.resolveMissions();
+  ok(p.missions.length === 1 && !p.failedMissions.length,
+    'holding it carries it to the next act — it is NOT auto-failed');
+
+  // Asked again in Act 2.
+  g.currentAct = 2;
+  ok(g.postponableMissions(0).length === 1, 'and it asks again in Act 2');
+
+  // ATTEMPT it early while UNMET: it really does fail, right now.
+  lou._attemptNow = true;
+  g.resolveMissions();
+  ok(p.missions.length === 0, 'attempting it early resolves it immediately');
+  ok(p.failedMissions.some(m => m.name === 'Wanted: Crazy Lou'),
+    'and unmet, it FAILS — failing on purpose is a legitimate play');
+}
+
+console.log('── Held mission: attempt it early while MET — it succeeds now');
+{
+  const g = newGame();
+  const p = g.players[0];
+  const lou = { ...missionByName('Wanted: Crazy Lou') };
+  p.missions = [lou];
+  p.bonusSkills = { power: 15 };                  // its 15-Power requirement, met
+  g.applySlotSkills(p);
+  g.currentAct = 1;
+
+  const favorBefore = p.favor || 0;
+  const goldBefore = p.gold;
+  lou._attemptNow = true;
+  g.resolveMissions();
+  ok(p.completedMissions.some(m => m.name === 'Wanted: Crazy Lou'),
+    'met + attempted in Act 1 = completed in Act 1, two acts early');
+  ok(p.gold === goldBefore + 15, `and pays its 15 Gold now (${goldBefore} -> ${p.gold})`);
+  ok(p.missions.length === 0, 'and leaves the hand');
+}
+
+console.log('── Held mission: at its DUE act it is FORCED, no choice offered');
+{
+  const g = newGame();
+  const p = g.players[0];
+  const lou = { ...missionByName('Wanted: Crazy Lou') };
+  p.missions = [lou];
+  g.currentAct = 3;                               // its due act
+  ok(g.postponableMissions(0).length === 0,
+    'at the due act it is no longer postponable — no prompt');
+  g.resolveMissions();
+  ok(p.failedMissions.some(m => m.name === 'Wanted: Crazy Lou'),
+    'and unmet at its due date it fails, with no say in it');
+}
+
+console.log('── A single-act mission is never offered a choice');
+{
+  const g = newGame();
+  const p = g.players[0];
+  const birds = { ...missionByName('A Day With the Birds') };   // Act 1 only
+  ok(g.missionDueAct(birds) === 1, 'A Day With the Birds is due Act 1');
+  p.missions = [birds];
+  g.currentAct = 1;
+  ok(g.postponableMissions(0).length === 0,
+    'due the same act it activates — nothing to postpone, it just resolves');
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);

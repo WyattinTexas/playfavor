@@ -1685,6 +1685,22 @@ class FavorGame {
      * Turn a held mission in EARLY, by choice — it resolves immediately,
      * success or failure, exactly as it would at its due date.
      */
+    /**
+     * Missions this seat is holding that are INSIDE their window but not yet
+     * forced: activated, and due in a LATER act. Each one is a decision at the
+     * act boundary — attempt it now (pass or fail on what you have), or hold it
+     * and be asked again next act. Wanted: Crazy Lou activates in Act 1 but is
+     * only due at the end of Act 3, so it asks three times.
+     * Pure — no side effects.
+     */
+    postponableMissions(playerIndex) {
+        const player = this.players[playerIndex];
+        return (player.missions || []).filter(m =>
+            m.activationRound
+            && m.activationRound <= this.currentAct
+            && this.missionDueAct(m) > this.currentAct);
+    }
+
     turnInMission(playerIndex, missionIndex) {
         const player = this.players[playerIndex];
         const mission = player.missions[missionIndex];
@@ -1835,12 +1851,19 @@ class FavorGame {
             const resolved = new Set();
             player.missions.forEach((mission, mi) => {
                 if (!mission.activationRound || mission.activationRound > this.currentAct) return;
-                const due = this.missionDueAct(mission) <= this.currentAct;
+                // A mission is FORCED at the end of its due act. Before that it
+                // is still the holder's call: attempt it now, or hold it. The
+                // act-boundary chooser sets _attemptNow, and an attempted
+                // mission then walks exactly the same road as a due one — the
+                // same two-pass ordering, the same borrow rescue, the same
+                // ceremony line. (Set it and forget it: the mission leaves
+                // player.missions either way, so the flag cannot linger.)
+                const forced = this.missionDueAct(mission) <= this.currentAct;
+                const due = forced || mission._attemptNow === true;
 
                 if (!due) {
-                    // In its window but not due. The AI banks a met mission
-                    // now; an unmet one is HELD, never auto-failed — the
-                    // human turns in by choice via turnInMission.
+                    // In its window but not due, and not attempted. The AI banks
+                    // a met mission now; an unmet one is HELD, never auto-failed.
                     if (pi !== 0) {
                         const { success, details } = this.checkMissionRequirements(pi, mission);
                         if (success) {

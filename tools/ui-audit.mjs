@@ -4932,6 +4932,128 @@ console.log('── Multiplayer: solo window, 2-client match, lockstep round, AF
   await page.close();
 }
 
+// ═══ HELD MISSION: the act boundary ASKS — attempt now, or hold ═════════
+// Wanted: Crazy Lou activates in Act 1 but is only forced at the end of Act 3.
+// It must offer the choice at every boundary until then, and holding must never
+// auto-fail it.
+{
+  console.log('── Held mission: Act 1 boundary offers Attempt / Hold, and Hold carries it');
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('held-mission: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('held-mission pageerror: ' + e.message));
+  await page.setViewport({ width: 1420, height: 850 });
+  await startGame(page);
+
+  await page.evaluate(() => {
+    const p = game.players[0];
+    const pick = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    // Crazy Lou: 15 Power, activates Act 1, due Act 3. Nowhere near met.
+    p.missions = [{ ...FAVOR_DATA.missions.find(m => m.name === 'Wanted: Crazy Lou') }];
+    p.gold = 10;
+    p.hand = [pick('First Aid')];
+    for (let i = 1; i < game.playerCount; i++) game.players[i].hand = [pick('First Aid')];
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    renderGameState();
+  });
+  await sleep(300);
+  await page.evaluate(() => selectHandCard(0));
+  await sleep(300);
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.action-panel .action-btn')].find(x => /discard/i.test(x.textContent));
+    b.click();
+  });
+
+  const asked = await page.waitForFunction(() =>
+    document.getElementById('promisePicker').classList.contains('active') &&
+    /Crazy Lou/i.test(document.getElementById('promisePicker').textContent) &&
+    document.getElementById('emHold'), { timeout: 18000 }).then(() => true, () => false);
+  ok(asked, 'the Act 1 boundary ASKS about the held mission (it is not silently skipped)');
+
+  const copy = await page.evaluate(() => {
+    const ov = document.getElementById('promisePicker');
+    return {
+      sub: ov.querySelector('.pp-sub').textContent,
+      attempt: ov.querySelector('#emAttempt').textContent.trim(),
+      hold: ov.querySelector('#emHold').textContent.trim(),
+    };
+  });
+  ok(/Act 3/.test(copy.sub), `it names the due act ("${copy.sub.slice(0, 60)}...")`);
+  ok(/FAIL/i.test(copy.attempt), `and tells the truth: "${copy.attempt}"`);
+  ok(/Hold until Act 3/i.test(copy.hold), `and offers "${copy.hold}"`);
+  await page.screenshot({ path: join(SHOTS, 'held-mission-choice.png') });
+
+  // HOLD it — it must survive into Act 2, unfailed.
+  await page.evaluate(() => document.getElementById('emHold').click());
+  const survived = await page.waitForFunction(() =>
+    game.players[0].missions.some(m => m.name === 'Wanted: Crazy Lou')
+    && !game.players[0].failedMissions.some(m => m.name === 'Wanted: Crazy Lou'),
+    { timeout: 15000 }).then(() => true, () => false);
+  ok(survived, 'holding it carries the mission forward — it is NOT auto-failed');
+  await page.close();
+}
+
+// ═══ MISSION LETTER resolves IN SEAT ORDER, not the instant you click ═══
+// Wyatt: "it plays my first card, then lets everyone else go, then my second."
+// Solo used to activate a Letter immediately, which split your final pair
+// around the whole table when you did not hold the Emblem.
+{
+  console.log('── Mission Letter: your last two cards stay back-to-back (seat order)');
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('letter-order: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('letter-order pageerror: ' + e.message));
+  await page.setViewport({ width: 1420, height: 850 });
+  await startGame(page);
+
+  await page.evaluate(() => {
+    game.emblemHolder = 1;                       // you do NOT act first
+    const p = game.players[0];
+    const letter = FAVOR_DATA.cards.find(c => c.type === 'mission_letter');
+    const filler = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    p.gold = 10;
+    p.hand = [{ ...letter, id: 9101 }, filler('First Aid')];   // your LAST TWO
+    for (let i = 1; i < game.playerCount; i++) {
+      game.players[i].hand = [filler('First Aid'), filler('Trapping')];
+    }
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    // record the true activation order
+    window.__order = [];
+    const orig = game.activateCard.bind(game);
+    game.activateCard = (pi, id, action, ...rest) => {
+      window.__order.push(pi === 0 ? 'YOU' : 'AI' + pi);
+      return orig(pi, id, action, ...rest);
+    };
+    renderGameState();
+  });
+  await sleep(300);
+  await page.evaluate(() => selectHandCard(0));
+  await sleep(300);
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.action-panel .action-btn')].find(x => /letter/i.test(x.textContent));
+    b.click();
+  });
+
+  // Let the AI seats run, clicking through any mission-select the Letter opens.
+  for (let t = 0; t < 16; t++) {
+    await sleep(1000);
+    const done = await page.evaluate(() => {
+      const opt = document.querySelector('.mission-option');
+      if (opt && opt.offsetParent) { opt.click(); return false; }
+      return !!document.querySelector('.action-panel.final-choice');
+    });
+    if (done) break;
+  }
+  const order = await page.evaluate(() => (window.__order || []).slice());
+  const youAt = order.indexOf('YOU');
+  ok(youAt > 0, `you do NOT jump the table — the Emblem seat goes first (${order.join(' ')})`);
+  // Everything before you must be AI; nothing after you until your 2nd card.
+  ok(order.slice(0, youAt).every(x => x !== 'YOU'),
+    'and every other seat has finished BOTH its cards before your turn');
+  ok(order[order.length - 1] === 'YOU',
+    'your Letter lands on YOUR turn, last in seat order — the pair is not split');
+  await page.screenshot({ path: join(SHOTS, 'letter-seat-order.png') });
+  await page.close();
+}
+
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));
 
 await browser.close();
