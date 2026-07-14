@@ -1760,5 +1760,62 @@ console.log("── Lockstep: a remote human's held mission is theirs to decide,
     'their streamed "attempt" resolves it — identically on every client');
 }
 
+// ── Mission borrow: WHO lends is the player's choice (Wyatt 7/14)
+console.log("── Mission borrow: the player picks the lender, and that lender is paid");
+{
+  // 'A Day With the Birds' — 3 Knowledge, due Act 1. Rig the human 1 short, and
+  // make BOTH neighbours able to lend Knowledge, so there is a real choice.
+  const kCard = () => ({ ...window.FAVOR_DATA.cards.find(c => (c.skills || []).includes('knowledge')) });
+  const rig = () => {
+    const g = newGame();
+    const p = g.players[0];
+    p.missions = [{ ...missionByName('A Day With the Birds') }];
+    p.bonusSkills = { knowledge: 2 };            // 1 short of 3
+    g.applySlotSkills(p);
+    p.gold = 20;
+    g.players[1].playedCards.push(kCard());      // right neighbour can lend
+    g.players[2].playedCards.push(kCard());      // left  neighbour can lend
+    return g;
+  };
+
+  const g0 = rig();
+  const both = g0.getBorrowableSkills(0).knowledge || [];
+  ok(both.includes(1) && both.includes(2), 'both neighbours can lend Knowledge', JSON.stringify(both));
+
+  // With NO pick, the engine still falls back to first-available (the AI path).
+  const auto = g0.missionBorrowPlan(0, g0.players[0].missions[0]);
+  ok(auto && auto.borrowFrom.length === 1, 'a plan exists (1 unit short)');
+  const autoLender = auto.borrowFrom[0].neighborIndex;
+
+  // Now PICK the OTHER neighbour and confirm the fee follows the pick.
+  const other = both.find(x => x !== autoLender);
+  const g1 = rig();
+  const m1 = g1.players[0].missions[0];
+  const chosen = [{ skill: 'knowledge', neighborIndex: other }];
+  const plan1 = g1.missionBorrowPlan(0, m1, chosen);
+  ok(plan1.borrowFrom[0].neighborIndex === other,
+    `the plan honours the PICKED lender (seat ${other}, not the default ${autoLender})`);
+
+  const goldBefore = { me: g1.players[0].gold, picked: g1.players[other].gold, other: g1.players[autoLender].gold };
+  const res = g1.completeMissionWithBorrow(0, 0, chosen);
+  ok(res.success, 'and the borrow completes the mission');
+  ok(g1.players[other].gold === goldBefore.picked + 2,
+    `the 2g fee is paid to the LENDER YOU PICKED (seat ${other}: ${goldBefore.picked} -> ${g1.players[other].gold})`);
+  ok(g1.players[autoLender].gold === goldBefore.other,
+    `and the neighbour you did NOT pick is paid nothing (seat ${autoLender} still ${g1.players[autoLender].gold})`);
+  ok(g1.players[0].gold === goldBefore.me - 2, 'and it costs you 2g');
+  ok(res.borrowFrom && res.borrowFrom[0].neighborIndex === other,
+    'the result names the lender who was paid (so the log and the stream can too)');
+
+  // A STALE pick (that lender can no longer lend) falls back rather than breaking.
+  const g2 = rig();
+  const m2 = g2.players[0].missions[0];
+  g2.players[2].playedCards = [];               // seat 2 can no longer lend
+  const stale = g2.missionBorrowPlan(0, m2, [{ skill: 'knowledge', neighborIndex: 2 }]);
+  ok(stale && stale.borrowFrom[0].neighborIndex === 1,
+    'a pick that went stale falls back to a lender who CAN still cover it',
+    JSON.stringify(stale && stale.borrowFrom));
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);

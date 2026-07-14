@@ -1694,9 +1694,20 @@ async function mpEndActStages(borrowsPendingLocal) {
                 const accept = mv ? !!mv.accept
                     : (plan && game.missionFavorEstimate(li, m) >= plan.cost); // boot \u2192 persona-grade judgment
                 if (accept && plan) {
-                    const res = game.completeMissionWithBorrow(li, idx);
+                    // Apply THEIR lenders, not our own first-available guess \u2014
+                    // the fee lands in a specific neighbor's purse, so picking
+                    // a different one here would fork the tables. A booted seat
+                    // sends nothing, and every client then falls back to the
+                    // same deterministic first-available plan.
+                    const chosen = (mv && Array.isArray(mv.borrowFrom)) ? mv.borrowFrom : null;
+                    const res = game.completeMissionWithBorrow(li, idx, chosen);
                     if (!res.success) game.failMissionByChoice(li, idx);
-                    else addLogEntry(`${p.name} borrows to complete ${m.name}`);
+                    else {
+                        const names = [...new Set(res.borrowFrom
+                            ? res.borrowFrom.map(b => game.players[b.neighborIndex].name)
+                            : [])].join(' & ');
+                        addLogEntry(`${p.name} borrows${names ? ` from ${names}` : ''} to complete ${m.name}`);
+                    }
                 } else {
                     game.failMissionByChoice(li, idx);
                     addLogEntry(`${p.name} lets ${m.name} fail`);
@@ -4846,37 +4857,62 @@ function showMissionBorrowChooser(mission) {
             return;
         }
 
+        // WHO lends is the player's call, not the engine's. The 2g-per-unit fee
+        // is paid TO the lender, so handing it to the leader is a real cost —
+        // this used to silently take the first available neighbor. Same chooser
+        // the card Borrow & Play uses, so the move reads the same in both places.
+        const borrowable = game.getBorrowableSkills(0);
+        const n = game.playerCount;
+        const p0 = game.players[0];
+        const curSlot = p0.character && p0.character.slots ? p0.character.slots[p0.sliderPosition] : null;
+        const anyLender = curSlot && curSlot.special === 'borrow_any_player';
+        const leftPi = (n - 1) % n, rightPi = 1 % n;
+        const seats = anyLender
+            ? [...Array(n).keys()].filter(i => i !== 0)
+            : [...new Set([leftPi, rightPi])];
+
+        // Units of the same skill share one lender (the table habit);
+        // distinct skills each pick their own.
         const counts = {};
         plan.borrowFrom.forEach(b => { counts[b.skill] = (counts[b.skill] || 0) + 1; });
-        const shortTxt = Object.entries(counts)
-            .map(([s, n]) => `${s.charAt(0).toUpperCase() + s.slice(1)}${n > 1 ? ' ×' + n : ''}`)
-            .join(', ');
-        const lenders = [...new Set(plan.borrowFrom.map(b => game.players[b.neighborIndex].name))].join(' & ');
+        const sections = Object.entries(counts);      // [skill, units]
+        const single = sections.length === 1;
+        const choice = {};                            // skill -> lender pi
+        const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+        const shortTxt = sections
+            .map(([sk, u]) => `${cap(sk)}${u > 1 ? ' ×' + u : ''}`).join(', ');
 
-        ov.innerHTML = `
-            <div class="pp-inner">
-                <div class="pp-title">Mission Due: ${mission.name}</div>
-                <div class="pp-sub">You're short <b>${shortTxt}</b> — ${lenders} can lend it for <b>${plan.cost} Gold</b>.</div>
-                <div class="pp-cards"><div class="pp-card" style="cursor:default">
-                    <img src="assets/cards/missions/${mission.filename}" alt="${mission.name}"
-                         style="width:auto;height:min(42vh,340px)">
-                </div></div>
-                <div class="pp-actions">
-                    <button class="btn-royal primary" id="borrowYes"><span>Borrow & Complete (−${plan.cost}g)</span></button>
-                    <button class="btn-royal" id="borrowNo"><span>Let it Fail</span></button>
-                </div>
-            </div>`;
+        const seatTag = (pi) => {
+            if (anyLender) return '';
+            if (pi === leftPi) return '<span class="bw-tag">◀ Left Neighbor</span>';
+            if (pi === rightPi) return '<span class="bw-tag">Right Neighbor ▶</span>';
+            return '';
+        };
 
-        ov.querySelector('#borrowYes').onclick = () => {
-            mpPub('mission_borrow', { accept: true, missionName: mission.name });
-            const idx = game.players[0].missions.indexOf(mission);
-            const res = game.completeMissionWithBorrow(0, idx);
+        const finish = (chosen) => {
             ov.classList.remove('active');
+            const idx = game.players[0].missions.indexOf(mission);
+            // Stream the LENDERS too, not just yes/no — a peer that re-picked
+            // the first neighbor itself would pay a different purse and fork.
+            mpPub('mission_borrow', {
+                accept: !!chosen, missionName: mission.name,
+                borrowFrom: chosen || null,
+            });
+            if (!chosen) {
+                game.failMissionByChoice(0, idx);
+                showNotification(`Mission failed: ${mission.name}`, 'error');
+                addLogEntry(`You let ${mission.name} fail`);
+                renderGameState();
+                resolve();
+                return;
+            }
+            const res = game.completeMissionWithBorrow(0, idx, chosen);
             if (res.success) {
-                showNotification(`Mission complete: ${mission.name}! (−${res.cost}g to your neighbor)`, 'mission');
-                addLogEntry(`You borrow skills (−${res.cost}g) and complete ${mission.name}`);
+                const names = [...new Set(chosen.map(b => game.players[b.neighborIndex].name))].join(' & ');
+                showNotification(`Mission complete: ${mission.name}! (−${res.cost}g to ${names})`, 'mission');
+                addLogEntry(`You borrow from ${names} (−${res.cost}g) and complete ${mission.name}`);
             } else {
-                // Plan somehow died under the click — the due date still rules.
+                // The plan died under the click — the due date still rules.
                 game.failMissionByChoice(0, idx);
                 showNotification(`Mission failed: ${mission.name}`, 'error');
                 addLogEntry(`You fail ${mission.name}`);
@@ -4884,16 +4920,78 @@ function showMissionBorrowChooser(mission) {
             renderGameState();
             resolve();
         };
-        ov.querySelector('#borrowNo').onclick = () => {
-            mpPub('mission_borrow', { accept: false, missionName: mission.name });
-            const idx = game.players[0].missions.indexOf(mission);
-            game.failMissionByChoice(0, idx);
-            ov.classList.remove('active');
-            showNotification(`Mission failed: ${mission.name}`, 'error');
-            addLogEntry(`You let ${mission.name} fail`);
-            renderGameState();
-            resolve();
+
+        const render = () => {
+            const sectionHtml = sections.map(([skill, units]) => {
+                const fee = units * 2;
+                const head = single
+                    ? ''
+                    : `<div class="bw-skill-head">${cap(skill)}${units > 1 ? ' ×' + units : ''} — ${fee}g to its lender</div>`;
+                const seatCards = seats.map(pi => {
+                    const pl = game.players[pi];
+                    const has = !!(borrowable[skill] && borrowable[skill].includes(pi));
+                    const on = choice[skill] === pi;
+                    const art = pl.character ? `assets/characters/${pl.character.filename}` : 'assets/ui/cover.jpg';
+                    const note = has ? `+${fee}g to their purse` : `No ${cap(skill)} to lend`;
+                    return `<div class="bw-row${has ? '' : ' off'}${on ? ' on' : ''}" data-skill="${skill}" data-pi="${pi}">
+                                <img class="bw-art" src="${art}" alt="${pl.name}">
+                                ${seatTag(pi)}
+                                <span class="bw-name">${pl.name}</span>
+                                <span class="bw-note">${note}</span>
+                            </div>`;
+                }).join('');
+                const undecided = !single && choice[skill] === undefined;
+                return `<div class="bw-section${undecided ? ' undecided' : ''}" data-skill="${skill}">
+                            ${head}<div class="bw-rows">${seatCards}</div>
+                        </div>`;
+            }).join('');
+
+            const ready = sections.every(([sk]) => choice[sk] !== undefined);
+
+            ov.innerHTML = `
+                <div class="pp-inner bw">
+                    <div class="pp-title">Mission Due: ${mission.name}</div>
+                    <div class="pp-sub">You're short <b>${shortTxt}</b> —
+                        ${single ? 'tap the neighbor who lends it' : 'pick a lender for each skill'}.
+                        The fee is paid <b>to them</b>${anyLender ? ' · your Merchant slot lets anyone lend' : ''}.
+                        Letting it fail is a real play.</div>
+                    <div class="bw-scroll">
+                        <div class="pp-cards mb-card"><div class="pp-card" style="cursor:default">
+                            <img src="assets/cards/missions/${mission.filename}" alt="${mission.name}">
+                        </div></div>
+                        ${sectionHtml}
+                    </div>
+                    <div class="pp-actions">
+                        ${single ? '' : `<button class="btn-royal primary" id="mbConfirm" ${ready ? '' : 'disabled style="opacity:.35"'}><span>Borrow &amp; Complete (−${plan.cost}g)</span></button>`}
+                        <button class="btn-royal" id="mbFail"><span>Let it Fail</span></button>
+                    </div>
+                </div>`;
+
+            const expand = () => plan.borrowFrom.map(b => ({ skill: b.skill, neighborIndex: choice[b.skill] }));
+
+            ov.querySelectorAll('.bw-row:not(.off)').forEach(el => {
+                el.onclick = () => {
+                    const skill = el.dataset.skill;
+                    const pi = parseInt(el.dataset.pi, 10);
+                    choice[skill] = pi;
+                    // One missing skill = tap-to-commit; several = assemble, then confirm.
+                    if (single) { finish(expand()); return; }
+                    render();
+                    requestAnimationFrame(() => {
+                        const next = ov.querySelector('.bw-section.undecided');
+                        if (next) next.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    });
+                };
+            });
+            const confirmBtn = ov.querySelector('#mbConfirm');
+            if (confirmBtn) confirmBtn.onclick = () => {
+                if (!sections.every(([sk]) => choice[sk] !== undefined)) return;
+                finish(expand());
+            };
+            ov.querySelector('#mbFail').onclick = () => finish(null);
         };
+
+        render();
         ov.classList.add('active');
     });
 }
@@ -5798,6 +5896,12 @@ document.addEventListener('dragstart', (e) => {
 // (engine deltas — per-asset favor included) pops in as chips. Tap once to
 // reveal the verdict early, tap again for the next beat. Borrow choices the
 // player still owes come AFTER the ceremony, exactly as before.
+// Wyatt 7/14: the mission phase read too fast to follow — the stamp landed and
+// the beat was gone. Every beat in the ceremony AND the mission-draw beat now
+// runs 40% longer. Applied ON TOP of CINEMATIC_SPEED (not instead of it), so the
+// audit suite's 0.05 still shrinks the whole phase to a blink.
+const MISSION_PACE = 1.4;
+
 function showMissionCeremony(missionResults, actNum) {
     return new Promise((resolve) => {
         const el = document.getElementById('missionCeremony');
@@ -5806,7 +5910,7 @@ function showMissionCeremony(missionResults, actNum) {
         if (!el || !beats.length) { resolve(); return; }
 
         const acts = ['I', 'II', 'III'];
-        const speed = () => (window.CINEMATIC_SPEED || 1);
+        const speed = () => (window.CINEMATIC_SPEED || 1) * MISSION_PACE;
         const perPlayer = {};
         beats.forEach(b => { (perPlayer[b.pi] = perPlayer[b.pi] || []).push(b); });
 
@@ -5940,7 +6044,7 @@ function showMissionDrawBeat() {
     if (!el || !draws.length) return Promise.resolve();
     game._missionDraws = [];                        // narrated once, never twice
 
-    const speed = () => (window.CINEMATIC_SPEED || 1);
+    const speed = () => (window.CINEMATIC_SPEED || 1) * MISSION_PACE;
 
     return draws.reduce((chain, ev) => chain.then(() => new Promise((resolve) => {
         const mine = ev.drawn.find(d => d.playerIndex === 0);

@@ -1726,7 +1726,7 @@ class FavorGame {
      * is unborrowable, and gold must cover the fee WITHOUT breaking a
      * hold-N-gold requirement. Pure analysis — no side effects.
      */
-    missionBorrowPlan(playerIndex, mission) {
+    missionBorrowPlan(playerIndex, mission, chosen) {
         const player = this.players[playerIndex];
         if (mission._reqWaived) return null; // Life Essence: succeeds on its own
 
@@ -1753,11 +1753,24 @@ class FavorGame {
 
         const gaps = this.unmetSkillReqs(playerIndex, skillReqs);
         const borrowable = this.getBorrowableSkills(playerIndex);
+        // `chosen` = the player's picked lenders, [{skill, neighborIndex}, ...].
+        // The 2g-per-unit fee is paid TO the lender, so WHO lends is a real
+        // decision (you may not want to fund the leader) — it is never the
+        // engine's to make. Every pick is RE-VALIDATED here: a lender can slide
+        // off the very slot that granted the skill between the click and the
+        // resolution. A stale pick falls back to any current lender, exactly
+        // like resolveBorrowPlan does for cards. With no picks (the AI, and
+        // every probe that only asks "is a borrow possible?") this is the old
+        // first-available behavior, unchanged.
+        const pool = Array.isArray(chosen) ? chosen.slice() : [];
         const borrowFrom = [];
         for (const [skill, short] of Object.entries(gaps)) {
             if (!borrowable[skill] || borrowable[skill].length === 0) return null;
             for (let k = 0; k < short; k++) {
-                borrowFrom.push({ skill, neighborIndex: borrowable[skill][0] });
+                const ci = pool.findIndex(b => b.skill === skill
+                    && borrowable[skill].includes(b.neighborIndex));
+                const pick = ci >= 0 ? pool.splice(ci, 1)[0] : null;
+                borrowFrom.push({ skill, neighborIndex: pick ? pick.neighborIndex : borrowable[skill][0] });
             }
         }
         if (borrowFrom.length === 0) return null; // nothing missing — no borrow needed
@@ -1775,11 +1788,11 @@ class FavorGame {
      * CHOICE, never automatic. Gold pays the lending neighbors, exactly
      * like card borrows.
      */
-    completeMissionWithBorrow(playerIndex, missionIndex) {
+    completeMissionWithBorrow(playerIndex, missionIndex, chosen) {
         const player = this.players[playerIndex];
         const mission = player.missions[missionIndex];
         if (!mission) return { success: false, error: 'No such mission' };
-        const plan = this.missionBorrowPlan(playerIndex, mission);
+        const plan = this.missionBorrowPlan(playerIndex, mission, chosen);
         if (!plan) return { success: false, error: 'Borrowing cannot complete this mission' };
 
         player.gold -= plan.cost;
@@ -1790,8 +1803,11 @@ class FavorGame {
         this.applyMissionRewards(playerIndex, mission);
         player.completedMissions.push(mission);
         const skills = plan.borrowFrom.map(b => b.skill).join(', ');
-        this.addLog(`${player.name} borrows ${skills} (−${plan.cost}g) to complete ${mission.name}`);
-        return { success: true, mission, cost: plan.cost };
+        const lenders = [...new Set(plan.borrowFrom.map(b => this.players[b.neighborIndex].name))].join(' & ');
+        this.addLog(`${player.name} borrows ${skills} from ${lenders} (−${plan.cost}g) to complete ${mission.name}`);
+        // borrowFrom comes back so callers can name the lenders who were PAID —
+        // the fee lands in their purse, so the log has to say whose.
+        return { success: true, mission, cost: plan.cost, borrowFrom: plan.borrowFrom };
     }
 
     /**

@@ -1503,29 +1503,54 @@ console.log('── Desktop: due mission short a borrowable skill — chooser of
   ok(chooser, 'borrow chooser pauses the mission phase');
 
   if (chooser) {
+    // Wyatt 7/14: the chooser must let you pick WHO lends — the 2g fee lands in
+    // THEIR purse, so it used to silently fund whichever neighbour came first.
     const offer = await page.evaluate(() => ({
-      yes: document.getElementById('borrowYes')?.textContent.trim(),
-      no: document.getElementById('borrowNo')?.textContent.trim(),
-      art: !!document.querySelector('#promisePicker .pp-card img'),
+      rows: [...document.querySelectorAll('#promisePicker .bw-row')].map(r => ({
+        pi: parseInt(r.dataset.pi, 10),
+        off: r.classList.contains('off'),
+        name: r.querySelector('.bw-name')?.textContent,
+      })),
+      fail: document.getElementById('mbFail')?.textContent.trim(),
+      art: !!document.querySelector('#promisePicker .pp-card img, #promisePicker .bw-art'),
+      sub: document.querySelector('#promisePicker .pp-sub')?.textContent || '',
     }));
-    ok(/Borrow & Complete \(−2g\)/.test(offer.yes || ''), `offer prices the gap (${offer.yes})`);
-    ok(/Let it Fail/i.test(offer.no || ''), 'declining stays a real option');
-    ok(offer.art, 'the mission card itself is shown');
+    const lenders = offer.rows.filter(r => !r.off);
+    ok(lenders.length >= 1, `the chooser lists the neighbours who can lend (${lenders.map(l => l.name).join(', ')})`);
+    ok(/fee is paid/i.test(offer.sub), 'and says the fee is paid TO them — the pick has a cost');
+    ok(/Let it Fail/i.test(offer.fail || ''), 'declining stays a real option');
+    ok(offer.art, 'the lenders are shown by portrait');
     await page.screenshot({ path: join(SHOTS, 'mission-borrow-chooser.png') });
 
-    const before = await page.evaluate(() => ({ gold: game.players[0].gold, lender: game.players[1].gold }));
-    await page.evaluate(() => document.getElementById('borrowYes').click());
-    await sleep(150);
-    const after = await page.evaluate(() => ({
+    // Pick a SPECIFIC lender and prove the fee follows the pick.
+    const pick = lenders[0].pi;
+    const before = await page.evaluate((pi) => ({
+      gold: game.players[0].gold,
+      picked: game.players[pi].gold,
+      others: game.players.map(p => p.gold),
+    }), pick);
+    await page.evaluate((pi) => {
+      document.querySelector(`#promisePicker .bw-row[data-pi="${pi}"]:not(.off)`).click();
+    }, pick);
+    await sleep(250);
+    // One missing skill = tap-to-commit; if a Confirm exists, press it.
+    await page.evaluate(() => { const b = document.getElementById('mbConfirm'); if (b) b.click(); });
+    await sleep(250);
+    const after = await page.evaluate((pi) => ({
       completed: game.players[0].completedMissions.length,
       failed: game.players[0].failedMissions.length,
       gold: game.players[0].gold,
-      lender: game.players[1].gold,
+      picked: game.players[pi].gold,
+      others: game.players.map(p => p.gold),
       closed: !document.getElementById('promisePicker').classList.contains('active'),
-    }));
-    ok(after.completed === 1 && after.failed === 0, 'Borrow & Complete completes the mission');
-    ok(after.gold === before.gold - 2 && after.lender === before.lender + 2,
-      `2g fee moved to the lender (you ${before.gold}→${after.gold}, lender ${before.lender}→${after.lender})`);
+    }), pick);
+    ok(after.completed === 1 && after.failed === 0, 'borrowing completes the mission');
+    ok(after.gold === before.gold - 2, `it costs you 2g (${before.gold}→${after.gold})`);
+    ok(after.picked === before.picked + 2,
+      `and the 2g goes to the lender YOU PICKED (seat ${pick}: ${before.picked}→${after.picked})`);
+    // Nobody else's purse moved.
+    const movedOthers = after.others.filter((g, i) => i !== 0 && i !== pick && g !== before.others[i]);
+    ok(movedOthers.length === 0, 'and no other neighbour is paid a penny');
     ok(after.closed, 'chooser closes; the act rolls on');
   }
   await page.close();

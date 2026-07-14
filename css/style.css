@@ -5818,3 +5818,12 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
 @media (prefers-reduced-motion: reduce) {
     .ach-pop, .ach-card { transition: none; }
 }
+
+/* The mission card rides ABOVE the lender rows in the borrow chooser — you are
+   deciding about a card, so the card is on screen (never a text recap of it).
+   It shares the .bw-scroll so a multi-skill borrow can still scroll past it. */
+.pp-inner.bw .pp-cards.mb-card { margin: 0 0 14px; }
+.pp-inner.bw .pp-cards.mb-card .pp-card img {
+    width: auto; height: min(26vh, 230px);
+    border-radius: 6px; box-shadow: 0 6px 22px rgba(0,0,0,0.6);
+}

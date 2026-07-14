@@ -59,7 +59,12 @@
     // them), and it still runs the old `pi !== 0` rule — which auto-banked a
     // remote human's met, not-yet-due mission on everyone else's client while
     // their own client held it. That was already a live fork; v8 fixes it.
-    const MPV = 8;
+    // 9 (7/14): 'mission_borrow' now carries `borrowFrom` — WHICH neighbor lends
+    // a due mission's missing skill is the player's choice (the 2g-a-unit fee is
+    // paid TO them). A v8 client sends no lenders and would re-pick the first
+    // available itself, so the fee would land in a different purse on different
+    // tables and the gold columns fork.
+    const MPV = 9;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.
