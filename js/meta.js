@@ -1038,7 +1038,11 @@
         await drainMsgs();     // then deliver congratulations
         // A crown won overnight advances the podium/champion achievements —
         // settle wrote the champs counters, this turns them into awards.
-        if (window.FACH) await window.FACH.sync();
+        // NOT awaited: this costs a DB round-trip and NOTHING below depends on
+        // it. Awaiting it here delayed the PayPal-return cleanup underneath by a
+        // whole read, which is a real bug for a player coming back from checkout
+        // (the audit caught it). It celebrates itself whenever it lands.
+        if (window.FACH) window.FACH.sync();
 
         // Back from a PayPal tab? Clean the URL, land the player in the
         // store, and watch for the Stars the IPN is about to credit.

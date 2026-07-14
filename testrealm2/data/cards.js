@@ -141,8 +141,11 @@ window.FAVOR_DATA.cards = [
   { id: cid(), name: "Fur Trading", audit: "8 Gold, 3 Favor, Req: 1 Charisma, Act 1", filename: "Fur Trading Card.jpg", act: 1, type: "adventure",
     cost: null, skills: [], requirements: ["charisma"], rewards: { gold: 8 }, favor: 3 },
 
-  { id: cid(), name: "Generous Donations", audit: "3 Knowledge, 25 Favor, Req: 18 Gold, Act 2", filename: "Generous Donation Card.jpg", act: 2, type: "adventure",
-    cost: 18, skills: ["knowledge", "knowledge", "knowledge"], reqGold: 18, requirements: [], rewards: {}, favor: 25 },
+  // AUDIT FIX 2026-07-14 (Wyatt confirmed): the card is 18 Gold -> 1 Knowledge +
+  // 25 Favor. The Knowledge shield is bare (= x1); the "3" was never on it. I had
+  // flagged the ART as the suspect here — wrong way round, the DATA was.
+  { id: cid(), name: "Generous Donations", audit: "1 Knowledge, 25 Favor, Req: 18 Gold, Act 2", filename: "Generous Donation Card.jpg", act: 2, type: "adventure",
+    cost: 18, skills: ["knowledge"], reqGold: 18, requirements: [], rewards: {}, favor: 25 },
 
   { id: cid(), name: "A Hidden Door", grantsMap: "The Shadow Guide", audit: "5 Favor & The Shadow Guide Map, Req: 3 Survival & 1 Knowledge, Act 2", filename: "Ghost Studies Card.jpg", act: 2, type: "adventure",
     cost: null, skills: [], requirements: ["survival", "survival", "survival", "knowledge"], rewards: {}, favor: 5 },
@@ -313,8 +316,15 @@ window.FAVOR_DATA.cards = [
     cost: null, skills: [], requirements: ["survival", "survival", "survival", "prospecting", "prospecting", "prospecting", "minds_eye"], rewards: {}, favor: 5,
     combo: "1/2", special: "map" },
 
-  { id: cid(), name: "Lost South Map", reqMaps: ["Cameron's Expedition", "Tunnel of Trinkets"], audit: "5 Favor & If you have the Lost North Map 20 additional Favor, Req: 3 Survival & 3 Charisma & 1 Mind's Eye OR The Thinking Tree Map OR Tunnel of Trinkets Map, Act 2", filename: "Lost South Map.jpg", act: 2, type: "adventure",
-    cost: null, skills: [], requirements: ["survival", "survival", "survival", "charisma", "charisma", "charisma", "minds_eye"], rewards: {}, favor: 5,
+  // AUDIT FIX 2026-07-14 (art v7): the three requirement shields are BARE — 1
+  // Survival, 1 Charisma, 1 Mind's Eye. The old 3/3/1 came from the print-res
+  // original in ~/Downloads/Favor_Assets/, which is STALE for this one card: it
+  // still carries the x3 coins AND the pre-rename "The Thinking Tree" scroll.
+  // The art shipped in the game already had neither. ⚠ This leaves the South
+  // half far cheaper than the North (which really does keep 3 Survival + 3
+  // Prospecting) — flagged to Wyatt as possibly-unintended asymmetry.
+  { id: cid(), name: "Lost South Map", reqMaps: ["Cameron's Expedition", "Tunnel of Trinkets"], audit: "5 Favor & If you have the Lost North Map 20 additional Favor, Req: 1 Survival & 1 Charisma & 1 Mind's Eye OR Cameron's Expedition Map OR Tunnel of Trinkets Map, Act 2", filename: "Lost South Map.jpg", act: 2, type: "adventure",
+    cost: null, skills: [], requirements: ["survival", "charisma", "minds_eye"], rewards: {}, favor: 5,
     combo: "2/2", special: "map" },
 
   // ═══ GREY/SILVER — WEAPONS ══════════════════════════════════════

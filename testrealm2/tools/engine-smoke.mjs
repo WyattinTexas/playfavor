@@ -1584,5 +1584,47 @@ console.log('── Achievements: the engine actually feeds them');
   ok(!g4.players[0].foretoldDoom, 'and does NOT without her');
 }
 
+// ── 2026-07-14 art v7 (Wyatt's corrections)
+console.log('── Art v7: Generous Donations, Lost South Map, and the map-pair bonus');
+{
+  const gd = cardByName('Generous Donations');
+  ok(gd.cost === 18 && gd.reqGold === 18, 'Generous Donations still costs 18 Gold');
+  ok((gd.skills || []).join() === 'knowledge', 'and grants ONE Knowledge (was 3)', JSON.stringify(gd.skills));
+  ok(gd.favor === 25, 'and 25 Favor');
+
+  // Lost SOUTH dropped its x3 coins; Lost NORTH really does keep 3 Survival + 3 Prospecting.
+  const tally = (l) => (l || []).reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {});
+  const south = tally(cardByName('Lost South Map').requirements);
+  ok(south.survival === 1 && south.charisma === 1 && south.minds_eye === 1,
+    'Lost South Map wants 1 Survival + 1 Charisma + 1 Mind\'s Eye (bare shields)', JSON.stringify(south));
+  const north = tally(cardByName('Lost North Map').requirements);
+  ok(north.survival === 3 && north.prospecting === 3 && north.minds_eye === 1,
+    'Lost North Map still wants 3 Survival + 3 Prospecting + 1 Mind\'s Eye (it kept its coins)',
+    JSON.stringify(north));
+
+  // Completing the pair pays 20 (the card prints 20; the engine used to say 15).
+  const g = newGame();
+  const p = g.players[0];
+  p.bonusSkills = { survival: 3, prospecting: 3, charisma: 3 };
+  g.applySlotSkills(p);
+  p.mindsEyeOverride = null;
+  p.playedCards.push({ ...cardByName('Mind\'s Eye') });   // supplies the Mind's Eye requirement
+  g.applySlotSkills(p);
+  // NOTE: a card's printed Favor is scored at GAME END (calculateFinalScores ->
+  // cardFavor), not added to player.favor on play. Only the pair BONUS lands
+  // directly, so that is what this asserts.
+  playCard(g, 0, 'Lost North Map');
+  const mid = p.favor || 0;
+  ok(mid === 0, 'one half alone pays no pair bonus', String(mid));
+  playCard(g, 0, 'Lost South Map');
+  const after = p.favor || 0;
+  ok(after - mid === 20,
+    `completing the pair pays a 20 Favor bonus, not 15 (+${after - mid})`);
+  ok(p.mapBonusAwarded === true, 'and the bonus is marked so it can never pay twice');
+  // ...and both cards' printed 5 Favor still reaches the score sheet.
+  const sheet = g.calculateFinalScores().find(x => x.playerIndex === 0);
+  ok(sheet.advFavor >= 10, `both halves' printed 5 Favor still scores (advFavor ${sheet.advFavor})`);
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);

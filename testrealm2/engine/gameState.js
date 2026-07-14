@@ -1519,8 +1519,12 @@ class FavorGame {
             // Only grant once — check if we already awarded it
             if (!player.mapBonusAwarded) {
                 player.mapBonusAwarded = true;
-                player.favor += 15;
-                this.addLog(`${player.name} completes the Map! Both halves found: +15 Favor!`);
+                // AUDIT FIX 2026-07-14: pays 20, not 15. The Lost South Map prints
+                // a blue 20 beside its "2/2" plaque, and its own audit text says
+                // "If you have the Lost North Map 20 additional Favor". The engine
+                // was the only voice saying 15 — and no checker looked at combos.
+                player.favor += 20;
+                this.addLog(`${player.name} completes the Map! Both halves found: +20 Favor!`);
             }
         }
     }
