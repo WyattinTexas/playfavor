@@ -5379,6 +5379,13 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     ok(rA.hash === rB.hash,
       `LOCKSTEP: the tables still agree after the act advances (${rA.hash} vs ${rB.hash})`);
 
+    // Leave no trace: this flow ends mid-game (no gameOver → no host
+    // cleanup), so its 'live' record would sit until the 6h sweep.
+    await pA.evaluate(async () => {
+      const gid = FMP.gid();
+      if (gid) await firebase.database().ref(`favor/mp/games/${gid}`).remove();
+      await firebase.database().ref('favor/mp/queue').remove();
+    });
     await ctxA.close(); await ctxB.close();
   } catch (e) {
     ok(false, 'MP held-mission flow crashed', e.message);
