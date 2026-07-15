@@ -3365,7 +3365,9 @@ function renderBoardOvSlots() {
         ring.style.left = BOARD_OV_TRACK.lefts[at] + '%';
         ring.style.top = BOARD_OV_TRACK.top + '%';
         ring.classList.toggle('pending', target !== null);
-        ring.classList.toggle('grab', !picking && reach.size > 0);
+        // Always grabbable during gameplay — even broke or direction-locked.
+        // The DROP is where validity is judged (snap home + the reason).
+        ring.classList.toggle('grab', !picking && game && game.phase === 'gameplay');
     }
     const ghost = document.getElementById('boardOvGhost');
     if (ghost) {
@@ -3507,9 +3509,13 @@ async function _ovSlideConfirm() {
     renderBoardOvSlots();   // stay open \u2014 slide again while gold and direction allow
 }
 
-// \u2500\u2500 Ring drag \u2014 grab the ring, ride the track, drop it on a circle \u2500\u2500
-// Maps finger X to the nearest REACHABLE slot (never past gold or the
-// direction lock); release off home shows the same confirm chip as a tap.
+// \u2500\u2500 Ring drag \u2014 grab the ring, ride the WHOLE track, drop it on a circle \u2500\u2500
+// The ring is always physically draggable during gameplay (clamped to the
+// track ends \u2014 it can never leave the slider). While it's in hand every
+// circle reveals itself: gold = payable right now, grey = exists but blocked,
+// red halo = the drop would be refused. Validity is judged at the DROP:
+// a reachable circle shows the Pay & Slide confirm; a blocked one glides
+// the ring home and says exactly why (gold short / one-direction rule).
 let _ovDragging = false;
 let _ovDragJustEnded = 0;
 
@@ -3520,13 +3526,11 @@ function _ovRingDragInit() {
 
     let startX = 0, engaged = false, rect = null;
 
+    // Nearest circle to the finger \u2014 ANY circle, valid or not.
     const slotAtX = (clientX) => {
         const pct = ((clientX - rect.left) / rect.width) * 100;
-        const reach = _ovPaidReach();
-        const cur = game.players[0].sliderPosition;
-        let best = cur, bestD = Infinity;
+        let best = 0, bestD = Infinity;
         BOARD_OV_TRACK.lefts.forEach((L, i) => {
-            if (i !== cur && !reach.has(i)) return;
             const d = Math.abs(L - pct);
             if (d < bestD) { bestD = d; best = i; }
         });
@@ -3535,7 +3539,6 @@ function _ovRingDragInit() {
 
     ring.addEventListener('pointerdown', (e) => {
         if (_slidePick || !game || game.phase !== 'gameplay') return;
-        if (_ovPaidReach().size === 0) return;
         const wrap = document.querySelector('.board-ov-boardwrap');
         if (!wrap) return;
         rect = wrap.getBoundingClientRect();
@@ -3553,18 +3556,22 @@ function _ovRingDragInit() {
         ring.classList.add('dragging');
         const ghost = document.getElementById('boardOvGhost');
         if (ghost) ghost.classList.add('show');   // home stays marked under the drag
-        // Follow the finger along the track, clamped to the reachable span.
+        const holder = document.getElementById('boardOvSlots');
+        if (holder) holder.classList.add('dragging');   // every circle shows itself
+        // Follow the finger along the track \u2014 full span, never off the ends.
+        const pct = Math.min(BOARD_OV_TRACK.lefts[BOARD_OV_TRACK.lefts.length - 1],
+                             Math.max(BOARD_OV_TRACK.lefts[0],
+                                      ((e.clientX - rect.left) / rect.width) * 100));
+        ring.style.left = pct + '%';
+        // Live halo on the circle it would snap to \u2014 gold if the drop will
+        // take, red if it will bounce.
         const reach = _ovPaidReach();
         const cur = game.players[0].sliderPosition;
-        const idxs = [cur, ...reach];
-        const minL = Math.min(...idxs.map(i => BOARD_OV_TRACK.lefts[i]));
-        const maxL = Math.max(...idxs.map(i => BOARD_OV_TRACK.lefts[i]));
-        const pct = Math.min(maxL, Math.max(minL, ((e.clientX - rect.left) / rect.width) * 100));
-        ring.style.left = pct + '%';
-        // Live halo on the circle it would snap to.
         const snap = slotAtX(e.clientX);
-        document.querySelectorAll('#boardOvSlots .board-ov-slot').forEach((el, i) =>
-            el.classList.toggle('snap', i === snap && i !== cur));
+        document.querySelectorAll('#boardOvSlots .board-ov-slot').forEach((el, i) => {
+            el.classList.toggle('snap', i === snap && i !== cur && reach.has(i));
+            el.classList.toggle('snap-bad', i === snap && i !== cur && !reach.has(i));
+        });
     });
 
     const release = (e) => {
@@ -3573,13 +3580,26 @@ function _ovRingDragInit() {
         const wasEngaged = engaged;
         engaged = false;
         ring.classList.remove('dragging');
-        document.querySelectorAll('#boardOvSlots .board-ov-slot.snap')
-            .forEach(el => el.classList.remove('snap'));
+        const holder = document.getElementById('boardOvSlots');
+        if (holder) holder.classList.remove('dragging');
+        document.querySelectorAll('#boardOvSlots .board-ov-slot.snap, #boardOvSlots .board-ov-slot.snap-bad')
+            .forEach(el => el.classList.remove('snap', 'snap-bad'));
         if (!wasEngaged) { renderBoardOvSlots(); return; }   // a tap, not a drag
         _ovDragJustEnded = Date.now();
+        const cur = game.players[0].sliderPosition;
         const snap = slotAtX(e.clientX);
-        _ovSlideTarget = (snap === game.players[0].sliderPosition) ? null : snap;
-        renderBoardOvSlots();   // ring settles on the target (or glides home)
+        if (snap === cur || !_ovPaidReach().has(snap)) {
+            // Home, or a circle the rules refuse \u2014 the ring glides back and
+            // the player hears the reason (gold short / one-direction rule).
+            _ovSlideTarget = null;
+            if (snap !== cur) {
+                const why = _ovWhyBlocked(snap);
+                if (why) showNotification(why, 'error');
+            }
+        } else {
+            _ovSlideTarget = snap;   // waits on the target for Pay & Slide
+        }
+        renderBoardOvSlots();
     };
     ring.addEventListener('pointerup', release);
     ring.addEventListener('pointercancel', release);

@@ -2256,6 +2256,23 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
 .board-ov-slot.blocked { cursor: default; }
 .board-ov-slot.blocked:hover { box-shadow: none; }
 
+/* While the ring is in hand, EVERY circle shows itself: gold = payable
+   right now, grey = it exists but the drop would be refused (gold short /
+   direction lock). The circle under the finger answers louder: gold snap
+   halo if the drop will take, red if the ring will bounce home. */
+#boardOvSlots.dragging .board-ov-slot:not(.current) {
+    box-shadow: 0 0 0 2px rgba(205,195,175,0.35), 0 0 10px 2px rgba(0,0,0,0.3);
+}
+#boardOvSlots.dragging .board-ov-slot.reach {
+    box-shadow: 0 0 0 2px rgba(240,210,120,0.75), 0 0 16px 4px rgba(201,168,76,0.42);
+}
+#boardOvSlots.dragging .board-ov-slot.snap {
+    box-shadow: 0 0 0 3px rgba(240,210,120,0.98), 0 0 26px 8px rgba(201,168,76,0.55);
+}
+#boardOvSlots.dragging .board-ov-slot.snap-bad {
+    box-shadow: 0 0 0 3px rgba(224,92,70,0.9), 0 0 20px 6px rgba(200,60,40,0.45);
+}
+
 /* The ring is grabbable in paid mode — raised above the hotspots so the
    grab wins; while a slide waits on its confirm it pulses on the target. */
 .board-ov-ring.grab { pointer-events: auto; cursor: grab; z-index: 5; touch-action: none; }
