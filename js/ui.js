@@ -23,8 +23,8 @@ setCinematicSpeed(1.0);
 
 const SPECIAL_DESCRIPTIONS = {
     "or_choice":                     "Choose one skill from the options granted.",
-    "charisma_or_prospecting":       "Gain Charisma or Prospecting (auto-picked).",
-    "alchemy_or_prospecting":        "Gain Alchemy or Prospecting (auto-picked).",
+    "charisma_or_prospecting":       "Counts as Charisma or Prospecting — whichever a requirement needs.",
+    "alchemy_or_prospecting":        "Counts as Alchemy or Prospecting — whichever a requirement needs.",
     "minds_eye":                     "+1 Knowledge (Mind's Eye).",
     "philosopher_stone":             "Converts Gold to Favor at game end!",
     "map_lost_north":                "Reveals a hidden path to the North.",
@@ -910,7 +910,10 @@ function renderHowto() {
 // Strictly linear: step N only becomes eligible once step N-1 is
 // dismissed AND step N's own moment arrives — so they pace themselves
 // to the natural flow of a first game rather than dogpiling at once.
-// Phone table-view only (desktop players have the How-to-Play deck).
+// Fires on BOTH form factors — each step anchors to whichever element
+// (phone or desktop) is on stage. Desktop players don't open the How-to-Play
+// deck unprompted (cold-pass 7/15), so the coach carries the first game.
+// Rig kill-switch: window._coachOff = true (ui-audit seeds seen-ids instead).
 
 function coachSumSkills(sk) {
     if (!sk) return 0;
@@ -922,32 +925,72 @@ function coachMyTurn(s) {
         && s.phase !== 'scoring' && s.phase !== 'game_over';
 }
 
+// Resolve the first VISIBLE anchor among selectors (phone first, then
+// desktop) so one step list serves both form factors.
+function coachEl(...sels) {
+    for (const s of sels) {
+        const el = document.querySelector(s);
+        if (el && coachVisibleEl(el)) return el;
+    }
+    return null;
+}
+
 const COACH_STEPS = [
     { id: 'welcome',
-      text: `You're seated at the table — this chip is <b>you</b>. Tap it (or your board, top right) to open your full board.`,
-      anchor: () => document.querySelector('#tvSeats .pmat.you'),
-      place: 'bottom',
+      text: `You're seated at the table — this is <b>you</b>. Tap your seat or your board any time to see your ring and what its circles pay.`,
+      anchor: () => coachEl('#tvSeats .pmat.you', '#boardThumb'),
+      place: 'auto',
       when: () => true },
     { id: 'missions',
-      text: `These are the <b>Missions of the Realm</b> — complete them for <b>Favor</b>, the points that win the crown. Tap one to read it.`,
-      anchor: () => document.getElementById('tvMissionRail'),
-      place: 'bottom',
+      text: `The <b>Missions of the Realm</b> — complete them for <b>Favor</b>, the points that win the crown. Tap one to read it.`,
+      anchor: () => coachEl('#tvMissionRail', '#missionStrip'),
+      place: 'auto',
       when: (s) => (s.visibleMissions || []).length > 0 },
     { id: 'hand',
-      text: `Your turn! <b>Drag a card up</b> out of your hand and let go — then choose: play it, discard it for gold, or more.`,
-      anchor: () => document.getElementById('tvHandStrip'),
+      text: `Your turn! Pick <b>one card</b> to act with — play it for its gifts, or discard it for gold or a ring move. The rest of your hand travels on.`,
+      anchor: () => coachEl('#tvHandStrip', '#handZone'),
       place: 'top',
       when: (s) => coachMyTurn(s) },
-    { id: 'rivals',
-      text: `Tap a <b>rival's chip</b> to see their board and played cards — and borrow a skill when you're short.`,
-      anchor: () => document.querySelector('#tvSeats .pmat.opp'),
-      place: 'bottom',
-      when: (s) => s.players.some((p, i) => i !== 0 && coachSumSkills(p.skills) > 0) },
     { id: 'skills',
-      text: `Your <b>skills</b> live here, always in view — the cards you play grow them. Tap an icon for its name.`,
-      anchor: () => document.getElementById('tvSkills'),
-      place: 'right',
+      text: `Your <b>skills</b> grow as you play cards. Mightier cards and missions require them — skills are never spent, only built.`,
+      anchor: () => coachEl('#tvSkills', '#statsPanel .skills-grid'),
+      place: 'auto',
       when: (s) => coachSumSkills(s.players[0].skills) > 0 },
+    { id: 'pass',
+      text: `New cards? Hands <b>travel around the table</b> after every pick — you're drafting from your rivals' hands now.`,
+      anchor: () => coachEl('#tvHandStrip', '#handZone'),
+      place: 'top',
+      when: (s) => !!window._uxHandsPassed && coachMyTurn(s) },
+    { id: 'rivals',
+      text: `Tap a <b>rival</b> to inspect their board and cards. Short a skill? <b>Borrow</b> a neighbor's for 2 gold — paid to them.`,
+      anchor: () => coachEl('#tvSeats .pmat.opp', '#gameSidebar .opp-entry'),
+      place: 'auto',
+      when: (s) => s.players.some((p, i) => i !== 0 && coachSumSkills(p.skills) > 0) },
+    { id: 'scorn',
+      text: `That red number is <b>Scorn</b> — dishonor. The Queen subtracts it at the final tally. Some cards charge it as their price; the card panel shows it before you commit.`,
+      anchor: () => coachEl('#tvPurse [data-stat="scorn"]', '#statsPanel [data-stat="scorn"]'),
+      place: 'auto',
+      when: (s) => (s.players[0].scorn || 0) > 0 },
+    { id: 'favor',
+      text: `<b>Favor!</b> The crown's own points. Whoever holds the most when Act Ⅲ ends takes the throne.`,
+      anchor: () => coachEl('#tvPurse [data-stat="favor"]', '#statsPanel [data-stat="favor"]'),
+      place: 'auto',
+      when: (s) => (s.players[0].favor || 0) > 0 },
+    { id: 'ring',
+      text: `Your <b>ring</b> moved! Landing on a circle pays its medallion, and some circles lend a skill while you rest there. The track's far ends pay the most.`,
+      anchor: () => coachEl('#tvBoardThumb', '#boardThumb'),
+      place: 'auto',
+      when: () => game.players[0].sliderPosition !== 2 },
+    { id: 'melee',
+      text: `That clash was the <b>Melee</b> — one ends every Act. The mightiest <b>Power</b> wins <b>Prestige</b>: pure points at the Queen's tally.`,
+      anchor: () => coachEl('#tvPurse [data-stat="prestige"]', '#statsPanel [data-stat="prestige"]'),
+      place: 'auto',
+      when: () => !!window._uxMeleeDone },
+    { id: 'emblem',
+      text: `You hold the <b>Emblem</b> — you act first while it's yours, and it travels on when the Act ends.`,
+      anchor: () => coachEl('#tvSeats .pmat.you .emblem-badge', '#statsPanel .emblem-tag'),
+      place: 'auto',
+      when: (s) => s.emblemHolder === 0 },
 ];
 
 let _coachSeen = coachLoadSeen();
@@ -988,7 +1031,7 @@ function coachVisibleEl(el) {
 function coachTick() {
     const coach = document.getElementById('coach');
     if (!coach) return;
-    if (!isCompactLandscape() || typeof game === 'undefined' || !game || coachOverlayOpen()) {
+    if (window._coachOff || typeof game === 'undefined' || !game || coachOverlayOpen()) {
         hideCoach(); return;
     }
     let state;
@@ -2258,6 +2301,10 @@ function buildStatsPanelHtml(playerIndex, state) {
             <span class="resource-token prestige-token" data-stat="prestige">
                 <img src="assets/tokens/Copy of Tokens_Design_v1_Prestige_1_v1.jpg" alt="Prestige" class="token-img">
                 <span class="token-val prestige-val">${player.prestige}</span>
+            </span>
+            <span class="resource-token favor-token" data-stat="favor" title="Favor — the points that win the throne">
+                <img src="${PURSE_ICONS.favor}" alt="Favor" class="token-img">
+                <span class="token-val favor-val">${player.favor || 0}</span>
             </span>
             <span class="resource-token scorn-token" data-stat="scorn">
                 <img src="assets/tokens/Copy of Tokens_Design_v1_Scorn_1_v1.jpg" alt="Scorn" class="token-img">
@@ -3935,7 +3982,13 @@ function showActionPanel(cardIndex) {
     html += `<div class="action-purse"><img src="${TOKEN_IMG.gold}" alt="Gold"> Your purse: <b>${game.players[0].gold} Gold</b></div>`;
 
     if (skills.length > 0) {
-        html += `<div class="action-skills">${skills.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' \u00B7 ')}</div>`;
+        html += `<div class="action-skills"><span class="ap-lbl">Grants</span>${skills.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' \u00B7 ')}</div>`;
+    }
+
+    // Flex / special abilities in plain words \u2014 same source of truth as the
+    // spotlight and card peek (SPECIAL_DESCRIPTIONS).
+    if (card.special && SPECIAL_DESCRIPTIONS[card.special]) {
+        html += `<div class="action-special">${SPECIAL_DESCRIPTIONS[card.special]}</div>`;
     }
 
     if (card.rewards) {
@@ -3943,7 +3996,17 @@ function showActionPanel(cardIndex) {
         if (card.rewards.gold) r.push(`+${card.rewards.gold} Gold`);
         if (card.rewards.prestige) r.push(`+${card.rewards.prestige} Prestige`);
         if (card.rewards.favor) r.push(`+${card.rewards.favor} Favor`);
-        if (r.length) html += `<div class="action-rewards">${r.join(' \u00B7 ')}</div>`;
+        if (r.length) html += `<div class="action-rewards"><span class="ap-lbl">Gains</span>${r.join(' \u00B7 ')}</div>`;
+    }
+
+    // The price, BEFORE you commit \u2014 gold cost and any Scorn the card
+    // charges (rewards.scorn is a cost in all but name). This line stays
+    // visible in compact layouts: hiding a price re-creates blind commits.
+    if (!isMissionLetter) {
+        const price = [];
+        if (card.cost) price.push(`\u2212${card.cost} Gold`);
+        if (card.rewards && card.rewards.scorn) price.push(`+${card.rewards.scorn} Scorn`);
+        if (price.length) html += `<div class="action-price"><span class="ap-lbl">Price</span>${price.join(' \u00B7 ')}</div>`;
     }
 
     html += '</div><div class="action-buttons">';
@@ -4030,6 +4093,30 @@ function showFinalCardChoice(card) {
         html += `<div class="action-card-name">${card.name}</div>`;
         html += `<div class="action-card-type">Your final card — choose its fate</div>`;
         html += `<div class="action-purse"><img src="${TOKEN_IMG.gold}" alt="Gold"> Your purse: <b>${player.gold} Gold</b></div>`;
+
+        // Same honest summary as the hand panel: grants, specials, and the
+        // price — this chooser is the same decision with one fewer escape.
+        const fcSkills = card.skills || [];
+        if (fcSkills.length > 0) {
+            html += `<div class="action-skills"><span class="ap-lbl">Grants</span>${fcSkills.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' · ')}</div>`;
+        }
+        if (card.special && SPECIAL_DESCRIPTIONS[card.special]) {
+            html += `<div class="action-special">${SPECIAL_DESCRIPTIONS[card.special]}</div>`;
+        }
+        if (card.rewards) {
+            const r = [];
+            if (card.rewards.gold) r.push(`+${card.rewards.gold} Gold`);
+            if (card.rewards.prestige) r.push(`+${card.rewards.prestige} Prestige`);
+            if (card.rewards.favor) r.push(`+${card.rewards.favor} Favor`);
+            if (r.length) html += `<div class="action-rewards"><span class="ap-lbl">Gains</span>${r.join(' · ')}</div>`;
+        }
+        if (!isMissionLetter) {
+            const price = [];
+            if (card.cost) price.push(`−${card.cost} Gold`);
+            if (card.rewards && card.rewards.scorn) price.push(`+${card.rewards.scorn} Scorn`);
+            if (price.length) html += `<div class="action-price"><span class="ap-lbl">Price</span>${price.join(' · ')}</div>`;
+        }
+
         html += '</div><div class="action-buttons">';
 
         const btn = (label, action, primary) =>
@@ -4618,6 +4705,9 @@ function finishRound() {
     } else {
         game.phase = 'gameplay';
         game.pendingActivations = new Array(game.playerCount).fill(null);
+        // Hands have rotated at least once — arms the coach's "hands travel
+        // around the table" tip for the player's next pick.
+        window._uxHandsPassed = true;
         renderGameState();
     }
 }
@@ -4628,7 +4718,8 @@ function showMissionSelectUI() {
     const overlay = document.getElementById('missionSelect');
 
     let html = '<div class="mission-select-content">';
-    html += '<h2 class="select-title" style="font-size: 28px; margin-bottom: 20px;">Choose a Mission</h2>';
+    html += '<h2 class="select-title" style="font-size: 28px; margin-bottom: 6px;">Choose a Mission</h2>';
+    html += '<div class="select-subtitle" style="font-size: 15px; margin-bottom: 14px;">Meet a mission’s skills by its due Act for big Favor — fall short and it costs Scorn.</div>';
     html += '<div class="mission-options">';
 
     game.visibleMissions.forEach((m, i) => {
@@ -4880,7 +4971,12 @@ async function endActPhases() {
         };
 
         if (meleeResults.length > 0) {
-            showMeleeSplash(meleeResults, actNum).then(() => setTimeout(advanceAct, 450));
+            showMeleeSplash(meleeResults, actNum).then(() => {
+                // The player has now SEEN a melee — arms the coach's
+                // "that clash was the Melee" tip once the table returns.
+                window._uxMeleeDone = true;
+                setTimeout(advanceAct, 450);
+            });
         } else {
             setTimeout(advanceAct, 2000);
         }

@@ -15,7 +15,8 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import puppeteer from 'puppeteer-core';
 
-const URL = process.env.AUDIT_URL || 'http://localhost:8891/testrealm2/';
+// testrealm2 is retired (Wyatt 7/15) — the repo root IS playfavor.net.
+const URL = process.env.AUDIT_URL || 'http://localhost:8891/';
 const SHOTS = join(dirname(fileURLToPath(import.meta.url)), 'audit-shots');
 mkdirSync(SHOTS, { recursive: true });
 
@@ -32,6 +33,16 @@ const browser = await puppeteer.launch({
 });
 
 async function startGame(page) {
+  // Coach marks fire on BOTH form factors now — flows must stay deterministic.
+  // MUST be pre-parse (evaluateOnNewDocument): ui.js snapshots _coachSeen at
+  // load, so a post-load localStorage write is inert. The coach flow asserts
+  // the ladder ids explicitly, so drift between this list and COACH_STEPS
+  // fails loudly there.
+  await page.evaluateOnNewDocument(() => {
+    localStorage.setItem('favor_coach_seen', JSON.stringify(
+      ['welcome', 'missions', 'hand', 'skills', 'pass', 'rivals',
+       'scorn', 'favor', 'ring', 'melee', 'emblem']));
+  });
   await page.goto(URL, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => {
     const b = [...document.querySelectorAll('#title-screen .btn-royal')]
@@ -479,7 +490,7 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
     const allCopy = COACH_STEPS.map(s => s.text).join(' ');
     return {
       shown: c.classList.contains('show'),
-      firstIsWelcome: /chip is/i.test(c.textContent),
+      firstIsWelcome: /seated at the table/i.test(c.textContent),
       anchored: overlap,
       cleanCopy: !/drawer|arrow/i.test(allCopy),
     };
@@ -915,8 +926,8 @@ console.log('── Desktop: rival rail entries + overlay (real mouse click)');
   ok(ov.ringOnBoard && ov.ringLeft === '66.3%', `their ring rides the board track (${ov.ringLeft})`);
   ok(ov.cards === 3, `all played cards shown (${ov.cards})`);
   ok(ov.pillArt === 4, 'overlay stats use real token art');
-  ok(ov.panelShown && ov.panelSkillRows === 6 && ov.panelTokens === 3,
-    `their variables read like YOUR stats panel (6 skill rows, 3 tokens — got ${ov.panelSkillRows}/${ov.panelTokens})`);
+  ok(ov.panelShown && ov.panelSkillRows === 6 && ov.panelTokens === 4,
+    `their variables read like YOUR stats panel (6 skill rows, 4 tokens incl. Favor — got ${ov.panelSkillRows}/${ov.panelTokens})`);
   ok(ov.panelLeftOfBoard && ov.panelIn, 'panel sits left of the board, fully on-screen');
   ok(ov.chipsHidden, 'phone chip rail stays hidden on desktop');
   await page.screenshot({ path: join(SHOTS, 'rival-overlay-desktop.png') });
@@ -3964,7 +3975,7 @@ console.log('── Opponent view: inspect panel/chips sum their spread; spotlig
       emblem: !!el.querySelector('.emblem-tag'),
     };
   });
-  ok(panel.tokens === '14,6,3', `token totem = their purse (${panel.tokens})`);
+  ok(panel.tokens === '14,6,22,3', `token totem = their purse incl. Favor (${panel.tokens})`);
   ok(panel.skills === '4,2,3,1,2,5', `six skills summed exactly (${panel.skills})`);
   ok(panel.flex && /Philosopher's Stone/.test(panel.phil) && /\b2\b/.test(panel.phil) && panel.emblem,
     `flex pair, full "Philosopher's Stone" ×2 and Emblem Holder all present (${panel.phil})`);
@@ -5390,6 +5401,100 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
   } catch (e) {
     ok(false, 'MP held-mission flow crashed', e.message);
   }
+}
+
+// ═══ FIRST-GAME GUIDED LAYER — desktop coach + honest action panel ═══
+console.log('── First game: desktop coach marks, favor token, price-before-commit');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('coach-desk: ' + m.text()); });
+  await page.setViewport({ width: 1440, height: 900 });
+  await startGame(page);
+
+  // startGame seeds every coach id as seen (deterministic flows) — this flow
+  // is ABOUT the coach, so un-see them and let the heartbeat re-evaluate.
+  await page.evaluate(async () => {
+    localStorage.removeItem('favor_coach_seen');
+    resetCoach();
+    renderGameState();
+    await new Promise(r => setTimeout(r, 400));
+  });
+
+  const welcome = await page.evaluate(() => {
+    const c = document.getElementById('coach');
+    const g = document.getElementById('coach-glow').getBoundingClientRect();
+    const thumb = document.querySelector('#boardThumb').getBoundingClientRect();
+    const overlap = !(g.right < thumb.left || g.left > thumb.right || g.bottom < thumb.top || g.top > thumb.bottom);
+    return { shown: c.classList.contains('show'), isWelcome: /seated at the table/i.test(c.textContent), overlap };
+  });
+  ok(welcome.shown && welcome.isWelcome && welcome.overlap, 'DESKTOP welcome tip shows framed on the player plate');
+
+  const missions = await page.evaluate(async () => {
+    dismissCoach();
+    if (typeof coachTick === 'function') coachTick();
+    await new Promise(r => setTimeout(r, 300));
+    const c = document.getElementById('coach');
+    const g = document.getElementById('coach-glow').getBoundingClientRect();
+    const strip = document.querySelector('#missionStrip').getBoundingClientRect();
+    const overlap = !(g.right < strip.left || g.left > strip.right || g.bottom < strip.top || g.top > strip.bottom);
+    return { shown: c.classList.contains('show'), isMissions: /Missions of the Realm/i.test(c.textContent), overlap };
+  });
+  ok(missions.shown && missions.isMissions && missions.overlap, 'dismiss advances to the missions tip on the strip');
+
+  const ladder = await page.evaluate(() => COACH_STEPS.map(s => s.id).join(','));
+  ok(ladder === 'welcome,missions,hand,skills,pass,rivals,scorn,favor,ring,melee,emblem',
+    `coach ladder covers the first game (${ladder})`);
+
+  // Favor — the win condition — has a permanent desktop counter.
+  const favorTok = await page.evaluate(() => {
+    const t = document.querySelector('#statsPanel .resource-token[data-stat="favor"]');
+    if (!t) return null;
+    const r = t.getBoundingClientRect();
+    return { val: t.querySelector('.token-val').textContent.trim(), visible: r.width > 10 && r.height > 6 };
+  });
+  ok(!!favorTok && favorTok.visible && favorTok.val === '0',
+    `desktop stats panel shows the FAVOR counter (${favorTok && favorTok.val})`);
+
+  // Honest action panel: a scorn-priced card warns BEFORE commit …
+  const priced = await page.evaluate(async () => {
+    skipAllCoach();
+    game.phase = 'gameplay';
+    game.players[0].hand = [
+      { ...FAVOR_DATA.cards.find(c => c.name === 'Endless Sparring') },
+      { ...FAVOR_DATA.cards.find(c => c.name === 'Forbidden Lab') },
+    ];
+    game.players[0].skills.power = 1;   // meets the req so Play is LIVE while the price shows
+    renderGameState();
+    selectHandCard(0);
+    await new Promise(r => setTimeout(r, 250));
+    const panel = document.getElementById('actionPanel');
+    return {
+      grants: (panel.querySelector('.action-skills') || {}).textContent || '',
+      price: (panel.querySelector('.action-price') || {}).textContent || '',
+      playLive: !![...panel.querySelectorAll('button')].find(b => /play/i.test(b.textContent) && !b.disabled),
+    };
+  });
+  ok(/^Grants/.test(priced.grants) && /Knowledge/.test(priced.grants), `grants line is labeled (${priced.grants})`);
+  ok(/Price/.test(priced.price) && /\+5 Scorn/.test(priced.price) && priced.playLive,
+    `the 5-Scorn price shows BEFORE commit, beside a live Play (${priced.price})`);
+
+  // … and a flex card explains its either/or in plain words.
+  const flex = await page.evaluate(async () => {
+    hideActionPanel();
+    selectHandCard(1);
+    await new Promise(r => setTimeout(r, 250));
+    const panel = document.getElementById('actionPanel');
+    return {
+      special: (panel.querySelector('.action-special') || {}).textContent || '',
+      price: (panel.querySelector('.action-price') || {}).textContent || '',
+    };
+  });
+  ok(/Alchemy or Prospecting/i.test(flex.special) && !/auto-picked/i.test(flex.special),
+    `flex card explains itself in plain words (${flex.special})`);
+  ok(/\+2 Scorn/.test(flex.price), `Forbidden Lab's 2-Scorn price shows (${flex.price})`);
+
+  await page.screenshot({ path: join(SHOTS, 'coach-desktop-panel.png') });
+  await page.close();
 }
 
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));

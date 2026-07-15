@@ -1448,8 +1448,8 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
 .resource-tokens {
     display: flex;
     flex-direction: column;
-    gap: calc(4px * var(--sx));
-    padding: 5px 0 7px;
+    gap: calc(3px * var(--sx));
+    padding: 3px 0 5px;
     border-bottom: 1px solid rgba(201, 168, 76, 0.08);
     margin-bottom: 6px;
 }
@@ -1466,8 +1466,9 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
 }
 
 .token-img {
-    width: calc(38px * var(--sx));
-    height: calc(38px * var(--sx));
+    /* 38→32: makes room for the 4th (Favor) token row without scroll */
+    width: calc(32px * var(--sx));
+    height: calc(32px * var(--sx));
     border-radius: 50%;
     object-fit: cover;
     box-shadow: 0 1px 4px rgba(0,0,0,0.4);
@@ -1483,6 +1484,7 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
 .token-val.gold-val { color: #ffd700; text-shadow: 0 0 6px rgba(255,215,0,0.4); }
 .token-val.prestige-val { color: #6cb4ee; text-shadow: 0 0 6px rgba(108,180,238,0.4); }
 .token-val.scorn-val { color: #e85454; text-shadow: 0 0 6px rgba(232,84,84,0.4); }
+.token-val.favor-val { color: #4fc3f7; text-shadow: 0 0 6px rgba(79,195,247,0.4); }
 
 /* ── Skills Grid ── */
 
@@ -3322,6 +3324,32 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     margin-top: 2px;
 }
 
+/* Small-caps prefix labels on the panel's summary lines (Grants/Gains/Price) */
+.ap-lbl {
+    font-size: 9.5px;
+    color: var(--text-light);
+    opacity: 0.55;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-right: 7px;
+}
+
+/* Special-ability sentence — the card's power in plain words */
+.action-special {
+    font-size: 12.5px;
+    color: #d8b4fe;
+    font-style: italic;
+    margin-top: 3px;
+    max-width: 300px;
+}
+
+/* The price line stays visible on EVERY layout — a hidden price is a trap */
+.action-price {
+    font-size: 13px;
+    color: #e85454;
+    margin-top: 2px;
+}
+
 .action-buttons {
     display: flex;
     flex-direction: column;
@@ -4599,11 +4627,14 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
         max-height: calc(100dvh - 40px);
     }
     .action-panel .action-header { margin-bottom: 2px; }
-    /* No text summaries — the card image IS the description. */
+    /* No text summaries — the card image IS the description. The PRICE
+       line is the deliberate exception: costs must show before commit. */
     .action-panel .action-card-name,
     .action-panel .action-card-type,
     .action-panel .action-skills,
+    .action-panel .action-special,
     .action-panel .action-rewards { display: none; }
+    .action-panel .action-price { font-size: 11px; margin-top: 0; }
     .action-panel .action-buttons { gap: 6px; margin-top: 4px; }
     .action-panel .action-btn { padding: 8px 14px !important; font-size: 11px !important; }
 
