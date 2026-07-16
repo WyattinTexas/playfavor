@@ -193,7 +193,7 @@ html, body {
     border-radius: 10px;
 }
 
-.ts-mid { min-height: clamp(58px, 12.5dvh, 104px); }
+.ts-mid { min-height: clamp(58px, 13.5dvh, 128px); }
 .ts-mid:nth-of-type(2) { grid-area: skirm; }
 .ts-mid:nth-of-type(3) { grid-area: host; }
 
