@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>FAVOR — Table Skins Preview</title>
+<!-- Real game stylesheet: the skins are judged under the exact UI chrome. -->
+<link rel="stylesheet" href="../css/style.css?v=20260716191707">
+<style>
+  html, body { margin: 0; height: 100%; background: #140a04; font-family: 'Cinzel', serif; }
+  /* the harness shows the game screen without playing a game */
+  #game-screen { display: block !important; }
+  /* melee-preview's toolbar language */
+  .pv-bar {
+    position: fixed; z-index: 20000; top: 0; left: 0; right: 0;
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center;
+    padding: 8px 12px; background: rgba(10,5,2,0.82); border-bottom: 1px solid rgba(201,168,76,0.3);
+    transition: transform 0.25s ease, opacity 0.25s ease;
+  }
+  .pv-bar.closed { transform: translateY(-105%); opacity: 0; pointer-events: none; }
+  .pv-bar b { color: #e8d48b; letter-spacing: 2px; font-size: 12px; margin-right: 6px; text-transform: uppercase; }
+  .pv-btn {
+    font-family: 'Cinzel', serif; font-size: 12px; font-weight: 700; letter-spacing: 1px;
+    color: #e8d48b; background: rgba(201,168,76,0.10); border: 1px solid rgba(201,168,76,0.4);
+    border-radius: 16px; padding: 5px 13px; cursor: pointer;
+  }
+  .pv-btn.on { background: rgba(201,168,76,0.28); color: #fff4d2; }
+  .pv-toggle {
+    position: fixed; top: 8px; left: 10px; z-index: 20001;
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; color: #e8d48b; cursor: pointer;
+    background: rgba(10,5,2,0.75); border: 1px solid rgba(201,168,76,0.45);
+  }
+  /* static hand fan for the mock (the real one is JS-driven) */
+  .tp-hand { position: absolute; bottom: -26px; left: 50%; transform: translateX(-50%); display: flex; }
+  .tp-hand img {
+    width: 92px; border-radius: 7px; border: 2px solid rgba(201,168,76,0.5);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.55); margin: 0 -12px; position: relative;
+  }
+</style>
+</head>
+<body>
+
+<button class="pv-toggle" onclick="document.getElementById('pvBar').classList.toggle('closed')">⚙</button>
+<div class="pv-bar" id="pvBar">
+  <b>Table Skins</b>
+  <button class="pv-btn on" data-skin="">Royal Oak</button>
+  <button class="pv-btn" data-skin="skin-leather">Oxblood Leather</button>
+  <button class="pv-btn" data-skin="skin-velvet">Crimson Velvet</button>
+  <button class="pv-btn" data-skin="skin-queens">The Queen's Table</button>
+</div>
+
+<!-- A representative mid-game table: seats, purse, skills, missions, board,
+     hand. Static content — enough real UI to judge a skin's busy-ness. -->
+<div id="game-screen">
+  <div id="table-view" style="position:absolute; inset:0;">
+    <div class="tv-seats" id="tvSeats" style="position:absolute; top:6px; left:50%; transform:translateX(-50%); display:flex; gap:8px;"></div>
+    <div class="tv-purse" id="tvPurse" style="position:absolute; top:8px; left:10px; display:flex; gap:6px;"></div>
+    <div class="tv-skills" id="tvSkills" style="position:absolute; top:96px; left:10px; display:grid; grid-template-columns:1fr 1fr; gap:6px;"></div>
+    <div class="tv-mission-rail" id="tvMissionRail" style="position:absolute; top:8px; right:10px; display:flex; gap:6px;"></div>
+    <div class="tv-board-thumb" id="tvBoardThumb" style="position:absolute; top:96px; right:10px; width:220px;"></div>
+    <div class="tp-hand" id="tpHand"></div>
+  </div>
+</div>
+
+<script>
+  // Skin classes come from the REAL stylesheet — this harness only toggles them.
+  document.querySelectorAll('[data-skin]').forEach(b => b.onclick = () => {
+    document.querySelectorAll('[data-skin]').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    const g = document.getElementById('game-screen');
+    g.className = '';
+    if (b.dataset.skin) g.classList.add(b.dataset.skin);
+  });
+  // URL: ?skin=skin-velvet preselects (headless captures)
+  const q = new URLSearchParams(location.search).get('skin');
+  if (q) { const b = document.querySelector(`[data-skin="${q}"]`); if (b) b.click(); }
+
+  // ── Populate the mock zones with real-markup content ──
+  const CHARS = ['Explorer.jpg', 'Knight.jpg', 'Duchess.jpg'];
+  document.getElementById('tvSeats').innerHTML = CHARS.map((f, i) => `
+    <div class="pmat ${i === 0 ? 'you' : 'opp'} seat-chip${i === 1 ? ' active' : ''}" data-pi="${i}" title="p${i}">
+        <img class="chip-art" src="../assets/characters/${f}" alt="">
+        ${i === 0 ? '<span class="chip-you">YOU</span>' : ''}
+        <span class="chip-count">${[2,3,1][i]}</span>
+    </div>`).join('');
+
+  const purse = [['gold','gold.png',7],['prestige','favor.png',3],['favor','favor.png',2],['scorn','scorn.png',0]];
+  document.getElementById('tvPurse').innerHTML = purse.map(([k, img, v]) =>
+    `<span class="tv-purse-chip ${k}" data-stat="${k}"><img src="../assets/icons/${img}" alt=""><b>${v}</b></span>`).join('');
+
+  const skills = [['survival',2],['charisma',1],['alchemy',0],['prospecting',3],['knowledge',0],['power',2]];
+  document.getElementById('tvSkills').innerHTML = skills.map(([k, v]) =>
+    `<span class="tv-skill-chip${v > 0 ? '' : ' zero'}" data-stat="${k}"><img class="skill-svg" src="../assets/icons/${k}.png" alt=""><b>${v}</b></span>`).join('');
+
+  document.getElementById('tvMissionRail').innerHTML =
+    ['Act 1_Helping the Merchant Card.jpg', 'Act 1_A Case of Wine Card.jpg', 'Act 1_The Kings Passing Card.jpg']
+      .map(f => `<img class="tv-mission" src="../assets/cards/missions/${f}" alt=""
+                      onerror="this.style.display='none'">`).join('');
+
+  document.getElementById('tvBoardThumb').innerHTML = `
+    <img class="tv-thumb-board" src="../assets/characters/Explorer.jpg" alt="" style="width:100%; border-radius:8px;">
+    <img class="thumb-ring" src="../assets/ui/slider-ring.png" alt="" style="left:50%; top:84.7%;">`;
+
+  document.getElementById('tpHand').innerHTML =
+    ['Trapping Card.jpg', 'Cooking Card.jpg', 'Negotiate Card.jpg', 'Hunting Card.jpg', 'Badge of Courage Card.jpg']
+      .map((f, i) => `<img src="../assets/cards/regular/${f}" alt=""
+                           style="transform: rotate(${(i - 2) * 5}deg) translateY(${Math.abs(i - 2) * 7}px)">`).join('');
+</script>
+</body>
+</html>

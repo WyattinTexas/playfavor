@@ -6616,3 +6616,65 @@ function shuffleArray(arr) {
     }
     return a;
 }
+
+// ═══ Table skins — cosmetic play surfaces (The Table Maker) ═════════════
+// A skin is a material, never a scene: every option keeps the same warm
+// vignette so gameplay reads identically. Free while we tune; Stars later.
+const TABLE_SKINS = [
+    { id: 'oak',    name: 'Royal Oak',        cls: '',            swatch: '' },
+    { id: 'leather', name: 'Oxblood Leather', cls: 'skin-leather', swatch: 'tsw-leather' },
+    { id: 'velvet', name: 'Crimson Velvet',   cls: 'skin-velvet', swatch: 'tsw-velvet' },
+    { id: 'queens', name: "The Queen's Table", cls: 'skin-queens', swatch: 'tsw-queens' },
+];
+
+function currentTableSkin() {
+    try { return localStorage.getItem('favor_table_skin') || 'oak'; } catch (e) { return 'oak'; }
+}
+
+function applyTableSkin(id) {
+    const skin = TABLE_SKINS.find(s => s.id === id) || TABLE_SKINS[0];
+    try { localStorage.setItem('favor_table_skin', skin.id); } catch (e) {}
+    const g = document.getElementById('game-screen');
+    if (g) {
+        TABLE_SKINS.forEach(s => { if (s.cls) g.classList.remove(s.cls); });
+        if (skin.cls) g.classList.add(skin.cls);
+    }
+    renderStoreTables();
+}
+window.applyTableSkin = applyTableSkin;
+
+function renderStoreTables() {
+    const holder = document.getElementById('stTables');
+    if (!holder) return;
+    const cur = currentTableSkin();
+    holder.innerHTML = TABLE_SKINS.map(s => `
+        <div class="st-table-card${s.id === cur ? ' equipped' : ''}"
+             onclick="event.stopPropagation(); applyTableSkin('${s.id}')">
+            <div class="st-table-swatch ${s.swatch}"
+                 ${s.swatch ? '' : 'style="background: radial-gradient(ellipse at 50% 40%, #6b4a30 0%, #4a3020 55%, #2a1a10 100%)"'}></div>
+            <div class="st-table-plate">
+                <span class="st-table-name">${s.name}</span>
+                <span class="st-table-state">${s.id === cur ? '✦ On your table' : 'Free — tap to equip'}</span>
+            </div>
+        </div>`).join('');
+}
+
+// The store panel is FLB's (meta.js, loads after us) — watch its class
+// instead of patching its code, and paint our shelf whenever it opens.
+(function () {
+    const panel = document.getElementById('storePanel');
+    if (!panel) return;
+    new MutationObserver(() => {
+        if (panel.classList.contains('active')) renderStoreTables();
+    }).observe(panel, { attributes: true, attributeFilter: ['class'] });
+})();
+
+// Restore the equipped table on load; ?table=<id> overrides (review/testing).
+(function () {
+    let id = currentTableSkin();
+    try {
+        const q = new URLSearchParams(location.search).get('table');
+        if (q && TABLE_SKINS.some(s => s.id === q)) id = q;
+    } catch (e) {}
+    applyTableSkin(id);
+})();

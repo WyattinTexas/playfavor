@@ -6579,3 +6579,65 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     .sk-size { width: 74px; padding: 10px 0 8px; }
     .sk-size b { font-size: 24px; }
 }
+/* ── Table skins (cosmetic play surfaces) ──────────────────────────────
+   A skin is a MATERIAL, never a scene: dark-to-mid value, low contrast,
+   and every skin keeps the same warm center-light vignette so cards and
+   text read identically on all of them. */
+#game-screen.skin-leather, .tsw-leather {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(60,24,20,0.0) 0%, rgba(26,10,8,0.42) 62%, rgba(14,6,4,0.72) 100%),
+        url('../assets/ui/table-leather.jpg');
+    background-size: 100% 100%, 640px;
+}
+#game-screen.skin-velvet, .tsw-velvet {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(40,10,10,0.05) 0%, rgba(22,6,6,0.5) 60%, rgba(10,3,3,0.76) 100%),
+        linear-gradient(rgba(20,5,5,0.34), rgba(20,5,5,0.34)),
+        url('../assets/ui/table-velvet.jpg');
+    background-size: 100% 100%, 100% 100%, 560px;
+}
+#game-screen.skin-queens, .tsw-queens {
+    /* every layer's size lives IN the shorthand — a trailing background-size
+       would resize the inlay LINES into full gold SHEETS (learned the hard way) */
+    background:
+        linear-gradient(rgba(214,178,102,0.42), rgba(214,178,102,0.42)) 10px 10px / calc(100% - 20px) 2px no-repeat,
+        linear-gradient(rgba(214,178,102,0.42), rgba(214,178,102,0.42)) 10px calc(100% - 12px) / calc(100% - 20px) 2px no-repeat,
+        linear-gradient(rgba(214,178,102,0.42), rgba(214,178,102,0.42)) 10px 10px / 2px calc(100% - 20px) no-repeat,
+        linear-gradient(rgba(214,178,102,0.42), rgba(214,178,102,0.42)) calc(100% - 12px) 10px / 2px calc(100% - 20px) no-repeat,
+        linear-gradient(rgba(214,178,102,0.22), rgba(214,178,102,0.22)) 17px 17px / calc(100% - 34px) 1px no-repeat,
+        linear-gradient(rgba(214,178,102,0.22), rgba(214,178,102,0.22)) 17px calc(100% - 18px) / calc(100% - 34px) 1px no-repeat,
+        linear-gradient(rgba(214,178,102,0.22), rgba(214,178,102,0.22)) 17px 17px / 1px calc(100% - 34px) no-repeat,
+        linear-gradient(rgba(214,178,102,0.22), rgba(214,178,102,0.22)) calc(100% - 18px) 17px / 1px calc(100% - 34px) no-repeat,
+        radial-gradient(ellipse at 50% 40%, rgba(44,26,66,0.08) 0%, rgba(22,12,36,0.52) 60%, rgba(9,5,18,0.8) 100%) 0 0 / 100% 100% no-repeat,
+        linear-gradient(rgba(16,9,28,0.5), rgba(16,9,28,0.5)) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-queens.jpg') 0 0 / 560px repeat;
+}
+
+/* The Table Maker — a quiet shelf below the heroes */
+.st-tables-head {
+    font-family: 'Cinzel', serif; font-weight: 700;
+    font-size: 13px; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--gold); opacity: 0.85;
+    margin: 18px 4px 8px; text-align: center;
+}
+.st-tables { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.st-table-card {
+    width: 150px; border-radius: 10px; overflow: hidden;
+    border: 1px solid rgba(201,168,76,0.4);
+    background: rgba(18,10,5,0.6);
+    cursor: pointer; transition: border-color 0.15s, transform 0.15s;
+}
+.st-table-card:hover { border-color: var(--gold); transform: translateY(-2px); }
+.st-table-card.equipped { border-color: var(--gold-light); box-shadow: 0 0 14px rgba(201,168,76,0.3); }
+.st-table-swatch { height: 74px; }
+.st-table-plate {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 7px 6px 9px;
+}
+.st-table-name { font-family: 'Cinzel', serif; font-weight: 700; font-size: 11px; letter-spacing: 1px; color: var(--gold-light); }
+.st-table-state {
+    font-family: 'Cinzel', serif; font-size: 9px; font-weight: 700;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    color: rgba(232,205,120,0.75);
+}
+.st-table-card.equipped .st-table-state { color: #ffe9ad; }
