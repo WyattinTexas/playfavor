@@ -6614,7 +6614,7 @@ function shuffleArray(arr) {
 // vignette so gameplay reads identically. Free while we tune; Stars later.
 const TABLE_SKINS = [
     { id: 'oak',    name: 'Royal Oak',        cls: '',            swatch: '' },
-    { id: 'walnut', name: 'Dark Walnut',      cls: 'skin-walnut', swatch: 'tsw-walnut' },
+    { id: 'leather', name: 'Oxblood Leather', cls: 'skin-leather', swatch: 'tsw-leather' },
     { id: 'velvet', name: 'Crimson Velvet',   cls: 'skin-velvet', swatch: 'tsw-velvet' },
     { id: 'queens', name: "The Queen's Table", cls: 'skin-queens', swatch: 'tsw-queens' },
 ];

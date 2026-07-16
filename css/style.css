@@ -6466,11 +6466,11 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
    A skin is a MATERIAL, never a scene: dark-to-mid value, low contrast,
    and every skin keeps the same warm center-light vignette so cards and
    text read identically on all of them. */
-#game-screen.skin-walnut, .tsw-walnut {
+#game-screen.skin-leather, .tsw-leather {
     background:
-        radial-gradient(ellipse at 50% 40%, rgba(60,40,24,0.0) 0%, rgba(26,16,8,0.42) 62%, rgba(14,8,4,0.72) 100%),
-        url('../assets/ui/table-walnut.jpg');
-    background-size: 100% 100%, 620px;
+        radial-gradient(ellipse at 50% 40%, rgba(60,24,20,0.0) 0%, rgba(26,10,8,0.42) 62%, rgba(14,6,4,0.72) 100%),
+        url('../assets/ui/table-leather.jpg');
+    background-size: 100% 100%, 640px;
 }
 #game-screen.skin-velvet, .tsw-velvet {
     background:
@@ -6483,13 +6483,17 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     /* every layer's size lives IN the shorthand — a trailing background-size
        would resize the inlay LINES into full gold SHEETS (learned the hard way) */
     background:
-        linear-gradient(rgba(214,178,102,0.30), rgba(214,178,102,0.30)) 12px 12px / calc(100% - 24px) 2px no-repeat,
-        linear-gradient(rgba(214,178,102,0.30), rgba(214,178,102,0.30)) 12px calc(100% - 14px) / calc(100% - 24px) 2px no-repeat,
-        linear-gradient(rgba(214,178,102,0.30), rgba(214,178,102,0.30)) 12px 12px / 2px calc(100% - 24px) no-repeat,
-        linear-gradient(rgba(214,178,102,0.30), rgba(214,178,102,0.30)) calc(100% - 14px) 12px / 2px calc(100% - 24px) no-repeat,
-        radial-gradient(ellipse at 50% 40%, rgba(44,26,66,0.06) 0%, rgba(24,14,40,0.5) 60%, rgba(10,6,20,0.78) 100%) 0 0 / 100% 100% no-repeat,
-        linear-gradient(rgba(18,10,30,0.42), rgba(18,10,30,0.42)) 0 0 / 100% 100% no-repeat,
-        url('../assets/ui/table-queens.jpg') 0 0 / 720px repeat;
+        linear-gradient(rgba(214,178,102,0.42), rgba(214,178,102,0.42)) 10px 10px / calc(100% - 20px) 2px no-repeat,
+        linear-gradient(rgba(214,178,102,0.42), rgba(214,178,102,0.42)) 10px calc(100% - 12px) / calc(100% - 20px) 2px no-repeat,
+        linear-gradient(rgba(214,178,102,0.42), rgba(214,178,102,0.42)) 10px 10px / 2px calc(100% - 20px) no-repeat,
+        linear-gradient(rgba(214,178,102,0.42), rgba(214,178,102,0.42)) calc(100% - 12px) 10px / 2px calc(100% - 20px) no-repeat,
+        linear-gradient(rgba(214,178,102,0.22), rgba(214,178,102,0.22)) 17px 17px / calc(100% - 34px) 1px no-repeat,
+        linear-gradient(rgba(214,178,102,0.22), rgba(214,178,102,0.22)) 17px calc(100% - 18px) / calc(100% - 34px) 1px no-repeat,
+        linear-gradient(rgba(214,178,102,0.22), rgba(214,178,102,0.22)) 17px 17px / 1px calc(100% - 34px) no-repeat,
+        linear-gradient(rgba(214,178,102,0.22), rgba(214,178,102,0.22)) calc(100% - 18px) 17px / 1px calc(100% - 34px) no-repeat,
+        radial-gradient(ellipse at 50% 40%, rgba(44,26,66,0.08) 0%, rgba(22,12,36,0.52) 60%, rgba(9,5,18,0.8) 100%) 0 0 / 100% 100% no-repeat,
+        linear-gradient(rgba(16,9,28,0.5), rgba(16,9,28,0.5)) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-queens.jpg') 0 0 / 560px repeat;
 }
 
 /* The Table Maker — a quiet shelf below the heroes */
