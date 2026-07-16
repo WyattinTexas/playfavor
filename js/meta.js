@@ -138,6 +138,18 @@
         return `${p.y}-${p.m}-${p.d}`;
     }
 
+    // Time until the next 10 PM ET boundary — the Daily Rival plaque's
+    // countdown ticks on this. (ET wall-clock arithmetic: reading the
+    // instant in the ET frame cancels the offset; the once-a-year DST
+    // boundary night drifts an hour and nobody is harmed.)
+    function msUntilNextWindow(now = new Date()) {
+        const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        const next = new Date(et);
+        next.setHours(22, 0, 0, 0);
+        if (et >= next) next.setDate(next.getDate() + 1);
+        return Math.max(0, next - et);
+    }
+
     // ── Rating points (deterministic, per finished game vs the table) ──
 
     function ratingDelta(place, count) {
@@ -1117,7 +1129,7 @@
         readRow, mergeRow,
         postGameResult, openLeaderboard, closeLeaderboard, openProfile, closeProfile,
         queueSize, rename, renderProfileChip, snapshot, tableSeed,
-        personaDefs, rivalDayClaimed, claimRivalWin,
+        personaDefs, rivalDayClaimed, claimRivalWin, msUntilNextWindow,
         settleDue, drainMsgs, currentDateKey, ratingDelta, generateName,
         gameStars, ownedIds, buyCharacter, openStore, closeStore, askBuy, confirmBuy,
         inspectChar, closeInspect,

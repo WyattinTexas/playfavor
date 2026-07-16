@@ -40,16 +40,57 @@
     }
 
     // ── SKIRMISH ─────────────────────────────────────────────────────
+    // First question: how big a table? (Wyatt 7/16 — the size is part of
+    // what kind of game a skirmish IS, not a menu-wide setting.)
     function openSkirmish() {
+        const ov = $('skirmishPick');
+        ov.innerHTML = `
+            <div class="ri-inner" onclick="event.stopPropagation()">
+                <div class="ri-title">Skirmish</div>
+                <div class="ri-stakes">A friendly clash against the court's own — play any hero you own.</div>
+                <div class="sk-sizes">
+                    ${[3, 4, 5].map(n => `
+                        <button type="button" class="sk-size" onclick="FMODES.beginSkirmish(${n})">
+                            <b>${n}</b><span>players</span>
+                        </button>`).join('')}
+                </div>
+                <button type="button" class="menu-link rm-back" onclick="FMODES.closeSkirmishPick()">← Back</button>
+            </div>`;
+        ov.classList.add('active');
+        ov.onclick = () => closeSkirmishPick();
+    }
+
+    function closeSkirmishPick() {
+        $('skirmishPick').classList.remove('active');
+    }
+
+    function beginSkirmish(n) {
+        closeSkirmishPick();
         window._gameMode = 'skirmish';
+        window._skirmishSize = [3, 4, 5].includes(n) ? n : 3;
         titleToSelect(ownedChars());
     }
 
     // ── DAILY RIVAL ──────────────────────────────────────────────────
-    // Deterministic pick from the daily key (10 PM ET boundary — the same
-    // day the champions live on): every client, same rival. No repeat on
-    // consecutive days.
+    // TEN rivals — one for each character in the game, each with a name
+    // worth facing (Wyatt 7/16). The day's pick is deterministic from the
+    // daily key (10 PM ET boundary — the same day the champions live on):
+    // every client, same rival. No repeat on consecutive days. Rivals are
+    // NOT leaderboard citizens — they never post rows; they just play
+    // sharp (persona brain) astride their own hero.
     const RIVAL_STARS = 25;
+    const RIVALS = [
+        { key: 'explorer',  hero: 'explorer',  name: 'Cassian the Far-Strider',      strong: ['survival', 'prospecting'] },
+        { key: 'knight',    hero: 'knight',    name: 'Ser Aldemar the Unbowed',      strong: ['power', 'survival'] },
+        { key: 'bandit',    hero: 'bandit',    name: 'Vesper Quickfingers',          strong: ['prospecting', 'power'] },
+        { key: 'merchant',  hero: 'merchant',  name: 'Barnaby Goldweight',           strong: ['charisma', 'knowledge'] },
+        { key: 'fisherman', hero: 'fisherman', name: 'Old Pike Whitmore',            strong: ['survival', 'knowledge'] },
+        { key: 'duchess',   hero: 'duchess',   name: 'Duchess Vivienne the Radiant', strong: ['charisma', 'knowledge'] },
+        { key: 'scientist', hero: 'scientist', name: 'Doctor Ambrose Quicksilver',   strong: ['alchemy', 'knowledge'] },
+        { key: 'doctor',    hero: 'doctor',    name: 'Rosamund the Mender',          strong: ['alchemy', 'charisma'] },
+        { key: 'fiddler',   hero: 'fiddler',   name: 'Fiddling Jack Merriweather',   strong: ['charisma', 'power'] },
+        { key: 'magician',  hero: 'magician',  name: 'Prospero the Wondermaker',     strong: ['alchemy', 'prospecting'] },
+    ];
 
     function hashKey(s) {
         let h = 0;
@@ -58,7 +99,7 @@
     }
 
     function rivalOfDay(key) {
-        const pool = FLB.personaDefs();
+        const pool = RIVALS;
         const k = key || FLB.currentDateKey();
         let idx = hashKey(k) % pool.length;
         // Yesterday's pick (previous calendar day of the same key-space)
@@ -67,11 +108,51 @@
         prev.setUTCDate(prev.getUTCDate() - 1);
         const prevIdx = hashKey(prev.toISOString().slice(0, 10)) % pool.length;
         if (idx === prevIdx) idx = (idx + 1) % pool.length;
-        return pool[idx];
+        // A sharp table brain + a seat at the rated start, but NO
+        // leaderboard identity (uid stays absent on purpose).
+        return { ...pool[idx], strong: pool[idx].strong.slice(), rating: 160 };
     }
 
     function rivalBeatenToday() {
         return !!(window.FLB && FLB.rivalDayClaimed && FLB.rivalDayClaimed() === FLB.currentDateKey());
+    }
+
+    // ── The menu plaque — the Daily Rival IS its own button, worn like
+    // Nation's Challenger: portrait, name plate, the ★ stakes, a live
+    // countdown to the next rival, and a red ! while today's is unbeaten.
+    let _plaqueT = null;
+
+    function fmtClock(ms) {
+        const s = Math.max(0, Math.floor(ms / 1000));
+        const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}`;
+    }
+
+    function renderRivalPlaque() {
+        const card = $('rivalPlaque');
+        if (!card || !window.FLB || !window.FAVOR_DATA) return;
+        const rival = rivalOfDay();
+        const hero = window.FAVOR_DATA.characters.find(c => c.id === rival.hero);
+        const beaten = rivalBeatenToday();
+        card.classList.toggle('beaten', beaten);
+        card.innerHTML = `
+            ${beaten ? '' : '<span class="drp-badge">!</span>'}
+            <div class="drp-head">Daily Rival</div>
+            <div class="drp-frame">
+                <img class="drp-art" src="assets/characters/${hero ? hero.filename : ''}" alt="">
+                ${beaten ? '<div class="drp-stamp">BEATEN</div>' : ''}
+            </div>
+            <div class="drp-name">${rival.name}</div>
+            <div class="drp-stars">${beaten ? 'Next rival in' : `<b>★</b> +${RIVAL_STARS}`}</div>
+            <div class="drp-clock" id="drpClock">${fmtClock(FLB.msUntilNextWindow())}</div>`;
+        clearInterval(_plaqueT);
+        _plaqueT = setInterval(() => {
+            const el = $('drpClock');
+            if (!el) { clearInterval(_plaqueT); _plaqueT = null; return; }
+            const left = FLB.msUntilNextWindow();
+            el.textContent = fmtClock(left);
+            if (left < 1000) renderRivalPlaque();   // rollover — the next rival takes the plaque
+        }, 1000);
     }
 
     function openDailyRival() {
@@ -85,7 +166,7 @@
                 <img class="ri-art${beaten ? ' beaten' : ''}" src="assets/characters/${hero ? hero.filename : ''}" alt="">
                 ${beaten ? '<div class="ri-stamp">BEATEN</div>' : ''}
                 <div class="ri-name">${rival.name}</div>
-                <div class="ri-sub">${hero ? 'Rides with ' + hero.name : ''} · a table of three</div>
+                <div class="ri-sub">${hero ? 'The ' + hero.name : ''} · a table of three</div>
                 <div class="ri-stakes">${beaten
                     ? 'Beaten today — the next rival arrives at 10 PM Eastern.'
                     : `Finish <b>ahead of them</b> and the crown pays <b>+${RIVAL_STARS} ★</b> — once a day.`}</div>
@@ -124,6 +205,7 @@
             if (fresh) {
                 showNotification(`Rival bested — ${rival.name} yields! +${RIVAL_STARS} ★`, 'act');
                 addLogEntry(`Daily Rival defeated: ${rival.name} (+${RIVAL_STARS} Stars)`);
+                renderRivalPlaque();   // the plaque wears its BEATEN stamp now
             }
         } catch (e) { /* the win itself still stands */ }
     }
@@ -148,9 +230,10 @@
     function renderRoomDoor() {
         $('roomOverlay').innerHTML = `
             <div class="rm-inner" onclick="event.stopPropagation()">
-                <div class="rm-title">A Private Table</div>
-                <div class="rm-sub">Host a room and hand your friends the code — the realm fills any empty seats.</div>
-                <button class="btn-royal primary rm-host" onclick="FMODES.hostRoom()"><span>Host a Room</span></button>
+                <div class="rm-title">Private Game</div>
+                <div class="rm-sub">Host a game and share the code, or join a friend's.</div>
+                <button class="btn-royal primary rm-host" onclick="FMODES.hostRoom()"><span>Host a Game</span></button>
+                <div class="rm-or">or</div>
                 <div class="rm-join">
                     <input id="rmCode" maxlength="5" placeholder="CODE" autocomplete="off"
                            oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '')">
@@ -221,12 +304,12 @@
             <button type="button" class="${rec.size === n ? 'on' : ''}"
                     ${host ? `onclick="FMODES.roomSetSize(${n})"` : 'disabled'}>${n}</button>`;
         $('roomOverlay').innerHTML = `
-            <div class="rm-inner" onclick="event.stopPropagation()">
-                <div class="rm-title">The Room Awaits</div>
+            <div class="rm-inner rm-lobby" onclick="event.stopPropagation()">
+                <div class="rm-title">Private Game</div>
                 <div class="rm-code" title="Share this code">${code}</div>
-                <div class="rm-sub">${host ? 'Share the code — friends join from Private Room.' : 'Waiting on the host to begin…'}</div>
+                <div class="rm-sub">Share this code with your friends.</div>
                 <div class="rm-size queue-seg">
-                    <span class="queue-label">Table of</span>
+                    <span class="queue-label">Players</span>
                     ${sizeBtn(3)}${sizeBtn(4)}${sizeBtn(5)}
                 </div>
                 <div class="rm-list">
@@ -236,11 +319,13 @@
                             <span class="rm-name">${s.name || 'A Noble'}${u === me ? ' (you)' : ''}</span>
                         </div>`).join('')}
                     ${Array.from({ length: fill }, () => `
-                        <div class="rm-row ai"><span class="rm-crown"></span><span class="rm-name">The realm answers…</span></div>`).join('')}
+                        <div class="rm-row open"><span class="rm-crown"></span><span class="rm-name">Open seat</span></div>`).join('')}
                 </div>
-                <div class="ri-actions">
+                <div class="rm-note">Open seats play as AI.</div>
+                <div class="rm-status">${host ? '' : 'Waiting for the host to start…'}</div>
+                <div class="ri-actions rm-actions">
                     <button class="btn-royal" onclick="FMODES.closePrivateRoom()"><span>Leave</span></button>
-                    ${host ? `<button class="btn-royal primary" onclick="FMODES.startRoomGame()"><span>Begin (${humans} + ${fill} AI)</span></button>` : ''}
+                    ${host ? `<button class="btn-royal primary" onclick="FMODES.startRoomGame()"><span>Start Game</span></button>` : ''}
                 </div>
             </div>`;
     }
@@ -332,11 +417,18 @@
 
     // ── Public surface ───────────────────────────────────────────────
     window.FMODES = {
-        openSkirmish, openDailyRival, closeRivalIntro, beginRivalGame,
-        rivalOfDay, rivalGameOver,
+        openSkirmish, beginSkirmish, closeSkirmishPick,
+        openDailyRival, closeRivalIntro, beginRivalGame,
+        rivalOfDay, rivalGameOver, renderRivalPlaque,
         openPrivateRoom, closePrivateRoom, hostRoom, joinRoom,
         roomSetSize, startRoomGame,
         attachEmotes, detachEmotes, toggleEmoteTray, emote,
         EMOTES,
     };
+
+    // The plaque draws at load and again once the profile row lands (the
+    // BEATEN state reads the cached row, which arrives a beat later).
+    renderRivalPlaque();
+    setTimeout(renderRivalPlaque, 1600);
+    setTimeout(renderRivalPlaque, 4500);
 })();

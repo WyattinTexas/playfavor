@@ -22,7 +22,7 @@ await page.setViewport({ width: 1440, height: 900 });
 // ── startGame (ui-audit pins: identity shuffle, 3p queue, emblem seat 0) ──
 await page.goto(URL, { waitUntil: 'networkidle2' });
 await page.waitForFunction(() => {
-  const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+  const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
     .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
   return b && b.offsetParent;
 }, { timeout: 20000 });
@@ -32,7 +32,7 @@ await page.evaluate(() => {
   window._pinEmblemSeed = 0;
 });
 await page.evaluate(() => {
-  const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+  const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
     .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
   b.click();
 });

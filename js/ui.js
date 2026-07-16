@@ -1405,8 +1405,11 @@ async function buildSoloTable() {
     const mode = window._gameMode || null;
     // Table size = the queue you joined on the menu (persisted; the old
     // in-select dropdown moved there so Play Now can never skip past it).
-    // The Daily Rival is always a table of three — the on-ramp table.
-    const playerCount = mode === 'rival' ? 3 : ((window.FLB && FLB.queueSize()) || 3);
+    // Skirmish asks its own 3/4/5 at the door (Wyatt 7/16); the Daily
+    // Rival is always a table of three — the on-ramp table.
+    const playerCount = mode === 'rival' ? 3
+        : mode === 'skirmish' ? (window._skirmishSize || 3)
+        : ((window.FLB && FLB.queueSize()) || 3);
 
     localStorage.removeItem('favorOffer');   // this pledge becomes a real table
 
@@ -1461,9 +1464,11 @@ async function buildSoloTable() {
     if (mode === 'skirmish') {
         personaSeats = new Array(playerCount - 1).fill(null);
     } else if (mode === 'rival' && window._rivalDef) {
+        // Today's rival: a themed challenger with the sharp table brain
+        // and their own hero — NOT a leaderboard citizen (no uid, so
+        // nothing ever posts a row for them).
         personaSeats = new Array(playerCount - 1).fill(null);
-        const live = seed && (seed.personas || []).find(p => p.uid === window._rivalDef.uid);
-        personaSeats[0] = live || { ...window._rivalDef, rating: window._rivalDef.seedRating };
+        personaSeats[0] = { ...window._rivalDef };
     } else {
         personaSeats = seatPersonas(seed, playerCount - 1);
     }
@@ -1479,8 +1484,11 @@ async function buildSoloTable() {
         if (persona) {
             // Signature hero for face recognition — random when it was
             // offered to you or someone at the table already took it.
-            const heroId = (available.includes(persona.hero) && !taken(persona.hero))
-                ? persona.hero : nextFree();
+            // The DAILY RIVAL outranks the offered-pool exclusion: the
+            // Duchess rival rides the Duchess unless YOU took her.
+            const sigOk = !taken(persona.hero)
+                && (available.includes(persona.hero) || mode === 'rival');
+            const heroId = sigOk ? persona.hero : nextFree();
             choices.push({ characterId: heroId, playerName: persona.name });
             seatedPersonas.push({ seat: i + 1, def: persona });
         } else {

@@ -32,12 +32,12 @@ const browser = await puppeteer.launch({
 async function startGame(page) {
   await page.goto(URL, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => {
-    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+    const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     return b && b.offsetParent;
   }, { timeout: 20000 });
   await page.evaluate(() => {
-    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+    const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     b.click();
   });

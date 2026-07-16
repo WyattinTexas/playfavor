@@ -25,7 +25,7 @@ for (const [w, h] of [[1440, 900], [1280, 800]]) {
   await page.goto(URL, { waitUntil: 'networkidle2' });
   await page.evaluate(() => {
     window.shuffleArray = (a) => [...a];
-    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+    const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     b.click();
   });

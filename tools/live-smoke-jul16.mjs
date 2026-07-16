@@ -29,9 +29,15 @@ ok(!EXPECT || stamp === EXPECT, `live stamp ${stamp}${EXPECT ? ` (expected ${EXP
 ok(await page.evaluate(() => !!window.FMODES && !!FMP.collectThrows && !!FLB.claimRivalWin),
   'modes + throw protocol + rival claim all aboard');
 
-const trio = await page.evaluate(() =>
-  [...document.querySelectorAll('.menu-trio .btn-royal span')].map(s => s.textContent).join('|'));
-ok(trio === 'Skirmish|Daily Rival|Private Room', `menu trio live (${trio})`);
+const doors = await page.evaluate(() => ({
+  tiles: [...document.querySelectorAll('.ts-card .ts-plaque')].map(s => s.textContent.trim()),
+  plaqueName: (document.querySelector('#rivalPlaque .drp-name') || {}).textContent || '',
+  clock: /^\d\d:\d\d:\d\d$/.test((document.getElementById('drpClock') || {}).textContent || ''),
+}));
+ok(doors.tiles.includes('Skirmish') && doors.tiles.includes('Private Game'),
+  `menu tiles live (${doors.tiles.join('|')})`);
+ok(doors.plaqueName.length > 8 && doors.clock,
+  `the rival plaque ticks on the menu (${doors.plaqueName})`);
 
 const rival = await page.evaluate(() => { FMODES.openDailyRival(); return {
   on: document.getElementById('rivalIntro').classList.contains('active'),
@@ -46,6 +52,7 @@ await page.evaluate(() => {
   window._pinEmblemSeed = 0;
   localStorage.setItem('favorQueue', '3');
   FMODES.openSkirmish();
+  FMODES.beginSkirmish(3);   // the door asks the size first now
 });
 await page.waitForFunction(() => document.getElementById('character-select').classList.contains('active')
   && document.querySelectorAll('.character-card').length > 0, { timeout: 15000 });

@@ -126,10 +126,11 @@ html, body {
     grid-template-areas:
         "play skirm host"
         "play rival lead"
-        "play store ach"
+        "play rival store"
+        "play rival ach"
         "play how   how";
     grid-template-columns: minmax(200px, 300px) minmax(140px, 205px) minmax(140px, 205px);
-    grid-template-rows: 1fr auto auto auto;
+    grid-template-rows: 1fr auto auto auto auto;
     gap: clamp(8px, 1.8dvh, 16px) clamp(10px, 1.4vw, 18px);
     max-width: min(780px, 64vw);
     /* tall screens: the grid floats centered between lockup and footer */
@@ -288,7 +289,7 @@ html, body {
 @media (orientation: portrait), (max-width: 640px) {
     .ts-frame { overflow-y: auto; padding: 20px 6vw; }
     .ts-grid {
-        grid-template-areas: "play play" "skirm host" "rival lead" "store ach" "how how";
+        grid-template-areas: "play play" "skirm host" "rival rival" "lead store" "ach how";
         grid-template-columns: 1fr 1fr;
         grid-template-rows: auto;
         max-width: 100%;
@@ -6301,10 +6302,7 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
     border-radius: 6px; box-shadow: 0 6px 22px rgba(0,0,0,0.6);
 }
 
-/* ═══ THE THREE NEW DOORS — Skirmish · Daily Rival · Private Room ═══ */
-.menu-trio { display: flex; gap: 8px; }
-.menu-trio .btn-royal { flex: 1; padding: 9px 4px; }
-.menu-trio .btn-royal span { font-size: 12.5px; letter-spacing: 0.4px; white-space: nowrap; }
+/* ═══ MODE OVERLAYS — Daily Rival · Skirmish · Private Game ═══ */
 
 /* ── Daily Rival intro plaque ── */
 .rival-intro {
@@ -6315,6 +6313,7 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
 .rival-intro.active { display: flex; }
 .ri-inner {
     position: relative;
+    box-sizing: border-box;
     display: flex; flex-direction: column; align-items: center; gap: 8px;
     max-width: min(420px, 92vw); max-height: 92vh; overflow-y: auto;
     padding: 22px 26px;
@@ -6359,14 +6358,31 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
 }
 .room-overlay.active { display: flex; }
 .rm-inner {
-    display: flex; flex-direction: column; align-items: center; gap: 10px;
-    width: min(440px, 92vw); max-height: 92vh; overflow-y: auto;
-    padding: 22px 26px;
+    box-sizing: border-box;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    width: min(560px, 94vw); max-height: 94vh; overflow: hidden auto;
+    padding: 30px 38px;
     background: linear-gradient(160deg, rgba(46, 28, 12, 0.98), rgba(24, 13, 6, 0.98));
     border: 1px solid rgba(212, 175, 55, 0.55);
     border-radius: 14px;
     box-shadow: 0 18px 50px rgba(0, 0, 0, 0.7);
 }
+.rm-lobby { width: min(600px, 94vw); gap: 13px; }
+.rm-or {
+    font-family: 'EB Garamond', serif; font-size: 13px; font-style: italic;
+    color: var(--parchment, #e8d9b5); opacity: 0.55;
+}
+.rm-note {
+    font-family: 'EB Garamond', serif; font-size: 13px;
+    color: var(--parchment, #e8d9b5); opacity: 0.6;
+}
+.rm-status {
+    font-family: 'EB Garamond', serif; font-size: 14px; min-height: 18px;
+    color: #ffd97a; opacity: 0.9;
+}
+.rm-actions { width: 100%; display: flex; gap: 12px; margin-top: 2px; }
+.rm-actions .btn-royal { flex: 1; min-width: 0; }
+.rm-actions .btn-royal span { white-space: nowrap; }
 .rm-title {
     font-family: 'Cinzel', serif; font-size: 20px; color: var(--gold, #d4af37);
     letter-spacing: 1.5px; text-transform: uppercase;
@@ -6394,20 +6410,21 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
 .rm-join input::placeholder { color: rgba(232, 217, 181, 0.35); letter-spacing: 2px; }
 .rm-size { align-self: center; }
 .rm-list {
-    width: 100%; display: flex; flex-direction: column; gap: 6px;
-    padding: 8px; border-radius: 10px;
+    box-sizing: border-box;
+    width: 100%; display: flex; flex-direction: column; gap: 8px;
+    padding: 12px; border-radius: 10px;
     background: rgba(0, 0, 0, 0.25);
     border: 1px solid rgba(212, 175, 55, 0.25);
 }
 .rm-row {
-    display: flex; align-items: center; gap: 8px;
-    padding: 7px 10px; border-radius: 8px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border-radius: 8px;
     background: rgba(212, 175, 55, 0.08);
-    font-family: 'EB Garamond', serif; font-size: 15px;
+    font-family: 'EB Garamond', serif; font-size: 16px;
     color: var(--parchment, #e8d9b5);
 }
 .rm-row.host { border: 1px solid rgba(212, 175, 55, 0.35); }
-.rm-row.ai { opacity: 0.55; font-style: italic; }
+.rm-row.open { opacity: 0.5; font-style: italic; }
 .rm-crown { width: 18px; text-align: center; color: #ffd97a; }
 .rm-back { margin-top: 2px; }
 
@@ -6452,12 +6469,109 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
 
 /* Compact landscape: the trio tightens; the emote button ducks the hand. */
 @media (orientation: landscape) and (max-height: 540px) {
-    .menu-trio { gap: 6px; }
-    .menu-trio .btn-royal { padding: 7px 3px; }
-    .menu-trio .btn-royal span { font-size: 11px; }
     .emote-btn { right: 10px; bottom: 148px; width: 38px; height: 38px; }
     .emote-btn img { width: 22px; height: 22px; }
     .emote-tray { right: 8px; bottom: 192px; }
     .emote-tray img { width: 34px; height: 34px; }
     .rm-code { font-size: 26px; letter-spacing: 7px; }
+}
+
+/* ═══ DAILY RIVAL PLAQUE — Nation's Challenger, worn on the menu ═══ */
+.drp {
+    grid-area: rival;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 9px 10px 10px;
+    min-height: 158px;
+    border-color: rgba(232, 195, 75, 0.85);
+    box-shadow: 0 0 22px rgba(201, 168, 76, 0.22), 0 6px 18px rgba(0, 0, 0, 0.55);
+}
+.drp-head {
+    font-family: 'Cinzel', serif; font-size: 12px; font-weight: 700;
+    letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--gold, #d4af37);
+}
+.drp-badge {
+    position: absolute; top: -7px; right: -7px; z-index: 2;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #ff5a4e, #a31408);
+    border: 1px solid #ffd97a;
+    color: #fff; font-family: 'Cinzel', serif; font-weight: 900; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+    animation: drpPulse 2.2s ease-in-out infinite;
+}
+@keyframes drpPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+.drp-frame {
+    position: relative;
+    width: 86%;
+    border: 1px solid rgba(212, 175, 55, 0.7);
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+}
+.drp-art { display: block; width: 100%; height: 58px; object-fit: cover; object-position: center 32%; }
+.drp.beaten .drp-art { filter: grayscale(0.85) brightness(0.65); }
+.drp-stamp {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%) rotate(-12deg);
+    font-family: 'Cinzel', serif; font-size: 15px; font-weight: 900;
+    letter-spacing: 3px; color: #e8c34b;
+    border: 2px solid #e8c34b; border-radius: 5px; padding: 1px 8px;
+    background: rgba(20, 12, 6, 0.55);
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+.drp-name {
+    max-width: 94%;
+    font-family: 'Cinzel', serif; font-size: 12px; font-weight: 700;
+    letter-spacing: 0.6px; text-transform: uppercase; text-align: center;
+    color: #ffd97a; line-height: 1.25;
+}
+.drp-stars {
+    font-family: 'Cinzel', serif; font-size: 12px; font-weight: 700;
+    color: var(--parchment, #e8d9b5);
+}
+.drp-stars b { color: #e8c34b; }
+.drp-clock {
+    font-family: 'Cinzel', serif; font-size: 14px; font-weight: 700;
+    font-variant-numeric: tabular-nums; letter-spacing: 2px;
+    color: #ffd97a; opacity: 0.9;
+}
+
+/* ═══ SKIRMISH — the 3/4/5 door ═══ */
+.sk-sizes { display: flex; gap: 14px; margin: 10px 0 6px; }
+.sk-size {
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    width: 92px; padding: 14px 0 11px;
+    background: linear-gradient(160deg, rgba(58, 36, 18, 0.95), rgba(32, 17, 8, 0.95));
+    border: 1px solid rgba(212, 175, 55, 0.5); border-radius: 12px;
+    cursor: pointer;
+    transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.sk-size:hover, .sk-size:focus-visible {
+    transform: translateY(-2px);
+    border-color: var(--gold-light, #ffd97a);
+    box-shadow: 0 0 18px rgba(201, 168, 76, 0.3);
+    outline: none;
+}
+.sk-size b { font-family: 'Cinzel', serif; font-size: 32px; font-weight: 900; color: #ffd97a; line-height: 1; }
+.sk-size span {
+    font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--parchment, #e8d9b5); opacity: 0.8;
+}
+
+/* Compact landscape: the plaque and lobby tighten with the grid. */
+@media (orientation: landscape) and (max-height: 540px) {
+    .drp { min-height: 118px; gap: 2px; padding: 6px 8px 7px; }
+    .drp-head { font-size: 9.5px; letter-spacing: 2px; }
+    .drp-art { height: 38px; }
+    .drp-name { font-size: 9.5px; }
+    .drp-stars { font-size: 10px; }
+    .drp-clock { font-size: 11px; }
+    .drp-badge { width: 18px; height: 18px; font-size: 11px; top: -6px; right: -6px; }
+    .rm-inner, .rm-lobby { padding: 18px 22px; gap: 8px; }
+    .rm-row { padding: 7px 10px; font-size: 13.5px; }
+    .sk-sizes { gap: 10px; }
+    .sk-size { width: 74px; padding: 10px 0 8px; }
+    .sk-size b { font-size: 24px; }
 }

@@ -45,7 +45,7 @@ async function startGame(page) {
   });
   await page.goto(URL, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => {
-    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+    const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     return b && b.offsetParent;
   }, { timeout: 20000 });
@@ -70,7 +70,7 @@ async function startGame(page) {
     window._pinEmblemSeed = 0;
   });
   await page.evaluate(() => {
-    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+    const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     b.click();
   });
@@ -136,6 +136,18 @@ console.log('── Phone: glide blooms exactly one card (no sticky-hover double
   await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
   await startGame(page);
   await sleep(500);   // strip is always open — nothing to raise
+  // Freeze the rivals' throw timers: a rival render mid-glide rebuilds the
+  // hand and orphans the .bloom element under the held finger (the same
+  // trap the drag flows freeze against).
+  await page.evaluate(() => {
+    for (let i = 1; i < game.playerCount; i++) {
+      if (game.pendingActivations[i]) game.unpickCard(i);
+    }
+    window.CINEMATIC_SPEED = 1000;
+    beginThrowPhase();
+    renderGameState();
+  });
+  await sleep(200);
 
   const centers = await page.evaluate(() => {
     const zone = document.getElementById('tvHand');
@@ -569,7 +581,7 @@ for (const [w, h] of [[844, 390], [932, 430], [667, 375]]) {
     // Layout flow — pin the seed (seat 0, no personas, no boon) so chip
     // sizes and zone fits never depend on who happened to sit down.
     window._pinEmblemSeed = 0;
-    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+    const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     b.click();
   });
@@ -859,7 +871,7 @@ console.log('── Hero select: 3 random heroes, bots draw from the leftovers, 
   await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
   await page.goto(URL, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => {
-    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+    const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     return b && b.offsetParent;
   }, { timeout: 20000 });
@@ -867,7 +879,7 @@ console.log('── Hero select: 3 random heroes, bots draw from the leftovers, 
     // This flow keeps the REAL seed path (offer/seating fuzz) but must
     // not enter the live matchmaking queue.
     window._mpSkipQueue = true;
-    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+    const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     b.click();
   });
@@ -1841,12 +1853,12 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
   // segmented 3/4/5 table picker, Leaderboard/Store pair, quiet row.
   const menu = await page.evaluate(() => ({
     mode: FLB.mode,
-    play: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /play now/i.test(b.textContent))),
+    play: !!([...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')].find(b => /\bplay\b/i.test(b.textContent) && !/how to play/i.test(b.textContent))),
     seg: [...document.querySelectorAll('#queueSeg button[data-q]')].map(b => b.dataset.q),
     segLit: document.querySelectorAll('#queueSeg button.on').length,
-    lbBtn: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /leaderboard/i.test(b.textContent))),
-    storeBtn: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /store/i.test(b.textContent))),
-    howto: !!([...document.querySelectorAll('.menu-link')].find(b => /how to play/i.test(b.textContent))),
+    lbBtn: !!([...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')].find(b => /leaderboard/i.test(b.textContent))),
+    storeBtn: !!([...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')].find(b => /store/i.test(b.textContent))),
+    howto: !!([...document.querySelectorAll('#title-screen .ts-card .ts-plaque')].find(b => /how to play/i.test(b.textContent))),
     promptTest: !!document.getElementById('promptTestToggle'),
     chip: document.getElementById('profileChip').textContent.trim(),
     oldDropdownGone: !document.getElementById('playerCountSelect'),
@@ -1859,24 +1871,25 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
   ok(/Audit Herald/.test(menu.chip), `profile chip carries the royal name (${menu.chip.split('\n')[0]})`);
   ok(menu.oldDropdownGone, 'player-count dropdown is gone from character select');
 
-  // Landscape-first geometry: the art panel sits fully LEFT of the menu
-  // column, the primary dwarfs the secondaries, everything on-screen.
+  // Wingspan-stage geometry: the PLAY tile dwarfs the mid tiles, the grid
+  // sits fully on-screen, and the rival plaque stands tall beside it.
   const geo = await page.evaluate(() => {
-    const art = document.querySelector('.title-art').getBoundingClientRect();
-    const col = document.querySelector('.title-menu').getBoundingClientRect();
-    const play = document.querySelector('.menu-play').getBoundingClientRect();
-    const pair = document.querySelector('.menu-pair .btn-royal').getBoundingClientRect();
+    const grid = document.querySelector('.ts-grid').getBoundingClientRect();
+    const tile = (t) => [...document.querySelectorAll('.ts-card')]
+      .find(c => (c.querySelector('.ts-plaque') || {}).textContent === t);
+    const play = tile('Play').getBoundingClientRect();
+    const mid = tile('Skirmish').getBoundingClientRect();
+    const plaque = document.getElementById('rivalPlaque').getBoundingClientRect();
     return {
-      sideBySide: art.right <= col.left + 1,
-      colOn: col.top >= 0 && col.bottom <= window.innerHeight + 1,
-      artOn: art.top >= 0 && art.bottom <= window.innerHeight + 1,
-      playBigger: play.height > pair.height * 1.4 && play.width >= col.width - 2,
+      gridOn: grid.top >= 0 && grid.bottom <= window.innerHeight + 1,
+      playBiggest: play.height > mid.height * 1.6,
+      plaqueTall: plaque.height >= 120,
       hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
   });
-  ok(geo.sideBySide, 'landscape stage: box art left, menu column right');
-  ok(geo.colOn && geo.artOn && !geo.hscroll, 'stage fully on-screen, no h-scroll');
-  ok(geo.playBigger, 'Play Now is the unmistakable primary (full-width, tallest)');
+  ok(geo.gridOn && !geo.hscroll, 'menu grid fully on-screen, no h-scroll');
+  ok(geo.playBiggest, 'PLAY is the unmistakable primary tile');
+  ok(geo.plaqueTall, 'the rival plaque stands tall in the grid');
   await page.screenshot({ path: join(SHOTS, 'menu-desktop.png') });
 
   // Queue choice persists (segmented tap).
@@ -1999,24 +2012,23 @@ console.log('── Phone: royal menu at 844×390');
   await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
   await sleep(500);
   const m = await page.evaluate(() => {
-    const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 2 && r.top < window.innerHeight; };
-    const play = [...document.querySelectorAll('#title-screen .btn-royal')].find(b => /play now/i.test(b.textContent));
-    const art = document.querySelector('.title-art').getBoundingClientRect();
-    const col = document.querySelector('.title-menu').getBoundingClientRect();
+    const vis = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 2 && r.top < window.innerHeight && r.bottom > 0; };
+    const tile = (t) => [...document.querySelectorAll('.ts-card .ts-plaque')].find(p => p.textContent.trim() === t);
     return {
-      play: vis(play),
+      play: vis(tile('Play')),
       seg: vis(document.getElementById('queueSeg')),
       chip: vis(document.getElementById('profileChip')),
-      trio: !!document.querySelector('.menu-trio')
-        && [...document.querySelectorAll('.menu-trio .btn-royal')].length === 3
-        && [...document.querySelectorAll('.menu-trio .btn-royal')].every(vis),
-      sideBySide: art.right <= col.left + 1,
+      skirm: vis(tile('Skirmish')),
+      privateGame: vis(tile('Private Game')),
+      plaque: vis(document.getElementById('rivalPlaque'))
+        && !!document.querySelector('#rivalPlaque .drp-name')
+        && /^\d\d:\d\d:\d\d$/.test((document.getElementById('drpClock') || {}).textContent || ''),
       hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
   });
-  ok(m.play && m.seg && m.chip, 'Play Now + table picker + profile chip all reachable on a phone');
-  ok(m.trio, 'Skirmish · Daily Rival · Private Room all reachable on a phone');
-  ok(m.sideBySide, 'landscape phone keeps the side-by-side stage');
+  ok(m.play && m.seg && m.chip, 'Play + table picker + profile chip all reachable on a phone');
+  ok(m.skirm && m.privateGame, 'Skirmish and Private Game tiles reachable on a phone');
+  ok(m.plaque, 'the Daily Rival plaque renders with its name and ticking clock');
   ok(!m.hscroll, 'no horizontal scroll on the phone menu');
   await page.screenshot({ path: join(SHOTS, 'menu-phone.png') });
   await page.close();
@@ -2904,8 +2916,8 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
   // Menu carries the Store button; Skylar's hooks survive beside it
   // (How to Play lives in the quiet row as a .menu-link now).
   const menu = await page.evaluate(() => ({
-    store: !!([...document.querySelectorAll('#title-screen .btn-royal')].find(b => /store/i.test(b.textContent))),
-    howto: !!([...document.querySelectorAll('.menu-link')].find(b => /how to play/i.test(b.textContent))),
+    store: !!([...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')].find(b => /store/i.test(b.textContent))),
+    howto: !!([...document.querySelectorAll('#title-screen .ts-card .ts-plaque')].find(b => /how to play/i.test(b.textContent))),
     promptTest: !!document.getElementById('promptTestToggle'),
   }));
   ok(menu.store && menu.howto && menu.promptTest, 'menu: Store button beside How to Play + Prompt Test');
@@ -4474,7 +4486,7 @@ console.log('── Emblem/personas/boon: rated seat, act pass, both boon paths,
 async function startSeeded(page, seedRig) {
   await page.goto(URL, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => {
-    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+    const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     return b && b.offsetParent;
   }, { timeout: 20000 });
@@ -4483,7 +4495,7 @@ async function startSeeded(page, seedRig) {
     window._mpSkipQueue = true;   // real seed path, no live queue
     localStorage.setItem('favorQueue', '3');
     FLB.tableSeed = async () => rig;
-    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+    const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     b.click();
   }, seedRig);
@@ -4632,7 +4644,7 @@ async function startSeeded(page, seedRig) {
       topRow: { uid: FLB.uid(), name: 'Me', score: 300 },
       personas: [],
     });
-    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+    const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     b.click();
   });
@@ -4734,7 +4746,7 @@ console.log('── Commit-first: Play pledges, the offer sticks, backing out re
     window._mpSkipQueue = true;             // this flow proves offer stickiness, not the wire
     localStorage.removeItem('favorOffer');  // fresh pledge
     localStorage.setItem('favorQueue', '3');
-    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+    const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     b.click();
   });
@@ -4755,7 +4767,7 @@ console.log('── Commit-first: Play pledges, the offer sticks, backing out re
   }, { timeout: 6000 });
   ok(true, 'Return to the Menu lands back on the title screen');
   await page.evaluate(() => {
-    const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+    const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
       .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
     b.click();
   });
@@ -4803,7 +4815,7 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
     await purgeMp(page);
     const clickPlay = () => page.evaluate(() => {
-      const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+      const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
         .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
       b.click();
     });
@@ -4979,7 +4991,7 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
         FMP._T.windowMin = 30000;           // never fall solo mid-beat
         FMP._T.windowSpread = 1;
         Object.assign(FMP._T, cfg || {});
-        const b = [...document.querySelectorAll('#title-screen .btn-royal')]
+        const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
           .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
         b.click();
       }, extra || {});
@@ -5415,7 +5427,7 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
         window.CINEMATIC_SPEED = 0.05;
         FMP._T.windowMin = 30000;
         FMP._T.windowSpread = 1;
-        [...document.querySelectorAll('#title-screen .btn-royal')]
+        [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
           .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent)).click();
       });
       await pg.waitForFunction(() => {
@@ -5669,16 +5681,27 @@ console.log('── Skirmish: any owned hero, thematic AI, no leaderboard person
   await page.evaluate(() => {
     window.shuffleArray = (a) => [...a];
     window._pinEmblemSeed = 0;
-    localStorage.setItem('favorQueue', '4');   // Skirmish honors the menu seg
+    localStorage.setItem('favorQueue', '3');   // the menu seg must NOT decide a skirmish
   });
 
   const menu = await page.evaluate(() => ({
-    trio: ['Skirmish', 'Daily Rival', 'Private Room'].map(t =>
-      !![...document.querySelectorAll('.menu-trio .btn-royal')].find(b => b.textContent.includes(t))),
+    tiles: ['Skirmish', 'Private Game'].map(t =>
+      !![...document.querySelectorAll('.ts-card .ts-plaque')].find(p => p.textContent.trim() === t)),
+    plaque: !!document.getElementById('rivalPlaque'),
   }));
-  ok(menu.trio.every(Boolean), `the menu carries all three new doors (${menu.trio.join(',')})`);
+  ok(menu.tiles.every(Boolean) && menu.plaque, 'Skirmish, Private Game and the rival plaque all on the menu');
 
+  // The door asks the size FIRST (Wyatt 7/16) — a table of four, please.
   await page.evaluate(() => FMODES.openSkirmish());
+  await sleep(250);
+  const sizes = await page.evaluate(() => ({
+    open: document.getElementById('skirmishPick').classList.contains('active'),
+    options: [...document.querySelectorAll('#skirmishPick .sk-size b')].map(b => b.textContent),
+  }));
+  ok(sizes.open && sizes.options.join(',') === '3,4,5',
+    `Skirmish asks how many players first (${sizes.options.join('/')})`);
+  await page.screenshot({ path: join(SHOTS, 'skirmish-sizes.png') });
+  await page.evaluate(() => FMODES.beginSkirmish(4));
   await page.waitForFunction(() =>
     document.getElementById('character-select').classList.contains('active')
     && document.querySelectorAll('.character-card').length > 0, { timeout: 15000 });
@@ -5704,7 +5727,7 @@ console.log('── Skirmish: any owned hero, thematic AI, no leaderboard person
     names: game.players.slice(1).map(p => p.name),
     mode: window._gameMode,
   }));
-  ok(table.count === 4, `table size honors the menu seg (${table.count})`);
+  ok(table.count === 4, `the table is the size the DOOR asked for, not the menu seg (${table.count})`);
   ok(table.personas === 0, 'a Skirmish is PURE vs-AI — no leaderboard personas seated');
   const THEMATIC = ['The Lady Vespurine', 'Count Balthazar', 'Lord Ashcropt', 'Dame Rosalind',
                     'Prince Aldric', 'Princess Sera', 'Lord Cassius', 'Lady Elara'];
@@ -5730,16 +5753,56 @@ console.log('── Daily Rival: deterministic pick, intro plaque, claim-once');
 
   const det = await page.evaluate(() => {
     const days = [];
-    for (let i = 0; i < 10; i++) {
-      const d = new Date(Date.UTC(2026, 6, 10 + i));
+    for (let i = 0; i < 21; i++) {
+      const d = new Date(Date.UTC(2026, 6, 5 + i));
       days.push(FMODES.rivalOfDay(d.toISOString().slice(0, 10)).key);
     }
     const stable = FMODES.rivalOfDay('2026-07-16').key === FMODES.rivalOfDay('2026-07-16').key;
     const noAdjacentRepeat = days.every((k, i) => i === 0 || k !== days[i - 1]);
-    return { days: days.join(','), stable, noAdjacentRepeat };
+    // Ten themed rivals — one per character, each under a crafted name.
+    const heroes = new Set(window.FAVOR_DATA.characters.map(c => c.id));
+    const pool = [];
+    for (let i = 0; i < 40; i++) {
+      const d = new Date(Date.UTC(2026, 0, 1 + i));
+      const r = FMODES.rivalOfDay(d.toISOString().slice(0, 10));
+      if (!pool.some(p => p.key === r.key)) pool.push(r);
+    }
+    return {
+      days: days.join(','), stable, noAdjacentRepeat,
+      poolSize: pool.length,
+      allHeroes: pool.every(r => heroes.has(r.hero)),
+      named: pool.every(r => r.name && r.name.length > 8 && r.name !== r.hero),
+    };
   });
   ok(det.stable, 'the pick is deterministic for a given day');
-  ok(det.noAdjacentRepeat, `no rival two days running (${det.days})`);
+  ok(det.noAdjacentRepeat, `no rival two days running (${det.days.slice(0, 90)}…)`);
+  ok(det.poolSize === 10 && det.allHeroes,
+    `TEN rivals, one per character (${det.poolSize} seen across 40 days)`);
+  ok(det.named, 'every rival wears a crafted name, not a character id');
+
+  // The MENU plaque — Nation's Challenger look: name, ★ stakes, live clock.
+  const plaque = await page.evaluate(() => {
+    FMODES.renderRivalPlaque();
+    const rival = FMODES.rivalOfDay();
+    const card = document.getElementById('rivalPlaque');
+    return {
+      head: (card.querySelector('.drp-head') || {}).textContent || '',
+      name: (card.querySelector('.drp-name') || {}).textContent || '',
+      expect: rival.name,
+      art: !!card.querySelector('.drp-art'),
+      stars: /\+25/.test((card.querySelector('.drp-stars') || {}).textContent || ''),
+      clock: /^\d\d:\d\d:\d\d$/.test((document.getElementById('drpClock') || {}).textContent || ''),
+      badge: !!card.querySelector('.drp-badge'),
+      tall: card.getBoundingClientRect().height >= 120,
+    };
+  });
+  ok(/daily rival/i.test(plaque.head) && plaque.name === plaque.expect,
+    `the menu plaque names today's rival (${plaque.name})`);
+  ok(plaque.art && plaque.stars && plaque.clock,
+    'portrait, ★ +25 and a ticking HH:MM:SS clock on the plaque');
+  ok(plaque.badge, 'the red ! badge rides an unbeaten day');
+  ok(plaque.tall, 'the plaque stands tall in the menu grid');
+  await page.screenshot({ path: join(SHOTS, 'rival-plaque.png') });
 
   await page.evaluate(() => FMODES.openDailyRival());
   await sleep(300);
@@ -5761,7 +5824,11 @@ console.log('── Daily Rival: deterministic pick, intro plaque, claim-once');
   await page.waitForFunction(() =>
     document.getElementById('character-select').classList.contains('active'), { timeout: 15000 });
   await page.evaluate(() => {
-    const c = document.querySelector('.character-card');
+    // Never mirror-match the rig: pick a hero that is NOT today's rival's,
+    // so the rides-their-own-character assert holds on every calendar day.
+    const rival = FMODES.rivalOfDay();
+    const c = [...document.querySelectorAll('.character-card')]
+      .find(x => x.dataset.id !== rival.hero) || document.querySelector('.character-card');
     selectCharacter(c.dataset.id, c);
     document.getElementById('confirmBtn').click();
   });
@@ -5774,13 +5841,15 @@ console.log('── Daily Rival: deterministic pick, intro plaque, claim-once');
       count: game.playerCount,
       seated: !!seat,
       sharp: !!(seat && seat._personaAI),
+      hero: seat && seat.character && seat.character.id,
+      expectHero: rival.hero,
       uid: seat && seat._personaUid,
-      expectUid: rival.uid,
     };
   });
   ok(table.count === 3, `the rival table seats three (${table.count})`);
   ok(table.seated && table.sharp, 'today\'s rival sits at the table with the sharp persona brain');
-  ok(table.uid === table.expectUid, 'and under their own leaderboard identity');
+  ok(table.hero === table.expectHero, `astride their own character (${table.hero})`);
+  ok(!table.uid, 'and with NO leaderboard identity — a rival never posts a row');
 
   // Claim path: stub the star grant, drive the scoring hook directly.
   const claims = await page.evaluate(async () => {
@@ -5908,7 +5977,7 @@ console.log('── Private room: host/join by code, size in-room, Start → pic
       FMODES.joinRoom();
     }, code);
     const bothListed = (pg) => pg.waitForFunction(() =>
-      document.querySelectorAll('#roomOverlay .rm-row:not(.ai)').length === 2, { timeout: 12000 })
+      document.querySelectorAll('#roomOverlay .rm-row:not(.open)').length === 2, { timeout: 12000 })
       .then(() => true, () => false);
     const [lA, lB] = await Promise.all([bothListed(pA), bothListed(pB)]);
     ok(lA && lB, 'both lobbies list both nobles');
@@ -5916,7 +5985,7 @@ console.log('── Private room: host/join by code, size in-room, Start → pic
     // The host picks the game size IN the room; AI fills the rest.
     await pA.evaluate(() => FMODES.roomSetSize(4));
     const sizeShown = await pB.waitForFunction(() =>
-      document.querySelectorAll('#roomOverlay .rm-row.ai').length === 2, { timeout: 8000 })
+      document.querySelectorAll('#roomOverlay .rm-row.open').length === 2, { timeout: 8000 })
       .then(() => true, () => false);
     ok(sizeShown, 'size 4 with 2 humans shows two AI seats — on the JOINER\'s lobby');
     await pB.screenshot({ path: join(SHOTS, 'room-lobby-joiner.png') });
