@@ -64,21 +64,22 @@ html, body {
      plaque, PLAY unmistakably biggest. ── */
 .ts-bg {
     position: absolute; inset: 0;
-    /* Placeholder wash until the MJ hero painting lands — same warm
-       golden-hour palette so the layout reads true in the meantime. */
-    background:
-        radial-gradient(ellipse at 78% 34%, rgba(230, 178, 92, 0.30) 0%, transparent 50%),
-        radial-gradient(ellipse at 60% 90%, rgba(90, 52, 24, 0.5) 0%, transparent 62%),
-        linear-gradient(180deg, #2c1c38 0%, #4a2c34 36%, #241318 70%, #0e0810 100%);
+    /* The hero painting: castle at golden hour on the right, calm sky
+       left. Anchored right-of-center so the castle survives the crop at
+       every aspect ratio (2:1 art; phones run ~2.16:1, desktops 16:9). */
+    background: #2c1c28 url('../assets/ui/menu-hero.jpg') no-repeat;
     background-size: cover;
-    background-position: 62% 38%;
+    background-position: 72% 42%;
 }
-/* Legibility wash — deepens the menu side, leaves the hero side open. */
+/* Legibility wash — deepens the menu side and the footer's ground,
+   leaves the castle in its own light. */
 .ts-haze {
     position: absolute; inset: 0; pointer-events: none;
-    background: linear-gradient(100deg,
-        rgba(10, 6, 14, 0.80) 0%, rgba(10, 6, 14, 0.58) 32%,
-        rgba(10, 6, 14, 0.14) 60%, rgba(10, 6, 14, 0.38) 100%);
+    background:
+        linear-gradient(180deg, rgba(12, 7, 16, 0.42) 0%, transparent 26%, transparent 78%, rgba(8, 5, 10, 0.55) 100%),
+        linear-gradient(100deg,
+            rgba(12, 7, 16, 0.66) 0%, rgba(12, 7, 16, 0.44) 34%,
+            rgba(12, 7, 16, 0.08) 62%, rgba(12, 7, 16, 0.10) 100%);
 }
 
 .ts-frame {
@@ -167,6 +168,9 @@ html, body {
 }
 
 .ts-play { grid-area: play; min-height: clamp(150px, 36dvh, 300px); }
+/* Play's vignette is a pre-cut clean slice of the Knight board (no chrome);
+   tall cards look at the tower top, short-wide phone cards at the walls. */
+.ts-art-play { background-image: url('../assets/ui/menu-play-vignette.jpg'); background-position: 50% 22%; }
 .ts-play .ts-plaque {
     font-size: clamp(16px, 3.4dvh, 23px);
     padding: 8px 30px; margin-bottom: 6px;
@@ -4108,6 +4112,7 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     .queue-seg { gap: 6px; }
     .queue-seg button { height: 26px; font-size: 12px; border-radius: 7px; }
     .ts-play .queue-seg { margin: 0 8px 8px; padding: 4px 6px; }
+    .ts-art-play { background-position: 50% 52%; }
     .queue-label { font-size: 8px; letter-spacing: 1.5px; }
     .menu-link { font-size: 10px; }
     .prompt-test-toggle { font-size: 9px; gap: 6px; }
