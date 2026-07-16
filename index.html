@@ -57,25 +57,28 @@
                     </div>
                 </div>
 
-                <div class="ts-card ts-mid" role="button" tabindex="0" onclick="menuComingSoon('Host Room')">
+                <div class="ts-card ts-mid" role="button" tabindex="0" onclick="FMODES.openPrivateRoom()">
                     <div class="ts-art ts-art-host"></div>
                     <span class="ts-plaque">Host Room</span>
                 </div>
-                <div class="ts-card ts-mid" role="button" tabindex="0" onclick="menuComingSoon('Skirmish')">
+                <div class="ts-card ts-mid" role="button" tabindex="0" onclick="FMODES.openSkirmish()">
                     <div class="ts-art ts-art-skirm"></div>
                     <span class="ts-plaque">Skirmish</span>
                 </div>
 
-                <div class="ts-card ts-sm" role="button" tabindex="0" onclick="FLB.openLeaderboard()">
+                <div class="ts-card ts-sm ga-rival" role="button" tabindex="0" onclick="FMODES.openDailyRival()">
+                    <span class="ts-plaque">Daily Rival</span>
+                </div>
+                <div class="ts-card ts-sm ga-lead" role="button" tabindex="0" onclick="FLB.openLeaderboard()">
                     <span class="ts-plaque">Leaderboard</span>
                 </div>
-                <div class="ts-card ts-sm" role="button" tabindex="0" onclick="FLB.openStore()">
+                <div class="ts-card ts-sm ga-store" role="button" tabindex="0" onclick="FLB.openStore()">
                     <span class="ts-plaque">Store</span>
                 </div>
-                <div class="ts-card ts-sm" role="button" tabindex="0" onclick="FACH.openGallery()">
+                <div class="ts-card ts-sm ga-ach" role="button" tabindex="0" onclick="FACH.openGallery()">
                     <span class="ts-plaque">Achievements</span>
                 </div>
-                <div class="ts-card ts-sm" role="button" tabindex="0" onclick="showRules()">
+                <div class="ts-card ts-sm ga-how" role="button" tabindex="0" onclick="showRules()">
                     <span class="ts-plaque">How to Play</span>
                 </div>
             </div>

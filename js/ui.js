@@ -1198,12 +1198,6 @@ function togglePromptTest(on) {
     if (on) resetCoach();   // clear seen now so prompts fire on the next play
 }
 
-// Menu cards for modes that don't exist yet (Host Room, Skirmish) — an
-// in-style herald line instead of a dead button.
-function menuComingSoon(mode) {
-    showNotification(`${mode} — the heralds are preparing this mode`, 'info');
-}
-
 // Menu cards are divs (the queue buttons nest inside Play, and buttons
 // can't nest in buttons) — give them real keyboard activation anyway.
 document.addEventListener('keydown', (e) => {
