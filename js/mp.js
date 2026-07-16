@@ -78,7 +78,12 @@
     // the host seals them at 'live'. A v9 client would refuse a 'proposed'
     // record outright (its joinGame demanded status 'live') and would wait
     // forever for entry.hero to matter — the ver gate keeps the eras apart.
-    const MPV = 10;
+    // 11 (7/16): the ROUND FLOW inverted — throw first, decide at the reveal.
+    // 'pick' and 'final' are gone; humans stream 'throw'/'unthrow' during the
+    // round (display + the deterministic lock via collectThrows) and ONE 'act'
+    // move per card at their seat's activation slot. A v10 client publishes
+    // pick-time decisions no v11 peer consumes and would hang the barrier.
+    const MPV = 11;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.
@@ -96,6 +101,7 @@
         staleBoot: 45000,   // presence older than this → fast boot
         cleanupAge: 6 * 3600 * 1000, // abandoned game records sweep
         limboAge: 10 * 60 * 1000,    // proposed/aborted records sweep
+        roomEmpty: 120000,  // a private room alone this long folds (Wyatt)
     };
 
     let db = null;
@@ -420,18 +426,11 @@
     // proposal; heroes are picked by their players AFTER everyone accepts
     // and sealed by the host when the pick window closes. The record is
     // the single source of truth every client builds from.
-    async function formGame(size, liveEntries) {
-        const takes = liveEntries.slice(0, size);   // humans, earliest first
-        const gid = fdb().ref(`${NS}/games`).push().key;
-        const roster = [];
-
-        for (const [huid, e] of takes) {
-            roster.push({
-                uid: huid, name: e.name || 'A Noble', hero: null,
-                offer: Array.isArray(e.offer) && e.offer.length ? e.offer : null,
-                rating: e.rating || 0, avatar: e.avatar || null, human: true,
-            });
-        }
+    // The record itself — the queue's formGame and a room's Start both
+    // land here: persona/bot fill by the same odds, the rated Emblem, the
+    // rank-1 boon, one seed, MPV. humanRows arrive earliest-first.
+    async function buildGameRecord(size, humanRows) {
+        const roster = humanRows.slice();
 
         // Fill the rest of the table exactly like solo: persona rivals by
         // the same odds, generic bots after. Host's tableSeed supplies the
@@ -475,16 +474,27 @@
         // Rank-1 boon: only if the all-time #1 sits at THIS table.
         let boonSeat = -1;
         if (seed && seed.topRow) {
-            const idx = roster.findIndex(r =>
+            boonSeat = roster.findIndex(r =>
                 (r.human && r.uid === seed.topRow.uid) || (r.personaUid === seed.topRow.uid));
-            boonSeat = idx;
         }
 
-        const rec = {
+        return {
             created: now(), size, status: 'proposed', ver: MPV,
             seed: Math.floor(Math.random() * 0x7fffffff) || 1,
             hostUid: uid(), roster, emblemSeat, boonSeat,
         };
+    }
+
+    async function formGame(size, liveEntries) {
+        const takes = liveEntries.slice(0, size);   // humans, earliest first
+        const gid = fdb().ref(`${NS}/games`).push().key;
+
+        const humanRows = takes.map(([huid, e]) => ({
+            uid: huid, name: e.name || 'A Noble', hero: null,
+            offer: Array.isArray(e.offer) && e.offer.length ? e.offer : null,
+            rating: e.rating || 0, avatar: e.avatar || null, human: true,
+        }));
+        const rec = await buildGameRecord(size, humanRows);
         await fdb().ref(`${NS}/games/${gid}`).set(rec);
 
         // Tag EVERY taken entry — self included. Tagged entries are
@@ -625,10 +635,226 @@
     }
 
     // The player picked (or the 20s clock picked for them) — the record
-    // carries it; the host seals from these.
+    // carries it; the host seals from these. Queue matches and room games
+    // both answer here: whichever pick phase is live owns the target.
+    let _roomPickGid = null;
     function publishPick(heroId) {
-        if (!q || !q.prop || q.state !== 'picking') return;
-        try { gameRef(q.prop.gid).child(`picks/${q.me}`).set(heroId || null); } catch (e) {}
+        const gid = (q && q.prop && q.state === 'picking') ? q.prop.gid : _roomPickGid;
+        if (!gid) return;
+        try { gameRef(gid).child(`picks/${uid()}`).set(heroId || null); } catch (e) {}
+    }
+
+    // ── Private rooms — a lobby that hands off to the pick pipeline ──
+    // favor/mp/rooms/{CODE} = { created, hostUid, size, ver, status,
+    //                           seats:{uid:{name,avatar,rating,offer,at}}, gameId? }
+    // The lobby IS the accept: Start births the game record 'proposed'
+    // exactly like a queue match, every room client answers yes on sight,
+    // and the standard picking → seal → live pipeline takes it from there.
+    let r = null;   // { code, host, onState, off, recOff, emptyT, watchdogT, adopted, picking, starting }
+
+    function roomRef(code) { return fdb().ref(`${NS}/rooms/${code}`); }
+
+    function genRoomCode() {
+        const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';   // no 0/O/1/I/L lookalikes
+        let c = '';
+        for (let i = 0; i < 5; i++) c += A[Math.floor(Math.random() * A.length)];
+        return c;
+    }
+
+    function roomSeatEntry(offer) {
+        const e = buildEntry(offer);
+        return { name: e.name, rating: e.rating, avatar: e.avatar,
+                 offer: e.offer, at: firebase.database.ServerValue.TIMESTAMP };
+    }
+
+    function roomEmit(kind, d) {
+        if (!r || !r.onState) return;
+        try { r.onState(kind, d || {}); } catch (e) { /* UI's problem */ }
+    }
+
+    function hostRoom({ size, offer, onState }) {
+        if (!available()) { try { onState('closed', { reason: 'gone' }); } catch (e) {} return; }
+        if (r) leaveRoom();
+        const code = genRoomCode();
+        r = { code, host: true, onState, adopted: false };
+        const me = uid();
+        roomRef(code).set({
+            created: now(), hostUid: me, size: [3, 4, 5].includes(size) ? size : 3,
+            ver: MPV, status: 'open',
+            seats: { [me]: roomSeatEntry(offer) },
+        });
+        roomRef(code).onDisconnect().remove();   // host-owned: host gone → room gone
+        // Alone at the deadline → the room folds (Wyatt's two-minute rule).
+        r.emptyT = setTimeout(async () => {
+            if (!r || r.code !== code || r.adopted) return;
+            let cur = null;
+            try { cur = (await roomRef(code).get()).val(); } catch (e) {}
+            if (!r || r.code !== code || r.adopted) return;
+            if (cur && Object.keys(cur.seats || {}).length <= 1 && !cur.gameId) {
+                const fire = r.onState;
+                teardownRoomState();
+                try { roomRef(code).onDisconnect().cancel(); roomRef(code).remove(); } catch (e) {}
+                try { fire('closed', { reason: 'empty' }); } catch (e) {}
+            }
+        }, T.roomEmpty);
+        watchRoom(code);
+    }
+
+    async function joinRoom(code, { offer, onState }) {
+        if (!available()) { try { onState('closed', { reason: 'gone' }); } catch (e) {} return; }
+        if (r) leaveRoom();
+        r = { code, host: false, onState, adopted: false };
+        let rec = null;
+        try { rec = (await roomRef(code).get()).val(); } catch (e) {}
+        if (!r || r.code !== code) return;
+        const refuse = (reason) => { r = null; try { onState('closed', { reason }); } catch (e) {} };
+        if (!rec || rec.status !== 'open') return refuse('missing');
+        if (rec.ver !== MPV) return refuse('version');
+        if (Object.keys(rec.seats || {}).length >= (rec.size || 3)) return refuse('full');
+        const me = uid();
+        try {
+            await roomRef(code).child(`seats/${me}`).set(roomSeatEntry(offer));
+            roomRef(code).child(`seats/${me}`).onDisconnect().remove();
+        } catch (e) { return refuse('gone'); }
+        if (!r || r.code !== code) return;
+        watchRoom(code);
+    }
+
+    function watchRoom(code) {
+        const ref = roomRef(code);
+        const onVal = (snap) => {
+            if (!r || r.code !== code) return;
+            const rec = snap.val();
+            if (!rec) {
+                if (r.adopted) return;   // the game started; the room was swept
+                const host = r.host;
+                const fire = r.onState;
+                teardownRoomState();
+                try { fire('closed', { reason: host ? 'gone' : 'host_left' }); } catch (e) {}
+                return;
+            }
+            if (!rec.seats || !rec.seats[uid()]) {
+                if (r.adopted) return;
+                const fire = r.onState;
+                teardownRoomState();
+                try { fire('closed', { reason: 'gone' }); } catch (e) {}
+                return;
+            }
+            if (rec.gameId && !r.adopted) {
+                r.adopted = true;
+                clearTimeout(r.emptyT);
+                adoptRoomGame(rec.gameId);
+                return;
+            }
+            roomEmit('room', { code, rec });
+        };
+        ref.on('value', onVal);
+        r.off = () => ref.off('value', onVal);
+    }
+
+    function roomSetSize(n) {
+        if (!r || !r.host || ![3, 4, 5].includes(n)) return;
+        try { roomRef(r.code).child('size').set(n); } catch (e) {}
+    }
+
+    async function roomStart() {
+        if (!r || !r.host || r.adopted || r.starting) return;
+        r.starting = true;
+        let rec = null;
+        try { rec = (await roomRef(r.code).get()).val(); } catch (e) {}
+        if (!r || !rec) { if (r) r.starting = false; return; }
+        const humanRows = Object.entries(rec.seats || {})
+            .sort((a, b) => (a[1].at || 0) - (b[1].at || 0))
+            .slice(0, rec.size || 3)
+            .map(([hu, e]) => ({
+                uid: hu, name: e.name || 'A Noble', hero: null,
+                offer: Array.isArray(e.offer) && e.offer.length ? e.offer : null,
+                rating: e.rating || 0, avatar: e.avatar || null, human: true,
+            }));
+        const gameRec = await buildGameRecord(rec.size || 3, humanRows);
+        if (!r) return;
+        const gid = fdb().ref(`${NS}/games`).push().key;
+        try {
+            await fdb().ref(`${NS}/games/${gid}`).set(gameRec);
+            await roomRef(r.code).update({ status: 'starting', gameId: gid });
+        } catch (e) { if (r) r.starting = false; return; }
+        refereeAccepts(gid, gameRec);
+    }
+
+    // The lobby was the accept — answer yes and ride the standard pipeline.
+    function adoptRoomGame(gid) {
+        const code = r.code;
+        try { gameRef(gid).child(`accept/${uid()}`).set(true); } catch (e) {}
+        const recRef = gameRef(gid);
+        const onRec = (snap) => {
+            if (!r || r.code !== code) { recRef.off('value', onRec); return; }
+            const rec = snap.val();
+            if (!rec || rec.status === 'aborted') {
+                recRef.off('value', onRec);
+                const fire = r.onState;
+                teardownRoomState();
+                _roomPickGid = null;
+                try { fire('closed', { reason: 'gone' }); } catch (e) {}
+                return;
+            }
+            if (rec.status === 'picking' && !r.picking) {
+                r.picking = true;
+                _roomPickGid = gid;
+                // Host gone mid-pick → dissolve honestly (queue parity).
+                r.watchdogT = setTimeout(() => {
+                    if (!r || r.code !== code) return;
+                    const fire = r.onState;
+                    teardownRoomState();
+                    _roomPickGid = null;
+                    try { fire('closed', { reason: 'gone' }); } catch (e) {}
+                }, T.pick + T.pickGrace + 6000);
+                roomEmit('picking', { gid, rec, pickStart: rec.pickStart || now() });
+                return;
+            }
+            if (rec.status === 'live') {
+                recRef.off('value', onRec);
+                const fire = r.onState;
+                const wasHost = r.host;
+                teardownRoomState();
+                _roomPickGid = null;
+                const res = attachGame(gid, rec);
+                if (wasHost) {
+                    try { roomRef(code).onDisconnect().cancel(); roomRef(code).remove(); } catch (e) {}
+                }
+                if (res) try { fire('live', res); } catch (e) {}
+                return;
+            }
+        };
+        recRef.on('value', onRec);
+        r.recOff = () => recRef.off('value', onRec);
+    }
+
+    function teardownRoomState() {
+        if (!r) return;
+        try {
+            if (r.off) r.off();
+            if (r.recOff) r.recOff();
+            clearTimeout(r.emptyT);
+            clearTimeout(r.watchdogT);
+        } catch (e) { /* best effort */ }
+        r = null;
+    }
+
+    function leaveRoom() {
+        if (!r) return;
+        const code = r.code, host = r.host, adopted = r.adopted;
+        teardownRoomState();
+        _roomPickGid = null;
+        if (adopted) return;   // mid-handshake — the game record owns the flow now
+        try {
+            if (host) {
+                roomRef(code).onDisconnect().cancel();
+                roomRef(code).remove();
+            } else {
+                roomRef(code).child(`seats/${uid()}`).onDisconnect().cancel();
+                roomRef(code).child(`seats/${uid()}`).remove();
+            }
+        } catch (e) { /* best effort */ }
     }
 
     // ── Live game runtime — stream, presence, AFK ────────────────────
@@ -646,6 +872,10 @@
             waiters: [],        // { seat, type, resolve, timer }
             handlers: {},       // type → [cb] for broadcast moves
             booted: new Set(),  // canonical seats already converted
+            throwLog: [],       // throw/unthrow/afk_boot in stream order —
+                                // buffered so a collector armed late (still
+                                // animating the prior round) misses nothing
+            throwFeeds: [],     // live collectThrows folds
             presenceTimer: null,
             afkTimer: null,
             ended: false,
@@ -656,9 +886,28 @@
             const m = snap.val();
             if (!m || typeof m.seat !== 'number' || !m.type) return;
             g.moveQ.push(m);
+            // The throw barrier folds these in stream order (see collectThrows).
+            if (m.type === 'throw' || m.type === 'unthrow' || m.type === 'afk_boot') {
+                g.throwLog.push(m);
+                if (m.type !== 'afk_boot') {
+                    // Display + fold only — never queued for waiters. (afk_boot
+                    // falls through to the broadcast handlers below.)
+                    g.throwFeeds.forEach(fn => { try { fn(m); } catch (e) {} });
+                    return;
+                }
+            }
             (g.handlers[m.type] || []).forEach(cb => { try { cb(m); } catch (e) {} });
-            // Broadcast types never queue for waiters.
-            if (m.type === 'afk_boot' || m.type === 'sync' || m.type === 'left') return;
+            if (m.type === 'afk_boot') {
+                // Fed AFTER the boot handlers so the fold sees the converted
+                // seat state; markBooted has already run by now. A boot of
+                // THIS client runs leaveGame inside those handlers — g is
+                // gone and there is nothing left to feed.
+                if (g) g.throwFeeds.forEach(fn => { try { fn(m); } catch (e) {} });
+            }
+            // Broadcast types never queue for waiters. ('emote' is social
+            // paint — every client shows it on receipt, nothing awaits it.)
+            if (m.type === 'afk_boot' || m.type === 'sync' || m.type === 'left'
+                || m.type === 'emote') return;
             const w = g.waiters.findIndex(x => x.seat === m.seat && x.type === m.type);
             if (w >= 0) {
                 const waiter = g.waiters.splice(w, 1)[0];
@@ -749,6 +998,101 @@
         }
     }
 
+    /**
+     * The throw barrier — a deterministic lock folded off the stream.
+     *
+     * Humans publish 'throw' {r, cardId} and 'unthrow' {r} freely during a
+     * round. The moves ride the same push-ordered stream as everything
+     * else, so every client folds the SAME sequence: the first moment all
+     * live human seats hold an active throw is the lock, and it is the
+     * same moment on every client. An unthrow that arrives after that
+     * point in the stream simply lost the race — the physical rule: the
+     * last card hitting the table locks every card instantly.
+     *
+     * `seats` = canonical seats that must throw (local human + remotes).
+     * Boots shrink the set mid-round (the caller AI-picks for them).
+     * onUpdate fires per fold step with the current {seat: cardId} map so
+     * the UI can land face-down cards live. Resolves { picks } at lock,
+     * or null if the game tears down first.
+     *
+     * The host arms Wyatt's AFK clock per missing seat, exactly like
+     * waitFor does: 2 minutes without a throw and the seat is booted.
+     */
+    function collectThrows({ round, seats, onUpdate }) {
+        if (!g) return Promise.resolve(null);
+        return new Promise((resolve) => {
+            const live = new Set(seats.filter(s => !g.booted.has(s)));
+            const active = {};
+            let done = false;
+            const afkTimers = {};
+
+            const finish = (val) => {
+                if (done) return;
+                done = true;
+                Object.values(afkTimers).forEach(t => clearInterval(t));
+                if (g) {
+                    const i = g.throwFeeds.indexOf(feed);
+                    if (i >= 0) g.throwFeeds.splice(i, 1);
+                }
+                resolve(val);
+            };
+
+            // The 2-minute clock runs from the round's start and reads
+            // T.afk LIVE each tick (the audit suite shrinks it mid-run).
+            // A seat holding an active throw idles the clock; taking the
+            // card back and walking away does not stop it.
+            const armAfk = (seat) => {
+                if (!isHost() || seat === g.mySeat || afkTimers[seat]) return;
+                const started = now();
+                afkTimers[seat] = setInterval(() => {
+                    if (done || !g) { clearInterval(afkTimers[seat]); return; }
+                    if (active[seat]) return;
+                    if (now() - started < T.afk) return;
+                    clearInterval(afkTimers[seat]);
+                    delete afkTimers[seat];
+                    publish('afk_boot', { target: seat, why: 'afk' });
+                }, 1000);
+            };
+
+            const check = () => {
+                if (done) return;
+                if (!g) { finish(null); return; }
+                for (const s of live) if (!active[s]) return;
+                finish({ picks: { ...active } });
+            };
+
+            const feed = (m) => {
+                if (done || !g) return;
+                if (m.type === 'afk_boot') {
+                    if (live.has(m.target)) {
+                        live.delete(m.target);
+                        delete active[m.target];
+                        if (onUpdate) try { onUpdate({ ...active }); } catch (e) {}
+                        check();
+                    }
+                    return;
+                }
+                if (m.r !== round || !live.has(m.seat)) return;
+                if (m.type === 'throw' && m.cardId !== undefined) active[m.seat] = m.cardId;
+                else if (m.type === 'unthrow') delete active[m.seat];
+                if (onUpdate) try { onUpdate({ ...active }); } catch (e) {}
+                check();
+            };
+
+            // Replay what already arrived (a fast peer throws while we're
+            // still animating the previous round), then go live — same
+            // tick, so nothing slips between the two.
+            g.throwLog = g.throwLog.filter(m =>
+                m.type !== 'afk_boot' && (m.r === undefined || m.r >= round));
+            g.throwLog.forEach(feed);
+            if (!done) {
+                g.throwFeeds.push(feed);
+                live.forEach(s => { if (!active[s]) armAfk(s); });
+                check();
+            }
+        });
+    }
+
     // Host duties on a cadence: boot the vanished, adopt hostship if the
     // host itself vanished.
     async function hostSweep() {
@@ -835,6 +1179,14 @@
                     await fdb().ref(`${NS}/games/${gid}`).remove();
                 }
             }
+            // Room wreckage from crashed hosts (onDisconnect can miss).
+            const rSnap = await fdb().ref(`${NS}/rooms`).get();
+            const rooms = rSnap.val() || {};
+            for (const [code, rec] of Object.entries(rooms)) {
+                if (!rec || !rec.created || tNow - rec.created > 60 * 60 * 1000) {
+                    await fdb().ref(`${NS}/rooms/${code}`).remove();
+                }
+            }
         } catch (e) { /* non-fatal */ }
     }
     if (document.readyState === 'loading') {
@@ -850,8 +1202,9 @@
         accept, decline: () => declineProposal('declined'), publishPick,
         queuePhase: () => (q ? q.state : null),
         queueStartedAt: () => (q ? q.startedAt : 0),
+        hostRoom, joinRoom, leaveRoom, roomSetSize, roomStart,
         active, mySeat, isHost, record, localIdx, canonSeat,
-        publish, waitFor, onBroadcast, markBooted,
+        publish, waitFor, collectThrows, onBroadcast, markBooted,
         leaveGame, gameOver,
         gid: () => (g ? g.gid : null),
         _T: T,   // timers — the audit suite shrinks these

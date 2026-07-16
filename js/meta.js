@@ -64,14 +64,19 @@
     // deleted (their history is the board's history). They sit at ~2 in 3
     // tables, play sharper than the generic bots, and post real rating
     // deltas per game — but never touch the daily board or Stars: the
-    // nightly crowns stay a human race. Names deliberately avoid the
-    // royal-anon generator's Title×Noun space so no player collides.
+    // nightly crowns stay a human race.
+    //
+    // Names are REALISTIC on purpose (Wyatt 7/16): the board should read
+    // like people play here. The old thematic style (Lady Vespurine, Count
+    // Balthazar…) moved to the Skirmish AI pool in ui.js. The uids/keys
+    // never change — rows are PATCH-only (tools/rename-personas.mjs did
+    // the live rows in place).
     const PERSONAS = [
-        { key: 'ashcroft',   uid: 'persona_ashcroft',   name: 'Lord Ashcroft',   hero: 'knight',    seedRating: 240, strong: ['power', 'survival'] },
-        { key: 'balthazar',  uid: 'persona_balthazar',  name: 'Count Balthazar', hero: 'scientist', seedRating: 185, strong: ['alchemy', 'knowledge'] },
-        { key: 'vespertine', uid: 'persona_vespertine', name: 'Lady Vespertine', hero: 'duchess',   seedRating: 140, strong: ['knowledge', 'prospecting'] },
-        { key: 'rosalind',   uid: 'persona_rosalind',   name: 'Dame Rosalind',   hero: 'fisherman', seedRating: 95,  strong: ['survival', 'knowledge'] },
-        { key: 'thorne',     uid: 'persona_thorne',     name: 'Baron Thorne',    hero: 'bandit',    seedRating: 60,  strong: ['power', 'prospecting'] },
+        { key: 'ashcroft',   uid: 'persona_ashcroft',   name: 'HotshotGG',      hero: 'knight',    seedRating: 240, strong: ['power', 'survival'] },
+        { key: 'balthazar',  uid: 'persona_balthazar',  name: 'Athene',         hero: 'scientist', seedRating: 185, strong: ['alchemy', 'knowledge'] },
+        { key: 'vespertine', uid: 'persona_vespertine', name: 'Sneaky Penguin', hero: 'duchess',   seedRating: 140, strong: ['knowledge', 'prospecting'] },
+        { key: 'rosalind',   uid: 'persona_rosalind',   name: 'Mable Stadango', hero: 'fisherman', seedRating: 95,  strong: ['survival', 'knowledge'] },
+        { key: 'thorne',     uid: 'persona_thorne',     name: 'Papa Johns',     hero: 'bandit',    seedRating: 60,  strong: ['power', 'prospecting'] },
     ];
 
     // Small gold crown — inline SVG so the champion mark is OURS (royal,
@@ -449,6 +454,36 @@
     function snapshot() {
         const p = _me || {};
         return { rating: p.rating || 0, stars: p.stars || 0 };
+    }
+
+    // ── Daily Rival (modes.js drives the UI; this owns the claim) ────
+    // The reward is once per daily window — the SAME 10 PM ET window the
+    // champions live on. One whole-row transaction flips rivalDay and adds
+    // the Stars together, so two tabs can never double-pay.
+    function personaDefs() {
+        return PERSONAS.map(p => ({ ...p, strong: p.strong.slice() }));
+    }
+    function rivalDayClaimed() {
+        return (_me && _me.rivalDay) || null;
+    }
+    async function claimRivalWin(key, stars) {
+        const res = await dbTxn(`players/${uid()}`, p => {
+            const cur = p || {};
+            if (cur.rivalDay === key) return;   // already paid today — abort
+            return {
+                ...cur,
+                name: myName(),
+                rivalDay: key,
+                stars: (cur.stars || 0) + stars,
+            };
+        });
+        const fresh = !!(res.committed && res.value && res.value.rivalDay === key
+            && (!_me || _me.rivalDay !== key));
+        if (res.committed && res.value) {
+            _me = res.value;          // the chip repaints from the fresh row
+            renderProfileChip();
+        }
+        return fresh;
     }
 
     // ── Avatars — a chosen crest that rides the chip, the boards and the
@@ -1082,6 +1117,7 @@
         readRow, mergeRow,
         postGameResult, openLeaderboard, closeLeaderboard, openProfile, closeProfile,
         queueSize, rename, renderProfileChip, snapshot, tableSeed,
+        personaDefs, rivalDayClaimed, claimRivalWin,
         settleDue, drainMsgs, currentDateKey, ratingDelta, generateName,
         gameStars, ownedIds, buyCharacter, openStore, closeStore, askBuy, confirmBuy,
         inspectChar, closeInspect,

@@ -7,7 +7,6 @@
 let game = null;
 let selectedCharacter = null;
 let musicPlaying = false;
-let selectedHandCard = null;
 
 // ─── CINEMATIC SPEED MULTIPLIER ──────────────────────────
 // 1.0 = normal, 0.5 = fast, 2.0 = slow drama
@@ -436,6 +435,7 @@ let _queueUx = null;   // { size, offer, startedAt, state, solo, accepted, tickT
 
 function startGame() {
     window._mpConsumed = false;
+    window._gameMode = null;   // Play Now is the queue — modes set their own
     // Straight-to-the-heroes seam: pinned/skip-queue builds (the audit's
     // ~600 title→select→game checks) and offline play take the classic
     // path — no queue, no window, no popup, no clock.
@@ -782,6 +782,22 @@ function commitHeroPick(auto) {
     }
 }
 
+// A private room reaching 'picking' rides the SAME timed-pick theater as
+// the queue — the lobby already was the accept, so the fabricated state
+// starts at the hero screen (modes.js calls this from the room events).
+function roomPickPhase(d) {
+    if (!_queueUx) {
+        _queueUx = {
+            size: (d.rec && d.rec.size) || 3,
+            offer: rollStickyOffer(),
+            startedAt: Date.now(),
+            state: 'picking',
+        };
+    }
+    _queueUx.state = 'picking';
+    enterPickPhase({ mp: true, pickStart: d.pickStart });
+}
+
 // Exiting the pick phase without a table (decline chains, dissolves).
 function leavePickPhase(opts) {
     if (_queueUx && _queueUx.pick) {
@@ -826,6 +842,8 @@ function rollStickyOffer() {
 function backToMenu() {
     if (window.FMP && FMP.cancelQueue) FMP.cancelQueue();
     teardownQueueUx();
+    window._gameMode = null;
+    window._rivalDef = null;
     document.getElementById('character-select').classList.remove('active');
     const t = document.getElementById('title-screen');
     t.style.display = '';
@@ -847,9 +865,9 @@ const HOWTO_CARDS = [
       art: `<div class="ht-board-wrap"><img class="ht-hero" src="assets/characters/Explorer.jpg" alt=""><img class="ht-board-ring" src="assets/ui/slider-ring.png" alt=""></div>` },
     { text: `Everything runs on six <b>skills</b>: Survival, Charisma, Alchemy, Prospecting, Knowledge, and Power. You build them up as you play.`,
       art: `<div class="ht-icons">${['survival','charisma','alchemy','prospecting','knowledge','power'].map(HOWTO_ART.icon).join('')}</div>` },
-    { text: `Each round you're dealt a hand. <b>Play one card, then pass the rest</b> to the next player. Everyone drafts from the same hands \u2014 choose wisely!`,
+    { text: `Each round you're dealt a hand. <b>Throw one card in face down</b>, then pass the rest to the next player. Everyone drafts from the same hands \u2014 choose wisely!`,
       art: `<div class="ht-fan"><img src="assets/cards/regular/Trapping Card.jpg" alt=""><img src="assets/cards/regular/Cooking Card.jpg" alt=""><img src="assets/cards/regular/Negotiate Card.jpg" alt=""></div>` },
-    { text: `On your turn, <b>play a card</b> to gain its skills (you'll need the right skills for some). Not useful? <b>Discard it for +3 gold</b> \u2014 or to slide your ring.`,
+    { text: `Once every card is in, they're <b>revealed in turn</b>. On your reveal, <b>play yours</b> for its skills (some need the right skills) \u2014 or <b>discard it for +3 gold</b> or a ring move.`,
       art: HOWTO_ART.card('assets/cards/regular/Alchemist Apprentice Card.jpg') },
     { text: `Cards come in many types: <b>Endeavors</b> build skills, <b>Weapons</b> give Power, <b>Artifacts</b> & <b>Adventures</b> grant Favor, and <b>Potions</b> fire off instantly.`,
       art: `<div class="ht-fan"><img src="assets/cards/regular/Hunting Card.jpg" alt=""><img src="assets/cards/regular/Lens of Truth Card.jpg" alt=""><img src="assets/cards/regular/Badge of Courage Card.jpg" alt=""></div>` },
@@ -920,9 +938,10 @@ function coachSumSkills(sk) {
     return Object.values(sk).reduce((a, b) => a + (b || 0), 0);
 }
 function coachMyTurn(s) {
+    // The throw window: your hand is live and your card isn't in yet.
     const hand = s.players[0].hand;
-    return s.activePlayerIndex === 0 && hand && hand.length > 0
-        && s.phase !== 'scoring' && s.phase !== 'game_over';
+    return s.phase === 'gameplay' && hand && hand.length > 0
+        && game.pendingActivations[0] === null;
 }
 
 // Resolve the first VISIBLE anchor among selectors (phone first, then
@@ -947,7 +966,7 @@ const COACH_STEPS = [
       place: 'auto',
       when: (s) => (s.visibleMissions || []).length > 0 },
     { id: 'hand',
-      text: `Your turn! Pick <b>one card</b> to act with — play it for its gifts, or discard it for gold or a ring move. The rest of your hand travels on.`,
+      text: `Slide <b>one card up</b> to throw it in, face down. Once every player has thrown, the cards are revealed in turn — you'll choose what yours does <b>then</b>.`,
       anchor: () => coachEl('#tvHandStrip', '#handZone'),
       place: 'top',
       when: (s) => coachMyTurn(s) },
@@ -1370,11 +1389,14 @@ async function confirmCharacter() {
 }
 
 // The classic table — solo builds land here from Begin (skip-queue and
-// offline paths) and from the queue theater's accepted solo pick.
+// offline paths), from the queue theater's accepted solo pick, and from
+// the Skirmish / Daily Rival doors (modes.js sets window._gameMode).
 async function buildSoloTable() {
+    const mode = window._gameMode || null;
     // Table size = the queue you joined on the menu (persisted; the old
     // in-select dropdown moved there so Play Now can never skip past it).
-    const playerCount = (window.FLB && FLB.queueSize()) || 3;
+    // The Daily Rival is always a table of three — the on-ramp table.
+    const playerCount = mode === 'rival' ? 3 : ((window.FLB && FLB.queueSize()) || 3);
 
     localStorage.removeItem('favorOffer');   // this pledge becomes a real table
 
@@ -1417,8 +1439,24 @@ async function buildSoloTable() {
     const choices = [{ characterId: selectedCharacter, playerName: 'You' }];
 
     const shuffled = shuffleArray(available);
-    const aiNames = ['Prince Aldric', 'Princess Sera', 'Lord Cassius', 'Lady Elara'];
-    const personaSeats = seatPersonas(seed, playerCount - 1);
+    // Skirmish and rival tables wear the thematic court names (Wyatt 7/16:
+    // that style lives HERE now — the leaderboard personas went realistic).
+    const aiNames = (mode === 'skirmish' || mode === 'rival')
+        ? shuffleArray(['The Lady Vespurine', 'Count Balthazar', 'Lord Ashcropt', 'Dame Rosalind',
+                        'Prince Aldric', 'Princess Sera', 'Lord Cassius', 'Lady Elara'])
+        : ['Prince Aldric', 'Princess Sera', 'Lord Cassius', 'Lady Elara'];
+    // Skirmish is PURE vs-AI (no leaderboard personas). The Daily Rival
+    // seats exactly ONE — today's rival, at seat 1, under their own row.
+    let personaSeats;
+    if (mode === 'skirmish') {
+        personaSeats = new Array(playerCount - 1).fill(null);
+    } else if (mode === 'rival' && window._rivalDef) {
+        personaSeats = new Array(playerCount - 1).fill(null);
+        const live = seed && (seed.personas || []).find(p => p.uid === window._rivalDef.uid);
+        personaSeats[0] = live || { ...window._rivalDef, rating: window._rivalDef.seedRating };
+    } else {
+        personaSeats = seatPersonas(seed, playerCount - 1);
+    }
     const seatedPersonas = [];   // [{seat, def}] — marked on game.players below
     const taken = (id) => choices.some(c => c.characterId === id);
     let draw = 0;
@@ -1454,6 +1492,9 @@ async function buildSoloTable() {
     let emblemSeat = 0;
     if (window._pinEmblemSeed !== undefined) {
         emblemSeat = window._pinEmblemSeed;
+    } else if (mode === 'skirmish') {
+        // A skirmish has no rated table — the Emblem starts anywhere.
+        emblemSeat = Math.floor(Math.random() * playerCount);
     } else if (seed) {
         const rated = [];
         if (seed.myRow) rated.push({ seat: 0, rating: seed.myRow.rating || 0 });
@@ -1517,6 +1558,10 @@ async function buildSoloTable() {
         addLogEntry(`${gp.name}, the realm's #1, gains the Queen's boon: +1 ${capSkill} all game`);
         renderGameState();
     }
+
+    // A fresh game \u2014 the gesture hint returns for the first hand.
+    window._uxThrownOnce = false;
+    beginThrowPhase();
 }
 
 // The boon lands in bonusSkills \u2014 the same ledger mission skill rewards
@@ -1637,6 +1682,8 @@ async function startMpGame({ game: rec, mySeat }) {
     // at the same point in the stream.
     FMP.onBroadcast('afk_boot', (m) => mpApplyBoot(m));
     FMP.onBroadcast('sync', (m) => mpCheckSync(m));
+    // Reactions land in the sender's bubble on every screen (modes.js).
+    if (window.FMODES) FMODES.attachEmotes();
 
     document.getElementById('character-select').classList.remove('active');
     game.startAct(1);
@@ -1681,7 +1728,13 @@ async function startMpGame({ game: rec, mySeat }) {
             // Booted at the boon \u2192 the Queen withdraws; no boon this game.
         }
     }
-    if (FMP.isHost()) mpPub('sync', { act: 1, hash: mpStateHash() });
+    // Desync stamp AND baseline at the same canonical point on every
+    // client \u2014 before the throw phase starts mutating bot hands.
+    mpActBaseline();
+
+    // A fresh game \u2014 the gesture hint returns for the first hand.
+    window._uxThrownOnce = false;
+    beginThrowPhase();
 }
 
 // \u2500\u2500 Waiting pill \u2014 non-modal, shows who the table waits on + AFK clock \u2500\u2500
@@ -1743,63 +1796,18 @@ function mpApplyBoot(m) {
     }
 }
 
-// \u2500\u2500 Lockstep round \u2014 the pick barrier \u2500\u2500
-// Bots pick deterministically at once; every remote human's pick is
-// awaited from the stream (canonical order for determinism); then hands
-// pass and activation runs exactly like solo.
-async function mpProcessRound(humanAction) {
-    for (let i = 1; i < game.playerCount; i++) {
-        const p = game.players[i];
-        if (!p._remoteHuman && game.pendingActivations[i] === null && p.hand.length > 0) {
-            aiPickCard(i);
-        }
-    }
-    renderGameState();
-
-    for (let cs = 0; cs < game.playerCount; cs++) {
-        const li = FMP.localIdx(cs);
-        if (li === 0) continue;
-        const p = game.players[li];
-        if (!p._remoteHuman || game.pendingActivations[li] !== null || !p.hand.length) continue;
-        mpWaitShow(li, 'choosing a card');
-        const mv = await FMP.waitFor(cs, 'pick');
-        mpWaitHide();
-        if (!mv) {           // booted mid-pick \u2014 the AI takes the seat over
-            if (game.pendingActivations[li] === null && p.hand.length) aiPickCard(li);
-            continue;
-        }
-        const hi = p.hand.findIndex(c => c.id === mv.cardId);
-        game.pickCard(li, hi >= 0 ? hi : 0);
-        p._mpRoundMove = mv;   // action + args consumed at activation
-        renderGameState();
-    }
-
-    game.passHands();
-    const needsMissionSelect = await activateAllCards(humanAction);
-    if (needsMissionSelect) {
-        renderGameState();
-        showMissionSelectUI();
-        return;
-    }
-    finishRound();
-}
-
-// \u2500\u2500 Remote seat activation \u2014 their streamed intent, our shared engine \u2500\u2500
-// Mirrors the local-human branch action for action; every wait can return
+// ── Remote seat activation — their streamed reveal, our shared engine ──
+// (The old pick barrier is gone: throws collect off the stream in
+// mpBeginThrowPhase, and each human's ACTION streams as an 'act' move at
+// exactly their seat's point in the activation order — the same moment
+// the local human answers the reveal chooser.) Every wait can return
 // null (boot) and falls back to the exact AI move every client computes.
 async function mpActivateRemote(pi, card, cardIdx) {
     const p = game.players[pi];
     const cs = FMP.canonSeat(pi);
-    let mv;
-    if (cardIdx === 0) {
-        mv = p._mpRoundMove || null;
-        p._mpRoundMove = null;
-        if (mv && mv.cardId !== card.id) mv = null;   // stream skew \u2014 fall back honestly
-    } else {
-        mpWaitShow(pi, 'deciding their final card');
-        mv = await FMP.waitFor(cs, 'final');
-        mpWaitHide();
-    }
+    mpWaitShow(pi, cardIdx === 0 ? 'revealing their card' : 'deciding their final card');
+    const mv = await FMP.waitFor(cs, 'act');
+    mpWaitHide();
 
     let action = mv && mv.action;
     if (!action) {
@@ -2111,14 +2119,37 @@ function mpStateHash() {
     for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
     return h;
 }
+// The host stamps each act's hash at a CANONICAL point \u2014 right before
+// its throw phase kicks off. Every client snapshots its own hash at the
+// SAME point (mpActBaseline): bot picks start mutating the engine the
+// instant beginThrowPhase runs, so comparing against the LIVE hash on
+// receipt is a race, not a check. A stamp that arrives before this
+// client's baseline (boon await, stream latency) defers until it lands.
+window._mpActHashes = {};   // act \u2192 my baseline hash
+window._mpActStamps = {};   // act \u2192 the host's stamp, if it arrived early
+function mpActBaseline() {
+    if (!mpActive()) return;
+    const act = game.currentAct;
+    window._mpActHashes[act] = mpStateHash();
+    if (FMP.isHost()) { mpPub('sync', { act, hash: window._mpActHashes[act] }); return; }
+    if (typeof window._mpActStamps[act] === 'number') mpCompareSync(act, window._mpActStamps[act]);
+}
+
 function mpCheckSync(m) {
     if (!mpActive() || FMP.isHost() || typeof m.hash !== 'number') return;
-    if (m.hash !== mpStateHash()) {
-        console.error('[FMP] state hash mismatch at act', m.act);
-        showNotification('The connection to the table slipped \u2014 the realm plays on.', 'error');
-        game.players.forEach(p => { p._remoteHuman = false; });
-        FMP.leaveGame();
+    if (typeof window._mpActHashes[m.act] !== 'number') {
+        window._mpActStamps[m.act] = m.hash;   // baseline not taken yet \u2014 compare when it is
+        return;
     }
+    mpCompareSync(m.act, m.hash);
+}
+
+function mpCompareSync(act, theirs) {
+    if (theirs === window._mpActHashes[act]) return;
+    console.error('[FMP] state hash mismatch at act', act);
+    showNotification('The connection to the table slipped \u2014 the realm plays on.', 'error');
+    game.players.forEach(p => { p._remoteHuman = false; });
+    FMP.leaveGame();
 }
 
 // ─── GAME SCREEN ───────────────────────────────────────────
@@ -2174,6 +2205,7 @@ function renderGameState() {
     renderCardStacks(state);
     renderSidebar(state);
     renderHand(state);
+    renderThrownZone();
     renderBottomStats(state);
     renderTableView(state);
 
@@ -2188,8 +2220,8 @@ function renderGameState() {
 function formatPhase(phase) {
     const names = {
         'setup': 'Setting Up...',
-        'gameplay': 'Draft Phase — Pick a Card',
-        'activate': 'Activation Phase',
+        'gameplay': 'Throw Phase — Throw a Card In',
+        'activate': 'The Reveal — In Turn Order',
         'missions': 'Missions Phase',
         'melee': 'Melee Phase',
         'scoring': 'Final Scoring',
@@ -2204,8 +2236,8 @@ function formatPhase(phase) {
 function formatPhaseShort(phase) {
     const names = {
         'setup': 'Setup',
-        'gameplay': 'Draft',
-        'activate': 'Activation',
+        'gameplay': 'Throw',
+        'activate': 'Reveal',
         'missions': 'Missions',
         'melee': 'Melee',
         'scoring': 'Scoring',
@@ -2584,6 +2616,12 @@ function renderSidebar(state) {
         const crest = (game.players[i]._mpAvatar && window.FLB)
             ? FLB.avatarDisc(game.players[i]._mpAvatar, 'opp-crest') : '';
 
+        // A thrown-but-unrevealed card sits face down by their portrait —
+        // exactly what the physical table shows during the throw phase.
+        const thrown = seatHasThrown(i)
+            ? `<img class="opp-thrown${_thrownLandClass(i)}" src="${CARD_BACK_IMG}" alt="Face-down card" title="Card thrown — face down">`
+            : '';
+
         html += `
             <div class="opp-entry${isActive ? ' active-turn' : ''}" data-pi="${i}"
                  onclick="openOppOverlay(${i})">
@@ -2599,6 +2637,7 @@ function renderSidebar(state) {
                         ).join('')}
                     </div>
                 </div>
+                ${thrown}
             </div>
         `;
     });
@@ -2627,18 +2666,36 @@ function renderHand(state) {
     const step = count > 1 ? (maxAngle * 2) / (count - 1) : 0;
     const startAngle = -maxAngle;
 
+    // During the reveal, the hand you were just passed sits FACE DOWN —
+    // physically you don't pick it up until everyone has activated, and
+    // showing its faces next to your reveal chooser reads as one muddled
+    // hand. Backs only, no interactions.
+    if (game.phase === 'activate') {
+        let fd = '<div class="hand-hint">Your next hand — dealt after the reveal</div>';
+        fd += '<div class="hand-arc awaiting">';
+        hand.forEach((card, i) => {
+            const angle = startAngle + step * i;
+            const lift = -Math.abs(angle) * 0.4;
+            fd += `<div class="hand-card facedown"
+                        style="transform: rotate(${angle}deg) translateY(${lift}px)">
+                        <img src="${CARD_BACK_IMG}" alt="Face-down card">
+                    </div>`;
+        });
+        fd += '</div>';
+        zone.innerHTML = fd;
+        return;
+    }
+
     let html = '<div class="hand-hint" onclick="event.stopPropagation(); openHandInspect()">Click to inspect hand</div>';
     html += '<div class="hand-arc">';
 
     hand.forEach((card, i) => {
         const angle = startAngle + step * i;
         const lift = -Math.abs(angle) * 0.4;
-        const isSelected = selectedHandCard === i;
 
-        html += `<div class="hand-card${isSelected ? ' selected' : ''}"
+        html += `<div class="hand-card"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
                     data-hand-i="${i}"
-                    onclick="event.stopPropagation(); selectHandCard(${i})"
                     ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
                     <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
                 </div>`;
@@ -2800,11 +2857,15 @@ function buildSeatChip(i, state) {
     const youTag = isYou ? '<span class="chip-you">YOU</span>' : '';
     const cardCount = (p.playedCards || []).length;
     const open = isYou ? 'openBoardOverlay()' : `openOppOverlay(${i})`;
+    // Their face-down throw rides the chip until it's revealed in turn.
+    const thrown = seatHasThrown(i)
+        ? `<img class="chip-thrown${_thrownLandClass(i)}" src="${CARD_BACK_IMG}" alt="" title="Card thrown — face down">`
+        : '';
     return `
         <div class="pmat ${isYou ? 'you' : 'opp'} seat-chip${isActive ? ' active' : ''}" data-pi="${i}"
              onclick="event.stopPropagation(); ${open}" title="${p.name}">
             <img class="chip-art" src="${artSrc}" alt="${p.name}">
-            ${crown}${youTag}
+            ${crown}${youTag}${thrown}
             <span class="chip-count" title="Cards played">${cardCount}</span>
         </div>`;
 }
@@ -2978,9 +3039,10 @@ function renderTvHand(state) {
     if (!zone) return;
     const hand = state.players[0].hand;
 
-    // Playable glow (Battlegrounds-style): on your turn, cards you can
-    // actually play get a soft green edge so options read at a glance.
-    const myTurn = state.activePlayerIndex === 0 && state.phase === 'gameplay';
+    // Playable glow (Battlegrounds-style): while your throw is open, cards
+    // you could play AS THINGS STAND get a soft green edge. The real check
+    // happens at your reveal — earlier players' moves can shift it.
+    const myTurn = state.phase === 'gameplay' && game.pendingActivations[0] === null;
 
     // "Your turn" pulse on the always-visible strip (replaces the old
     // auto-opening drawer as the turn signal).
@@ -2998,11 +3060,26 @@ function renderTvHand(state) {
     const step = count > 1 ? (maxAngle * 2) / (count - 1) : 0;
     const startAngle = -maxAngle;
 
+    // The reveal: your next hand waits face down (see renderHand).
+    if (game.phase === 'activate') {
+        let fd = '<div class="hand-arc awaiting">';
+        hand.forEach((card, i) => {
+            const angle = startAngle + step * i;
+            const lift = -Math.abs(angle) * 0.4;
+            fd += `<div class="hand-card facedown"
+                        style="transform: rotate(${angle}deg) translateY(${lift}px)">
+                        <img src="${CARD_BACK_IMG}" alt="Face-down card">
+                    </div>`;
+        });
+        fd += '</div>';
+        zone.innerHTML = fd;
+        return;
+    }
+
     let html = '<div class="hand-arc">';
     hand.forEach((card, i) => {
         const angle = startAngle + step * i;
         const lift = -Math.abs(angle) * 0.4;
-        const isSelected = selectedHandCard === i;
         let playable = false;
         if (myTurn) {
             if (card.type === 'mission_letter') {
@@ -3012,8 +3089,8 @@ function renderTvHand(state) {
             }
         }
         // No tap-to-select here: committing a card is the DRAG-UP gesture
-        // (touch = bloom to read, drag up + release = action sheet).
-        html += `<div class="hand-card${isSelected ? ' selected' : ''}${playable ? ' playable' : ''}"
+        // (touch = bloom to read, drag up + release = the throw).
+        html += `<div class="hand-card${playable ? ' playable' : ''}"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
                     data-hand-i="${i}">
                     <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
@@ -3262,11 +3339,9 @@ function closeBoardOverlay() {
     if (_slidePick) {
         const pick = _slidePick;
         _slidePick = null;
-        if (pick.mode === 'hand') {
-            setTimeout(() => selectHandCard(pick.cardIndex), 0);
-        } else {
-            document.getElementById('actionPanel').classList.add('active');
-        }
+        // Cancelled out of pick-a-slot: the reveal chooser (still pending,
+        // guarded) just re-surfaces.
+        document.getElementById('actionPanel').classList.add('active');
     } else {
         // Same-tick dodge: restoring in this click's own bubble would let
         // the document-level outside-click handler immediately re-hide it.
@@ -3282,13 +3357,6 @@ function closeBoardOverlay() {
 // lives INSIDE the game screen's stacking context, so it can never paint
 // over the root-level panel — hiding the panel is the only clean stage.
 let _slidePick = null;
-
-function openSlidePicker(cardIndex) {
-    if (!game || game.phase !== 'gameplay') return;
-    _slidePick = { mode: 'hand', cardIndex };
-    hideActionPanel();
-    openBoardOverlay();
-}
 
 function openSlidePickerFinal(onPick) {
     _slidePick = { mode: 'final', onPick };
@@ -3327,7 +3395,10 @@ let _ovSlideTarget = null;   // slot index awaiting Pay & Slide, or null
 // matching the direction already taken this turn (engine truth).
 function _ovPaidReach() {
     const ok = new Set();
-    if (!game || game.phase !== 'gameplay' || _slidePick) return ok;
+    if (!game || _slidePick || mpActive()) return ok;
+    // Paid slides live at YOUR reveal — before you choose the card's
+    // action (rulebook p.4) — not during the throw phase.
+    if (game.phase !== 'activate' || !window._finalChoicePending) return ok;
     const p = game.players[0];
     const afford = Math.floor(p.gold / 5);
     const lock = p._paidSlideDir || 0;
@@ -3341,7 +3412,8 @@ function _ovPaidReach() {
 }
 
 function _ovWhyBlocked(i) {
-    if (!game || game.phase !== 'gameplay') return 'The ring slides during gameplay rounds';
+    if (!game || game.phase !== 'activate' || !window._finalChoicePending)
+        return 'The ring slides on your turn — when your card is revealed';
     const p = game.players[0];
     const steps = i - p.sliderPosition;
     if (p._paidSlideDir && Math.sign(steps) !== p._paidSlideDir)
@@ -3365,9 +3437,12 @@ function renderBoardOvSlots() {
         ring.style.left = BOARD_OV_TRACK.lefts[at] + '%';
         ring.style.top = BOARD_OV_TRACK.top + '%';
         ring.classList.toggle('pending', target !== null);
-        // Always grabbable during gameplay — even broke or direction-locked.
-        // The DROP is where validity is judged (snap home + the reason).
-        ring.classList.toggle('grab', !picking && game && game.phase === 'gameplay');
+        // Always grabbable while the game is at the table — even broke or
+        // direction-locked, and in the throw phase too. The DROP is where
+        // validity is judged (snap home + the reason); under the throw-first
+        // flow that includes "not your reveal yet".
+        ring.classList.toggle('grab', !picking && game
+            && (game.phase === 'gameplay' || game.phase === 'activate'));
     }
     const ghost = document.getElementById('boardOvGhost');
     if (ghost) {
@@ -3440,8 +3515,7 @@ function boardOvSlotClick(i) {
         const pick = _slidePick;
         _slidePick = null;
         closeBoardOverlay();
-        if (pick.mode === 'hand') discardToSlide(pick.cardIndex, step);
-        else pick.onPick(step);
+        pick.onPick(step);
         return;
     }
 
@@ -3449,10 +3523,8 @@ function boardOvSlotClick(i) {
         if (_ovSlideTarget !== null) _ovSlideCancel();   // tapping home = never mind
         return;
     }
-    if (!game || game.phase !== 'gameplay') {
-        showNotification('The ring slides during gameplay rounds', 'error');
-        return;
-    }
+    // Paid-slide reach handles the WHEN (your reveal, before your action)
+    // as well as gold and direction — blocked taps explain themselves.
     if (!_ovPaidReach().has(i)) {
         const why = _ovWhyBlocked(i);
         if (why) showNotification(why, 'error');
@@ -3538,7 +3610,13 @@ function _ovRingDragInit() {
     };
 
     ring.addEventListener('pointerdown', (e) => {
-        if (_slidePick || !game || game.phase !== 'gameplay') return;
+        // Always grabbable while the game is at the table (throw phase OR
+        // the reveal) — Skylar's judge-at-the-DROP model. Validity comes
+        // from _ovPaidReach/_ovWhyBlocked, which now encode the throw-first
+        // rule too: outside YOUR reveal every circle is blocked, so a drop
+        // glides home and says "the ring slides on your turn".
+        if (_slidePick || !game) return;
+        if (game.phase !== 'gameplay' && game.phase !== 'activate') return;
         const wrap = document.querySelector('.board-ov-boardwrap');
         if (!wrap) return;
         rect = wrap.getBoundingClientRect();
@@ -3908,13 +3986,239 @@ function closeAllOverlays() {
     }
 }
 
-function selectHandCard(index) {
-    if (game.phase !== 'gameplay') return;
+// ─── THE THROW PHASE — throw first, decide at the reveal ──────────
+// The physical flow (rulebook p.3–4): every player picks a card and
+// places it FACE DOWN on their board; hands pass; then, starting with
+// the Emblem holder and going clockwise, each player reveals their card
+// and chooses an action. Nothing pops up at throw time — the choice
+// happens at YOUR reveal, with earlier players' effects already applied.
+// Any player may take their card back until the last card goes in; that
+// instant, every card locks.
+
+const CARD_BACK_IMG = 'assets/cards/backs/Back Card 1_Brown1.jpg';
+
+let _throwUx = null;   // { round, locked, timers[], mpThrown{}, seen:Set }
+
+// Unique per throw phase and identical on every client — hand sizes are
+// uniform around the table when the phase opens.
+function throwRoundId() {
+    return game.currentAct * 100 + game.players[0].hand.length;
+}
+
+function _throwClearTimers() {
+    if (!_throwUx) return;
+    (_throwUx.timers || []).forEach(t => clearTimeout(t));
+    _throwUx.timers = [];
+}
+
+// Face-down card state for seat i — engine truth, plus the pre-lock
+// stream state for remote humans (their pick is engine-applied at lock).
+function seatHasThrown(i) {
+    if (!game) return false;
+    if (game.phase !== 'gameplay' && game.phase !== 'activate') return false;
+    if (game.pendingActivations[i]) return true;
+    return !!(i !== 0 && _throwUx && _throwUx.mpThrown && _throwUx.mpThrown[i]);
+}
+
+// First render of a seat's throw gets the landing animation; innerHTML
+// rebuilds replay CSS animations, so every later render stays still.
+function _thrownLandClass(i) {
+    if (!_throwUx || _throwUx.seen.has(i)) return '';
+    _throwUx.seen.add(i);
+    return ' land';
+}
+
+function beginThrowPhase() {
+    if (!game || game.phase !== 'gameplay') return;
+    _throwClearTimers();
+    _throwUx = { round: throwRoundId(), locked: false, timers: [], mpThrown: null, seen: new Set() };
+
+    if (mpActive()) { mpBeginThrowPhase(); return; }
+
+    // Solo: the rivals think, then toss their cards in one by one — those
+    // face-down cards landing around the table ARE your undo window.
+    const base = 1300, step = 1050;
+    for (let i = 1; i < game.playerCount; i++) {
+        if (!game.players[i].hand.length) continue;
+        const jitter = Math.random() * 650;
+        const t = setTimeout(() => {
+            if (!_throwUx || _throwUx.locked || !game || game.phase !== 'gameplay') return;
+            if (game.pendingActivations[i] === null && game.players[i].hand.length) {
+                aiPickCard(i);
+                renderGameState();
+                maybeLockThrows();
+            }
+        }, (base + (i - 1) * step + jitter) * window.CINEMATIC_SPEED);
+        _throwUx.timers.push(t);
+    }
+    renderGameState();
+    maybeShowThrowHint();
+    if (typeof coachTick === 'function') coachTick();
+}
+
+// The human throws: drag a card up and it goes in face down. No options,
+// no popup — the decision comes at your reveal.
+function throwCard(index) {
+    if (!game || game.phase !== 'gameplay') return;
+    if (_throwUx && _throwUx.locked) return;
+    if (game.pendingActivations[0] !== null) return;   // already in — take it back first
+    const card = game.players[0].hand[index];
+    if (!card) return;
 
     if (typeof coachMarkSeen === 'function') coachMarkSeen('hand');
-    selectedHandCard = index;
-    renderHand(game.getState(0));
-    showActionPanel(index);
+    hideThrowHint();
+    window._uxThrownOnce = true;
+
+    game.pickCard(0, index);
+    mpPub('throw', { r: _throwUx ? _throwUx.round : 0, cardId: card.id });
+    addLogEntry('You throw a card in, face down');
+    renderGameState();
+    maybeLockThrows();
+}
+
+// Take it back — the physical rule allows it until the last card goes in.
+function undoThrow() {
+    if (!game || game.phase !== 'gameplay') return;
+    if (!_throwUx || _throwUx.locked) return;
+    const res = game.unpickCard(0);
+    if (!res.success) return;
+    if (_throwUx.seen) _throwUx.seen.delete(0);
+    mpPub('unthrow', { r: _throwUx.round });
+    addLogEntry('You take your card back');
+    renderGameState();
+}
+
+// Solo lock: the engine state is the whole truth. (Multiplayer locks off
+// the move stream instead — see mpBeginThrowPhase.)
+function maybeLockThrows() {
+    if (mpActive()) return;
+    if (!_throwUx || _throwUx.locked) return;
+    if (!game.allPlayersPicked()) return;
+    lockThrows();
+}
+
+// The last card hit the table: everything locks instantly, hands pass,
+// and the reveal walks the table from the Emblem holder.
+async function lockThrows() {
+    if (!_throwUx || _throwUx.locked) return;
+    _throwUx.locked = true;
+    _throwClearTimers();
+    hideThrowHint();
+    renderGameState();
+
+    const holder = game.emblemHolder === 0 ? null : game.players[game.emblemHolder].name;
+    showNotification(holder ? `All cards are in — ${holder} reveals first.`
+                            : 'All cards are in — you reveal first.', 'act');
+    await new Promise(r => setTimeout(r, 900 * window.CINEMATIC_SPEED));
+    if (!game) return;
+
+    game.passHands();
+    renderGameState();
+    await activateAllCards();
+    finishRound();
+}
+
+// ── Your thrown card — face down above your hand, with the take-back ──
+function renderThrownZone() {
+    const zone = document.getElementById('thrownZone');
+    if (!zone || !game) return;
+    const pending = game.pendingActivations[0];
+    const inWindow = game.phase === 'gameplay' || game.phase === 'activate';
+    if (!pending || !inWindow || window._finalChoicePending) {
+        zone.classList.remove('active');
+        zone.innerHTML = '';
+        return;
+    }
+    const pair = Array.isArray(pending);
+    const locked = !_throwUx || _throwUx.locked || game.phase === 'activate';
+    const note = locked
+        ? 'Locked in — revealed on your turn'
+        : (pair ? 'Your last two go in together' : 'Thrown in — face down');
+    zone.innerHTML = `
+        <div class="tz-cards${pair ? ' pair' : ''}">
+            <img class="tz-card" src="${CARD_BACK_IMG}" alt="Your face-down card">
+            ${pair ? `<img class="tz-card two" src="${CARD_BACK_IMG}" alt="">` : ''}
+        </div>
+        <div class="tz-side">
+            <div class="tz-note">${note}</div>
+            ${locked ? '' : `<button class="btn-royal tz-undo" onclick="event.stopPropagation(); undoThrow()"><span>↩ Take it Back</span></button>`}
+        </div>`;
+    zone.classList.add('active');
+}
+
+// ── The throw-gesture hint — a finger pushing a card upward ──────
+// Replaces the old "pick one card" text prompt: the gesture IS the
+// tutorial. Shows on a game's first hand until the first throw lands.
+function maybeShowThrowHint() {
+    if (window._uxThrownOnce) return;
+    if (!game || game.phase !== 'gameplay') return;
+    if (game.pendingActivations[0] !== null || !game.players[0].hand.length) return;
+    const hint = document.getElementById('throwHint');
+    if (hint) hint.classList.add('active');
+}
+function hideThrowHint() {
+    const hint = document.getElementById('throwHint');
+    if (hint) hint.classList.remove('active');
+}
+
+// ── Multiplayer throw phase — deterministic lock off the move stream ──
+// Humans stream 'throw'/'unthrow' freely; every client folds the SAME
+// push-ordered stream, so the first moment all live human seats hold an
+// active throw — the lock — is the same moment everywhere. An undo that
+// loses the race to the last throw is overridden, exactly the physical
+// rule: the last card hitting the table locks every card instantly.
+async function mpBeginThrowPhase() {
+    const round = _throwUx.round;
+
+    // Bots pick deterministically at once — identical on every client.
+    for (let i = 1; i < game.playerCount; i++) {
+        const p = game.players[i];
+        if (!p._remoteHuman && game.pendingActivations[i] === null && p.hand.length > 0) {
+            aiPickCard(i);
+        }
+    }
+    renderGameState();
+    maybeShowThrowHint();
+    if (typeof coachTick === 'function') coachTick();
+
+    const seats = [];
+    for (let i = 0; i < game.playerCount; i++) {
+        if (i === 0 || game.players[i]._remoteHuman) seats.push(FMP.canonSeat(i));
+    }
+
+    const res = await FMP.collectThrows({
+        round, seats,
+        onUpdate: (active) => {
+            if (!_throwUx || _throwUx.round !== round) return;
+            const mp = {};
+            Object.keys(active).forEach(cs => { mp[FMP.localIdx(Number(cs))] = true; });
+            _throwUx.mpThrown = mp;
+            renderGameState();
+        },
+    });
+    if (!_throwUx || _throwUx.round !== round || _throwUx.locked || !res) return;
+
+    // Reconcile every human seat to the locked snapshot — stream order
+    // already decided any last-throw-vs-undo race.
+    Object.entries(res.picks).forEach(([cs, cardId]) => {
+        const li = FMP.localIdx(Number(cs));
+        const p = game.players[li];
+        const pend = game.pendingActivations[li];
+        const pendId = pend ? (Array.isArray(pend) ? pend[0].id : pend.id) : null;
+        if (pendId === cardId) return;
+        if (pend) game.unpickCard(li);
+        else if (li === 0) showNotification('The last card fell — yours is locked in.', 'act');
+        const hi = p.hand.findIndex(c => c.id === cardId);
+        game.pickCard(li, hi >= 0 ? hi : 0);
+    });
+
+    // Booted or silent human seats: the same AI pick on every client.
+    for (let i = 0; i < game.playerCount; i++) {
+        if (game.pendingActivations[i] === null && game.players[i].hand.length) {
+            aiPickCard(i);
+        }
+    }
+    lockThrows();
 }
 
 // ─── NEIGHBOR-TARGET HIGHLIGHT ─────────────────────────────
@@ -3980,103 +4284,11 @@ function applyTargetHighlights() {
     }
 }
 
-// ─── ACTION PANEL ──────────────────────────────────────────
-
-function showActionPanel(cardIndex) {
-    const panel = document.getElementById('actionPanel');
-    const card = game.players[0].hand[cardIndex];
-    if (!card) return;
-
-    const { canPlay, missingSkills, missingSpecial = [] } = game.checkRequirements(0, card);
-    const isMissionLetter = card.type === 'mission_letter';
-    const skills = card.skills || [];
-    const typeName = (card.type || 'card').replace(/_/g, ' ');
-
-    // The card itself sits beside the buttons (readable, peek-able) so the
-    // decision and the actions live together \u2014 no more covered/cut-off card.
-    let html = `<img class="action-card-img" src="assets/cards/regular/${card.filename}"
-                     alt="${card.name}" data-peek="assets/cards/regular/${card.filename}">`;
-    html += '<div class="action-body"><div class="action-header">';
-    html += `<div class="action-card-name">${card.name}</div>`;
-    html += `<div class="action-card-type">${typeName.charAt(0).toUpperCase() + typeName.slice(1)}</div>`;
-    html += `<div class="action-purse"><img src="${TOKEN_IMG.gold}" alt="Gold"> Your purse: <b>${game.players[0].gold} Gold</b></div>`;
-
-    if (skills.length > 0) {
-        html += `<div class="action-skills"><span class="ap-lbl">Grants</span>${skills.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' \u00B7 ')}</div>`;
-    }
-
-    // Flex / special abilities in plain words \u2014 same source of truth as the
-    // spotlight and card peek (SPECIAL_DESCRIPTIONS).
-    if (card.special && SPECIAL_DESCRIPTIONS[card.special]) {
-        html += `<div class="action-special">${SPECIAL_DESCRIPTIONS[card.special]}</div>`;
-    }
-
-    if (card.rewards) {
-        const r = [];
-        if (card.rewards.gold) r.push(`+${card.rewards.gold} Gold`);
-        if (card.rewards.prestige) r.push(`+${card.rewards.prestige} Prestige`);
-        if (card.rewards.favor) r.push(`+${card.rewards.favor} Favor`);
-        if (r.length) html += `<div class="action-rewards"><span class="ap-lbl">Gains</span>${r.join(' \u00B7 ')}</div>`;
-    }
-
-    // The price, BEFORE you commit \u2014 gold cost and any Scorn the card
-    // charges (rewards.scorn is a cost in all but name). This line stays
-    // visible in compact layouts: hiding a price re-creates blind commits.
-    if (!isMissionLetter) {
-        const price = [];
-        if (card.cost) price.push(`\u2212${card.cost} Gold`);
-        if (card.rewards && card.rewards.scorn) price.push(`+${card.rewards.scorn} Scorn`);
-        if (price.length) html += `<div class="action-price"><span class="ap-lbl">Price</span>${price.join(' \u00B7 ')}</div>`;
-    }
-
-    html += '</div><div class="action-buttons">';
-
-    if (isMissionLetter) {
-        // Mission letters can ONLY be used as mission letters or discarded — no "Play"
-        if (game.players[0].gold >= 1 && game.visibleMissions.length > 0) {
-            html += `<button class="btn-royal primary action-btn" onclick="playMissionLetter(${cardIndex})"><span>Mission Letter (\u22121g)</span></button>`;
-        } else {
-            html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>Need 1g for Mission Letter</span></button>`;
-        }
-    } else {
-        // Regular card — Play button
-        if (canPlay) {
-            html += `<button class="btn-royal primary action-btn" onclick="playSelectedCard(${cardIndex})"><span>\u25B6 Play</span></button>`;
-        } else {
-            const needed = [...missingSkills, ...missingSpecial];
-            html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>\u25B6 Need: ${needed.join(', ')}</span></button>`;
-
-            // Borrow option \u2014 only skill gaps are borrowable; Mind's Eye / Philosopher's
-            // Stone / Gold / Favor requirements can never be borrowed (see tutorial).
-            if (missingSpecial.length === 0 && missingSkills.length > 0) {
-                const borrowable = game.getBorrowableSkills(0);
-                const canBorrowAll = missingSkills.every(s => borrowable[s] && borrowable[s].length > 0);
-                // The fee goes to the lender BEFORE the card's own cost is paid
-                // (activateCard deducts in that order), so affording the fee
-                // alone isn't enough — a borrow that leaves you short of the
-                // card cost lands right back in the silent-refusal path.
-                const borrowCost = missingSkills.length * 2;
-                if (canBorrowAll && game.players[0].gold >= borrowCost + (card.cost || 0)) {
-                    html += `<button class="btn-royal primary action-btn" onclick="playWithBorrow(${cardIndex})"><span>Borrow & Play (\u2212${borrowCost}g)</span></button>`;
-                }
-            }
-        }
-    }
-
-    // Discard — always available, offers +3g or slide
-    html += `<button class="btn-royal action-btn" onclick="discardSelectedCard(${cardIndex})"><span>\u2715 Discard (+3g)</span></button>`;
-
-    // Discard to slide — ONE button; the board itself opens in pick-a-slot
-    // mode and the circles beside the ring take the discard as payment.
-    html += `<button class="btn-royal action-btn" onclick="openSlidePicker(${cardIndex})"><span>\u21c4 Discard: Slide Ring</span></button>`;
-
-    html += '</div></div>';
-
-    panel.innerHTML = html;
-    panel.classList.add('active');
-    setTargetHighlights(card);
-    if (typeof coachTick === 'function') coachTick();
-}
+// ─── ACTION PANEL SHELL ────────────────────────────────────
+// The pick-time action sheet is GONE — throwing shows nothing (the
+// physical flow), and the only thing #actionPanel hosts now is the
+// reveal chooser (showCardChoice). hideActionPanel remains the guarded
+// outside-click sink.
 
 function hideActionPanel() {
     // The final-card chooser awaits a Promise that ONLY its buttons resolve.
@@ -4084,7 +4296,6 @@ function hideActionPanel() {
     // the round — so while it's pending the panel refuses to hide.
     if (window._finalChoicePending) return;
     document.getElementById('actionPanel').classList.remove('active', 'final-choice');
-    selectedHandCard = null;
     // Nothing re-renders the hand here, so the .selected card (z 31)
     // would linger and paint OVER a neighbor's hover-bloom (Wyatt's
     // buried-bloom screenshot) — strip the class with the selection.
@@ -4093,132 +4304,159 @@ function hideActionPanel() {
     if (typeof coachTick === 'function') coachTick();
 }
 
-// ─── FINAL CARD CHOICE ─────────────────────────────────────
-// With two cards left you pick one and the last card activates too — but
-// WHAT it does (play / borrow / mission letter / discard / slide) is still
-// the player's call, exactly like any other card. Resolves an action string.
-function showFinalCardChoice(card) {
+// ─── THE REVEAL CHOOSER ────────────────────────────────────
+// Your thrown card comes face up and NOW you choose — play / borrow /
+// mission letter / discard / slide — with everything earlier players did
+// already applied. The same panel serves the auto-paired final card.
+// Resolves an action string; window._finalChoicePending guards every
+// stray dismissal while it's up, and window._cardChoiceRerender lets a
+// paid slide refresh the requirements it just changed.
+function showCardChoice(card, cardIdx) {
     return new Promise((resolve) => {
         // Mark the chooser as pending BEFORE it renders: hideActionPanel()
         // is a no-op while this is set, so no stray click can strand the await.
         window._finalChoicePending = true;
         const panel = document.getElementById('actionPanel');
-        const player = game.players[0];
-        const { canPlay, missingSkills, missingSpecial = [] } = game.checkRequirements(0, card);
-        const isMissionLetter = card.type === 'mission_letter';
 
-        let html = `<img class="action-card-img" src="assets/cards/regular/${card.filename}"
-                         alt="${card.name}" data-peek="assets/cards/regular/${card.filename}">`;
-        html += '<div class="action-body"><div class="action-header">';
-        html += `<div class="action-card-name">${card.name}</div>`;
-        html += `<div class="action-card-type">Your final card — choose its fate</div>`;
-        html += `<div class="action-purse"><img src="${TOKEN_IMG.gold}" alt="Gold"> Your purse: <b>${player.gold} Gold</b></div>`;
+        const finish = (act) => {
+            window._cardChoiceRerender = null;
+            window._finalChoicePending = false;
+            panel.classList.remove('active', 'final-choice');
+            clearTargetHighlights();
+            resolve(act);
+        };
 
-        // Same honest summary as the hand panel: grants, specials, and the
-        // price — this chooser is the same decision with one fewer escape.
-        const fcSkills = card.skills || [];
-        if (fcSkills.length > 0) {
-            html += `<div class="action-skills"><span class="ap-lbl">Grants</span>${fcSkills.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' · ')}</div>`;
-        }
-        if (card.special && SPECIAL_DESCRIPTIONS[card.special]) {
-            html += `<div class="action-special">${SPECIAL_DESCRIPTIONS[card.special]}</div>`;
-        }
-        if (card.rewards) {
-            const r = [];
-            if (card.rewards.gold) r.push(`+${card.rewards.gold} Gold`);
-            if (card.rewards.prestige) r.push(`+${card.rewards.prestige} Prestige`);
-            if (card.rewards.favor) r.push(`+${card.rewards.favor} Favor`);
-            if (r.length) html += `<div class="action-rewards"><span class="ap-lbl">Gains</span>${r.join(' · ')}</div>`;
-        }
-        if (!isMissionLetter) {
-            const price = [];
-            if (card.cost) price.push(`−${card.cost} Gold`);
-            if (card.rewards && card.rewards.scorn) price.push(`+${card.rewards.scorn} Scorn`);
-            if (price.length) html += `<div class="action-price"><span class="ap-lbl">Price</span>${price.join(' · ')}</div>`;
-        }
+        const render = (first) => {
+            // A rerender while the board overlay has the stage must not
+            // yank the panel back over it — respect the stepped-aside state.
+            const stayHidden = !first && !panel.classList.contains('active');
+            const player = game.players[0];
+            const { canPlay, missingSkills, missingSpecial = [] } = game.checkRequirements(0, card);
+            const isMissionLetter = card.type === 'mission_letter';
 
-        html += '</div><div class="action-buttons">';
+            let html = `<img class="action-card-img" src="assets/cards/regular/${card.filename}"
+                             alt="${card.name}" data-peek="assets/cards/regular/${card.filename}">`;
+            html += '<div class="action-body"><div class="action-header">';
+            html += `<div class="action-card-name">${card.name}</div>`;
+            html += `<div class="action-card-type">${cardIdx > 0 ? 'Your final card — choose its fate' : 'Your card is revealed — choose its fate'}</div>`;
+            html += `<div class="action-purse"><img src="${TOKEN_IMG.gold}" alt="Gold"> Your purse: <b>${player.gold} Gold</b></div>`;
 
-        const btn = (label, action, primary) =>
-            `<button class="btn-royal${primary ? ' primary' : ''} action-btn" data-act="${action}"><span>${label}</span></button>`;
+            // The honest summary: grants, specials, and the price — shown
+            // before you commit, with the table's current state applied.
+            const fcSkills = card.skills || [];
+            if (fcSkills.length > 0) {
+                html += `<div class="action-skills"><span class="ap-lbl">Grants</span>${fcSkills.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' · ')}</div>`;
+            }
+            if (card.special && SPECIAL_DESCRIPTIONS[card.special]) {
+                html += `<div class="action-special">${SPECIAL_DESCRIPTIONS[card.special]}</div>`;
+            }
+            if (card.rewards) {
+                const r = [];
+                if (card.rewards.gold) r.push(`+${card.rewards.gold} Gold`);
+                if (card.rewards.prestige) r.push(`+${card.rewards.prestige} Prestige`);
+                if (card.rewards.favor) r.push(`+${card.rewards.favor} Favor`);
+                if (r.length) html += `<div class="action-rewards"><span class="ap-lbl">Gains</span>${r.join(' · ')}</div>`;
+            }
+            if (!isMissionLetter) {
+                const price = [];
+                if (card.cost) price.push(`−${card.cost} Gold`);
+                if (card.rewards && card.rewards.scorn) price.push(`+${card.rewards.scorn} Scorn`);
+                if (price.length) html += `<div class="action-price"><span class="ap-lbl">Price</span>${price.join(' · ')}</div>`;
+            }
 
-        if (isMissionLetter) {
-            if (player.gold >= 1 && game.visibleMissions.length > 0) {
-                html += btn('Mission Letter (−1g)', 'mission_letter', true);
+            html += '</div><div class="action-buttons">';
+
+            const btn = (label, action, primary) =>
+                `<button class="btn-royal${primary ? ' primary' : ''} action-btn" data-act="${action}"><span>${label}</span></button>`;
+
+            if (isMissionLetter) {
+                if (player.gold >= 1 && game.visibleMissions.length > 0) {
+                    html += btn('Mission Letter (−1g)', 'mission_letter', true);
+                } else {
+                    html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>Need 1g for Mission Letter</span></button>`;
+                }
+            } else if (canPlay) {
+                html += btn('▶ Play', 'play', true);
             } else {
-                html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>Need 1g for Mission Letter</span></button>`;
-            }
-        } else if (canPlay) {
-            html += btn('▶ Play', 'play', true);
-        } else {
-            const needed = [...missingSkills, ...missingSpecial];
-            html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>▶ Need: ${needed.join(', ')}</span></button>`;
-            if (missingSpecial.length === 0 && missingSkills.length > 0) {
-                const borrowable = game.getBorrowableSkills(0);
-                const canBorrowAll = missingSkills.every(s => borrowable[s] && borrowable[s].length > 0);
-                // Fee first, card cost second (see showActionPanel) — the
-                // player must be able to cover both, or the play silently dies.
-                const borrowCost = missingSkills.length * 2;
-                if (canBorrowAll && player.gold >= borrowCost + (card.cost || 0)) {
-                    html += btn(`Borrow & Play (−${borrowCost}g)`, 'borrow_play', true);
+                const needed = [...missingSkills, ...missingSpecial];
+                html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>▶ Need: ${needed.join(', ')}</span></button>`;
+                if (missingSpecial.length === 0 && missingSkills.length > 0) {
+                    const borrowable = game.getBorrowableSkills(0);
+                    const canBorrowAll = missingSkills.every(s => borrowable[s] && borrowable[s].length > 0);
+                    // Fee first, card cost second — the player must cover
+                    // both, or the play silently dies in activateCard.
+                    const borrowCost = missingSkills.length * 2;
+                    if (canBorrowAll && player.gold >= borrowCost + (card.cost || 0)) {
+                        html += btn(`Borrow & Play (−${borrowCost}g)`, 'borrow_play', true);
+                    }
                 }
             }
-        }
-        html += btn('✕ Discard (+3g)', 'discard', false);
-        html += btn('⇄ Discard: Slide Ring', 'discard_slide_pick', false);
-        html += '</div></div>';
+            html += btn('✕ Discard (+3g)', 'discard', false);
+            html += btn('⇄ Discard: Slide Ring', 'discard_slide_pick', false);
+            // The rulebook's optional beat: before choosing your action you
+            // may pay gold to shift your ring (5g a space, one direction a
+            // turn) — the board itself is the picker. Solo for now; paid
+            // slides ride the next multiplayer protocol window.
+            if (!mpActive() && player.gold >= 5) {
+                html += btn('⟡ Pay to Slide (5g/space)', 'pay_slide', false);
+            }
+            html += '</div></div>';
 
-        panel.innerHTML = html;
-        // final-choice: the card lives in pending (not the hand), so nothing
-        // blooms beside the panel — the panel itself must show the art.
-        panel.classList.add('active', 'final-choice');
-        setTargetHighlights(card);
-        if (typeof coachTick === 'function') coachTick();
+            panel.innerHTML = html;
+            // final-choice: the card lives in pending (not the hand), so
+            // nothing blooms beside the panel — it must show the art itself.
+            panel.classList.add('final-choice');
+            if (!stayHidden) panel.classList.add('active');
+            setTargetHighlights(card);
+            if (typeof coachTick === 'function') coachTick();
 
-        panel.querySelectorAll('[data-act]').forEach(b => {
-            b.onclick = () => {
-                // Slide is a two-step choice: the board opens in pick-a-slot
-                // mode; cancelling lands back here, chooser still up (it
-                // never closed — hideActionPanel is guarded while pending).
-                if (b.dataset.act === 'discard_slide_pick') {
-                    openSlidePickerFinal((direction) => {
-                        window._finalChoicePending = false;
-                        panel.classList.remove('active', 'final-choice');
-                        clearTargetHighlights();
-                        resolve(direction < 0 ? 'discard_slide_left' : 'discard_slide_right');
-                    });
-                    return;
-                }
-                // Borrow is two beats here too: pick the lender first. The
-                // panel steps aside directly (the pending guard stays armed
-                // against stray clicks); cancel re-surfaces it.
-                if (b.dataset.act === 'borrow_play') {
-                    panel.classList.remove('active');
-                    showBorrowChooser(card).then(chosen => {
-                        if (!chosen) { panel.classList.add('active'); return; }
-                        window._finalBorrowChoice = chosen;
-                        window._finalChoicePending = false;
-                        panel.classList.remove('final-choice');
-                        clearTargetHighlights();
-                        resolve('borrow_play');
-                    });
-                    return;
-                }
-                window._finalChoicePending = false;
-                panel.classList.remove('active', 'final-choice');
-                clearTargetHighlights();
-                resolve(b.dataset.act);
-            };
-        });
+            panel.querySelectorAll('[data-act]').forEach(b => {
+                b.onclick = () => {
+                    // The paid slide: the board overlay takes the stage (it
+                    // steps this panel aside itself and restores it on
+                    // close); a completed slide re-renders this chooser.
+                    if (b.dataset.act === 'pay_slide') {
+                        openBoardOverlay();
+                        return;
+                    }
+                    // Slide is a two-step choice: the board opens in
+                    // pick-a-slot mode; cancelling lands back here, chooser
+                    // still up (hideActionPanel is guarded while pending).
+                    if (b.dataset.act === 'discard_slide_pick') {
+                        openSlidePickerFinal((direction) => {
+                            finish(direction < 0 ? 'discard_slide_left' : 'discard_slide_right');
+                        });
+                        return;
+                    }
+                    // Borrow is two beats here too: pick the lender first.
+                    // The panel steps aside directly (the pending guard
+                    // stays armed); cancel re-surfaces it.
+                    if (b.dataset.act === 'borrow_play') {
+                        panel.classList.remove('active');
+                        showBorrowChooser(card).then(chosen => {
+                            if (!chosen) { panel.classList.add('active'); return; }
+                            window._finalBorrowChoice = chosen;
+                            finish('borrow_play');
+                        });
+                        return;
+                    }
+                    finish(b.dataset.act);
+                };
+            });
+        };
+
+        window._cardChoiceRerender = () => render(false);
+        render(true);
     });
 }
 
-// Apply the chosen action to the final card through the normal engine paths.
-async function resolveFinalCardChoice(card) {
-    const act = await showFinalCardChoice(card);
+// Apply the chosen action through the normal engine paths — YOUR reveal,
+// at exactly your seat's point in the activation order.
+async function resolveCardChoice(card, cardIdx) {
+    const act = await showCardChoice(card, cardIdx);
 
     if (mpActive()) {
-        // The final card's fate streams like the round pick did.
+        // The decision streams so every client applies it right here.
         const data = {
             action: (act === 'discard_slide_left' || act === 'discard_slide_right')
                 ? 'discard_slide' : act,
@@ -4229,7 +4467,7 @@ async function resolveFinalCardChoice(card) {
             data.borrow = (window._finalBorrowChoice || []).map(b =>
                 ({ skill: b.skill, lender: FMP.canonSeat(b.neighborIndex) }));
         }
-        mpPub('final', data);
+        mpPub('act', data);
     }
 
     // Payoff-first beat (Wyatt): the engine resolves, the "+N" floats rise
@@ -4240,7 +4478,7 @@ async function resolveFinalCardChoice(card) {
 
     if (act === 'play') {
         game.activateCard(0, card.id, 'play');
-        addLogEntry(`You also play ${card.name}`);
+        addLogEntry(cardIdx > 0 ? `You also play ${card.name}` : `You play ${card.name}`);
         bannerAction = 'play';
     } else if (act === 'borrow_play') {
         const chosen = window._finalBorrowChoice;
@@ -4283,152 +4521,25 @@ async function resolveFinalCardChoice(card) {
     }
 }
 
-// ─── CARD ACTIONS ──────────────────────────────────────────
+// ─── PAID SLIDE ────────────────────────────────────────────
 
-function playSelectedCard(cardIndex) {
-    if (!game || game.phase !== 'gameplay') return;
-
-    const card = game.players[0].hand[cardIndex];
-    if (!card) return;
-
-    const { canPlay } = game.checkRequirements(0, card);
-    if (!canPlay) {
-        showNotification(`Cannot play ${card.name}!`, 'error');
-        return;
-    }
-
-    game.pickCard(0, cardIndex);
-    hideActionPanel();
-    mpPub('pick', { cardId: card.id, action: 'play' });
-
-    const skillText = card.skills && card.skills.length > 0
-        ? ` \u2014 ${card.skills.join(', ')}`
-        : '';
-    showNotification(`Played: ${card.name}${skillText}`, 'play');
-    addLogEntry(`You play ${card.name}`);
-
-    processRound('play');
-}
-
-function discardSelectedCard(cardIndex) {
-    if (!game || game.phase !== 'gameplay') return;
-
-    const card = game.players[0].hand[cardIndex];
-    if (!card) return;
-
-    game.pickCard(0, cardIndex);
-    hideActionPanel();
-    mpPub('pick', { cardId: card.id, action: 'discard' });
-
-    game.players[0]._discardNext = true;
-
-    showNotification(`Discarded: ${card.name} (+3 Gold)`, 'discard');
-    addLogEntry(`You discard ${card.name} for 3 Gold`);
-
-    processRound('discard');
-}
-
-async function playMissionLetter(cardIndex) {
-    if (!game || game.phase !== 'gameplay') return;
-
-    const card = game.players[0].hand[cardIndex];
-    if (!card || game.players[0].gold < 1) return;
-
-    // A Mission Letter resolves at ACTIVATION, in seat order — the physical
-    // rule, and the same road every other card already takes.
-    //
-    // Solo used to fire the letter IMMEDIATELY, which jumped it ahead of the
-    // whole table. On the last two cards of an act that read as a broken turn:
-    // if you did not hold the Emblem, your letter went off, THEN everyone else
-    // played both of their cards, and only then did your second card come back
-    // to you. Your pair was split around the rest of the table.
-    //
-    // Multiplayer always staged it correctly — lockstep forced the issue — so
-    // the two modes disagreed about the rules. Now there is one path.
-    game.pickCard(0, cardIndex);
-    hideActionPanel();
-    game.players[0]._letterNext = true;
-    mpPub('pick', { cardId: card.id, action: 'mission_letter' });   // no-op solo
-    addLogEntry('You play a Mission Letter');
-    processRound('mission_letter');
-}
-
-// Borrow & Play is TWO beats: the button first, THEN "from whom?" \u2014 the
-// chooser shows both neighbors (one may have nothing to lend; it sits
-// grayed with the reason). The 2g-per-skill fee goes TO the lender, so
-// who gets paid is the player's call \u2014 never auto-picked.
-function playWithBorrow(cardIndex) {
-    if (!game || game.phase !== 'gameplay') return;
-
-    const card = game.players[0].hand[cardIndex];
-    if (!card) return;
-
-    // Special requirements (Mind's Eye / Philosopher's Stone / Gold / Favor) can't be borrowed
-    const { missingSpecial = [] } = game.checkRequirements(0, card);
-    if (missingSpecial.length > 0) {
-        showNotification(`Cannot borrow for: ${missingSpecial.join(', ')}`, 'error');
-        return;
-    }
-
-    showBorrowChooser(card).then(chosen => {
-        if (!chosen) {
-            // Cancelled \u2014 land back on the card. Re-selected a tick later
-            // so this click's own outside-click handler can't eat the panel.
-            setTimeout(() => selectHandCard(cardIndex), 0);
-            return;
-        }
-
-        game.pickCard(0, cardIndex);
-        hideActionPanel();
-        mpPub('pick', { cardId: card.id, action: 'borrow_play',
-            borrow: chosen.map(b => ({ skill: b.skill, lender: FMP.canonSeat(b.neighborIndex) })) });
-
-        game.players[0]._borrowNext = chosen;   // [{skill, neighborIndex}] \u2014 consumed at activation
-
-        const lenders = [...new Set(chosen.map(b => game.players[b.neighborIndex].name))].join(' & ');
-        const borrowCost = chosen.length * 2;
-        showNotification(`Borrowing from ${lenders} \u2014 playing ${card.name} (\u2212${borrowCost}g)`, 'play');
-        addLogEntry(`You borrow from ${lenders} and play ${card.name}`);
-
-        processRound('borrow_play');
-    });
-}
-
-function discardToSlide(cardIndex, direction) {
-    if (!game || game.phase !== 'gameplay') return;
-
-    const card = game.players[0].hand[cardIndex];
-    if (!card) return;
-
-    const player = game.players[0];
-    const newPos = player.sliderPosition + direction;
-    if (newPos < 0 || newPos > 4) return;
-
-    game.pickCard(0, cardIndex);
-    hideActionPanel();
-    mpPub('pick', { cardId: card.id, action: 'discard_slide', dir: direction });
-
-    game.players[0]._discardSlideNext = direction;
-
-    const dirName = direction < 0 ? 'left' : 'right';
-    const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
-    showNotification(`Discarded ${card.name} \u2014 Slider moves ${dirName} to ${posNames[newPos]}`, 'play');
-    addLogEntry(`You discard ${card.name} to slide ${dirName}`);
-
-    processRound('discard_slide');
-}
-
-// Pay 5 Gold to move slider (can do anytime during gameplay)
+// Pay 5 Gold a space to shift your ring — the rulebook's optional beat at
+// YOUR reveal, before you choose the card's action. (It used to be an
+// anytime-action; the throw-first flow pins it to your turn, which is
+// also exactly what the printed rules say.)
 async function payToSlide(direction) {
-    if (!game || game.phase !== 'gameplay') return;
-
-    // Anytime-actions can't ride the round barrier — they'd apply at
-    // different points on different clients. Paid slides sit out of
-    // multiplayer v1 (discard-to-slide still works — it's pick-staged).
+    // Paid slides still sit out of multiplayer v1 — they'd need their own
+    // streamed move (slot events cascade off a landing). Discard-to-slide
+    // covers the ring in MP.
     if (mpActive()) {
         showNotification('Paid slides return in a future multiplayer update.', 'error');
         return;
     }
+    if (!game || game.phase !== 'activate' || !window._finalChoicePending) {
+        showNotification('The ring slides on your turn — when your card is revealed.', 'error');
+        return;
+    }
+
 
     const player = game.players[0];
     if (player.gold < 5) {
@@ -4459,50 +4570,18 @@ async function payToSlide(direction) {
             renderGameState();
             renderBoardOvSlots();
         }
+
+        // The slide can change what the revealed card needs — refresh the
+        // chooser so Play/Need and the purse line tell the truth.
+        if (window._cardChoiceRerender) window._cardChoiceRerender();
     } else {
         showNotification(result.error, 'error');
     }
 }
 
-// ─── ROUND PROCESSING ─────────────────────────────────────
+// ─── THE REVEAL — activation in turn order ─────────────────
 
-async function processRound(humanAction) {
-    // Multiplayer rounds run the pick barrier instead — bots pick the
-    // same on every client; humans stream.
-    if (mpActive()) return mpProcessRound(humanAction);
-
-    // AI picks
-    for (let i = 1; i < game.playerCount; i++) {
-        if (game.pendingActivations[i] === null && game.players[i].hand.length > 0) {
-            aiPickCard(i);
-        }
-    }
-
-    // Every seat, player 0 included, now has a pending pick — a Mission Letter
-    // no longer activates itself early, so there is no seat to special-case.
-    const allReady = game.allPlayersPicked();
-
-    if (!allReady) {
-        renderGameState();
-        return;
-    }
-
-    game.passHands();
-
-    const needsMissionSelect = await activateAllCards(humanAction);
-
-    if (needsMissionSelect) {
-        renderGameState();
-        showMissionSelectUI();
-        return;
-    }
-
-    finishRound();
-}
-
-async function activateAllCards(humanAction) {
-    let needsMissionSelect = false;
-
+async function activateAllCards() {
     for (let round = 0; round < game.playerCount; round++) {
         const pi = (game.emblemHolder + round) % game.playerCount;
         const pending = game.pendingActivations[pi];
@@ -4517,78 +4596,15 @@ async function activateAllCards(humanAction) {
             if (pi === 0) captureStats();
 
             if (pi === 0) {
-                // Human player — quick mini-spotlight (you already know what you picked)
-                if (humanAction === 'discard_slide' && cardIdx === 0 && game.players[0]._discardSlideNext !== undefined) {
-                    // Payoff-first beat (Wyatt): activate, let the "+N" floats
-                    // rise off the fresh render, and show the banner WITH
-                    // them — one clear beat instead of banner-then-blink.
-                    const direction = game.players[0]._discardSlideNext;
-                    game.activateCard(0, card.id, 'discard_slide', direction);
-                    game.players[0]._discardSlideNext = undefined;
-                    renderGameState();
-                    await showMiniSpotlight(card, 'discard_slide');
-
-                    // Magician slot 2: choose_mission triggered by slider move
-                    if (game.players[0]._pendingSlotMission) {
-                        game.players[0]._pendingSlotMission = false;
-                        renderGameState();
-                        if (mpActive()) window._mpMissionCtx = 'slot_mission';
-                        await showMissionSelectAsync();
-                    }
-                } else if (humanAction === 'discard' && cardIdx === 0 && game.players[0]._discardNext) {
-                    game.activateCard(0, card.id, 'discard');
-                    game.players[0]._discardNext = false;
-                    renderGameState();
-                    await showMiniSpotlight(card, 'discard');
-                } else if (humanAction === 'borrow_play' && cardIdx === 0 && game.players[0]._borrowNext) {
-                    // The lender was CHOSEN in the borrow chooser at pick time;
-                    // resolveBorrowPlan re-validates it against the table now.
-                    const { borrowFrom, uncovered } = resolveBorrowPlan(card, game.players[0]._borrowNext);
-                    if (uncovered) {
-                        game.activateCard(0, card.id, 'discard');
-                        showNotification(`No one can lend for ${card.name} anymore — discarded (+3g)`, 'error');
-                        addLogEntry(`No neighbor could lend for ${card.name} — discarded (+3 Gold)`);
-                    } else {
-                        game.activateCard(0, card.id, 'play', borrowFrom);
-                    }
-                    game.players[0]._borrowNext = false;
-                    renderGameState();
-                    await showMiniSpotlight(card, uncovered ? 'discard' : 'play');
-                } else if (humanAction === 'mission_letter' && cardIdx === 0 && game.players[0]._letterNext) {
-                    // MP-staged Mission Letter: it resolves HERE, in seat
-                    // order, exactly where every other client applies it.
-                    game.players[0]._letterNext = false;
-                    await showMiniSpotlight(card, 'play');
-                    const result = game.activateCard(0, card.id, 'mission_letter');
-                    if (result && result.chooseMission) {
-                        renderGameState();
-                        window._mpMissionCtx = 'mission_pick';
-                        await showMissionSelectAsync();
-                    }
-                } else if (cardIdx > 0) {
-                    // The auto-paired FINAL card: the player still chooses its
-                    // fate — play / borrow / letter / discard / slide. It always
-                    // sits at index 1 now, right behind the card you picked, so
-                    // your two cards resolve back-to-back on your seat's turn.
-                    renderGameState();
-                    await resolveFinalCardChoice(card);
-                } else {
-                    // Default: play if possible
-                    const isMissionLetter = card.type === 'mission_letter';
-
-                    if (isMissionLetter) {
-                        // Mission letters can't be "played" — auto-discard if no choice given
-                        game.activateCard(0, card.id, 'discard');
-                        addLogEntry(`${card.name} auto-discarded (mission letter)`);
-                        renderGameState();
-                        await showMiniSpotlight(card, 'discard');
-                    } else {
-                        const { canPlay } = game.checkRequirements(0, card);
-                        game.activateCard(0, card.id, canPlay ? 'play' : 'discard');
-                        renderGameState();
-                        await showMiniSpotlight(card, canPlay ? 'play' : 'discard');
-                    }
-                }
+                // YOUR reveal: the thrown card comes face up and you choose
+                // what it does — play / borrow / letter / discard / slide —
+                // with everything earlier seats did already on the table.
+                // The auto-paired final card follows as a second choice.
+                game.activePlayerIndex = pi;
+                renderGameState();
+                await resolveCardChoice(card, cardIdx);
+            } else {
+                game.activePlayerIndex = pi;
             }
 
             // Chemical Y just resolved for the human: pick which adventure
@@ -4713,8 +4729,6 @@ async function activateAllCards(humanAction) {
             }
         }
     }
-
-    return needsMissionSelect;
 }
 
 function finishRound() {
@@ -4726,9 +4740,10 @@ function finishRound() {
         game.phase = 'gameplay';
         game.pendingActivations = new Array(game.playerCount).fill(null);
         // Hands have rotated at least once — arms the coach's "hands travel
-        // around the table" tip for the player's next pick.
+        // around the table" tip for the player's next throw.
         window._uxHandsPassed = true;
         renderGameState();
+        beginThrowPhase();
     }
 }
 
@@ -4982,11 +4997,10 @@ async function endActPhases() {
                 showNotification(`The Emblem passes to ${hn}${hn === 'you' ? ' \u2014 you act first' : ''}.`, 'act');
                 addLogEntry(`The Emblem passes to ${hn}`);
                 renderGameState();
-                // Desync insurance: the host stamps the table each act;
-                // a client whose hash disagrees falls back to solo.
-                if (mpActive() && FMP.isHost()) {
-                    mpPub('sync', { act: game.currentAct, hash: mpStateHash() });
-                }
+                // Desync insurance: stamp + baseline at the same canonical
+                // point on every client — before the throw phase mutates.
+                if (mpActive()) mpActBaseline();
+                beginThrowPhase();
             }
         };
 
@@ -5736,6 +5750,9 @@ function showScoring() {
         }).filter(Boolean)
         : [];
     if (window.FLB) FLB.postGameResult(scores, personaPlaces);
+    // Daily Rival: finishing ahead of today's named rival pays Stars once
+    // per window (modes.js owns the claim and the once-a-day gate).
+    if (window.FMODES) FMODES.rivalGameOver(scores);
     if (mpActive()) FMP.gameOver();   // host tidies the record; everyone detaches
 
     // Achievements: hero victories, single-game feats, The Master. Runs AFTER
@@ -6131,6 +6148,10 @@ document.addEventListener('pointerdown', (e) => {
 function _handDragStart(ev) {
     const card = _bloomEl || _bloomStartEl;
     if (!card || !_handDrag) return;
+    // One throw per round: your card is already in (take it back first),
+    // or the hand on screen is next round's face-down stack — no lift.
+    if (!game || game.phase !== 'gameplay' || game.pendingActivations[0] !== null
+        || card.classList.contains('facedown')) return;
     _handDrag.active = true;
     _handDrag.card = card;
     _handDrag.baseTransform = card.style.transform;
@@ -6166,12 +6187,12 @@ function _handDragEnd(e, allowCommit) {
     const strip = document.getElementById('tvHandStrip');
     if (strip) strip.classList.remove('drag-from');
     if (allowCommit && (d.startY - e.clientY) > HAND_DRAG_LIFT) {
-        // Swallow this release's synthetic click so the outside-click
-        // handler can't instantly hide the sheet we're about to open.
+        // Swallow this release's synthetic click so it can't land on
+        // whatever renders under the finger after the throw.
         _peekSwallowClick = true;
         setTimeout(() => { _peekSwallowClick = false; }, 400);
         const i = parseInt(card.getAttribute('data-hand-i'), 10);
-        if (!isNaN(i)) setTimeout(() => selectHandCard(i), 0);
+        if (!isNaN(i)) setTimeout(() => throwCard(i), 0);
     }
 }
 
@@ -6236,6 +6257,9 @@ document.addEventListener('pointerdown', (e) => {
     if (isCompactLandscape() || e.button !== 0) return;
     const card = e.target.closest && e.target.closest('#handZone .hand-card');
     if (!card) return;
+    // One throw per round; the reveal-phase hand is face down and inert.
+    if (!game || game.phase !== 'gameplay' || game.pendingActivations[0] !== null
+        || card.classList.contains('facedown')) return;
     _deskDrag = { startX: e.clientX, startY: e.clientY, active: false,
                   card, baseTransform: card.style.transform };
 }, { passive: true });
@@ -6272,7 +6296,7 @@ function _deskDragEnd(e, allowCommit) {
     setTimeout(() => { _peekSwallowClick = false; }, 400);
     if (allowCommit && (d.startY - e.clientY) > HAND_DRAG_LIFT) {
         const i = parseInt(card.getAttribute('data-hand-i'), 10);
-        if (!isNaN(i)) setTimeout(() => selectHandCard(i), 0);
+        if (!isNaN(i)) setTimeout(() => throwCard(i), 0);
     }
 }
 document.addEventListener('pointerup', (e) => _deskDragEnd(e, true), { passive: true });

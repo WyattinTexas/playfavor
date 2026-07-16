@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — A Game of Royal Succession</title>
-    <link rel="stylesheet" href="css/style.css?v=20260715173010">
+    <link rel="stylesheet" href="css/style.css?v=20260716145621">
     <!-- Skylar's melee cinematic — loaded AFTER style.css so its .ms-* rules win. -->
-    <link rel="stylesheet" href="css/melee.css?v=20260715155428">
+    <link rel="stylesheet" href="css/melee.css?v=20260716145621">
     <link rel="icon" type="image/png" href="assets/ui/cover.jpg">
 </head>
 <body>
@@ -48,12 +48,20 @@
                 </button>
 
                 <!-- Table size — one tap, stays lit. Each size is its own
-                     matchmaking queue. -->
+                     matchmaking queue, and Skirmish honors it too. -->
                 <div class="queue-seg" id="queueSeg" title="Table size — each queue matches separately">
                     <span class="queue-label">Table of</span>
                     <button type="button" data-q="3">3</button>
                     <button type="button" data-q="4">4</button>
                     <button type="button" data-q="5">5</button>
+                </div>
+
+                <!-- The three new doors (Wyatt 7/16): vs-AI at your size,
+                     today's named rival, and a code-shared private table. -->
+                <div class="menu-trio">
+                    <button class="btn-royal" onclick="FMODES.openSkirmish()"><span>Skirmish</span></button>
+                    <button class="btn-royal" onclick="FMODES.openDailyRival()"><span>Daily Rival</span></button>
+                    <button class="btn-royal" onclick="FMODES.openPrivateRoom()"><span>Private Room</span></button>
                 </div>
 
                 <div class="menu-pair">
@@ -336,6 +344,34 @@
     <!-- ═══ ACTION PANEL ═══ -->
     <div class="action-panel" id="actionPanel"></div>
 
+    <!-- ═══ YOUR THROWN CARD — face down, take-back until the last card locks ═══ -->
+    <div class="thrown-zone" id="thrownZone"></div>
+
+    <!-- ═══ EMOTES — table-wide reactions (multiplayer) ═══ -->
+    <button id="emoteBtn" class="emote-btn" title="React"
+            onclick="event.stopPropagation(); FMODES.toggleEmoteTray()">
+        <img src="assets/emotes/hearts.png" alt="React">
+    </button>
+    <div id="emoteTray" class="emote-tray"></div>
+
+    <!-- ═══ DAILY RIVAL — today's challenger ═══ -->
+    <div id="rivalIntro" class="rival-intro"></div>
+
+    <!-- ═══ PRIVATE ROOM — host / join / lobby ═══ -->
+    <div id="roomOverlay" class="room-overlay"></div>
+
+    <!-- ═══ THROW-GESTURE HINT — a finger pushing a card upward ═══ -->
+    <div class="throw-hint" id="throwHint" aria-hidden="true">
+        <div class="th-stage">
+            <div class="th-card"></div>
+            <svg class="th-finger" viewBox="0 0 64 64" width="46" height="46">
+                <path d="M30 6c-2.8 0-5 2.2-5 5v21l-4.6-4.1c-2-1.8-5.1-1.7-7 .2s-1.9 5 0 6.9L26 47.5c1.9 1.8 4.4 2.9 7 2.9h8.4c5.6 0 10.1-4.5 10.1-10.1V29c0-2.6-2.1-4.7-4.7-4.7-.9 0-1.7.2-2.4.7-.6-2-2.5-3.4-4.7-3.4-1 0-1.9.3-2.7.8-.7-1.8-2.5-3-4.5-3-.9 0-1.8.3-2.5.7V11c0-2.8-2.2-5-5-5z"
+                      fill="#f0d8a8" stroke="#7a5b2e" stroke-width="2.5" stroke-linejoin="round"/>
+            </svg>
+        </div>
+        <div class="th-label">Slide a card up to throw it in</div>
+    </div>
+
     <!-- ═══ GAME LOG ═══ -->
     <div id="gameLog" class="game-log">
         <div style="font-family: Cinzel, serif; color: var(--gold); margin-bottom: 12px; font-size: 14px;">Game Log</div>
@@ -391,15 +427,16 @@
          falls back to local standings if these can't reach the project) -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="data/cards.js?v=20260715155428"></script>
-    <script src="data/missions.js?v=20260715155428"></script>
-    <script src="data/characters.js?v=20260715155428"></script>
-    <script src="data/achievements.js?v=20260715155428"></script>
-    <script src="engine/gameState.js?v=20260715155428"></script>
-    <script src="js/melee.js?v=20260715155428"></script>
-    <script src="js/ui.js?v=20260715173010"></script>
-    <script src="js/meta.js?v=20260715155428"></script>
-    <script src="js/achievements.js?v=20260715155428"></script>
-    <script src="js/mp.js?v=20260715155428"></script>
+    <script src="data/cards.js?v=20260716145621"></script>
+    <script src="data/missions.js?v=20260716145621"></script>
+    <script src="data/characters.js?v=20260716145621"></script>
+    <script src="data/achievements.js?v=20260716145621"></script>
+    <script src="engine/gameState.js?v=20260716145621"></script>
+    <script src="js/melee.js?v=20260716145621"></script>
+    <script src="js/ui.js?v=20260716145621"></script>
+    <script src="js/meta.js?v=20260716145621"></script>
+    <script src="js/achievements.js?v=20260716145621"></script>
+    <script src="js/mp.js?v=20260716145621"></script>
+    <script src="js/modes.js?v=20260716145621"></script>
 </body>
 </html>

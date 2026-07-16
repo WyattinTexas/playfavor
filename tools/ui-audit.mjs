@@ -92,6 +92,42 @@ async function startGame(page) {
 
 const consoleErrors = [];
 
+// ── Throw-first flow helpers (7/16 rework) ──────────────────────────
+// The pick-time action sheet is gone: a drag/throw commits the card face
+// down, rivals throw on human-paced timers, the last card locks the
+// round, hands pass, and YOUR reveal chooser opens at your activation
+// slot (startGame pins the Emblem to seat 0, so you reveal first).
+//
+// throwAndAwaitChoice(page, i): throw hand card i, hurry the rivals
+// along the same engine path the timers would take (deterministic, no
+// stagger wait), and resolve once the reveal chooser is up. The chooser
+// is the old action sheet — same labels — so existing text-matched
+// button clicks keep working against it.
+async function throwAndAwaitChoice(page, i = 0) {
+  await page.evaluate((idx) => throwCard(idx), i);
+  await page.evaluate(() => {
+    for (let s = 1; s < game.playerCount; s++) {
+      if (game.pendingActivations[s] === null && game.players[s].hand.length) {
+        aiPickCard(s);
+      }
+    }
+    renderGameState();
+    maybeLockThrows();
+  });
+  await page.waitForFunction(() => window._finalChoicePending === true, { timeout: 20000 });
+}
+
+// Answer the open reveal chooser by button-label regex (falls back to
+// data-act), e.g. answerChoice(page, /discard \(\+3g\)/i).
+async function answerChoice(page, re) {
+  await page.evaluate((src) => {
+    const rx = new RegExp(src, 'i');
+    const b = [...document.querySelectorAll('#actionPanel .action-btn')]
+      .find(x => rx.test(x.textContent) && !x.disabled);
+    if (b) b.click();
+  }, re.source);
+}
+
 // ═══ PHONE: touch glide must bloom exactly ONE card ═══
 console.log('── Phone: glide blooms exactly one card (no sticky-hover double)');
 {
@@ -171,7 +207,19 @@ console.log('── Phone: glide blooms exactly one card (no sticky-hover double
   ok(!after.panel, 'glide release alone opens nothing');
 
   // ── Drag-up commits (Hearthstone pull): lift a card out and release ──
-  console.log('── Phone: drag a card up and release → action sheet');
+  console.log('── Phone: drag a card up and release → the throw');
+  // Freeze the rivals' throw timers (they scale by CINEMATIC_SPEED) so the
+  // take-back window stays open for the whole gesture sequence.
+  await page.evaluate(() => {
+    // Any rival who already threw takes it back (engine-clean), so the
+    // whole table is guaranteed un-locked for the gesture checks.
+    for (let i = 1; i < game.playerCount; i++) {
+      if (game.pendingActivations[i]) game.unpickCard(i);
+    }
+    window.CINEMATIC_SPEED = 1000;
+    beginThrowPhase();
+  });
+  await sleep(150);
   await page.touchscreen.touchStart(centers[1], y);
   await sleep(150);
   await page.touchscreen.touchMove(centers[1] + 4, y - 40);   // under the lift line: still browsing
@@ -192,24 +240,28 @@ console.log('── Phone: glide blooms exactly one card (no sticky-hover double
   await sleep(500);
   const committed = await page.evaluate(() => ({
     panel: !!document.querySelector('.action-panel.active'),
-    buttons: [...document.querySelectorAll('.action-panel .action-btn')].map(b => b.textContent.trim()),
+    thrown: !!game.pendingActivations[0],
+    zone: document.getElementById('thrownZone').classList.contains('active'),
+    undoBtn: !!document.querySelector('#thrownZone .tz-undo'),
     dragLeft: !!document.querySelector('.hand-card.dragging'),
   }));
-  ok(committed.panel, 'release up top opens the action sheet');
-  ok(committed.buttons.some(t => /discard \(\+3g\)/i.test(t)),
-    `sheet offers the choices (${committed.buttons.slice(0, 3).join(' · ') || 'none'})`);
-  ok(!committed.dragLeft, 'the card snapped home');
+  ok(committed.thrown && !committed.panel, 'release up top THROWS the card — no sheet appears');
+  ok(committed.zone && committed.undoBtn, 'the face-down card shows with its take-back');
+  ok(!committed.dragLeft, 'the drag element snapped home');
   await page.screenshot({ path: join(SHOTS, 'phone-drag-commit.png') });
-  await page.evaluate(() => { window._finalChoicePending = false; hideActionPanel(); });
+  // Take it back so the gesture checks below start from a full hand.
+  await page.evaluate(() => undoThrow());
   await sleep(300);
+  ok(await page.evaluate(() => !game.pendingActivations[0] && game.players[0].hand.length === 7),
+    'Take it Back restores the full hand');
 
-  // Plain tap = read only, never the sheet.
+  // Plain tap = read only, never a throw.
   await page.touchscreen.touchStart(centers[0], y);
   await sleep(150);
   await page.touchscreen.touchEnd();
   await sleep(450);
-  ok(await page.evaluate(() => !document.querySelector('.action-panel.active')),
-    'a plain tap opens nothing');
+  ok(await page.evaluate(() => !document.querySelector('.action-panel.active') && !game.pendingActivations[0]),
+    'a plain tap opens nothing and throws nothing');
 
   // Drag up, then back down = cancel.
   await page.touchscreen.touchStart(centers[1], y);
@@ -247,14 +299,14 @@ console.log('── Phone: glide blooms exactly one card (no sticky-hover double
     return d ? parseInt(d.getAttribute('data-hand-i'), 10) : -1;
   });
   ok(draggedIdx === 2, `the drag carries the card you picked up (#${draggedIdx})`);
+  const cardAt2 = await page.evaluate(() => game.players[0].hand[2].id);
   await page.touchscreen.touchEnd();
   await sleep(500);
   const pickedRight = await page.evaluate(() => ({
-    panel: !!document.querySelector('.action-panel.active'),
-    sel: selectedHandCard,
+    thrownId: game.pendingActivations[0] ? game.pendingActivations[0].id : null,
   }));
-  ok(pickedRight.panel && pickedRight.sel === 2, `the sheet opens for that same card (selected #${pickedRight.sel})`);
-  await page.evaluate(() => { window._finalChoicePending = false; hideActionPanel(); });
+  ok(pickedRight.thrownId === cardAt2, `the throw commits that same card (#2 → ${pickedRight.thrownId})`);
+  await page.evaluate(() => undoThrow());
   await sleep(200);
   await page.close();
 }
@@ -434,10 +486,9 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
     !document.querySelector('.tv-gear') && document.querySelectorAll('#tvPurse .tv-purse-chip').length === 4),
     'purse is four chips, no gear button');
 
-  // Panel-aside: hand panel up → rival chip → panel steps aside → returns on close.
-  await page.evaluate(() => selectHandCard(0));
-  await sleep(300);
-  ok(await page.evaluate(() => document.getElementById('actionPanel').classList.contains('active')), 'action panel opens for a hand card');
+  // Panel-aside: reveal chooser up → rival chip → panel steps aside → returns on close.
+  await throwAndAwaitChoice(page, 0);
+  ok(await page.evaluate(() => document.getElementById('actionPanel').classList.contains('active')), 'reveal chooser opens at your activation slot');
   await page.evaluate(() => document.querySelector('#tvSeats .pmat.opp').click());
   await sleep(350);
   const aside = await page.evaluate(() => ({
@@ -450,7 +501,9 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
   await sleep(400);
   ok(await page.evaluate(() => document.getElementById('actionPanel').classList.contains('active')),
     'action panel returns when the overlay closes');
-  await page.evaluate(() => { window._finalChoicePending = false; hideActionPanel(); });
+  // Answer it honestly — a forced dismissal would strand the round's await.
+  await answerChoice(page, /discard \(\+3g\)/);
+  await sleep(400);
 
   // The strip stays on stage even with no cards to hold.
   await page.evaluate(() => { game.players[0].hand = []; game.phase = 'activate'; renderGameState(); });
@@ -464,6 +517,9 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
   // Delta FX aimed at the chip rail stay on-screen (top-edge targets flip
   // to the downward drop — the classic climb would start above the screen).
   const fxCheck = await page.evaluate(async () => {
+    // The real round played above leaves its own token-drop in flight —
+    // clear the stage so exactly the two probes below are measured.
+    const fxHost = document.getElementById('tvFx'); if (fxHost) fxHost.innerHTML = '';
     tvDropToken(tvMatEl(1), 'gold', 3);
     tvAnimateNewCard(tvMatEl(2), FAVOR_DATA.cards.find(c => c.name === 'Hunting'));
     await new Promise(r => setTimeout(r, 420));
@@ -691,18 +747,19 @@ console.log('── Desktop: last two cards — player chooses BOTH fates');
   });
   await sleep(400);
 
-  // Pick card 0 through the REAL panel.
-  await page.evaluate(() => selectHandCard(0));
-  await sleep(300);
-  await page.evaluate(() => {
-    const b = [...document.querySelectorAll('.action-panel .action-btn')].find(x => /play/i.test(x.textContent) && !x.disabled);
-    b.click();
-  });
+  // Throw through the REAL path: a 2-card hand pairs both face down, and
+  // the reveal presents TWO choosers back to back — picked card first.
+  await throwAndAwaitChoice(page, 0);
+  ok(await page.evaluate(() =>
+    /your card is revealed/i.test(document.querySelector('.action-panel').textContent)),
+    'the picked card reveals with its own chooser first');
+  await answerChoice(page, /play/);
 
   // The FINAL card must present a choice panel, not auto-resolve.
   let choiceShown = false;
   try {
     await page.waitForFunction(() =>
+      window._finalChoicePending === true &&
       document.querySelector('.action-panel.active') &&
       /final card/i.test(document.querySelector('.action-panel').textContent), { timeout: 9000 });
     choiceShown = true;
@@ -765,7 +822,16 @@ console.log('── Final round order: last two cards play in a row, never inter
     renderGameState();
   });
   await sleep(300);
-  await page.evaluate(() => playSelectedCard(0));
+  // Throw the pair in and reveal: chooser #1 = the picked card, with
+  // nothing activated yet anywhere at the table.
+  await throwAndAwaitChoice(page, 0);
+  ok(await page.evaluate(() => window._trace.length === 0),
+    'the reveal chooser opens before anything has activated');
+  await page.evaluate(() => {
+    const b = document.querySelector('#actionPanel [data-act="play"]') ||
+              document.querySelector('#actionPanel [data-act="discard"]');
+    b.click();
+  });
 
   // Your leftover's chooser must open before ANY rival has activated.
   await page.waitForFunction(() => window._finalChoicePending === true, { timeout: 12000 });
@@ -944,6 +1010,18 @@ console.log('── Desktop: hover-bloom and selected cards paint above the phas
   await page.setViewport({ width: 1420, height: 620 });
   await startGame(page);
   await sleep(400);
+  // Freeze the rivals' throw timers: their renders rebuild the hand DOM
+  // under the stationary mouse and headless Chrome drops the :hover match
+  // (the same trap the drag flows freeze against).
+  await page.evaluate(() => {
+    for (let i = 1; i < game.playerCount; i++) {
+      if (game.pendingActivations[i]) game.unpickCard(i);
+    }
+    window.CINEMATIC_SPEED = 1000;
+    beginThrowPhase();
+    renderGameState();
+  });
+  await sleep(200);
 
   // Reparent restore: on desktop the pill lives at game-screen level.
   const home = await page.evaluate(() => {
@@ -982,67 +1060,8 @@ console.log('── Desktop: hover-bloom and selected cards paint above the phas
   ok(hoverLayer.hitCard === true, `hover-bloomed card paints ABOVE the pill (hit: ${hoverLayer.hit})`);
   await page.screenshot({ path: join(SHOTS, 'desktop-pill-bloom.png') });
 
-  // Selected state must not depend on the mouse still hovering: the layout
-  // bump has to fire for .selected on its own.
-  await page.mouse.move(5, 400);           // park the mouse away from the hand
-  await sleep(250);
-  await page.evaluate(() => selectHandCard(0));
-  await sleep(350);
-  const selLayer = await page.evaluate(() => {
-    const layout = document.querySelector('.game-layout');
-    const z = parseInt(getComputedStyle(layout).zIndex, 10);
-    const pillZ = parseInt(getComputedStyle(document.getElementById('phaseBar')).zIndex, 10);
-    return { z, pillZ, selected: !!document.querySelector('.hand-card.selected') };
-  });
-  ok(selLayer.selected, 'a hand card is selected (fixture valid)');
-  ok(selLayer.z > selLayer.pillZ,
-    `.game-layout outranks the pill while a card is selected (${selLayer.z} > ${selLayer.pillZ})`);
-
-  // Hover must outrank a selected neighbor (z 33 vs 31): with the middle
-  // card selected, hover the card beside it — the BLOOM wins the hit-test
-  // over the selected card's territory (a selected card used to paint
-  // over the bloom of the card you were reading — Wyatt's screenshot).
-  await page.evaluate(() => {
-    const cards = [...document.querySelectorAll('.hand-zone .hand-card')];
-    selectHandCard(Math.floor(cards.length / 2));
-  });
-  await sleep(300);
-  const duelPt = await page.evaluate(() => {
-    const cards = [...document.querySelectorAll('.hand-zone .hand-card')];
-    const mid = Math.floor(cards.length / 2);
-    const sel = cards[mid].getBoundingClientRect();
-    const hov = cards[mid + 1].getBoundingClientRect();
-    return { hx: hov.left + hov.width / 2, hy: hov.top + hov.height / 2,
-             sx: sel.left + sel.width / 2, sy: sel.top + sel.height / 2 };
-  });
-  await page.mouse.move(duelPt.hx, duelPt.hy);
-  await sleep(450);
-  const duel = await page.evaluate((pt) => {
-    const hovered = [...document.querySelectorAll('.hand-zone .hand-card')].find(x => x.matches(':hover'));
-    const el = document.elementFromPoint(pt.sx, pt.sy);
-    return {
-      hovered: !!hovered,
-      bloomWins: !!(hovered && (hovered === el || hovered.contains(el))),
-      hit: el ? (el.className.toString() || el.tagName) : 'none',
-    };
-  }, duelPt);
-  ok(duel.hovered, 'a neighbor of the selected card is hovered (fixture valid)');
-  ok(duel.bloomWins, `hover-bloom paints ABOVE the selected neighbor (hit: ${duel.hit})`);
-  await page.screenshot({ path: join(SHOTS, 'desktop-bloom-over-selected.png') });
-
-  // Outside click closes the panel AND strips .selected — the class used
-  // to linger (nothing re-renders on hide) and bury later blooms at z 31.
-  // (400,60): empty felt between the board thumb and the phase pill —
-  // clear of the root-level action panel, which is exempt from the hide.
-  await page.mouse.move(400, 60);
-  await page.mouse.down(); await page.mouse.up();
-  await sleep(300);
-  const cleared = await page.evaluate(() => ({
-    panel: !!document.querySelector('.action-panel.active'),
-    stale: document.querySelectorAll('.hand-card.selected').length,
-  }));
-  ok(!cleared.panel && cleared.stale === 0,
-    `outside click leaves no stale .selected behind (${cleared.stale})`);
+  // (The old .selected z-duel checks retired with the pick-time panel —
+  // clicking no longer selects; hover-bloom above is the whole story.)
   await page.close();
 }
 
@@ -1165,8 +1184,7 @@ console.log('── Phone: rail thumb opens the browser, action panel steps asid
   await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
   await startGame(page);
   await sleep(400);
-  await page.evaluate(() => selectHandCard(0));
-  await sleep(300);
+  await throwAndAwaitChoice(page, 0);
   const panelBefore = await page.evaluate(() => document.querySelector('.action-panel').classList.contains('active'));
   await page.evaluate(() => document.querySelector('.tv-mission').click());
   await sleep(600);
@@ -1175,7 +1193,7 @@ console.log('── Phone: rail thumb opens the browser, action panel steps asid
     cards: document.querySelectorAll('#mbTrack .mb-card').length,
     panel: document.querySelector('.action-panel').classList.contains('active'),
   }));
-  ok(panelBefore, 'action panel was up (fixture valid)');
+  ok(panelBefore, 'reveal chooser was up (fixture valid)');
   ok(mid.open && mid.cards >= 2, `rail thumb opens the realm browser (${mid.cards} cards)`);
   ok(!mid.panel, 'action panel steps aside while the browser has the stage');
   await page.screenshot({ path: join(SHOTS, 'mission-browser-phone.png') });
@@ -1183,6 +1201,8 @@ console.log('── Phone: rail thumb opens the browser, action panel steps asid
   await sleep(300);
   const panelAfter = await page.evaluate(() => document.querySelector('.action-panel').classList.contains('active'));
   ok(panelAfter, 'action panel restores after the browser closes');
+  await answerChoice(page, /discard \(\+3g\)/);
+  await sleep(300);
   await page.close();
 }
 
@@ -1248,13 +1268,10 @@ console.log('── Desktop: Chemical Y presents the choose-one picker');
     p.gold = 30;
     p.hand = [pick('Chemical Y'), pick('First Aid')];
     renderGameState();
-    selectHandCard(0);
   });
   await sleep(300);
-  await page.evaluate(() => {
-    const b = [...document.querySelectorAll('.action-panel .action-btn')].find(x => /play/i.test(x.textContent) && !x.disabled);
-    b.click();
-  });
+  await throwAndAwaitChoice(page, 0);
+  await answerChoice(page, /play/);
 
   let pickerShown = false;
   try {
@@ -1357,8 +1374,7 @@ async function doubleLetterFlow(mode) {
   });
   await sleep(400);
 
-  await page.evaluate(() => selectHandCard(0));
-  await sleep(300);
+  await throwAndAwaitChoice(page, 0);
   const played = await page.evaluate(() => {
     const b = [...document.querySelectorAll('.action-panel .action-btn')]
       .find(x => /mission letter/i.test(x.textContent) && !x.disabled);
@@ -1366,7 +1382,7 @@ async function doubleLetterFlow(mode) {
     b.click();
     return true;
   });
-  ok(played, 'letter #1 played through the hand panel');
+  ok(played, 'letter #1 played through the reveal chooser');
 
   let msShown = false;
   try {
@@ -1462,8 +1478,13 @@ console.log('── Desktop: board thumb ring marks the slot and follows slides'
     ok(m.ringW > 5, `ring visible at thumb scale (${m.ringW.toFixed(1)}px wide)`);
   }
 
-  // Slide right (pay 5g) — the thumb must follow without reopening anything.
-  await page.evaluate(() => { game.players[0].gold = 30; payToSlide(1); });
+  // Slide right (the engine's paid move — payToSlide's UI wrapper now only
+  // answers at your reveal) — the thumb must follow without reopening anything.
+  await page.evaluate(() => {
+    game.players[0].gold = 30;
+    game.moveSlider(0, 1);
+    renderGameState();
+  });
   await sleep(600);
   const m2 = await measure();
   ok(m2 && m2.pos !== m.pos, `slide moved the ring (slot ${m.pos + 1} → ${m2 && m2.pos + 1})`);
@@ -1497,12 +1518,8 @@ console.log('── Desktop: due mission short a borrowable skill — chooser of
     renderGameState();
   });
   await sleep(300);
-  await page.evaluate(() => selectHandCard(0));
-  await sleep(300);
-  await page.evaluate(() => {
-    const b = [...document.querySelectorAll('.action-panel .action-btn')].find(x => /discard \(\+3g\)/i.test(x.textContent));
-    b.click();
-  });
+  await throwAndAwaitChoice(page, 0);
+  await answerChoice(page, /discard \(\+3g\)/);
 
   let chooser = false;
   try {
@@ -1640,8 +1657,7 @@ async function slidePickerFlow(mode) {
     renderGameState();
   });
   await sleep(300);
-  await page.evaluate(() => selectHandCard(0));
-  await sleep(300);
+  await throwAndAwaitChoice(page, 0);
 
   const buttons = await page.evaluate(() =>
     [...document.querySelectorAll('.action-panel .action-btn')].map(b => b.textContent.trim()));
@@ -1674,9 +1690,10 @@ async function slidePickerFlow(mode) {
     ovClosed: !document.getElementById('boardOverlay').classList.contains('active'),
     panelBack: document.querySelector('.action-panel').classList.contains('active'),
     hand: game.players[0].hand.length,
+    thrown: !!game.pendingActivations[0],
   }));
-  ok(afterEsc.ovClosed && afterEsc.panelBack && afterEsc.hand === 3,
-    'Escape cancels back to the action panel, card untouched');
+  ok(afterEsc.ovClosed && afterEsc.panelBack && afterEsc.hand === 2 && afterEsc.thrown,
+    'Escape cancels back to the reveal chooser, thrown card untouched');
 
   // Backdrop cancel — the same click must not eat the re-opened panel.
   await page.evaluate(() => {
@@ -1739,12 +1756,8 @@ console.log('── Desktop: final card slides via the picker, chooser survives 
     renderGameState();
   });
   await sleep(300);
-  await page.evaluate(() => selectHandCard(0));
-  await sleep(300);
-  await page.evaluate(() => {
-    const b = [...document.querySelectorAll('.action-panel .action-btn')].find(x => /play/i.test(x.textContent) && !x.disabled);
-    b.click();
-  });
+  await throwAndAwaitChoice(page, 0);
+  await answerChoice(page, /play/);
 
   await page.waitForFunction(() =>
     document.querySelector('.action-panel.active') &&
@@ -1994,11 +2007,15 @@ console.log('── Phone: royal menu at 844×390');
       play: vis(play),
       seg: vis(document.getElementById('queueSeg')),
       chip: vis(document.getElementById('profileChip')),
+      trio: !!document.querySelector('.menu-trio')
+        && [...document.querySelectorAll('.menu-trio .btn-royal')].length === 3
+        && [...document.querySelectorAll('.menu-trio .btn-royal')].every(vis),
       sideBySide: art.right <= col.left + 1,
       hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
   });
   ok(m.play && m.seg && m.chip, 'Play Now + table picker + profile chip all reachable on a phone');
+  ok(m.trio, 'Skirmish · Daily Rival · Private Room all reachable on a phone');
   ok(m.sideBySide, 'landscape phone keeps the side-by-side stage');
   ok(!m.hscroll, 'no horizontal scroll on the phone menu');
   await page.screenshot({ path: join(SHOTS, 'menu-phone.png') });
@@ -2055,8 +2072,10 @@ for (const mode of ['desktop', 'phone']) {
              total: document.querySelectorAll('.nt-read').length };
   }, s);
 
-  // 1 · Royal Hilt (neighbors only)
-  await page.evaluate(() => selectHandCard(0));
+  // 1 · Royal Hilt (neighbors only) — driven exactly as the reveal
+  // chooser drives it (setTargetHighlights on chooser render); the full
+  // chooser integration is step 5 below.
+  await page.evaluate(() => setTargetHighlights(game.players[0].hand[0]));
   await sleep(300);
   let m = await readMarks(sel);
   ok(m.left && m.left.read && m.left.tag === '◀ Left Neighbor',
@@ -2081,7 +2100,7 @@ for (const mode of ['desktop', 'phone']) {
     'marks + tags survive renderGameState (re-applied after rebuild)');
 
   // 2 · Marketplace Sales (neighbors + SELF)
-  await page.evaluate(() => selectHandCard(1));
+  await page.evaluate(() => setTargetHighlights(game.players[0].hand[1]));
   await sleep(300);
   m = await readMarks(sel);
   ok(m.left.read && m.right.read, 'Marketplace Sales still marks both neighbors');
@@ -2093,20 +2112,26 @@ for (const mode of ['desktop', 'phone']) {
   }
   await page.screenshot({ path: join(SHOTS, `nt-${mode}-self.png`) });
 
-  // 3 · Inert card → nothing marked; close → everything clears.
-  await page.evaluate(() => selectHandCard(2));
+  // 3 · Inert card → nothing marked.
+  await page.evaluate(() => setTargetHighlights(game.players[0].hand[2]));
   await sleep(250);
   m = await readMarks(sel);
   ok(m.total === 0, `First Aid marks nobody (${m.total} marks)`);
-  await page.evaluate(() => { selectHandCard(0); });
-  await sleep(250);
-  await page.evaluate(() => hideActionPanel());
-  await sleep(150);
+
+  // 4 · The REVEAL CHOOSER is the live caller now: throwing Royal Hilt
+  // lights the neighbors while the chooser is up, answering clears all.
+  await page.evaluate(() => { window.CINEMATIC_SPEED = 0.05; });
+  await throwAndAwaitChoice(page, 0);
+  await sleep(200);
+  const live = await page.evaluate(() => document.querySelectorAll('.nt-read').length);
+  ok(live >= 2, `reveal chooser lights the read seats (${live} marks)`);
+  await answerChoice(page, /discard \(\+3g\)/);
+  await sleep(300);
   const after = await page.evaluate(() => ({
     reads: document.querySelectorAll('.nt-read').length,
     tags: document.querySelectorAll('.nt-tag').length,
   }));
-  ok(after.reads === 0 && after.tags === 0, 'panel close clears every ring and tag');
+  ok(after.reads === 0 && after.tags === 0, 'answering the chooser clears every ring and tag');
   await page.close();
 }
 
@@ -2150,16 +2175,18 @@ for (const mode of ['desktop', 'phone']) {
     game.pendingActivations = new Array(game.playerCount).fill(null);
     renderGameState();
     document.querySelectorAll('.game-toast').forEach(t => t.remove());
-    return { cardName: reqCard.name, skill, lenderGold: game.players[1].gold,
+    return { cardName: reqCard.name, skill, lenderName: lender.name,
+             lenderGold: game.players[1].gold,
              otherGold: game.players[game.playerCount - 1].gold, n: game.playerCount };
   });
   ok(!!rig, 'rig found a controllable one-skill-short card', 'no candidate — data drifted?');
 
-  // A · Tap-a-neighbor regression: select the reader card (index 1) so the
-  // ◀▶ tags appear, then tap the RIGHT chip/tag — the rival peek must open
-  // and the panel must come back with the selection intact.
-  await page.evaluate(() => selectHandCard(1));
-  await sleep(350);
+  // A · Tap-a-neighbor regression: throw the reader card (index 1) so the
+  // ◀▶ tags appear on the reveal chooser, then tap the RIGHT chip/tag —
+  // the rival peek must open and the chooser must come back, marks intact.
+  await page.evaluate(() => { window.CINEMATIC_SPEED = 0.05; });
+  await throwAndAwaitChoice(page, 1);
+  await sleep(250);
   await page.evaluate((m) => {
     if (m === 'phone') {
       const tag = document.querySelector('#tvSeats .pmat.nt-right .nt-tag');
@@ -2172,22 +2199,43 @@ for (const mode of ['desktop', 'phone']) {
   const peek = await page.evaluate(() => ({
     opp: document.getElementById('oppOverlay').classList.contains('active'),
     panelAside: !document.querySelector('.action-panel.active'),
-    sel: selectedHandCard,
+    pending: !!window._finalChoicePending,
   }));
   ok(peek.opp, 'tapping the neighbor arrow/chip opens the rival peek');
   ok(peek.panelAside, 'panel steps aside under the peek');
-  ok(peek.sel === 1, `selection survives (${peek.sel})`);
+  ok(peek.pending, 'the reveal choice survives underneath');
   await page.evaluate(() => closeOppOverlay());
   await sleep(450);
   const back = await page.evaluate(() => ({
     panel: document.querySelector('.action-panel').classList.contains('active'),
-    sel: selectedHandCard,
+    marks: document.querySelectorAll('.nt-read').length,
   }));
-  ok(back.panel && back.sel === 1, 'closing the peek restores the panel — nothing disappears');
+  ok(back.panel && back.marks >= 2, 'closing the peek restores the chooser — nothing disappears');
+
+  // Finish the round honestly, then re-rig a fresh throw phase for part B
+  // (hands rotate at the lock, so the borrow card must be re-dealt).
+  await answerChoice(page, /discard \(\+3g\)/);
+  await page.waitForFunction(() => game.phase === 'gameplay' && !window._finalChoicePending,
+    { timeout: 20000 });
+  await page.evaluate((r) => {
+    const byName = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    const p0 = game.players[0];
+    p0.hand = [byName(r.cardName), byName('Marketplace Sales'), byName('First Aid')];
+    p0.gold = 12;
+    for (let i = 1; i < game.playerCount; i++) {
+      game.players[i].hand = [byName('First Aid'), byName('First Aid'), byName('First Aid')];
+      game.players[i].gold = i === 1 ? r.lenderGold : r.otherGold;
+      // Part A's round let the rivals play their rigged First Aids — reset
+      // the table so ONLY p1 lends the missing skill, as the rig demands.
+      game.players[i].playedCards = i === 1 ? [byName(r.lenderName)] : [];
+    }
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    renderGameState();
+  }, rig);
+  await sleep(250);
 
   // B · The chooser: Borrow & Play first, THEN whom.
-  await page.evaluate(() => selectHandCard(0));
-  await sleep(350);
+  await throwAndAwaitChoice(page, 0);
   const hasBtn = await page.evaluate(() =>
     [...document.querySelectorAll('.action-panel .action-btn')].some(b => /Borrow & Play/i.test(b.textContent)));
   ok(hasBtn, 'Borrow & Play offered (right neighbor can lend)');
@@ -2216,17 +2264,17 @@ for (const mode of ['desktop', 'phone']) {
   ok(chooser.otherOff && /^No /.test(chooser.otherNote), `the empty-handed neighbor sits grayed with why ("${chooser.otherNote}")`);
   await page.screenshot({ path: join(SHOTS, `borrow-chooser-${mode}.png`) });
 
-  // Cancel lands back on the card.
+  // Cancel lands back on the chooser, thrown card untouched.
   await page.evaluate(() => document.getElementById('bwCancel').click());
   await sleep(450);
   const cancel = await page.evaluate(() => ({
     ovGone: !document.getElementById('promisePicker').classList.contains('active'),
     panel: document.querySelector('.action-panel').classList.contains('active'),
-    sel: selectedHandCard,
+    pending: !!game.pendingActivations[0],
     hand: game.players[0].hand.length,
   }));
-  ok(cancel.ovGone && cancel.panel && cancel.sel === 0 && cancel.hand === 3,
-    'Cancel returns to the action panel, card untouched', JSON.stringify(cancel));
+  ok(cancel.ovGone && cancel.panel && cancel.pending && cancel.hand === 2,
+    'Cancel returns to the reveal chooser, thrown card untouched', JSON.stringify(cancel));
 
   // Tap the lender = commit (single missing skill needs no second confirm).
   await page.evaluate(() => {
@@ -2309,8 +2357,7 @@ for (const mode of ['desktop', 'phone']) {
   });
   ok(!!rig && rig.sections >= 2, `rig: two-skill borrow card on hand (${rig && rig.cardName})`);
 
-  await page.evaluate(() => selectHandCard(0));
-  await sleep(350);
+  await throwAndAwaitChoice(page, 0);
   await page.evaluate(() => {
     [...document.querySelectorAll('.action-panel .action-btn')].find(b => /Borrow & Play/i.test(b.textContent)).click();
   });
@@ -2390,6 +2437,51 @@ for (const mode of ['desktop', 'phone']) {
   await startGame(page);
   await sleep(300);
 
+  // Paid slides live at YOUR reveal now (rulebook p.4: before choosing an
+  // action) — reach the chooser first, then the board opens over it.
+  await page.evaluate(() => {
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    renderGameState();
+    document.querySelectorAll('.game-toast').forEach(t => t.remove());
+  });
+
+  // Skylar's judge-at-the-drop model composes with the throw-first rule:
+  // during the THROW phase the ring still grabs, but every circle is
+  // blocked — a drop glides home and says "slides on your turn".
+  await page.evaluate(() => { game.players[0].gold = 70; openBoardOverlay(); });
+  await sleep(350);
+  const preReveal = await page.evaluate(() => ({
+    grab: document.getElementById('boardOvRing').classList.contains('grab'),
+    reach: document.querySelectorAll('.board-ov-slot.reach').length,
+  }));
+  ok(preReveal.grab && preReveal.reach === 0,
+    `throw phase: ring grabs but nothing is reachable (${preReveal.reach})`);
+  if (mode === 'desktop') {
+    const geo0 = await page.evaluate(() => {
+      const w = document.querySelector('.board-ov-boardwrap').getBoundingClientRect();
+      const r = document.getElementById('boardOvRing').getBoundingClientRect();
+      return { wl: w.left, ww: w.width, rx: r.left + r.width / 2, ry: r.top + r.height / 2 };
+    });
+    await page.mouse.move(geo0.rx, geo0.ry);
+    await page.mouse.down();
+    for (let i = 1; i <= 6; i++) {
+      await page.mouse.move(geo0.rx + (geo0.wl + geo0.ww * 0.663 - geo0.rx) * (i / 6), geo0.ry);
+      await sleep(20);
+    }
+    await page.mouse.up();
+    await sleep(500);
+    const bounced = await page.evaluate(() => ({
+      home: document.getElementById('boardOvRing').style.left === '50%',
+      confirm: document.getElementById('boardOvConfirm').classList.contains('active'),
+      told: /slides on your turn/i.test(document.getElementById('notifications').textContent),
+    }));
+    ok(bounced.home && !bounced.confirm, 'a pre-reveal drop glides the ring home, no confirm');
+    ok(bounced.told, 'and the player hears WHY (slides live at your reveal)');
+  }
+  await page.evaluate(() => closeBoardOverlay());
+  await sleep(300);
+
+  await throwAndAwaitChoice(page, 0);
   await page.evaluate(() => {
     const p = game.players[0];
     p.gold = 70;                                // Wyatt's scenario: plenty of gold
@@ -2398,9 +2490,7 @@ for (const mode of ['desktop', 'phone']) {
     // applySliderAbilities). This flow slides RIGHT, and the Explorer's slots 4
     // and 5 carry no coins (Mind's Eye / Philosopher's Stone events only, both
     // idempotent), so the fee math below stays pure at a clean −5 per space.
-    game.pendingActivations = new Array(game.playerCount).fill(null);
     renderGameState();
-    document.querySelectorAll('.game-toast').forEach(t => t.remove());
     openBoardOverlay();
   });
   await sleep(400);
@@ -3305,7 +3395,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
     };
   });
   ok(pw.sorted, 'Power board sorts by lifetime power');
-  ok(/Ashcroft/.test(pw.top), `seeded persona anchors the top (${pw.top.slice(0, 40).trim()}…)`);
+  ok(/HotshotGG/.test(pw.top), `seeded persona anchors the top under its 7/16 name (${pw.top.slice(0, 40).trim()}…)`);
   ok(/74/.test(pw.myScore) && pw.icon, `your two games total ⚔ 74 (${pw.myScore.trim()})`);
   await page.screenshot({ path: join(SHOTS, 'lb-power.png') });
 
@@ -3494,22 +3584,31 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   await startGame(page);
 
   // Father's Lab has no skill requirement — so the ONLY gap is the purse.
-  const short = await page.evaluate(() => {
+  // The chooser probe: showCardChoice renders the same buttons the reveal
+  // shows; answering Discard just resolves the promise (nothing applies),
+  // so the probe leaves the engine untouched.
+  const short = await page.evaluate(async () => {
     const p = game.players[0];
     p.gold = 2;                                    // the card costs 3
     p.hand = [{ ...window.FAVOR_DATA.cards.find(c => c.name === "Father's Lab") }];
     renderGameState();
-    showActionPanel(0);
+    const card = p.hand[0];
+    game.pickCard(0, 0);
+    showCardChoice(card, 0);
+    await new Promise(r => setTimeout(r, 80));
     const btn = [...document.querySelectorAll('#actionPanel .action-btn')]
       .find(b => /Play|Need/.test(b.textContent));
-    const chk = game.checkRequirements(0, p.hand[0]);
-    return {
+    const chk = game.checkRequirements(0, card);
+    const out = {
       text: btn ? btn.textContent.trim() : '(no button)',
       disabled: btn ? btn.disabled : false,
       canPlay: chk.canPlay,
       borrowOffered: [...document.querySelectorAll('#actionPanel .action-btn')]
         .some(b => /Borrow/.test(b.textContent)),
     };
+    document.querySelector('#actionPanel [data-act="discard"]').click();
+    game.unpickCard(0);   // restore the rig hand for the rich beat
+    return out;
   });
   ok(short.canPlay === false, 'engine: canPlay is FALSE one gold short of the cost');
   ok(short.disabled && /Need/.test(short.text) && /3 Gold/.test(short.text),
@@ -3522,12 +3621,14 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
     const p = game.players[0];
     p.gold = 3;
     renderGameState();
-    showActionPanel(0);
+    const card = p.hand[0];
+    game.pickCard(0, 0);
+    showCardChoice(card, 0);
+    await new Promise(r => setTimeout(r, 80));
     const btn = [...document.querySelectorAll('#actionPanel .action-btn')]
       .find(b => /Play/.test(b.textContent) && !/Need/.test(b.textContent));
     const enabled = !!btn && !btn.disabled;
-    const card = p.hand[0];
-    game.pickCard(0, 0);
+    document.querySelector('#actionPanel [data-act="discard"]').click();
     const res = game.activateCard(0, card.id, 'play');
     return { enabled, text: btn ? btn.textContent.trim() : '', ok: res.success,
              gold: p.gold, alchemy: p.skills.alchemy || 0 };
@@ -3549,7 +3650,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   await page.setViewport({ width: 1280, height: 800 });
   await startGame(page);
 
-  const r = await page.evaluate(() => {
+  const r = await page.evaluate(async () => {
     const p = game.players[0];
     p.bonusSkills = { alchemy: 6 };
     game.applySlotSkills(p);
@@ -3559,12 +3660,14 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
     const mw = window.FAVOR_DATA.cards.find(c => c.name === 'Mind Warper');
     p.hand = [{ ...mw }];
     renderGameState();
-    showActionPanel(0);
+    const card = p.hand[0];
+    const canPlay = game.checkRequirements(0, card).canPlay;
+    game.pickCard(0, 0);
+    showCardChoice(card, 0);
+    await new Promise(r => setTimeout(r, 80));
     const btn = [...document.querySelectorAll('#actionPanel .action-btn')]
       .find(b => /Play|Need/.test(b.textContent));
-    const canPlay = game.checkRequirements(0, p.hand[0]).canPlay;
-    const card = p.hand[0];
-    game.pickCard(0, 0);
+    document.querySelector('#actionPanel [data-act="discard"]').click();
     const res = game.activateCard(0, card.id, 'play');
     return { cost: mw.cost || 0, canPlay, text: btn ? btn.textContent.trim() : '',
              ok: res.success, scorn: p.scorn, prestige: p.prestige, gold: p.gold };
@@ -3654,6 +3757,10 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
     game.pendingActivations = new Array(game.playerCount).fill(null);
     renderGameState();
     document.querySelectorAll('.game-toast').forEach(t => t.remove());
+  });
+  // Paid slides answer at YOUR reveal now — reach it, then slide onto the slot.
+  await throwAndAwaitChoice(page, 0);
+  await page.evaluate(() => {
     payToSlide(1);                        // NOT awaited — it blocks on the picker
   });
   await sleep(700);
@@ -3770,8 +3877,10 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
     game.pendingActivations = new Array(game.playerCount).fill(null);
     renderGameState();
     document.querySelectorAll('.game-toast').forEach(t => t.remove());
-    playSelectedCard(0);                         // the REAL path: play → round → drain
   });
+  // The REAL path: throw → reveal → Play → the drain opens the board.
+  await throwAndAwaitChoice(page, 0);
+  await answerChoice(page, /play/);
   await page.waitForFunction(() =>
     document.getElementById('boardOverlay').classList.contains('active'), { timeout: 20000 });
   await sleep(450);
@@ -4085,8 +4194,8 @@ console.log('── Opponent view: inspect panel/chips sum their spread; spotlig
   await phone.close();
 }
 
-// ═══ DESKTOP: drag-to-play — the phone's Hearthstone pull, mouse-driven ═══
-console.log('── Desktop: drag a card up and release → action sheet (click still works)');
+// ═══ DESKTOP: drag-to-THROW — the phone's Hearthstone pull, mouse-driven ═══
+console.log('── Desktop: drag a card up and release → the throw (face down, take-back)');
 {
   const page = await browser.newPage();
   page.on('console', m => { if (m.type() === 'error') consoleErrors.push('desk-drag: ' + m.text()); });
@@ -4094,6 +4203,18 @@ console.log('── Desktop: drag a card up and release → action sheet (click 
   await page.setViewport({ width: 1440, height: 900 });
   await startGame(page);
   await sleep(400);
+  // Freeze the rivals' throw timers (they scale by CINEMATIC_SPEED) so the
+  // undo window stays open for the whole gesture sequence below.
+  await page.evaluate(() => {
+    // Any rival who already threw takes it back (engine-clean), so the
+    // whole table is guaranteed un-locked for the gesture checks.
+    for (let i = 1; i < game.playerCount; i++) {
+      if (game.pendingActivations[i]) game.unpickCard(i);
+    }
+    window.CINEMATIC_SPEED = 1000;
+    beginThrowPhase();
+  });
+  await sleep(200);
 
   // Middle card, same as the hover-bloom flow: the left rail's mission
   // strip overhangs the leftmost card's center at this viewport.
@@ -4134,23 +4255,33 @@ console.log('── Desktop: drag a card up and release → action sheet (click 
   ok(midDrag.dimmed && midDrag.hoverDead, 'the rest of the fan dims and goes hover-dead');
   await page.screenshot({ path: join(SHOTS, 'desktop-drag-up.png') });
 
-  // Release up top → the action sheet, for THIS card.
+  // Release up top → THE THROW: face down, no popup, take-back on offer.
   await page.mouse.up();
   await sleep(500);
   const committed = await page.evaluate(() => ({
     panel: !!document.querySelector('.action-panel.active'),
-    sel: selectedHandCard,
+    thrown: !!game.pendingActivations[0],
+    zone: document.getElementById('thrownZone').classList.contains('active'),
+    undoBtn: !!document.querySelector('#thrownZone .tz-undo'),
+    hand: game.players[0].hand.length,
     dragLeft: !!document.querySelector('#handZone .hand-card.dragging'),
   }));
-  ok(committed.panel && committed.sel === c.i, `release up top opens the sheet for that card (selected #${committed.sel})`);
-  ok(!committed.dragLeft, 'the card snapped home');
+  ok(committed.thrown && !committed.panel, 'release up top THROWS the card — no popup appears');
+  ok(committed.zone && committed.undoBtn, 'the face-down card shows with its take-back');
+  ok(!committed.dragLeft, 'the drag element snapped home');
   await page.screenshot({ path: join(SHOTS, 'desktop-drag-commit.png') });
-  await page.evaluate(() => { window._finalChoicePending = false; hideActionPanel(); });
-  await sleep(300);
 
-  // hideActionPanel leaves the .selected card (and its fan reflow) in
-  // place until the next render — re-render and re-measure before the
-  // next gesture or the coordinates go stale.
+  // Take it back — the physical undo, open until the last card drops.
+  await page.evaluate(() => document.querySelector('#thrownZone .tz-undo').click());
+  await sleep(350);
+  const undone = await page.evaluate(() => ({
+    thrown: !!game.pendingActivations[0],
+    zone: document.getElementById('thrownZone').classList.contains('active'),
+    hand: game.players[0].hand.length,
+  }));
+  ok(!undone.thrown && !undone.zone, 'Take it Back retrieves the card');
+  ok(undone.hand === 7, `the hand is whole again (${undone.hand})`);
+
   const fresh = async () => {
     await page.evaluate(() => renderGameState());
     await sleep(250);
@@ -4176,7 +4307,7 @@ console.log('── Desktop: drag a card up and release → action sheet (click 
   ok(midCancel, 'cancel fixture: the drag really engaged before dropping back');
   ok(!cancelled.panel && !cancelled.dragging, 'dragging back down cancels cleanly (release ≠ click)');
 
-  // The classic desktop click flow survives untouched.
+  // A plain click is a read, not a commit: nothing throws, nothing opens.
   const c3 = await fresh();
   await page.mouse.move(c3.x, c3.y);
   await sleep(200);
@@ -4185,10 +4316,9 @@ console.log('── Desktop: drag a card up and release → action sheet (click 
   await sleep(400);
   const clicked = await page.evaluate(() => ({
     panel: !!document.querySelector('.action-panel.active'),
-    sel: selectedHandCard,
+    thrown: !!game.pendingActivations[0],
   }));
-  ok(clicked.panel && clicked.sel === c3.i, `a plain click still selects and opens the sheet (#${clicked.sel})`);
-  await page.evaluate(() => { window._finalChoicePending = false; hideActionPanel(); });
+  ok(!clicked.panel && !clicked.thrown, 'a plain click never throws and opens nothing');
   await page.close();
 }
 
@@ -4276,7 +4406,8 @@ console.log('── Stat floats: +N rises off the grown stat (desktop rail + pho
     renderGameState();
   });
   await sleep(250);
-  await page.evaluate(() => playSelectedCard(0));
+  await throwAndAwaitChoice(page, 0);
+  await answerChoice(page, /play/);
   let overlap = false;
   for (let t = 0; t < 30 && !overlap; t++) {
     overlap = await page.evaluate(() =>
@@ -4284,7 +4415,11 @@ console.log('── Stat floats: +N rises off the grown stat (desktop rail + pho
     await sleep(100);
   }
   ok(overlap, 'banner and "+N" floats share the stage — one payoff beat');
-  await page.evaluate(() => { window._finalChoicePending = false; hideActionPanel(); });
+  // The auto-paired second card asks too — answer it honestly.
+  try {
+    await page.waitForFunction(() => window._finalChoicePending === true, { timeout: 8000 });
+    await answerChoice(page, /discard \(\+3g\)/);
+  } catch (e) {}
   await page.close();
 
   // Phone: skill gain floats on the rail chip; purse gains keep their
@@ -4869,8 +5004,12 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
       document.getElementById('confirmBtn').click();
     }, idx);
 
-    // A queues first (earliest entry, 4s AFK clock for the boot beat); B joins.
-    const pA = await boot(ctxA, A_UID, 'Audit MpA', { afk: 4500 });
+    // A queues first (earliest entry — A hosts). The AFK clock stays at
+    // its real 2 minutes through the handshake and beat 3: the throw
+    // collector arms it at ROUND start now, so a shrunk clock would boot
+    // B while the suite is still reading the sealed table. Beat 4 shrinks
+    // it live, right before B goes silent.
+    const pA = await boot(ctxA, A_UID, 'Audit MpA', {});
     await sleep(900);
     const pB = await boot(ctxB, B_UID, 'Audit MpB', {});
     pB.on('pageerror', e => { pB.evaluate((m) => { (window.__bErrs = window.__bErrs || []).push(m); }, 'PAGEERROR: ' + e.message).catch(() => {}); });
@@ -4944,12 +5083,24 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     await pA.screenshot({ path: join(SHOTS, 'mp-match-hostA.png') });
     await pB.screenshot({ path: join(SHOTS, 'mp-match-clientB.png') });
 
-    // ── Beat 3: one full lockstep round — both discard their first card. ──
-    await pA.evaluate(() => discardSelectedCard(0));
+    // ── Beat 3: one full lockstep round — both THROW, the stream locks the
+    //    table on both clients, and each answers its reveal with a discard. ──
+    await pA.evaluate(() => throwCard(0));
     await sleep(250);
-    await pB.evaluate(() => discardSelectedCard(0));
+    await pB.evaluate(() => throwCard(0));
+    const answerDiscard = async (pg) => {
+      await pg.waitForFunction(() => window._finalChoicePending === true, { timeout: 30000 });
+      await pg.evaluate(() => {
+        const b = [...document.querySelectorAll('#actionPanel .action-btn')]
+          .find(x => /discard \(\+3g\)/i.test(x.textContent) && !x.disabled);
+        if (b) b.click();
+      });
+    };
+    await Promise.all([answerDiscard(pA), answerDiscard(pB)]);
+    // Next round's bots pick the instant finishRound hands over, so the
+    // all-pendings-null state is transient — gate on YOUR seat + the hand.
     const roundDone = (pg) => pg.waitForFunction(() => game.phase === 'gameplay'
-      && game.pendingActivations.every(a => a === null)
+      && game.pendingActivations[0] === null
       && game.players[0].hand.length === 6, { timeout: 30000 }).then(() => true, () => false);
     const [rdA, rdB] = await Promise.all([roundDone(pA), roundDone(pB)]);
     ok(rdA && rdB, `both clients finish the round (A ${rdA}, B ${rdB})`);
@@ -4959,15 +5110,19 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     const bLog = await pB.evaluate(() => document.getElementById('logEntries').innerText);
     ok(/Audit MpA (discards|plays)/.test(bLog), "B's log narrates A's move (stream applied)");
 
-    // ── Beat 4: A picks, B goes silent — the 2-minute boot (shrunk to
-    //    4.5s) converts B's seat to AI everywhere and kicks B out. ──
-    await pA.evaluate(() => discardSelectedCard(0));
+    // ── Beat 4: A throws, B goes silent — the 2-minute boot (shrunk to
+    //    4.5s NOW; the collector's clock reads it live) converts B's seat
+    //    to AI everywhere and kicks B out. ──
+    await pA.evaluate(() => { FMP._T.afk = 4500; });
+    await pA.evaluate(() => throwCard(0));
     const booted = await pA.waitForFunction(() =>
       game.players[1] && game.players[1]._remoteHuman === false, { timeout: 20000 })
       .then(() => true, () => false);
     ok(booted, "host's AFK clock boots the silent seat (remote → AI)");
+    // The boot unblocks the lock; A's own reveal still asks.
+    await answerDiscard(pA);
     const round2 = await pA.waitForFunction(() => game.phase === 'gameplay'
-      && game.pendingActivations.every(a => a === null)
+      && game.pendingActivations[0] === null
       && game.players[0].hand.length === 5, { timeout: 30000 })
       .then(() => true, () => false);
     const aLog = await pA.evaluate(() => document.getElementById('logEntries').innerText);
@@ -5133,12 +5288,8 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     renderGameState();
   });
   await sleep(300);
-  await page.evaluate(() => selectHandCard(0));
-  await sleep(300);
-  await page.evaluate(() => {
-    const b = [...document.querySelectorAll('.action-panel .action-btn')].find(x => /discard/i.test(x.textContent));
-    b.click();
-  });
+  await throwAndAwaitChoice(page, 0);
+  await answerChoice(page, /discard \(\+3g\)/);
 
   const asked = await page.waitForFunction(() =>
     document.getElementById('promisePicker').classList.contains('active') &&
@@ -5182,6 +5333,7 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
   await startGame(page);
 
   await page.evaluate(() => {
+    window.CINEMATIC_SPEED = 0.05;
     game.emblemHolder = 1;                       // you do NOT act first
     const p = game.players[0];
     const letter = FAVOR_DATA.cards.find(c => c.type === 'mission_letter');
@@ -5202,23 +5354,23 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     renderGameState();
   });
   await sleep(300);
-  await page.evaluate(() => selectHandCard(0));
-  await sleep(300);
-  await page.evaluate(() => {
-    const b = [...document.querySelectorAll('.action-panel .action-btn')].find(x => /letter/i.test(x.textContent));
-    b.click();
-  });
+  // Throw the pair in: the Emblem seat's reveals run FIRST, then your
+  // chooser opens for the Letter — the decision now truly lives at your
+  // seat's activation slot.
+  await throwAndAwaitChoice(page, 0);
+  await answerChoice(page, /letter/);
 
-  // Let the AI seats run, clicking through any mission-select the Letter opens.
-  for (let t = 0; t < 16; t++) {
-    await sleep(1000);
-    const done = await page.evaluate(() => {
-      const opt = document.querySelector('.mission-option');
-      if (opt && opt.offsetParent) { opt.click(); return false; }
-      return !!document.querySelector('.action-panel.final-choice');
-    });
-    if (done) break;
-  }
+  // The Letter's mission pick opens at YOUR reveal — take one.
+  await page.waitForFunction(() =>
+    document.querySelector('.mission-option') && document.querySelector('.mission-option').offsetParent,
+    { timeout: 15000 });
+  await page.evaluate(() => document.querySelector('.mission-option').click());
+
+  // Your auto-paired second card asks last — answer it.
+  await page.waitForFunction(() => window._finalChoicePending === true, { timeout: 15000 });
+  await answerChoice(page, /discard \(\+3g\)/);
+  await page.waitForFunction(() => (window.__order || []).length >= game.playerCount * 2,
+    { timeout: 20000 });
   const order = await page.evaluate(() => (window.__order || []).slice());
   const youAt = order.indexOf('YOU');
   ok(youAt > 0, `you do NOT jump the table — the Emblem seat goes first (${order.join(' ')})`);
@@ -5455,8 +5607,10 @@ console.log('── First game: desktop coach marks, favor token, price-before-c
   ok(!!favorTok && favorTok.visible && favorTok.val === '0',
     `desktop stats panel shows the FAVOR counter (${favorTok && favorTok.val})`);
 
-  // Honest action panel: a scorn-priced card warns BEFORE commit …
-  const priced = await page.evaluate(async () => {
+  // Honest reveal chooser: a scorn-priced card warns BEFORE commit. The
+  // two rigged cards are a final pair — chooser #1 = Endless Sparring,
+  // chooser #2 = Forbidden Lab, exactly the old two panels in sequence.
+  await page.evaluate(() => {
     skipAllCoach();
     game.phase = 'gameplay';
     game.players[0].hand = [
@@ -5464,9 +5618,12 @@ console.log('── First game: desktop coach marks, favor token, price-before-c
       { ...FAVOR_DATA.cards.find(c => c.name === 'Forbidden Lab') },
     ];
     game.players[0].skills.power = 1;   // meets the req so Play is LIVE while the price shows
+    game.pendingActivations = new Array(game.playerCount).fill(null);
+    window.CINEMATIC_SPEED = 0.05;
     renderGameState();
-    selectHandCard(0);
-    await new Promise(r => setTimeout(r, 250));
+  });
+  await throwAndAwaitChoice(page, 0);
+  const priced = await page.evaluate(() => {
     const panel = document.getElementById('actionPanel');
     return {
       grants: (panel.querySelector('.action-skills') || {}).textContent || '',
@@ -5478,11 +5635,12 @@ console.log('── First game: desktop coach marks, favor token, price-before-c
   ok(/Price/.test(priced.price) && /\+5 Scorn/.test(priced.price) && priced.playLive,
     `the 5-Scorn price shows BEFORE commit, beside a live Play (${priced.price})`);
 
-  // … and a flex card explains its either/or in plain words.
-  const flex = await page.evaluate(async () => {
-    hideActionPanel();
-    selectHandCard(1);
-    await new Promise(r => setTimeout(r, 250));
+  // … and a flex card explains its either/or in plain words (chooser #2).
+  await answerChoice(page, /play/);
+  await page.waitForFunction(() =>
+    window._finalChoicePending === true &&
+    /Forbidden Lab/i.test(document.getElementById('actionPanel').textContent), { timeout: 12000 });
+  const flex = await page.evaluate(() => {
     const panel = document.getElementById('actionPanel');
     return {
       special: (panel.querySelector('.action-special') || {}).textContent || '',
@@ -5494,7 +5652,341 @@ console.log('── First game: desktop coach marks, favor token, price-before-c
   ok(/\+2 Scorn/.test(flex.price), `Forbidden Lab's 2-Scorn price shows (${flex.price})`);
 
   await page.screenshot({ path: join(SHOTS, 'coach-desktop-panel.png') });
+  await answerChoice(page, /discard \(\+3g\)/);
+  await sleep(300);
   await page.close();
+}
+
+// ═══ SKIRMISH — vs AI at the menu size, ANY owned hero, thematic names ═══
+console.log('── Skirmish: any owned hero, thematic AI, no leaderboard personas');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('skirmish: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('skirmish pageerror: ' + e.message));
+  await page.setViewport({ width: 1280, height: 800 });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await page.evaluate(() => {
+    window.shuffleArray = (a) => [...a];
+    window._pinEmblemSeed = 0;
+    localStorage.setItem('favorQueue', '4');   // Skirmish honors the menu seg
+  });
+
+  const menu = await page.evaluate(() => ({
+    trio: ['Skirmish', 'Daily Rival', 'Private Room'].map(t =>
+      !![...document.querySelectorAll('.menu-trio .btn-royal')].find(b => b.textContent.includes(t))),
+  }));
+  ok(menu.trio.every(Boolean), `the menu carries all three new doors (${menu.trio.join(',')})`);
+
+  await page.evaluate(() => FMODES.openSkirmish());
+  await page.waitForFunction(() =>
+    document.getElementById('character-select').classList.contains('active')
+    && document.querySelectorAll('.character-card').length > 0, { timeout: 15000 });
+  const select = await page.evaluate(() => ({
+    cards: document.querySelectorAll('.character-card').length,
+    owned: FLB.ownedIds().length,
+  }));
+  ok(select.cards === select.owned && select.cards >= 5,
+    `Skirmish select offers EVERY owned hero (${select.cards} of ${select.owned})`);
+  await page.screenshot({ path: join(SHOTS, 'skirmish-select.png') });
+
+  await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.character-card')];
+    const last = cards[cards.length - 1];           // NOT a 3-offer card
+    selectCharacter(last.dataset.id, last);
+    document.getElementById('confirmBtn').click();
+  });
+  await page.waitForFunction(() => typeof game !== 'undefined' && game
+    && game.players.length && game.players[0].character, { timeout: 20000 });
+  const table = await page.evaluate(() => ({
+    count: game.playerCount,
+    personas: game.players.filter(p => p._personaAI).length,
+    names: game.players.slice(1).map(p => p.name),
+    mode: window._gameMode,
+  }));
+  ok(table.count === 4, `table size honors the menu seg (${table.count})`);
+  ok(table.personas === 0, 'a Skirmish is PURE vs-AI — no leaderboard personas seated');
+  const THEMATIC = ['The Lady Vespurine', 'Count Balthazar', 'Lord Ashcropt', 'Dame Rosalind',
+                    'Prince Aldric', 'Princess Sera', 'Lord Cassius', 'Lady Elara'];
+  ok(table.names.every(n => THEMATIC.includes(n)),
+    `Skirmish rivals wear thematic names (${table.names.join(', ')})`);
+  await page.close();
+}
+
+// ═══ DAILY RIVAL — one named rival a day, Stars once per window ═══
+console.log('── Daily Rival: deterministic pick, intro plaque, claim-once');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('rival: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('rival pageerror: ' + e.message));
+  await page.setViewport({ width: 1280, height: 800 });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await page.evaluate(() => {
+    window.shuffleArray = (a) => [...a];
+    window._pinEmblemSeed = 0;
+    localStorage.setItem('favorQueue', '3');
+  });
+
+  const det = await page.evaluate(() => {
+    const days = [];
+    for (let i = 0; i < 10; i++) {
+      const d = new Date(Date.UTC(2026, 6, 10 + i));
+      days.push(FMODES.rivalOfDay(d.toISOString().slice(0, 10)).key);
+    }
+    const stable = FMODES.rivalOfDay('2026-07-16').key === FMODES.rivalOfDay('2026-07-16').key;
+    const noAdjacentRepeat = days.every((k, i) => i === 0 || k !== days[i - 1]);
+    return { days: days.join(','), stable, noAdjacentRepeat };
+  });
+  ok(det.stable, 'the pick is deterministic for a given day');
+  ok(det.noAdjacentRepeat, `no rival two days running (${det.days})`);
+
+  await page.evaluate(() => FMODES.openDailyRival());
+  await sleep(300);
+  const intro = await page.evaluate(() => {
+    const ov = document.getElementById('rivalIntro');
+    const rival = FMODES.rivalOfDay();
+    return {
+      active: ov.classList.contains('active'),
+      named: ov.textContent.includes(rival.name),
+      art: !!ov.querySelector('.ri-art'),
+      stakes: /\+25\s*★/.test(ov.textContent.replace(/\s+/g, ' ')),
+    };
+  });
+  ok(intro.active && intro.named, 'the intro plaque names today\'s rival');
+  ok(intro.art && intro.stakes, 'portrait + the +25★ stakes on the plaque');
+  await page.screenshot({ path: join(SHOTS, 'daily-rival-intro.png') });
+
+  await page.evaluate(() => FMODES.beginRivalGame());
+  await page.waitForFunction(() =>
+    document.getElementById('character-select').classList.contains('active'), { timeout: 15000 });
+  await page.evaluate(() => {
+    const c = document.querySelector('.character-card');
+    selectCharacter(c.dataset.id, c);
+    document.getElementById('confirmBtn').click();
+  });
+  await page.waitForFunction(() => typeof game !== 'undefined' && game
+    && game.players.length && game.players[0].character, { timeout: 20000 });
+  const table = await page.evaluate(() => {
+    const rival = FMODES.rivalOfDay();
+    const seat = game.players.find(p => p.name === rival.name);
+    return {
+      count: game.playerCount,
+      seated: !!seat,
+      sharp: !!(seat && seat._personaAI),
+      uid: seat && seat._personaUid,
+      expectUid: rival.uid,
+    };
+  });
+  ok(table.count === 3, `the rival table seats three (${table.count})`);
+  ok(table.seated && table.sharp, 'today\'s rival sits at the table with the sharp persona brain');
+  ok(table.uid === table.expectUid, 'and under their own leaderboard identity');
+
+  // Claim path: stub the star grant, drive the scoring hook directly.
+  const claims = await page.evaluate(async () => {
+    const calls = [];
+    const real = FLB.claimRivalWin;
+    FLB.claimRivalWin = async (key, stars) => { calls.push({ key, stars }); return calls.length === 1; };
+    const rival = FMODES.rivalOfDay();
+    await FMODES.rivalGameOver([{ name: 'You' }, { name: rival.name }, { name: 'Filler' }]);   // ahead → claim
+    await FMODES.rivalGameOver([{ name: rival.name }, { name: 'You' }, { name: 'Filler' }]);   // behind → no claim
+    window._gameMode = 'rival';   // rigGameOver clears nothing; ensure mode intact for the 2nd win
+    await FMODES.rivalGameOver([{ name: 'You' }, { name: rival.name }, { name: 'Filler' }]);   // claim refused (stub false)
+    FLB.claimRivalWin = real;
+    return calls;
+  });
+  ok(claims.length === 2 && claims.every(c => c.stars === 25),
+    `beating the rival claims +25★ through the once-a-day gate (${claims.length} claim calls)`);
+  await page.close();
+}
+
+// ═══ EMOTES — Nation's six, streamed to every screen at the table ═══
+console.log('── Emotes: publish on tap, bubble on the right seat, cooldown holds');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('emotes: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('emotes pageerror: ' + e.message));
+  await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+  await sleep(300);
+
+  const wire = await page.evaluate(async () => {
+    const sent = [];
+    const handlers = {};
+    const realFMP = window.FMP;
+    window.FMP = {
+      active: () => true,
+      publish: (type, data) => sent.push({ type, data }),
+      onBroadcast: (type, cb) => { handlers[type] = cb; },
+      localIdx: (s) => s,
+      mySeat: () => 0,
+    };
+    FMODES.attachEmotes();
+
+    // The stream echoes YOUR emote back — it must not double-bubble.
+    handlers.emote({ seat: 0, e: 'hearts' });
+
+    FMODES.emote('hearts');                      // publishes + own bubble
+    FMODES.emote('fuming');                      // inside the cooldown — swallowed
+    await new Promise(r => setTimeout(r, 120));
+    const own = document.querySelectorAll('.emote-bubble').length;
+    handlers.emote({ seat: 1, e: 'thumbsup' });  // a rival's reaction arrives
+    await new Promise(r => setTimeout(r, 120));
+    const bubbles = [...document.querySelectorAll('.emote-bubble')];
+    const rivalChip = document.querySelector('#gameSidebar .opp-entry[data-pi="1"]');
+    const rr = rivalChip.getBoundingClientRect();
+    const overRival = bubbles.some(b => {
+      const br = b.getBoundingClientRect();
+      return Math.abs((br.left + br.width / 2) - (rr.left + rr.width / 2)) < rr.width;
+    });
+    window.FMP = realFMP;
+    return { sent, own, total: bubbles.length, overRival };
+  });
+  ok(wire.sent.length === 1 && wire.sent[0].type === 'emote' && wire.sent[0].data.e === 'hearts',
+    `one tap = one 'emote' move; the cooldown swallowed the spam (${wire.sent.length} sent)`);
+  ok(wire.own === 1, `your own bubble shows once — the stream echo never doubles it (${wire.own})`);
+  ok(wire.total >= 2 && wire.overRival, 'a rival\'s reaction lands in THEIR bubble');
+  await page.screenshot({ path: join(SHOTS, 'emote-bubbles.png') });
+
+  const tray = await page.evaluate(() => {
+    FMODES.toggleEmoteTray();
+    const t = document.getElementById('emoteTray');
+    return {
+      active: t.classList.contains('active'),
+      count: t.querySelectorAll('img').length,
+      srcs: [...t.querySelectorAll('img')].every(i => /assets\/emotes\//.test(i.getAttribute('src'))),
+    };
+  });
+  ok(tray.active && tray.count === 6 && tray.srcs, `the tray offers Nation's six (${tray.count})`);
+  await page.close();
+}
+
+// ═══ PRIVATE ROOM — host + code, friends join, AI fills, uniqueness ═══
+console.log('── Private room: host/join by code, size in-room, Start → picking → live');
+{
+  try {
+    const mkContext = async () => (browser.createBrowserContext
+      ? browser.createBrowserContext() : browser.createIncognitoBrowserContext());
+    const ctxA = await mkContext();
+    const ctxB = await mkContext();
+    const A_UID = 'uauditrma' + Math.random().toString(36).slice(2, 6);
+    const B_UID = 'uauditrmb' + Math.random().toString(36).slice(2, 6);
+
+    const boot = async (ctx, uid, name) => {
+      const pg = await ctx.newPage();
+      pg.on('console', m => { if (m.type() === 'error') consoleErrors.push(`room-${name}: ` + m.text()); });
+      pg.on('pageerror', e => consoleErrors.push(`room-${name} pageerror: ` + e.message));
+      await pg.evaluateOnNewDocument((u, n) => {
+        localStorage.setItem('favorUid', u);
+        localStorage.setItem('favorName', n);
+        localStorage.setItem('favorQueue', '3');
+      }, uid, name);
+      await pg.setViewport({ width: 1280, height: 800 });
+      await pg.goto(URL, { waitUntil: 'networkidle2' });
+      await pg.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+      await pg.evaluate(() => {
+        window.shuffleArray = (a) => [...a];
+        window.CINEMATIC_SPEED = 0.05;
+      });
+      return pg;
+    };
+
+    const pA = await boot(ctxA, A_UID, 'Audit RoomA');
+    const pB = await boot(ctxB, B_UID, 'Audit RoomB');
+
+    // Host: the lobby shows a shareable code.
+    await pA.evaluate(() => { FMODES.openPrivateRoom(); FMODES.hostRoom(); });
+    await pA.waitForFunction(() => document.querySelector('#roomOverlay .rm-code'), { timeout: 12000 });
+    const code = await pA.evaluate(() => document.querySelector('#roomOverlay .rm-code').textContent.trim());
+    ok(/^[A-Z2-9]{5}$/.test(code), `host receives a 5-char room code (${code})`);
+    await pA.screenshot({ path: join(SHOTS, 'room-lobby-host.png') });
+
+    // Join by code — both lobbies list both nobles.
+    await pB.evaluate((c) => {
+      FMODES.openPrivateRoom();
+      document.getElementById('rmCode').value = c;
+      FMODES.joinRoom();
+    }, code);
+    const bothListed = (pg) => pg.waitForFunction(() =>
+      document.querySelectorAll('#roomOverlay .rm-row:not(.ai)').length === 2, { timeout: 12000 })
+      .then(() => true, () => false);
+    const [lA, lB] = await Promise.all([bothListed(pA), bothListed(pB)]);
+    ok(lA && lB, 'both lobbies list both nobles');
+
+    // The host picks the game size IN the room; AI fills the rest.
+    await pA.evaluate(() => FMODES.roomSetSize(4));
+    const sizeShown = await pB.waitForFunction(() =>
+      document.querySelectorAll('#roomOverlay .rm-row.ai').length === 2, { timeout: 8000 })
+      .then(() => true, () => false);
+    ok(sizeShown, 'size 4 with 2 humans shows two AI seats — on the JOINER\'s lobby');
+    await pB.screenshot({ path: join(SHOTS, 'room-lobby-joiner.png') });
+
+    // Start → both clients land on the pick screen with the clock.
+    await pA.evaluate(() => FMODES.startRoomGame());
+    const picking = (pg) => pg.waitForFunction(() =>
+      document.getElementById('character-select').classList.contains('active')
+      && !!document.getElementById('pickClock'), { timeout: 20000 }).then(() => true, () => false);
+    const [kA, kB] = await Promise.all([picking(pA), picking(pB)]);
+    ok(kA && kB, 'Start opens the timed hero pick on both clients');
+
+    // Both pick DIFFERENT heroes (uniqueness holds by construction); the
+    // sealed roster resolves any collision — asserted below by identity.
+    await pA.evaluate(() => {
+      const c = [...document.querySelectorAll('#characterGrid .character-card')][0];
+      selectCharacter(c.dataset.id, c);
+      document.getElementById('confirmBtn').click();
+    });
+    await pB.evaluate(() => {
+      const cards = [...document.querySelectorAll('#characterGrid .character-card')];
+      const c = cards[cards.length - 1];
+      selectCharacter(c.dataset.id, c);
+      document.getElementById('confirmBtn').click();
+    });
+    const live = (pg) => pg.waitForFunction(() =>
+      typeof game !== 'undefined' && game && game.players.length && FMP.active(), { timeout: 25000 })
+      .then(() => true, () => false);
+    const [gA, gB] = await Promise.all([live(pA), live(pB)]);
+    ok(gA && gB, 'the sealed room goes live on both clients');
+
+    const stateOf = (pg) => pg.evaluate(() => ({
+      n: game.playerCount,
+      humans: game.players.filter((p, i) => i === 0 || p._remoteHuman).length,
+      names: game.players.map(p => p.name),
+      heroes: game.players.map(p => p.character.id),
+      handsCanon: [0, 1, 2, 3].map(cs =>
+        game.players[FMP.localIdx(cs)].hand.map(c => c.id).join(',')).join(';'),
+    }));
+    const [sA, sB] = await Promise.all([stateOf(pA), stateOf(pB)]);
+    ok(sA.n === 4 && sB.n === 4, `the table is the room's size (${sA.n})`);
+    ok(sA.humans === 2 && sB.humans === 2, 'two humans, two AI — the realm filled the seats');
+    ok(sA.names.includes('Audit RoomB') && sB.names.includes('Audit RoomA'),
+      'friends see each other by name');
+    ok(new Set(sA.heroes).size === 4, `no two players share a hero (${sA.heroes.join(', ')})`);
+    ok(sA.handsCanon === sB.handsCanon, 'LOCKSTEP: both tables deal identically');
+
+    // Leave no trace.
+    await pA.evaluate(async (c) => {
+      const gid = FMP.gid();
+      FMP.leaveGame();
+      if (gid) await firebase.database().ref(`favor/mp/games/${gid}`).remove();
+      await firebase.database().ref(`favor/mp/rooms/${c}`).remove();
+    }, code);
+    await pB.evaluate(() => FMP.leaveGame());
+
+    // Empty room folds on the shrunk clock.
+    await pA.evaluate(() => { FMP._T.roomEmpty = 2500; FMODES.openPrivateRoom(); FMODES.hostRoom(); });
+    await pA.waitForFunction(() => document.querySelector('#roomOverlay .rm-code'), { timeout: 12000 });
+    const emptyCode = await pA.evaluate(() => document.querySelector('#roomOverlay .rm-code').textContent.trim());
+    const folded = await pA.waitForFunction(() =>
+      !document.querySelector('#roomOverlay .rm-code'), { timeout: 12000 }).then(() => true, () => false);
+    const recGone = await pA.evaluate(async (c) =>
+      !(await firebase.database().ref(`favor/mp/rooms/${c}`).get()).exists(), emptyCode);
+    ok(folded && recGone, 'an empty room folds at the deadline and sweeps its record');
+
+    await ctxA.close(); await ctxB.close();
+  } catch (e) {
+    ok(false, 'private-room flow crashed', e.message);
+  }
 }
 
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));

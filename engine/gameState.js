@@ -226,6 +226,10 @@ class FavorGame {
 
         if (!card) throw new Error('Invalid card selection');
 
+        // Where the throw came from — unpickCard() rebuilds the hand
+        // byte-identical if the player takes the card back.
+        player._thrownRestore = { cardIndex, paired: false };
+
         // Place face-down
         this.pendingActivations[playerIndex] = card;
         player.hand.splice(cardIndex, 1);
@@ -235,9 +239,39 @@ class FavorGame {
             // Auto-play the remaining card
             this.pendingActivations[playerIndex] = [this.pendingActivations[playerIndex], player.hand[0]];
             player.hand = [];
+            player._thrownRestore.paired = true;
         }
 
         return card;
+    }
+
+    /**
+     * Take a thrown card back — physical rule: any player may retrieve
+     * their face-down card until EVERY player has thrown. The moment the
+     * last card goes in, everything locks; the UI enforces that moment,
+     * and the engine refuses once hands have passed (phase left GAMEPLAY).
+     */
+    unpickCard(playerIndex) {
+        if (this.phase !== PHASES.GAMEPLAY) {
+            return { success: false, error: 'Cards are locked in' };
+        }
+        const player = this.players[playerIndex];
+        const pending = this.pendingActivations[playerIndex];
+        if (!pending) return { success: false, error: 'Nothing thrown' };
+
+        const restore = player._thrownRestore || { cardIndex: player.hand.length, paired: false };
+        if (Array.isArray(pending)) {
+            // The auto-paired final two came out of a 2-card hand —
+            // rebuild it in its original order.
+            const [picked, leftover] = pending;
+            player.hand = restore.cardIndex === 0 ? [picked, leftover] : [leftover, picked];
+        } else {
+            const at = Math.min(restore.cardIndex, player.hand.length);
+            player.hand.splice(at, 0, pending);
+        }
+        player._thrownRestore = null;
+        this.pendingActivations[playerIndex] = null;
+        return { success: true };
     }
 
     allPlayersPicked() {

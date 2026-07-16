@@ -70,15 +70,24 @@ await page.evaluate(() => {
   renderGameState();
 });
 
-// ── Human plays hand card 0 (the real Play-button entry point) ──
-await page.evaluate(() => { playSelectedCard(0); });
-
-// The leftover card presents the final-card chooser — choose Play.
-await page.waitForFunction(() => window._finalChoicePending === true, { timeout: 20000 });
+// ── Human THROWS hand card 0 (the real entry point), rivals hurried ──
 await page.evaluate(() => {
-  const b = document.querySelector('#actionPanel [data-act="play"]');
-  if (b) b.click(); else document.querySelector('#actionPanel [data-act="discard"]').click();
+  throwCard(0);
+  for (let s = 1; s < game.playerCount; s++) {
+    if (game.pendingActivations[s] === null && game.players[s].hand.length) aiPickCard(s);
+  }
+  maybeLockThrows();
 });
+
+// Chooser #1 (the picked card) — choose Play; chooser #2 (the leftover) too.
+for (let k = 0; k < 2; k++) {
+  await page.waitForFunction(() => window._finalChoicePending === true, { timeout: 20000 });
+  await page.evaluate(() => {
+    const b = document.querySelector('#actionPanel [data-act="play"]');
+    if (b) b.click(); else document.querySelector('#actionPanel [data-act="discard"]').click();
+  });
+  await new Promise(r => setTimeout(r, 150));
+}
 
 // All six activations (3 players × 2 cards) should land.
 await page.waitForFunction(() => window._trace && window._trace.length >= 6, { timeout: 30000 });

@@ -1817,5 +1817,52 @@ console.log("── Mission borrow: the player picks the lender, and that lender
     JSON.stringify(stale && stale.borrowFrom));
 }
 
+// ─── Throw-first flow: unpickCard (the take-back) ──────────────────
+{
+  console.log('\nThrow phase — unpickCard restores the hand exactly');
+  const g = newGame();
+  g.startAct(1);
+  const p = g.players[0];
+  p.hand = [
+    { ...cardByName('First Aid'), id: 'u1' },
+    { ...cardByName('Hunting'), id: 'u2' },
+    { ...cardByName('Pearl Diving'), id: 'u3' },
+  ];
+  const before = p.hand.map(c => c.id);
+
+  g.pickCard(0, 1);
+  ok(g.pendingActivations[0] && g.pendingActivations[0].id === 'u2', 'pick places the card face down');
+  ok(p.hand.length === 2, 'and the hand shrinks by one');
+
+  const res = g.unpickCard(0);
+  ok(res.success, 'unpick succeeds while the phase is still open');
+  ok(g.pendingActivations[0] === null, 'the face-down slot empties');
+  ok(p.hand.map(c => c.id).join(',') === before.join(','),
+    'the hand is restored in its ORIGINAL order', p.hand.map(c => c.id).join(','));
+
+  // The auto-paired final two: unpick restores BOTH, in order.
+  p.hand = [{ ...cardByName('First Aid'), id: 'p1' }, { ...cardByName('Hunting'), id: 'p2' }];
+  g.pickCard(0, 1);   // picks p2; p1 auto-pairs behind it
+  ok(Array.isArray(g.pendingActivations[0]) && g.pendingActivations[0][0].id === 'p2',
+    'a 2-card hand throws the pair (picked first)');
+  ok(p.hand.length === 0, 'and the hand empties');
+  const res2 = g.unpickCard(0);
+  ok(res2.success && p.hand.map(c => c.id).join(',') === 'p1,p2',
+    'unpicking the pair rebuilds the 2-card hand in original order', p.hand.map(c => c.id).join(','));
+
+  // Nothing thrown → honest refusal.
+  ok(!g.unpickCard(0).success, 'unpick with nothing thrown refuses');
+
+  // Once hands pass (activation began), the take-back is locked out.
+  g.pickCard(0, 0);
+  g.players[1].hand = [{ ...cardByName('First Aid'), id: 'a1' }, { ...cardByName('First Aid'), id: 'a2' }];
+  g.players[2].hand = [{ ...cardByName('First Aid'), id: 'b1' }, { ...cardByName('First Aid'), id: 'b2' }];
+  g.pickCard(1, 0);
+  g.pickCard(2, 0);
+  g.passHands();
+  const locked = g.unpickCard(0);
+  ok(!locked.success && /locked/i.test(locked.error || ''), 'after passHands the engine refuses the take-back');
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);
