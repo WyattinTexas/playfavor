@@ -170,9 +170,10 @@ html, body {
 .ts-play { grid-area: play; min-height: clamp(150px, 36dvh, 300px); }
 /* Play's vignette is a pre-cut clean slice of the Knight board (no chrome);
    tall cards look at the tower top, short-wide phone cards at the walls. */
-.ts-art-play { background-image: url('../assets/ui/menu-play-vignette.jpg'); background-position: 50% 24%; }
-/* Host Room: Negotiate's royal audience (pre-cut art window, no card frame) */
-.ts-art-host { background-image: url('../assets/ui/menu-host-vignette.jpg'); background-position: 50% 30%; }
+.ts-art-play { background-image: url('../assets/ui/menu-play-vignette.jpg'); background-position: 50% 42%; }
+/* Host Room + Skirmish: purpose-painted MJ vignettes, same family as the hero */
+.ts-art-host { background-image: url('../assets/ui/menu-host-vignette.jpg'); background-position: 50% 55%; }
+.ts-art-skirm { background-image: url('../assets/ui/menu-skirmish-vignette.jpg'); background-position: 50% 42%; }
 .ts-play .ts-plaque {
     font-size: clamp(16px, 3.4dvh, 23px);
     padding: 8px 30px; margin-bottom: 6px;
@@ -4114,7 +4115,7 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     .queue-seg { gap: 6px; }
     .queue-seg button { height: 26px; font-size: 12px; border-radius: 7px; }
     .ts-play .queue-seg { margin: 0 8px 8px; padding: 4px 6px; }
-    .ts-art-play { background-position: 50% 38%; }
+    .ts-art-play { background-position: 50% 46%; }
     .queue-label { font-size: 8px; letter-spacing: 1.5px; }
     .menu-link { font-size: 10px; }
     .prompt-test-toggle { font-size: 9px; gap: 6px; }
