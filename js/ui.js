@@ -1203,6 +1203,16 @@ function togglePromptTest(on) {
 function menuComingSoon(mode) {
     showNotification(`${mode} — the heralds are preparing this mode`, 'info');
 }
+
+// Menu cards are divs (the queue buttons nest inside Play, and buttons
+// can't nest in buttons) — give them real keyboard activation anyway.
+document.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ')
+        && e.target.classList && e.target.classList.contains('ts-card')) {
+        e.preventDefault();
+        e.target.click();
+    }
+});
 function coachPromptTestOn() {
     try { return localStorage.getItem('favor_prompt_test') === '1'; } catch (e) { return false; }
 }
