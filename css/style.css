@@ -64,22 +64,26 @@ html, body {
      plaque, PLAY unmistakably biggest. ── */
 .ts-bg {
     position: absolute; inset: 0;
-    /* The hero painting: castle at golden hour on the right, calm sky
-       left. Anchored right-of-center so the castle survives the crop at
-       every aspect ratio (2:1 art; phones run ~2.16:1, desktops 16:9). */
-    background: #2c1c28 url('../assets/ui/menu-hero.jpg') no-repeat;
+    /* The hero painting (Wyatt 7/16): the storybook meadow — cottage on
+       the flowered hill, path winding toward the white castle. Anchored
+       right-of-center so the castle survives the crop at every aspect
+       ratio (the cottage rides the left edge behind the menu column). */
+    background: #2a3a28 url('../assets/ui/menu-meadow.jpg') no-repeat;
     background-size: cover;
-    background-position: 72% 42%;
+    background-position: 68% 34%;
 }
 /* Legibility wash — deepens the menu side and the footer's ground,
    leaves the castle in its own light. */
 .ts-haze {
     position: absolute; inset: 0; pointer-events: none;
+    /* Lighter wash than the old dusk art needed — the meadow is a sunny
+       painting and should read sunny; just enough scrim for the gold
+       lockup (top-left) and the footer line (bottom). */
     background:
-        linear-gradient(180deg, rgba(12, 7, 16, 0.42) 0%, transparent 26%, transparent 78%, rgba(8, 5, 10, 0.55) 100%),
+        linear-gradient(180deg, rgba(12, 7, 16, 0.32) 0%, transparent 24%, transparent 80%, rgba(8, 5, 10, 0.42) 100%),
         linear-gradient(100deg,
-            rgba(12, 7, 16, 0.66) 0%, rgba(12, 7, 16, 0.44) 34%,
-            rgba(12, 7, 16, 0.08) 62%, rgba(12, 7, 16, 0.10) 100%);
+            rgba(12, 7, 16, 0.5) 0%, rgba(12, 7, 16, 0.3) 34%,
+            rgba(12, 7, 16, 0.05) 62%, rgba(12, 7, 16, 0.07) 100%);
 }
 
 .ts-frame {
