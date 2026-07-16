@@ -32,49 +32,63 @@
         <!-- Profile — top-right: royal anon name · rating · champion crowns -->
         <button class="profile-chip" id="profileChip" onclick="FLB.openProfile()" title="Your profile"></button>
 
-        <!-- Landscape-first stage: the box art is the hero on the left,
-             a single decisive menu column on the right. Portrait stacks. -->
-        <div class="title-stage">
-            <div class="title-art">
-                <img src="assets/ui/cover.jpg" alt="FAVOR" class="title-cover" id="coverArt">
-                <p class="title-plate">3–5 Players &bull; 45–90 Minutes &bull; 1st Edition</p>
+        <!-- Wingspan-style stage: full-bleed hero painting, title lockup,
+             and a loose grid of framed vignette cards — PLAY unmistakably
+             biggest, HOST ROOM & SKIRMISH beside it, quiet minors below. -->
+        <div class="ts-bg" id="tsBg"></div>
+        <div class="ts-haze"></div>
+
+        <div class="ts-frame">
+            <header class="ts-lockup">
+                <h1 class="ts-title">FAVOR</h1>
+                <p class="ts-sub">A Game of Royal Succession</p>
+            </header>
+
+            <div class="ts-grid">
+                <div class="ts-card ts-play" role="button" tabindex="0" onclick="startGame()">
+                    <div class="ts-art" style="background-image:url('assets/characters/Knight.jpg'); background-position: 6% 46%; background-size: 240%;"></div>
+                    <span class="ts-plaque">Play</span>
+                    <!-- Table size — one tap, stays lit. Each size is its own queue. -->
+                    <div class="queue-seg" id="queueSeg" onclick="event.stopPropagation()" title="Table size — each queue matches separately">
+                        <span class="queue-label">Table of</span>
+                        <button type="button" data-q="3">3</button>
+                        <button type="button" data-q="4">4</button>
+                        <button type="button" data-q="5">5</button>
+                    </div>
+                </div>
+
+                <div class="ts-card ts-mid" role="button" tabindex="0" onclick="menuComingSoon('Host Room')">
+                    <div class="ts-art" style="background-image:url('assets/characters/Fiddler.jpg'); background-position: 28% 52%; background-size: 270%;"></div>
+                    <span class="ts-plaque">Host Room</span>
+                </div>
+                <div class="ts-card ts-mid" role="button" tabindex="0" onclick="menuComingSoon('Skirmish')">
+                    <div class="ts-art" style="background-image:url('assets/characters/Bandit.jpg'); background-position: 52% 42%; background-size: 280%;"></div>
+                    <span class="ts-plaque">Skirmish</span>
+                </div>
+
+                <div class="ts-card ts-sm" role="button" tabindex="0" onclick="FLB.openLeaderboard()">
+                    <span class="ts-plaque">Leaderboard</span>
+                </div>
+                <div class="ts-card ts-sm" role="button" tabindex="0" onclick="FLB.openStore()">
+                    <div class="ts-art" style="background-image:url('assets/characters/Merchant.jpg'); background-position: 16% 48%; background-size: 320%;"></div>
+                    <span class="ts-plaque">Store</span>
+                </div>
+                <div class="ts-card ts-sm" role="button" tabindex="0" onclick="FACH.openGallery()">
+                    <span class="ts-plaque">Achievements</span>
+                </div>
+                <div class="ts-card ts-sm" role="button" tabindex="0" onclick="showRules()">
+                    <span class="ts-plaque">How to Play</span>
+                </div>
             </div>
 
-            <div class="title-menu">
-                <p class="title-subtitle">A Game of Royal Succession</p>
-
-                <button class="btn-royal primary menu-play" onclick="startGame()">
-                    <span>Play Now</span>
-                </button>
-
-                <!-- Table size — one tap, stays lit. Each size is its own
-                     matchmaking queue. -->
-                <div class="queue-seg" id="queueSeg" title="Table size — each queue matches separately">
-                    <span class="queue-label">Table of</span>
-                    <button type="button" data-q="3">3</button>
-                    <button type="button" data-q="4">4</button>
-                    <button type="button" data-q="5">5</button>
-                </div>
-
-                <div class="menu-pair">
-                    <button class="btn-royal" onclick="FLB.openLeaderboard()">
-                        <span>Leaderboard</span>
-                    </button>
-                    <button class="btn-royal" onclick="FLB.openStore()">
-                        <span>Store</span>
-                    </button>
-                </div>
-
-                <div class="menu-quiet">
-                    <button type="button" class="menu-link" onclick="FACH.openGallery()" title="Your achievements">Achievements</button>
-                    <button type="button" class="menu-link mint-link" onclick="FLB.openStore()" title="Star bundles — the Royal Mint">★ Get Stars</button>
-                    <button type="button" class="menu-link" onclick="showRules()">How to Play</button>
-                    <label class="prompt-test-toggle" title="Replay the in-game tutorial prompts on your next game">
-                        <input type="checkbox" id="promptTestToggle" onchange="togglePromptTest(this.checked)">
-                        <span>Replay Tips</span>
-                    </label>
-                </div>
-            </div>
+            <footer class="ts-footer">
+                <button type="button" class="menu-link mint-link" onclick="FLB.openStore()" title="Star bundles — the Royal Mint">★ Get Stars</button>
+                <label class="prompt-test-toggle" title="Replay the in-game tutorial prompts on your next game">
+                    <input type="checkbox" id="promptTestToggle" onchange="togglePromptTest(this.checked)">
+                    <span>Replay Tips</span>
+                </label>
+                <p class="ts-plate">3–5 Players &bull; 45–90 Minutes &bull; 1st Edition</p>
+            </footer>
         </div>
     </div>
 
