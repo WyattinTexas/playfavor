@@ -58,87 +58,166 @@ html, body {
     pointer-events: none;
 }
 
-/* ── The stage: art panel left, one decisive menu column right.
-     A landscape game gets a landscape menu — console-style, no more
-     wide slabs scattered across rows. Portrait stacks below. ── */
-.title-stage {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: clamp(32px, 7vw, 96px);
-    width: 100%;
-    padding: 0 5vw;
+/* ── Wingspan-style stage: a full-bleed hero painting (calm on the left,
+     the castle owns the right), the title lockup up top, and a loose grid
+     of framed vignette cards — every button is a small painting with a
+     plaque, PLAY unmistakably biggest. ── */
+.ts-bg {
+    position: absolute; inset: 0;
+    /* The hero painting: castle at golden hour on the right, calm sky
+       left. Anchored right-of-center so the castle survives the crop at
+       every aspect ratio (2:1 art; phones run ~2.16:1, desktops 16:9). */
+    background: #2c1c28 url('../assets/ui/menu-hero.jpg') no-repeat;
+    background-size: cover;
+    background-position: 72% 42%;
+}
+/* Legibility wash — deepens the menu side and the footer's ground,
+   leaves the castle in its own light. */
+.ts-haze {
+    position: absolute; inset: 0; pointer-events: none;
+    background:
+        linear-gradient(180deg, rgba(12, 7, 16, 0.42) 0%, transparent 26%, transparent 78%, rgba(8, 5, 10, 0.55) 100%),
+        linear-gradient(100deg,
+            rgba(12, 7, 16, 0.66) 0%, rgba(12, 7, 16, 0.44) 34%,
+            rgba(12, 7, 16, 0.08) 62%, rgba(12, 7, 16, 0.10) 100%);
+}
+
+.ts-frame {
+    position: relative; z-index: 1;
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column;
+    /* notched landscape phones: never tuck under the sensor housing */
+    padding: clamp(12px, 3.5dvh, 36px)
+             max(clamp(18px, 4vw, 56px), env(safe-area-inset-right))
+             calc(clamp(12px, 3.5dvh, 36px) + env(safe-area-inset-bottom))
+             max(clamp(18px, 4vw, 56px), env(safe-area-inset-left));
     box-sizing: border-box;
 }
 
-.title-art {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 13px;
-    flex-shrink: 0;
+.ts-lockup { margin: 0 0 clamp(8px, 2.4dvh, 24px); }
+/* clear the music toggle (top-left chrome) on screens tall enough to show it */
+@media (min-height: 541px) { .ts-lockup { padding-left: 56px; } }
+.ts-title {
+    font-family: 'Cinzel', serif; font-weight: 900;
+    font-size: clamp(30px, 9dvh, 64px);
+    letter-spacing: 0.2em;
+    color: var(--gold-light);
+    margin: 0; line-height: 1;
+    text-shadow: 0 0 34px rgba(201, 168, 76, 0.45), 0 3px 12px rgba(0, 0, 0, 0.85);
+}
+.ts-sub {
+    font-family: 'Cinzel', serif;
+    font-size: clamp(10px, 2dvh, 15px);
+    letter-spacing: 0.42em; text-transform: uppercase;
+    color: rgba(232, 205, 120, 0.8);
+    margin: 6px 0 0 2px;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
 }
 
-.title-cover {
-    width: auto;
-    max-width: min(360px, 32vw);
-    max-height: min(66vh, 520px);
-    object-fit: contain;
+/* The card grid: PLAY spans the full left column; HOST ROOM & SKIRMISH
+   are the second tier; four quiet minors fill out the right. The grid
+   hugs the left/haze side — the hero painting keeps the right. */
+.ts-grid {
+    display: grid;
+    grid-template-areas:
+        "play skirm host"
+        "play rival lead"
+        "play store ach"
+        "play how   how";
+    grid-template-columns: minmax(200px, 300px) minmax(140px, 205px) minmax(140px, 205px);
+    grid-template-rows: 1fr auto auto auto;
+    gap: clamp(8px, 1.8dvh, 16px) clamp(10px, 1.4vw, 18px);
+    max-width: min(780px, 64vw);
+    /* tall screens: the grid floats centered between lockup and footer */
+    margin-block: auto;
+}
+
+.ts-card {
+    position: relative; overflow: hidden;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-end;
     border-radius: 12px;
-    box-shadow:
-        0 0 60px rgba(201, 168, 76, 0.3),
-        0 0 120px rgba(201, 168, 76, 0.1),
-        0 20px 60px rgba(0, 0, 0, 0.8);
-    animation: coverFloat 6s ease-in-out infinite;
+    border: 2px solid rgba(201, 168, 76, 0.55);
+    background: linear-gradient(160deg, rgba(34, 19, 9, 0.92), rgba(18, 9, 4, 0.94));
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(0, 0, 0, 0.5);
     cursor: pointer;
-    transition: transform 0.3s ease;
+    transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.ts-card:hover, .ts-card:focus-visible {
+    transform: translateY(-2px);
+    border-color: var(--gold-light);
+    box-shadow: 0 0 24px rgba(201, 168, 76, 0.35), 0 10px 26px rgba(0, 0, 0, 0.6);
+    outline: none;
+}
+.ts-card:active { transform: translateY(0); }
+
+/* The vignette painting inside a card, with a scrim so plaques read. */
+.ts-art { position: absolute; inset: 0; background-size: cover; }
+.ts-art::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(10, 6, 2, 0.04) 42%, rgba(10, 6, 2, 0.74) 100%);
 }
 
-.title-cover:hover {
-    transform: scale(1.02);
+.ts-plaque {
+    position: relative; z-index: 1;
+    font-family: 'Cinzel', serif; font-weight: 700;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    font-size: clamp(11px, 1.9dvh, 14px);
+    color: #f0e2b6;
+    background: linear-gradient(180deg, rgba(44, 26, 10, 0.94), rgba(24, 13, 5, 0.94));
+    border: 1px solid rgba(201, 168, 76, 0.65);
+    border-radius: 8px;
+    padding: 6px 15px; margin: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+    white-space: nowrap;
 }
 
-@keyframes coverFloat {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-8px); }
+.ts-play { grid-area: play; min-height: clamp(150px, 36dvh, 300px); }
+/* Play's vignette is a pre-cut clean slice of the Knight board (no chrome);
+   tall cards look at the tower top, short-wide phone cards at the walls. */
+.ts-art-play { background-image: url('../assets/ui/menu-play-vignette.jpg'); background-position: 50% 42%; }
+/* Host Room + Skirmish: purpose-painted MJ vignettes, same family as the hero */
+.ts-art-host { background-image: url('../assets/ui/menu-host-vignette.jpg'); background-position: 50% 55%; }
+.ts-art-skirm { background-image: url('../assets/ui/menu-skirmish-vignette.jpg'); background-position: 50% 42%; }
+.ts-play .ts-plaque {
+    font-size: clamp(16px, 3.4dvh, 23px);
+    padding: 8px 30px; margin-bottom: 6px;
+    box-shadow: 0 0 20px rgba(201, 168, 76, 0.3), 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+.ts-play .queue-seg {
+    position: relative; z-index: 1;
+    width: calc(100% - 20px); box-sizing: border-box;
+    margin: 0 10px 10px;
+    padding: 5px 8px;
+    background: rgba(12, 7, 3, 0.6);
+    border-radius: 10px;
 }
 
-/* The box's spec line lives with the box, like a shelf plate. */
-.title-plate {
-    font-family: 'EB Garamond', serif;
-    font-style: italic;
-    font-size: 13px;
+.ts-mid { min-height: clamp(58px, 12.5dvh, 104px); }
+.ts-mid:nth-of-type(2) { grid-area: skirm; }
+.ts-mid:nth-of-type(3) { grid-area: host; }
+
+.ts-sm { min-height: clamp(34px, 7dvh, 52px); justify-content: center; }
+.ts-sm .ts-plaque { font-size: clamp(10px, 1.7dvh, 12px); padding: 4px 12px; margin: 4px; }
+.ga-rival { grid-area: rival; }
+.ga-lead { grid-area: lead; }
+.ga-store { grid-area: store; }
+.ga-ach { grid-area: ach; }
+.ga-how { grid-area: how; }
+
+/* Footer strip — quiet dev/reference hooks, Wingspan's community line. */
+.ts-footer {
+    margin-top: auto;
+    display: flex; align-items: center;
+    gap: clamp(12px, 2vw, 22px);
+    padding-top: clamp(8px, 2dvh, 16px);
+}
+.ts-plate {
+    font-family: 'EB Garamond', serif; font-style: italic;
+    font-size: clamp(10px, 1.7dvh, 13px);
     letter-spacing: 1px;
     color: rgba(201, 168, 76, 0.55);
-    margin: 0;
-}
-
-.title-menu {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 15px;
-    width: clamp(280px, 30vw, 380px);
-}
-
-.title-subtitle {
-    font-family: 'Cinzel', serif;
-    font-size: clamp(13px, 1.6vw, 17px);
-    color: var(--gold);
-    letter-spacing: 5px;
-    text-transform: uppercase;
-    text-align: center;
-    margin: 0 0 4px;
-    opacity: 0.85;
-}
-
-/* One unmistakable primary. */
-.btn-royal.menu-play {
-    width: 100%;
-    padding: 19px 20px;
-    font-size: clamp(18px, 2.2vw, 23px);
-    letter-spacing: 3px;
-    box-shadow: 0 0 34px rgba(201,168,76,0.25), 0 8px 22px rgba(0,0,0,0.5);
+    margin: 0 0 0 auto;
 }
 
 /* Table size — a segmented row, one tap, stays lit. */
@@ -178,18 +257,6 @@ html, body {
     box-shadow: 0 0 14px rgba(201,168,76,0.35);
 }
 
-/* Secondary pair — equal citizens, half-width each. */
-.menu-pair { display: flex; gap: 12px; }
-.menu-pair .btn-royal { flex: 1; padding: 13px 8px; font-size: 14px; }
-
-/* The quiet row — reference and dev hooks, present but not shouting. */
-.menu-quiet {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 20px;
-    margin-top: 2px;
-}
 .menu-link {
     background: none;
     border: none;
@@ -212,11 +279,23 @@ html, body {
 /* iOS shell: no external purchase rail anywhere (Apple 3.1.1) */
 .ios-shell .mint-link, .ios-shell .st-mint { display: none !important; }
 
-/* Portrait / narrow: the stage stacks — art above, column below. */
+/* Portrait / narrow: single column, scrollable — the rotate-gate handles
+   in-game, but the menu itself stays usable any way you hold it. */
 @media (orientation: portrait), (max-width: 640px) {
-    .title-stage { flex-direction: column; gap: 20px; padding: 0 6vw; }
-    .title-cover { max-width: min(300px, 62vw); max-height: 36dvh; }
-    .title-menu { width: min(420px, 100%); }
+    .ts-frame { overflow-y: auto; padding: 20px 6vw; }
+    .ts-grid {
+        grid-template-areas: "play play" "skirm host" "rival lead" "store ach" "how how";
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto;
+        max-width: 100%;
+    }
+    .ts-play { min-height: 180px; }
+    .ts-haze { background: linear-gradient(180deg, rgba(10,6,14,0.72), rgba(10,6,14,0.5)); }
+    /* clear the profile chip; keep footer links on one line each */
+    .ts-title { font-size: clamp(24px, 8.5vw, 40px); }
+    .ts-lockup { padding-left: 48px; margin-top: 34px; }
+    .ts-footer { flex-wrap: wrap; }
+    .menu-link, .prompt-test-toggle { white-space: nowrap; }
 }
 
 /* Profile chip — top-right of the menu */
@@ -4037,17 +4116,18 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
         padding: 8px 14px;
         overflow-y: auto; /* safety: Play always reachable */
     }
-    .title-stage { gap: clamp(18px, 5vw, 48px); padding: 0 3vw; }
-    .title-cover { max-width: 30vw; max-height: 76dvh; }
-    .title-plate { font-size: 10px; }
-    .title-menu { gap: 9px; width: clamp(250px, 40vw, 330px); }
-    .title-subtitle { font-size: 11px; letter-spacing: 3px; }
-    #title-screen .btn-royal.menu-play { padding: 12px 14px; font-size: 16px; letter-spacing: 2px; }
+    .ts-frame { padding: 10px 16px 8px; }
+    .ts-lockup { margin-bottom: 8px; }
+    .ts-grid {
+        max-width: min(640px, 70vw);
+        gap: 7px 10px;
+        grid-template-columns: minmax(180px, 250px) minmax(120px, 175px) minmax(120px, 175px);
+    }
     .queue-seg { gap: 6px; }
-    .queue-seg button { height: 34px; font-size: 13px; border-radius: 7px; }
-    .menu-pair { gap: 8px; }
-    .menu-pair .btn-royal { padding: 9px 6px; font-size: 12px; min-width: 0; }
-    .menu-quiet { gap: 14px; }
+    .queue-seg button { height: 26px; font-size: 12px; border-radius: 7px; }
+    .ts-play .queue-seg { margin: 0 8px 8px; padding: 4px 6px; }
+    .ts-art-play { background-position: 50% 46%; }
+    .queue-label { font-size: 8px; letter-spacing: 1.5px; }
     .menu-link { font-size: 10px; }
     .prompt-test-toggle { font-size: 9px; gap: 6px; }
     .prompt-test-toggle input { width: 13px; height: 13px; }

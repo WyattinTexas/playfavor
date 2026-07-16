@@ -1216,6 +1216,16 @@ function togglePromptTest(on) {
     try { localStorage.setItem('favor_prompt_test', on ? '1' : '0'); } catch (e) {}
     if (on) resetCoach();   // clear seen now so prompts fire on the next play
 }
+
+// Menu cards are divs (the queue buttons nest inside Play, and buttons
+// can't nest in buttons) — give them real keyboard activation anyway.
+document.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ')
+        && e.target.classList && e.target.classList.contains('ts-card')) {
+        e.preventDefault();
+        e.target.click();
+    }
+});
 function coachPromptTestOn() {
     try { return localStorage.getItem('favor_prompt_test') === '1'; } catch (e) { return false; }
 }
