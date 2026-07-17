@@ -399,9 +399,12 @@ html, body {
 .lb-tabs { display: flex; gap: 8px; justify-content: center; margin: 14px 0 8px; }
 
 /* The ten character boards — portrait chips in a row under the text
-   tabs (Wyatt 7/17). Round crests, gold ring when that board is open. */
+   tabs (Wyatt 7/17). Round crests, gold ring when that board is open.
+   flex-shrink 0: the panel is a flex column and a squeezed chip row
+   half-decapitates every portrait (Wyatt's 7/17 phone screenshot). */
 .lb-chartabs {
     display: flex; gap: 6px; justify-content: center; flex-wrap: nowrap;
+    flex: 0 0 auto;
     margin: 0 0 10px; padding: 0 6px 2px;
     overflow-x: auto; -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
@@ -427,6 +430,17 @@ html, body {
 .lb-chartab.on {
     opacity: 1; border-color: var(--gold, #d4af37);
     box-shadow: 0 0 10px rgba(232, 195, 75, 0.5);
+}
+
+/* The Emblem flare — "who reveals first" with no words (Wyatt 7/17).
+   Plays once when the throws lock and the reveal opens. */
+.em-first { animation: emFirst 1.9s ease-in-out; }
+@keyframes emFirst {
+    0%, 100% { transform: scale(1); filter: none; }
+    18%, 55% {
+        transform: scale(1.55);
+        filter: drop-shadow(0 0 10px rgba(232, 195, 75, 0.95));
+    }
 }
 .lb-tab {
     font-family: 'Cinzel', serif;
@@ -4211,6 +4225,8 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     .update-pill .up-glyph { font-size: 12px; }
     .lb-inner, .pf-inner { max-height: 94dvh; padding: 12px 16px 10px; }
     .lb-title, .pf-title { font-size: 14px; letter-spacing: 3px; }
+    .lb-chartabs { margin-bottom: 6px; gap: 5px; }
+    .lb-chartab { width: 28px; height: 28px; }
     .lb-tabs { margin: 8px 0 6px; }
     .champ-card { padding: 26px 30px 24px; }
 

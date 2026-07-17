@@ -454,7 +454,11 @@
                 persona: p.key, personaUid: p.uid, strong: p.strong, rating: p.rating || 0,
             });
         }
-        const aiNames = ['Prince Aldric', 'Princess Sera', 'Lord Cassius', 'Lady Elara'];
+        // Fake humans wear the casual pool (Wyatt 7/17) — never renaissance.
+        const pool = (window.CASUAL_AI_NAMES || ['Frisky Teacher', 'Soggy Waffle',
+            'Turbo Grandma', 'Midnight Snacker']).slice();
+        const aiNames = typeof window.shuffleArray === 'function'
+            ? window.shuffleArray(pool) : pool;
         let ai = 0;
         while (roster.length < size) {
             roster.push({ name: aiNames[ai++ % aiNames.length], hero: null, rating: null });

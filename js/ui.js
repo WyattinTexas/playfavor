@@ -966,7 +966,7 @@ const COACH_STEPS = [
       place: 'auto',
       when: (s) => (s.visibleMissions || []).length > 0 },
     { id: 'hand',
-      text: `Slide <b>one card up</b> to throw it in, face down. Once every player has thrown, the cards are revealed in turn — you'll choose what yours does <b>then</b>.`,
+      text: `Drag <b>one card up</b> to play it, face down. Once every player has thrown, the cards are revealed in turn — you'll choose what yours does <b>then</b>.`,
       anchor: () => coachEl('#tvHandStrip', '#handZone'),
       place: 'top',
       when: (s) => coachMyTurn(s) },
@@ -1398,6 +1398,26 @@ async function confirmCharacter() {
     await buildSoloTable();
 }
 
+// Fake-human names for REGULAR games (Wyatt 7/17): two things put
+// together, fun, realistic-username energy — never renaissance. The
+// thematic court names stay Skirmish/Wanted flavor; leaderboard
+// personas keep their own realistic names. mp.js fills AI seats from
+// this same pool (window.CASUAL_AI_NAMES).
+const CASUAL_AI_NAMES = [
+    'Frisky Teacher', 'Soggy Waffle', 'Turbo Grandma', 'Midnight Snacker',
+    'Casual Dentist', 'Sleepy Barista', 'Angry Muffin', 'Disco Plumber',
+    'Lucky Raccoon', 'Spicy Librarian', 'Waffle Inspector', 'Couch Captain',
+    'Taco Whisperer', 'Grumpy Optimist', 'Bacon Scientist', 'Karate Uncle',
+    'Pickle Enthusiast', 'Sneaky Accountant', 'Caffeinated Owl', 'Suburban Ninja',
+    'Extreme Napper', 'Polite Viking', 'Confused Tourist', 'Garage Drummer',
+    'Diet Wizard', 'Weekend Pirate', 'Nervous Chef', 'Retired Cowboy',
+    'Bubbly Mechanic', 'Awkward Lifeguard', 'Crispy Noodle', 'Hungry Landlord',
+    'Mystic Janitor', 'Gentle Bulldozer', 'Panicked Golfer', 'Frozen Mailman',
+    'Dramatic Cactus', 'Budget Astronaut', 'Silent Kazoo', 'Chatty Monk',
+    'Rogue Intern', 'Cozy Lumberjack', 'Salty Cupcake', 'Blissful Goblin',
+];
+window.CASUAL_AI_NAMES = CASUAL_AI_NAMES;
+
 // The classic table — solo builds land here from Begin (skip-queue and
 // offline paths), from the queue theater's accepted solo pick, and from
 // the Skirmish / Wanted doors (modes.js sets window._gameMode).
@@ -1453,11 +1473,13 @@ async function buildSoloTable() {
 
     const shuffled = shuffleArray(available);
     // Skirmish and rival tables wear the thematic court names (Wyatt 7/16:
-    // that style lives HERE now — the leaderboard personas went realistic).
+    // that style lives HERE now). REGULAR games are fake humans — they
+    // wear the casual two-word names (Wyatt 7/17: "Frisky Teacher", never
+    // renaissance) so the table reads like people play here.
     const aiNames = (mode === 'skirmish' || mode === 'rival')
         ? shuffleArray(['The Lady Vespurine', 'Count Balthazar', 'Lord Ashcropt', 'Dame Rosalind',
                         'Prince Aldric', 'Princess Sera', 'Lord Cassius', 'Lady Elara'])
-        : ['Prince Aldric', 'Princess Sera', 'Lord Cassius', 'Lady Elara'];
+        : shuffleArray(CASUAL_AI_NAMES.slice());
     // Skirmish is PURE vs-AI (no leaderboard personas). The WANTED rival
     // seats exactly ONE — today's rival, at seat 1, under their own row.
     let personaSeats;
@@ -2295,6 +2317,12 @@ function renderPhaseBar(state) {
         if (compact) home.appendChild(bar);
         else home.insertBefore(bar, home.querySelector('.game-layout'));
     }
+    // Throw + Reveal carry no words (Wyatt 7/17) — face-down cards and
+    // the Emblem flare ARE the phase indicator; the pill returns for
+    // Missions / Melee / Scoring where a label earns its place.
+    const quiet = state.phase === 'gameplay' || state.phase === 'activate';
+    bar.style.display = quiet ? 'none' : '';
+    if (quiet) { bar.innerHTML = ''; return; }
     const phaseText = compact ? formatPhaseShort(state.phase) : formatPhase(state.phase);
     bar.innerHTML = `
         <span class="act-tag">Act ${acts[state.currentAct - 1] || state.currentAct}</span>
@@ -4114,6 +4142,7 @@ function undoThrow() {
     if (!_throwUx || _throwUx.locked) return;
     const res = game.unpickCard(0);
     if (!res.success) return;
+    if (_throwUx.lockT) { clearTimeout(_throwUx.lockT); _throwUx.lockT = null; }
     if (_throwUx.seen) _throwUx.seen.delete(0);
     mpPub('unthrow', { r: _throwUx.round });
     addLogEntry('You take your card back');
@@ -4121,12 +4150,25 @@ function undoThrow() {
 }
 
 // Solo lock: the engine state is the whole truth. (Multiplayer locks off
-// the move stream instead — see mpBeginThrowPhase.)
+// the move stream instead — see mpBeginThrowPhase; the stream position
+// IS the lock, so the grace below stays solo-only.)
 function maybeLockThrows() {
     if (mpActive()) return;
     if (!_throwUx || _throwUx.locked) return;
-    if (!game.allPlayersPicked()) return;
-    lockThrows();
+    if (!game.allPlayersPicked()) {
+        if (_throwUx.lockT) { clearTimeout(_throwUx.lockT); _throwUx.lockT = null; }
+        return;
+    }
+    // The table holds THREE seconds once the last card is in (Wyatt
+    // 7/17) — your quiet take-back window, no banner. A take-back inside
+    // the grace cancels it; the re-throw starts a fresh one.
+    if (_throwUx.lockT) return;
+    _throwUx.lockT = setTimeout(() => {
+        if (!_throwUx || _throwUx.locked || !game) return;
+        _throwUx.lockT = null;
+        if (game.phase === 'gameplay' && game.allPlayersPicked()) lockThrows();
+    }, 3000);
+    _throwUx.timers.push(_throwUx.lockT);
 }
 
 // The last card hit the table: everything locks instantly, hands pass,
@@ -4138,9 +4180,9 @@ async function lockThrows() {
     hideThrowHint();
     renderGameState();
 
-    const holder = game.emblemHolder === 0 ? null : game.players[game.emblemHolder].name;
-    showNotification(holder ? `All cards are in — ${holder} reveals first.`
-                            : 'All cards are in — you reveal first.', 'act');
+    // No banner (Wyatt 7/17) — the Emblem token itself says who reveals
+    // first: it flares on the holder's seat as the reveal opens.
+    flashEmblemFirst(game.emblemHolder);
     await new Promise(r => setTimeout(r, 900 * window.CINEMATIC_SPEED));
     if (!game) return;
 
@@ -4148,6 +4190,23 @@ async function lockThrows() {
     renderGameState();
     await activateAllCards();
     finishRound();
+}
+
+// The Emblem flares where the reveal begins — the token IS the message
+// (Wyatt 7/17: no "reveals first" words). Fires on every surface that
+// wears the badge: phone seat chip, desktop sidebar entry, your own tag.
+function flashEmblemFirst(pi) {
+    const els = [
+        document.querySelector(`#tvSeats .pmat[data-pi="${pi}"] .emblem-badge`),
+        pi === 0 ? document.querySelector('#statsPanel .emblem-tag')
+                 : document.querySelector(`#gameSidebar .opp-entry[data-pi="${pi}"] .emblem-badge`),
+    ].filter(Boolean);
+    els.forEach(el => {
+        el.classList.remove('em-first');
+        void el.offsetWidth;   // restart the animation on re-lock
+        el.classList.add('em-first');
+        setTimeout(() => el.classList.remove('em-first'), 2000);
+    });
 }
 
 // ── Your thrown card — face down above your hand, with the take-back ──

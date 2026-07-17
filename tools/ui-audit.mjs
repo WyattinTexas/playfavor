@@ -188,6 +188,12 @@ console.log('── Phone: glide blooms exactly one card (no sticky-hover double
   // ── Task-1 layering: the bloomed card must PAINT above the phase pill.
   // elementFromPoint exercises real hit-test stacking — synthetic clicks
   // bypass it, which is exactly how this class of bug slips through.
+  await page.evaluate(() => {   // pill fixture: visible as in a worded phase
+    const b = document.getElementById('phaseBar');
+    b.style.display = '';
+    if (!b.textContent.trim()) b.innerHTML =
+      '<span class="act-tag">Act I</span><span class="phase-text">Missions</span>';
+  });
   const layer = await page.evaluate(() => {
     const b = document.querySelector('.tv-hand .hand-card.bloom');
     const pill = document.getElementById('phaseBar');
@@ -350,6 +356,12 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
   });
   await sleep(400);
 
+  await page.evaluate(() => {   // pill fixture: visible as in a worded phase
+    const b = document.getElementById('phaseBar');
+    b.style.display = '';
+    if (!b.textContent.trim()) b.innerHTML =
+      '<span class="act-tag">Act I</span><span class="phase-text">Missions</span>';
+  });
   const zones = await page.evaluate(() =>
     ['tvPurse', 'tvSkills', 'tvSeats', 'tvMissionRail', 'tvBoardThumb', 'tvStage', 'tvHand', 'phaseBar'].map(id => {
       const el = document.getElementById(id);
@@ -608,6 +620,12 @@ for (const [w, h] of [[844, 390], [932, 430], [667, 375]]) {
     const fx = document.getElementById('tvFx'); if (fx) fx.innerHTML = '';
   });
   await sleep(300);
+  await page.evaluate(() => {   // pill fixture: visible as in a worded phase
+    const b = document.getElementById('phaseBar');
+    b.style.display = '';
+    if (!b.textContent.trim()) b.innerHTML =
+      '<span class="act-tag">Act I</span><span class="phase-text">Missions</span>';
+  });
   const m = await page.evaluate(() => {
     const rect = id => { const r = document.getElementById(id).getBoundingClientRect(); return { id, l: r.left, t: r.top, r: r.right, b: r.bottom }; };
     const zones = ['tvPurse', 'tvSkills', 'tvSeats', 'tvMissionRail', 'tvBoardThumb', 'phaseBar'].map(rect);
@@ -1035,6 +1053,12 @@ console.log('── Desktop: hover-bloom and selected cards paint above the phas
   });
   await sleep(200);
 
+  await page.evaluate(() => {   // pill fixture: visible as in a worded phase
+    const b = document.getElementById('phaseBar');
+    b.style.display = '';
+    if (!b.textContent.trim()) b.innerHTML =
+      '<span class="act-tag">Act I</span><span class="phase-text">Missions</span>';
+  });
   // Reparent restore: on desktop the pill lives at game-screen level.
   const home = await page.evaluate(() => {
     const pill = document.getElementById('phaseBar');
@@ -4386,6 +4410,115 @@ console.log('── Desktop: drag a card up and release → the throw (face down
 }
 
 // ═══ STAT FLOATS: a gain pops "+N" off the stat itself, both layouts ═══
+console.log('── Quiet throw: no phase words, 3s take-back grace, Emblem flare, casual names');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('quiet-throw: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('quiet-throw pageerror: ' + e.message));
+  await page.setViewport({ width: 1440, height: 900 });
+  await startGame(page);
+  await sleep(400);
+
+  // Regular solo table: fake humans wear the casual pool, never the
+  // renaissance style (Wyatt 7/17), and never a persona's name unless
+  // the seat IS a persona.
+  const names = await page.evaluate(() => ({
+    bots: game.players.slice(1).filter(p => !p._personaUid).map(p => p.name),
+    pool: window.CASUAL_AI_NAMES,
+  }));
+  ok(names.bots.length > 0 && names.bots.every(n => names.pool.includes(n)),
+    `regular-game bots wear casual names (${names.bots.join(', ')})`);
+  ok(names.bots.every(n => !/Prince|Princess|Lord|Lady|Count|Dame|Duke|Baron/.test(n)),
+    'no renaissance titles on fake humans');
+
+  // The hint label reads the new line.
+  const label = await page.evaluate(() =>
+    (document.querySelector('.th-label') || {}).textContent);
+  ok(label === 'Drag a card up to play it', `throw hint label (${label})`);
+
+  // Phase bar carries NO words during throw/reveal.
+  await page.evaluate(() => {
+    for (let i = 1; i < game.playerCount; i++) {
+      if (game.pendingActivations[i]) game.unpickCard(i);
+    }
+    window.CINEMATIC_SPEED = 1000;   // park the rivals' own timers
+    beginThrowPhase();
+  });
+  await sleep(200);
+  const quiet = await page.evaluate(() => ({
+    phase: game.phase,
+    barHidden: document.getElementById('phaseBar').style.display === 'none',
+    barEmpty: !document.getElementById('phaseBar').textContent.trim(),
+  }));
+  ok(quiet.phase === 'gameplay' && quiet.barHidden && quiet.barEmpty,
+    'the Act/Throw pill is gone while cards go in');
+
+  // All cards in → THREE seconds of grace, take-back alive the whole way.
+  await page.evaluate(() => {
+    for (let i = 1; i < game.playerCount; i++) {
+      if (game.pendingActivations[i] === null && game.players[i].hand.length) aiPickCard(i);
+    }
+    throwCard(0);
+  });
+  await sleep(1100);
+  const inGrace = await page.evaluate(() => ({
+    phase: game.phase,
+    locked: !!(_throwUx && _throwUx.locked),
+    undoBtn: !!document.querySelector('#thrownZone .tz-undo'),
+  }));
+  ok(inGrace.phase === 'gameplay' && !inGrace.locked && inGrace.undoBtn,
+    'one second after the last card, the table still holds (grace open)');
+
+  // A take-back inside the grace cancels the pending lock entirely.
+  await page.evaluate(() => undoThrow());
+  await sleep(2600);
+  const cancelled = await page.evaluate(() => ({
+    locked: !!(_throwUx && _throwUx.locked),
+    myPending: game.pendingActivations[0],
+  }));
+  ok(!cancelled.locked && cancelled.myPending === null,
+    'a take-back inside the grace cancels the lock — nothing fires at 3s');
+
+  // Re-throw → fresh grace → the lock lands and the Emblem flares in
+  // place of any "reveals first" banner.
+  await page.evaluate(() => { throwCard(0); });
+  const flared = await page.waitForFunction(
+    () => document.querySelector('.em-first') || (_throwUx && _throwUx.locked),
+    { timeout: 8000 }).then(() => page.evaluate(() => ({
+      flare: !!document.querySelector('.em-first'),
+      locked: !!(_throwUx && _throwUx.locked),
+      toastText: document.getElementById('notifications').textContent,
+    })));
+  ok(flared.locked, 'the fresh grace runs its three seconds and locks');
+  ok(flared.flare, 'the Emblem token flares to say who reveals first');
+  ok(!/reveals? first/i.test(flared.toastText), 'no "reveals first" banner anywhere');
+  await page.close();
+}
+
+console.log('── Phone leaderboard: character chips stand whole (no half-cut row)');
+{
+  const page = await browser.newPage();
+  page.on('pageerror', e => consoleErrors.push('lb-chips pageerror: ' + e.message));
+  await page.setViewport({ width: 932, height: 430, isMobile: true, hasTouch: true });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await page.evaluate(() => FLB.openLeaderboard('alltime'));
+  await sleep(1000);
+  const chips = await page.evaluate(() => {
+    const inner = document.querySelector('.lb-inner').getBoundingClientRect();
+    const rs = [...document.querySelectorAll('.lb-chartab')].map(c => c.getBoundingClientRect());
+    return {
+      count: rs.length,
+      whole: rs.every(r => r.height >= 22 && r.top >= inner.top && r.bottom <= inner.bottom),
+      round: rs.every(r => Math.abs(r.width - r.height) < 2),
+    };
+  });
+  ok(chips.count === 10 && chips.whole && chips.round,
+    `all ten chips render whole inside the panel at 932×430 (${chips.count})`);
+  await page.screenshot({ path: join(SHOTS, 'lb-chips-phone.png') });
+  await page.close();
+}
+
 console.log('── Stat floats: +N rises off the grown stat (desktop rail + phone chips)');
 {
   // Desktop: +3 Charisma (Wyatt's Settling Claims beat) + gold/favor purse.
