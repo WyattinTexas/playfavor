@@ -47,4 +47,19 @@ for g in groups:
          {"data": [{"type": "builds", "id": build["id"]}]})
     print(f"attached build {want} -> group '{name}'")
 
-print("DONE — TestFlight testers get the new build once beta review clears.")
+# Attaching alone is NOT enough: without a betaAppReviewSubmission the build
+# sits READY_FOR_BETA_SUBMISSION forever and external testers never see it
+# (build 2 taught us, 7/17). Subsequent builds of an approved app clear
+# instantly — the POST flips them straight to IN_BETA_TESTING.
+detail = get(f"/v1/builds/{build['id']}/buildBetaDetail")["data"]
+state = detail["attributes"]["externalBuildState"]
+if state == "READY_FOR_BETA_SUBMISSION":
+    post("/v1/betaAppReviewSubmissions",
+         {"data": {"type": "betaAppReviewSubmissions",
+                   "relationships": {"build": {"data": {"type": "builds", "id": build["id"]}}}}})
+    state = get(f"/v1/builds/{build['id']}/buildBetaDetail")["data"]["attributes"]["externalBuildState"]
+    print(f"beta review submitted -> externalBuildState {state}")
+else:
+    print(f"externalBuildState already {state}")
+
+print("DONE — public link: https://testflight.apple.com/join/7CpFEaAN")

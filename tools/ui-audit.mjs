@@ -5927,6 +5927,70 @@ console.log('── Wanted: deterministic pick, drifting bounty, intro plaque, c
   await page.close();
 }
 
+// ═══ UPDATE PILL — a newer live stamp wears the notice on the menu ═══
+console.log('── Update pill: fresh stays clean, stale wears it, tap reloads, menu-only');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('updpill: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('updpill pageerror: ' + e.message));
+  await page.setViewport({ width: 1280, height: 800 });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && typeof FLB.checkForUpdate === 'function',
+    { timeout: 15000 });
+
+  // Fresh client: the real index carries OUR stamp — no pill.
+  const fresh = await page.evaluate(async () => {
+    await FLB.checkForUpdate();
+    return !document.getElementById('updatePill');
+  });
+  ok(fresh, 'a fresh client asks and stays clean (live stamp == mine)');
+
+  // Stale client: the live index answers with a FUTURE stamp — pill on.
+  const shown = await page.evaluate(async () => {
+    const real = window.fetch;
+    window.fetch = async () => ({ ok: true, text: async () => 'src="js/ui.js?v=99999999999999"' });
+    await FLB.checkForUpdate();
+    await FLB.checkForUpdate();   // second sighting must not double the pill
+    window.fetch = real;
+    const pills = document.querySelectorAll('#updatePill, .update-pill');
+    const p = document.getElementById('updatePill');
+    const r = p ? p.getBoundingClientRect() : null;
+    const chip = document.querySelector('.profile-chip').getBoundingClientRect();
+    return {
+      count: pills.length,
+      text: p ? p.textContent : '',
+      visible: !!r && r.width > 40,
+      topRight: !!r && r.top >= chip.bottom - 2 && (innerWidth - r.right) < 160,
+    };
+  });
+  ok(shown.count === 1 && /Update Ready/.test(shown.text),
+    'a stale client wears ONE Update Ready pill');
+  ok(shown.visible && shown.topRight, 'the pill sits top-right under the profile chip');
+  await page.screenshot({ path: join(SHOTS, 'update-pill.png') });
+
+  // Tap = the reload door (stubbed so the page survives the audit).
+  const tapped = await page.evaluate(() => {
+    let calls = 0;
+    const real = FLB.applyUpdate;
+    FLB.applyUpdate = () => calls++;
+    document.getElementById('updatePill').click();
+    FLB.applyUpdate = real;
+    return calls;
+  });
+  ok(tapped === 1, 'tapping the pill asks for the reload');
+
+  // The pill is a TITLE-SCREEN child — when the menu leaves, so does it.
+  const gated = await page.evaluate(() => {
+    const ts = document.getElementById('title-screen');
+    ts.style.display = 'none';
+    const w = document.getElementById('updatePill').getBoundingClientRect().width;
+    ts.style.display = '';
+    return w === 0;
+  });
+  ok(gated, 'the pill lives in the title screen — it can never cover a live table');
+  await page.close();
+}
+
 // ═══ EMOTES — Nation's six, streamed to every screen at the table ═══
 console.log('── Emotes: publish on tap, bubble on the right seat, cooldown holds');
 {

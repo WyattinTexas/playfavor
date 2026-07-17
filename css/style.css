@@ -181,6 +181,34 @@ html, body {
     white-space: nowrap;
 }
 
+/* ── Update pill — Nation's notice worn under the profile chip. A slow
+   SHINE, never a pulse (Wyatt's call on Nation's). Lives inside the
+   title screen so it can never cover a live table. ── */
+.update-pill {
+    position: absolute;
+    top: calc(max(14px, env(safe-area-inset-top)) + 52px);
+    right: max(16px, env(safe-area-inset-right));
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 7px 14px;
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: 12px;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    color: #1c1006;
+    background: linear-gradient(115deg, #d9b44a 0%, #f7e29a 45%, #d9b44a 60%);
+    background-size: 220% 100%;
+    border: 1px solid #ffe9a8;
+    border-radius: 999px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), 0 0 18px rgba(232, 195, 75, 0.35);
+    cursor: pointer;
+    z-index: 60;
+    animation: updShine 3.4s linear infinite;
+}
+.update-pill .up-glyph { font-size: 14px; line-height: 1; }
+.update-pill:hover, .update-pill:focus-visible {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55), 0 0 26px rgba(232, 195, 75, 0.6);
+    outline: none;
+}
+@keyframes updShine { 0% { background-position: 120% 0; } 100% { background-position: -120% 0; } }
+
 .ts-play { grid-area: play; min-height: clamp(150px, 36dvh, 300px); }
 /* Play's vignette: the realm's open gates — castle, falls and the road in
    (Wyatt 7/16); tall cards look through the arch, short-wide cards at the
@@ -4144,6 +4172,11 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     .profile-chip { padding: 5px 12px; gap: 8px; }
     .pc-name { font-size: 11px; }
     .pc-rating, .pc-crowns { font-size: 12px; }
+    .update-pill {
+        top: calc(max(10px, env(safe-area-inset-top)) + 42px);
+        padding: 5px 11px; font-size: 10px; gap: 5px;
+    }
+    .update-pill .up-glyph { font-size: 12px; }
     .lb-inner, .pf-inner { max-height: 94dvh; padding: 12px 16px 10px; }
     .lb-title, .pf-title { font-size: 14px; letter-spacing: 3px; }
     .lb-tabs { margin: 8px 0 6px; }

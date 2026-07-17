@@ -1110,6 +1110,55 @@
         boot();
     }
 
+    // ── Update notice — Nation's pill, worn FAVOR's way ──────────────
+    // The site ships as stamped statics, so a loaded client only learns a
+    // new build exists by asking. Poll the live index for its ui.js stamp;
+    // newer than ours → wear the gold pill under the profile chip. The
+    // pill lives INSIDE the title screen, so it can never interrupt a
+    // game — and for the iOS shell (a live-site wrapper) a reload IS the
+    // update, no TestFlight roundtrip needed for content.
+    const UPD_EVERY = 4 * 60 * 1000;
+    let _updTimer = null;
+
+    function myStamp() {
+        const ui = document.querySelector('script[src*="ui.js"]');
+        return ui ? Number(ui.src.split('?v=')[1] || 0) : 0;
+    }
+
+    async function checkForUpdate() {
+        try {
+            const res = await fetch('index.html', { cache: 'no-store' });
+            if (!res.ok) return;
+            const m = (await res.text()).match(/js\/ui\.js\?v=(\d+)/);
+            if (m && Number(m[1]) > myStamp()) showUpdatePill();
+        } catch (e) { /* offline — ask again next tick */ }
+    }
+
+    function showUpdatePill() {
+        if (document.getElementById('updatePill')) return;
+        const ts = document.getElementById('title-screen');
+        if (!ts) return;
+        const b = document.createElement('button');
+        b.id = 'updatePill';
+        b.className = 'update-pill';
+        b.type = 'button';
+        b.title = 'A new build of FAVOR is live — tap to load it';
+        b.innerHTML = '<span class="up-glyph">↻</span> Update Ready';
+        b.onclick = () => window.FLB.applyUpdate();
+        ts.appendChild(b);
+    }
+
+    // Its own door so the audit can stub the reload.
+    function applyUpdate() { location.reload(); }
+
+    (function initUpdateWatch() {
+        _updTimer = setInterval(checkForUpdate, UPD_EVERY);
+        setTimeout(checkForUpdate, 25 * 1000);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') checkForUpdate();
+        });
+    })();
+
     // The player's own row, read + whole-row merge. Exposed so achievements
     // (js/achievements.js) can grant and pay Stars in ONE transaction on the
     // SAME row postGameResult writes — a second node would let a tab close
@@ -1136,6 +1185,7 @@
         askBuyStars, buyStars, starCheckoutUrl, watchForStars,
         starPacks: () => STAR_PACKS,
         setAvatar, myAvatar, avatarDisc,
+        checkForUpdate, applyUpdate,
         get mode() { return mode; }, uid,
     };
 })();
