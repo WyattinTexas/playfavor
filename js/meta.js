@@ -443,7 +443,14 @@
                     const cd = eloTableDelta(cElo, place, opps, kFor(cc.g || 0, 0));
                     out.chars = {
                         ...(cur.chars || {}),
-                        [myChar]: { r: clampElo(cElo + cd), g: (cc.g || 0) + 1 },
+                        // `best` = your highest single-game score with this hero
+                        // (Wyatt 7/17) — players love hunting their own high, and
+                        // seeing a rival's big number on a hero's board.
+                        [myChar]: {
+                            r: clampElo(cElo + cd),
+                            g: (cc.g || 0) + 1,
+                            best: Math.max(cc.best || 0, Math.round(mine.finalScore || 0)),
+                        },
                     };
                 }
                 return out;
@@ -715,6 +722,39 @@
         daily: 'No champions yet — the day awaits its first.',
     };
 
+    // Test residue from the ui-audit suite posts under these names; they are
+    // not real players and must never sit on the board (Wyatt 7/17).
+    const TEST_NAMES = /^(audit herald|sir auditsworth|audit hero|audit .*)$/i;
+
+    // One row per person: drop test/nameless rows and collapse duplicate names
+    // (the same name from two uids = audit residue, not two nobles). YOUR own
+    // uid always wins its name-group so your row never vanishes; otherwise the
+    // higher score is kept. Order is preserved (rows arrive pre-sorted).
+    function cleanBoardRows(rows) {
+        const out = [];
+        const at = new Map();   // lowercased name → index in out
+        for (const r of rows) {
+            const nm = (r.name || '').trim();
+            // Filter test residue — but never YOUR OWN row (a real player is
+            // never named 'Audit Herald'; the ui-audit suite runs as one and
+            // must still see itself on the board).
+            if (!nm || (r.uid !== uid() && TEST_NAMES.test(nm))) continue;
+            const key = nm.toLowerCase();
+            if (at.has(key)) {
+                const i = at.get(key);
+                const mine = r.uid === uid();
+                const keptMine = out[i].uid === uid();
+                if ((mine && !keptMine) || (!keptMine && (r.score || 0) > (out[i].score || 0))) {
+                    out[i] = r;
+                }
+                continue;
+            }
+            at.set(key, out.length);
+            out.push(r);
+        }
+        return out;
+    }
+
     function lbRowHtml(r, rank, tab, opts) {
         const me = r.uid === uid();
         const medal = rank <= 3
@@ -724,11 +764,17 @@
         const score = tab === 'daily'
             ? `<img class="lb-ico" src="assets/icons/favor.png" alt="">${r.score}`
             : `✦ ${ratingSpan(r.score)}`;
+        // On a hero's board, each row wears its best single-game score with
+        // that hero beside the rating (Wyatt 7/17) — the number players hunt.
+        const best = (tab && tab.indexOf('char:') === 0 && (r.best || 0) > 0)
+            ? `<span class="lb-best" title="Best game with this hero"><img class="lb-ico" src="assets/icons/favor.png" alt="">${r.best}</span>`
+            : '';
         return `
             <div class="lb-row${me ? ' me' : ''}${rank <= 3 ? ` podium p${rank}` : ''}${opts && opts.appendix ? ' appendix' : ''}" style="--li:${opts ? opts.idx : 0}">
                 ${medal}
                 ${avatarDisc(r.avatar, 'lb-av')}
                 <span class="lb-name">${r.name || 'Unknown Noble'}${crowns}${me ? '<span class="lb-you">You</span>' : ''}</span>
+                ${best}
                 <b class="lb-score">${score}</b>
             </div>`;
     }
@@ -791,7 +837,8 @@
                 rows = Object.entries(players)
                     .filter(([, p]) => p && p.name && p.chars && p.chars[charId]
                         && (p.chars[charId].g || 0) > 0)
-                    .map(([u, p]) => ({ ...deck(u, p), score: clampElo(p.chars[charId].r) }))
+                    .map(([u, p]) => ({ ...deck(u, p), score: clampElo(p.chars[charId].r),
+                        best: p.chars[charId].best || 0 }))
                     .sort((a, b) => b.score - a.score);
             } else {
                 rows = Object.entries(players)
@@ -799,6 +846,7 @@
                     .map(([u, p]) => ({ ...deck(u, p), score: eloOf(p) }))
                     .sort((a, b) => b.score - a.score);
             }
+            rows = cleanBoardRows(rows);
             if (!rows.length) {
                 body.innerHTML = `<div class="lb-loading">${charDef
                     ? `No one has ridden the ${charDef.name} into a rated game yet.`

@@ -577,6 +577,16 @@ html, body {
 .lb-sub { color: rgba(240,230,211,0.42); font-size: 10.5px; letter-spacing: 0.5px; flex: none; }
 .lb-score { color: var(--gold-light); font-size: 15px; display: inline-flex; align-items: center; gap: 5px; flex: none; }
 .lb-ico { width: 17px; height: 17px; object-fit: contain; }
+/* Best single-game score with a hero, on that hero's board — a quieter
+   parchment chip so the rating still leads. */
+.lb-best {
+    display: inline-flex; align-items: center; gap: 4px; flex: none;
+    margin-right: 10px; padding: 2px 8px; border-radius: 999px;
+    background: rgba(201,168,76,0.12); border: 1px solid rgba(201,168,76,0.22);
+    color: var(--parchment); font-size: 12.5px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.lb-best .lb-ico { width: 14px; height: 14px; }
 .lb-gap { text-align: center; color: var(--gold-dark); letter-spacing: 6px; padding: 2px 0; }
 .lb-row.appendix { border-top: 1px solid rgba(201,168,76,0.25); border-bottom: none; }
 
@@ -6323,6 +6333,29 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
 /* Multi-skill borrows can outgrow the screen: the section list scrolls
    on its own while the title and Confirm/Cancel stay pinned in reach. */
 .pp-inner.bw { flex-wrap: nowrap; }
+
+/* Mission-due chooser: mission card on the SIDE, boards + fail door beside it
+   so nothing hides below the fold (Wyatt 7/17). Stacks on narrow portrait. */
+.pp-inner.bw.mb-due { max-width: min(1040px, 96vw); }
+.mb-due .mb-layout {
+    display: flex; align-items: center; justify-content: center;
+    gap: 26px; min-height: 0; width: 100%;
+}
+.mb-due .mb-mission { flex: 0 0 auto; }
+.mb-due .mb-mission img {
+    display: block; width: auto; height: min(52dvh, 380px);
+    border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+}
+.mb-due .mb-choose {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 12px; min-height: 0; min-width: 0;
+}
+.mb-due .mb-choose .bw-scroll { padding: 4px 10px; }
+.mb-due .mb-choose .pp-sub { text-align: center; max-width: 460px; }
+@media (max-width: 720px), (max-aspect-ratio: 1/1) {
+    .mb-due .mb-layout { flex-direction: column; gap: 12px; }
+    .mb-due .mb-mission img { height: min(30dvh, 240px); }
+}
 .pp-inner.bw .bw-scroll {
     display: flex;
     flex-direction: column;

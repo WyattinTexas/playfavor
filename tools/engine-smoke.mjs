@@ -96,6 +96,32 @@ console.log('── Her Lost Father: grants 1 Prospecting, 3 Gold, 3 Scorn + map
   ok(g2.checkRequirements(0, flc).canPlay === false, 'without map: still needs Mind\'s Eye ×2');
 }
 
+console.log('── Flex ("OR") skills are borrowable from a neighbour (either skill)');
+{
+  // A neighbour's Hermit's Lab (Alchemy OR Survival) can lend EITHER —
+  // Philosopher's Stone play was blocked because it wasn't offered (Wyatt 7/17).
+  const g = newGame();
+  g.players[1].gold = 5;
+  playCard(g, 1, "Hermit's Lab");        // right neighbour of seat 0
+  const b0 = g.getBorrowableSkills(0);
+  ok((b0.alchemy || []).includes(1), 'neighbour Hermit\'s Lab lends Alchemy');
+  ok((b0.survival || []).includes(1), 'neighbour Hermit\'s Lab lends Survival');
+
+  // A Mining Guild (Charisma OR Prospecting) neighbour lets a due mission borrow.
+  const g2 = newGame();
+  g2.players[2].gold = 5;
+  playCard(g2, 2, 'Mining Guild');       // left neighbour of seat 0
+  const b2 = g2.getBorrowableSkills(0);
+  ok((b2.prospecting || []).includes(2), 'neighbour Mining Guild lends Prospecting');
+  const m = { ...missionByName('Trust of the Elders') };   // Req: 5 Favor & 2 Prospecting
+  g2.players[0].missions = [m];
+  g2.players[0].favor = 5;
+  g2.players[0].skills.prospecting = 1;                    // one short
+  const plan = g2.missionBorrowPlan(0, m);
+  ok(plan && plan.borrowFrom && plan.borrowFrom.some(x => x.skill === 'prospecting'),
+    'Trust of the Elders can borrow Prospecting off the flex neighbour (no false auto-fail)');
+}
+
 console.log('── Discard-to-Slide is FREE — the discard is the toll, no gold charged');
 {
   const g = newGame();

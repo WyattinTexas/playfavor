@@ -1445,7 +1445,14 @@ function soloSaveEligible() {
     // Rig seam: pinned tables (_pinEmblemSeed) are audit fixtures — they
     // never checkpoint, so a suite flow can never leave a save behind
     // that derails the next flow's Play tap.
-    return !!game && !mpActive() && !window._gameMode && !window._noSoloSave
+    // Skirmish and the Daily Rival are fully LOCAL (AI only, no wire) — they
+    // checkpoint and resume like a regular table, so minimizing and coming
+    // back always returns you to the game, however long it's been (Wyatt
+    // 7/17). Private games and anything with real people ride mpActive() and
+    // are excluded — they can't be revived from a lone client.
+    const localMode = !window._gameMode
+        || window._gameMode === 'skirmish' || window._gameMode === 'rival';
+    return !!game && !mpActive() && localMode && !window._noSoloSave
         && window._pinEmblemSeed === undefined
         && game.phase === 'gameplay'
         && game.pendingActivations.every(p => p === null);
@@ -1457,6 +1464,9 @@ function saveSoloCheckpoint() {
         const g = game;
         localStorage.setItem(SOLO_SAVE_KEY, JSON.stringify({
             v: SOLO_SAVE_V, at: Date.now(), hero: selectedCharacter,
+            mode: window._gameMode || null,
+            rivalDef: window._rivalDef || null,
+            skirmishSize: window._skirmishSize || null,
             g: {
                 playerCount: g.playerCount, currentAct: g.currentAct,
                 emblemHolder: g.emblemHolder, activePlayerIndex: g.activePlayerIndex,
@@ -1505,7 +1515,11 @@ function resumeSoloSave() {
         game = g;
         selectedCharacter = s.hero
             || (g.players[0].character && g.players[0].character.id) || null;
-        window._gameMode = null;
+        // Restore the local mode (Skirmish / Daily Rival) so scoring still
+        // knows it's a bounty table; regular saves carry mode null.
+        window._gameMode = s.mode || null;
+        window._rivalDef = s.rivalDef || null;
+        if (s.skirmishSize) window._skirmishSize = s.skirmishSize;
         window._uxThrownOnce = true;   // a returning table needs no gesture hint
         const ts = document.getElementById('title-screen');
         ts.classList.add('hidden');
@@ -4306,7 +4320,7 @@ function _thrownLandClass(i) {
 
 function beginThrowPhase() {
     if (!game || game.phase !== 'gameplay') return;
-    saveSoloCheckpoint();   // a regular table survives leaving (Wyatt 7/17)
+    saveSoloCheckpoint();   // regular + Skirmish + Rival tables survive minimizing (Wyatt 7/17)
     _throwClearTimers();
     _throwUx = { round: throwRoundId(), locked: false, timers: [], mpThrown: null, seen: new Set() };
 
@@ -5708,22 +5722,27 @@ function showMissionBorrowChooser(mission) {
 
             const ready = sections.every(([sk]) => choice[sk] !== undefined);
 
+            // Two columns (Wyatt 7/17): the mission card rides the SIDE while the
+            // neighbour boards + the fail door sit up top beside it — the whole
+            // decision fits one screen, no scrolling to reach "Let it Fail".
             ov.innerHTML = `
-                <div class="pp-inner bw">
+                <div class="pp-inner bw mb-due">
                     <div class="pp-title">Mission Due: ${mission.name}</div>
-                    <div class="pp-sub">You're short <b>${shortTxt}</b> —
-                        ${single ? 'tap the neighbor who lends it' : 'pick a lender for each skill'}.
-                        The fee is paid <b>to them</b>${anyLender ? ' · your Merchant slot lets anyone lend' : ''}.
-                        Letting it fail is a real play.</div>
-                    <div class="bw-scroll">
-                        <div class="pp-cards mb-card"><div class="pp-card" style="cursor:default">
+                    <div class="mb-layout">
+                        <div class="mb-mission">
                             <img src="assets/cards/missions/${mission.filename}" alt="${mission.name}">
-                        </div></div>
-                        ${sectionHtml}
-                    </div>
-                    <div class="pp-actions">
-                        ${single ? '' : `<button class="btn-royal primary" id="mbConfirm" ${ready ? '' : 'disabled style="opacity:.35"'}><span>Borrow &amp; Complete (−${plan.cost}g)</span></button>`}
-                        <button class="btn-royal" id="mbFail"><span>Let it Fail</span></button>
+                        </div>
+                        <div class="mb-choose">
+                            <div class="pp-sub">You're short <b>${shortTxt}</b> —
+                                ${single ? 'tap the neighbor who lends it' : 'pick a lender for each skill'}.
+                                The fee is paid <b>to them</b>${anyLender ? ' · your Merchant slot lets anyone lend' : ''}.
+                                Letting it fail is a real play.</div>
+                            <div class="bw-scroll">${sectionHtml}</div>
+                            <div class="pp-actions">
+                                ${single ? '' : `<button class="btn-royal primary" id="mbConfirm" ${ready ? '' : 'disabled style="opacity:.35"'}><span>Borrow &amp; Complete (−${plan.cost}g)</span></button>`}
+                                <button class="btn-royal" id="mbFail"><span>Let it Fail</span></button>
+                            </div>
+                        </div>
                     </div>
                 </div>`;
 

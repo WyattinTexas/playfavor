@@ -17,6 +17,14 @@ const PHASES = {
 
 const SKILLS = ['survival', 'charisma', 'alchemy', 'prospecting', 'knowledge', 'power'];
 
+// Flex ("OR") cards grant one of two skills, chosen per check. A neighbour
+// holding one can lend EITHER skill (the borrower pays for the one they need).
+const FLEX_SKILL_PAIRS = {
+    charisma_or_prospecting: ['charisma', 'prospecting'],
+    alchemy_or_prospecting: ['alchemy', 'prospecting'],
+    alchemy_or_survival: ['alchemy', 'survival'],
+};
+
 const MELEE_REWARDS = {
     1: { 1: 5,  2: 3,  3: 1  },
     2: { 1: 15, 2: 5,  3: 3  },
@@ -509,6 +517,12 @@ class FavorGame {
         const player = this.players[playerIndex];
         for (const card of player.playedCards) {
             if (card.skills && card.skills.includes(skill)) return true;
+            // A flex card (Hermit's Lab / Mining Guild / Forbidden Lab) can
+            // lend EITHER of its two skills — the borrower buys the one they
+            // need, so it counts as a source for that skill (Wyatt 7/17:
+            // couldn't borrow Prospecting/Alchemy off a neighbor's OR card).
+            const pair = FLEX_SKILL_PAIRS[card.special];
+            if (pair && pair.includes(skill)) return true;
         }
         // Check character board current slot skills
         if (player.character && player.character.slots) {
