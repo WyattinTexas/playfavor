@@ -33,6 +33,49 @@
 
     const ctx = canvas.getContext('2d');
 
+    // ── The cottage is FOREGROUND: birds (and anything else) pass BEHIND
+    // it. We redraw the cottage's own pixels over the animation each frame,
+    // clipped to its silhouette — identical pixels mean the patch is
+    // invisible, and slack over sky costs nothing. Geometry mirrors the
+    // .ts-bg CSS exactly (cover, background-position 68% 34%) — if that
+    // CSS changes, change BG_POS here too.
+    const BG_DIMS = { w: 2400, h: 1535 };
+    const BG_POS = { x: 0.68, y: 0.34 };
+    const COTTAGE_POLY = [
+        [294, 414], [516, 252], [570, 180],            // left eave up the slope
+        [575, 127], [643, 125], [648, 158],            // chimney
+        [714, 106],                                    // ridge peak
+        [828, 314], [914, 360], [1034, 458],           // right gable down
+        [1130, 533], [1154, 624],                      // porch corner
+        [1154, 840], [216, 840], [216, 504],           // sloppy below the eaves
+    ];
+    const bgImg = new Image();
+    bgImg.src = 'assets/ui/menu-meadow.jpg';
+
+    function coverTransform(w, h) {
+        const s = Math.max(w / BG_DIMS.w, h / BG_DIMS.h);
+        return {
+            s,
+            ox: (w - BG_DIMS.w * s) * BG_POS.x,
+            oy: (h - BG_DIMS.h * s) * BG_POS.y,
+        };
+    }
+
+    function drawCottageOccluder(w, h) {
+        if (!bgImg.complete || !bgImg.naturalWidth) return;
+        const { s, ox, oy } = coverTransform(w, h);
+        ctx.save();
+        ctx.beginPath();
+        COTTAGE_POLY.forEach(([px, py], i) => {
+            const x = ox + px * s, y = oy + py * s;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(bgImg, ox, oy, BG_DIMS.w * s, BG_DIMS.h * s);
+        ctx.restore();
+    }
+
     function titleVisible() {
         const t = document.getElementById('title-screen');
         return t && !t.classList.contains('hidden') && t.style.display !== 'none';
@@ -235,6 +278,7 @@
             if (AMBIENT.pollen) stepPollen(now, w, h);
             if (AMBIENT.butterflies) stepButterflies(now, w, h, dt);
             if (AMBIENT.birds) stepBirds(now, w, h);
+            drawCottageOccluder(w, h);   // foreground wins — depth is real
         }
         requestAnimationFrame(frame);
     }
