@@ -1864,5 +1864,58 @@ console.log("── Mission borrow: the player picks the lender, and that lender
   ok(!locked.success && /locked/i.test(locked.error || ''), 'after passHands the engine refuses the take-back');
 }
 
+console.log('\n— Blind Faith pairing: ONGOING power — missions, reqs, panel (Wyatt 7/17) —');
+{
+  // His table: Blind Faith + Heaven's Blade down, base power 6 → the
+  // pairing makes it 12 EVERYWHERE, and "Wanted: Crazy Lou" (15 Power)
+  // leaves a 3-unit deficit that exactly 15 gold can borrow.
+  const g = newGame();
+  const p = g.players[0];
+  g.currentAct = 3;
+  p.playedCards = [
+    { ...cardByName('Blind Faith'), id: 'bf1' },
+    { ...cardByName("Heaven's Blade"), id: 'hb1' },
+  ];
+  p.skills.power = 6;   // printed skills + slots, pairing NOT baked in
+  ok(g.pairingPower(0) === 6, 'one partner beside Blind Faith pairs +6');
+  ok(g.effectiveSkill(0, 'power') === 12, `effective power reads 12 (${g.effectiveSkill(0, 'power')})`);
+  ok(g.calculatePower(0) === 12, `melee power matches the panel — no double count (${g.calculatePower(0)})`);
+  ok(g.getState(0).players[0].skills.power === 12, 'getState shows the effective 12 to every display');
+  ok(!g.unmetSkillReqs(0, { power: 12 }).power, 'a 12-Power requirement is satisfied');
+  ok(g.unmetSkillReqs(0, { power: 15 }).power === 3, 'the 15-Power mission leaves a 3 deficit, not 9');
+
+  // The borrow gate: 3 short at 2 gold a unit = 6 gold. Under the old
+  // phantom 9-deficit the plan needed 18 gold — more than his 15, so the
+  // chooser never appeared. Now it must.
+  p.gold = 15;
+  g.players[1].playedCards = [{ ...cardByName('Blind Faith'), id: 'lend1' }];
+  const lou = missionByName('Wanted: Crazy Lou');
+  const plan = g.missionBorrowPlan(0, lou);
+  ok(!!plan && plan.cost === 6 && plan.borrowFrom.length === 3,
+    `Crazy Lou's borrow plan exists: 3 units, 6 gold (${plan && plan.cost})`);
+  p.gold = 5;
+  ok(!g.missionBorrowPlan(0, lou), '5 gold cannot fund the 3-unit borrow');
+  p.gold = 15;
+
+  // Both partners: +12. No Blind Faith: nothing.
+  p.playedCards.push({ ...cardByName('Archeus'), id: 'ar1' });
+  ok(g.effectiveSkill(0, 'power') === 18, 'both partners pair +12 total');
+  ok(g.calculatePower(0) === 18, 'melee agrees at +12 too');
+  p.playedCards = [{ ...cardByName("Heaven's Blade"), id: 'hb2' }];
+  ok(g.pairingPower(0) === 0, 'no Blind Faith on the table — no pairing power');
+
+  // Neighbor-reading cards see effective power: Melee Spectacular pays
+  // 2 gold per neighbor Power, pairing included.
+  const g2 = newGame();
+  g2.players[1].playedCards = [
+    { ...cardByName('Blind Faith'), id: 'n1' },
+    { ...cardByName("Heaven's Blade"), id: 'n2' },
+  ];
+  g2.players[1].skills.power = 3;   // 3 base + 6 pairing = 9 effective
+  g2.players[2].skills.power = 1;
+  ok(g2.effectiveSkill(1, 'power') === 9 && g2.effectiveSkill(2, 'power') === 1,
+    'neighbor effective powers read 9 and 1');
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);

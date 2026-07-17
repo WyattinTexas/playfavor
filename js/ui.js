@@ -3865,6 +3865,7 @@ function requestLend(oppIndex, cardName) {
 // completed set. The clicked card opens centered; swipe / arrows / click
 // browse the rest, every card readable-big.
 let _mbList = [], _mbKind = null, _mbIndex = 0, _mbScrollT = null;
+let _mbSnapping = false, _mbSnapT = null;
 
 function openMissionBrowser(kind, focusName) {
     if (!game) return;
@@ -3892,11 +3893,16 @@ function openMissionBrowser(kind, focusName) {
         </div>`).join('');
 
     // Swipe/scroll settles on the nearest card: while moving, focus tracks
-    // the center; on idle, snap it exactly (rAF + short debounce).
+    // the center; on idle, snap to the card ACTUALLY nearest (recomputed
+    // fresh — the tracked index can be stale when iOS cancels a smooth
+    // scroll mid-flight, which is how a tapped mission snapped back to
+    // the first one, Wyatt 7/17). While a programmatic snap is in
+    // flight, the scroll it causes must not re-target anything.
     track.onscroll = () => {
+        if (_mbSnapping) return;
         requestAnimationFrame(_mbTrackFocus);
         clearTimeout(_mbScrollT);
-        _mbScrollT = setTimeout(() => mbFocus(_mbIndex, true), 130);
+        _mbScrollT = setTimeout(() => { _mbTrackFocus(); mbFocus(_mbIndex, true); }, 130);
     };
 
     const nav = _mbList.length > 1 ? '' : ' mb-solo';
@@ -3926,7 +3932,23 @@ function mbFocus(i, smooth) {
     clearTimeout(_mbScrollT);   // this IS the snap — don't re-snap after it
     const left = Math.round(el.offsetLeft - (track.clientWidth - el.offsetWidth) / 2);
     if (Math.abs(track.scrollLeft - left) > 1) {
+        // Own the scroll until it lands (or a beat passes — iOS cancels
+        // smooth scrolls on touch): tracking stays paused so the tapped
+        // card keeps the focus it was given.
+        _mbSnapping = true;
+        clearTimeout(_mbSnapT);
         track.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
+        const t0 = performance.now();
+        const settle = () => {
+            if (!_mbSnapping) return;
+            if (Math.abs(track.scrollLeft - left) <= 1 || performance.now() - t0 > 800) {
+                _mbSnapping = false;
+                return;
+            }
+            requestAnimationFrame(settle);
+        };
+        requestAnimationFrame(settle);
+        _mbSnapT = setTimeout(() => { _mbSnapping = false; }, 900);
     }
     _mbApplyFocus();
 }
@@ -5706,7 +5728,7 @@ function showSlotSkillPicker() {
 
         const render = () => {
             const tiles = opts.map(s => {
-                const have = player.skills[s] || 0;
+                const have = game.effectiveSkill(0, s);
                 return `
                 <div class="pp-skill${chosen === s ? ' chosen' : ''}" data-s="${s}">
                     <img src="assets/icons/${s}.png" alt="${cap(s)}">

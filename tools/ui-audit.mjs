@@ -1159,6 +1159,28 @@ console.log('── Mission browser: full set, focus browsing, Life Essence stay
   await sleep(500);
   const back = await page.evaluate(() => document.getElementById('missionLBLabel').textContent);
   ok(back === realm.visible[0], 'clicking a card focuses it');
+
+  // Tap-stability (Wyatt 7/17): a tapped mission KEEPS its focus while
+  // the smooth scroll is still in flight — the mid-flight tracker used
+  // to demote it back to the first card when iOS cancelled the glide.
+  const stable = await page.evaluate(async () => {
+    const last = document.querySelectorAll('#mbTrack .mb-card').length - 1;
+    document.querySelector(`#mbTrack .mb-card[data-i="${last}"]`).click();
+    const mid = await new Promise(r => setTimeout(() => r({
+      i: _mbIndex, snapping: _mbSnapping,
+      focusOn: (document.querySelector('#mbTrack .mb-card.focus') || { dataset: {} }).dataset.i,
+    }), 120));
+    await new Promise(r => setTimeout(r, 900));
+    return {
+      last: String(last), mid,
+      settled: _mbIndex === last && !_mbSnapping,
+      focusEnd: (document.querySelector('#mbTrack .mb-card.focus') || { dataset: {} }).dataset.i,
+    };
+  });
+  ok(stable.mid.i === +stable.last && stable.mid.focusOn === stable.last && stable.mid.snapping,
+    `mid-glide the tapped card holds focus (i=${stable.mid.i}, guard on)`);
+  ok(stable.settled && stable.focusEnd === stable.last,
+    'the glide settles on the tapped card and the guard releases');
   await page.evaluate(() => closeMissionLB());
   await sleep(200);
 
@@ -4492,6 +4514,38 @@ console.log('── Quiet throw: no phase words, 3s take-back grace, Emblem flar
   ok(flared.locked, 'the fresh grace runs its three seconds and locks');
   ok(flared.flare, 'the Emblem token flares to say who reveals first');
   ok(!/reveals? first/i.test(flared.toastText), 'no "reveals first" banner anywhere');
+  await page.close();
+}
+
+console.log('── Blind Faith pairing: the panel, the probe and the melee agree');
+{
+  const page = await browser.newPage();
+  page.on('pageerror', e => consoleErrors.push('pairing pageerror: ' + e.message));
+  await page.setViewport({ width: 1440, height: 900 });
+  await startGame(page);
+  await sleep(300);
+  const pair = await page.evaluate(() => {
+    const p = game.players[0];
+    const by = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n), id: 'rig_' + n });
+    p.playedCards = [by('Blind Faith'), by("Heaven's Blade")];
+    p.skills.power = 6;
+    p.gold = 15;
+    renderGameState();
+    const shown = document.querySelector('#statsPanel .skill-row[data-stat="power"] .skill-value');
+    const lou = FAVOR_DATA.missions.find(m => m.name === 'Wanted: Crazy Lou');
+    game.players[1].playedCards = [by('Blind Faith')];
+    const plan = game.missionBorrowPlan(0, { ...lou });
+    return {
+      panel: shown ? shown.textContent : null,
+      melee: game.calculatePower(0),
+      deficit: game.unmetSkillReqs(0, { power: 15 }).power || 0,
+      plan: !!plan, planCost: plan && plan.cost,
+    };
+  });
+  ok(pair.panel === '12', `the left panel shows the paired 12 Power (${pair.panel})`);
+  ok(pair.melee === 12, `the melee tallies the same 12 (${pair.melee})`);
+  ok(pair.deficit === 3 && pair.plan && pair.planCost === 6,
+    `Wanted: Crazy Lou sees a 3 deficit and offers the 6-gold borrow (${pair.planCost})`);
   await page.close();
 }
 

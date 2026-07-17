@@ -947,7 +947,7 @@ class FavorGame {
         const player = this.players[playerIndex];
         const deficit = {};
         Object.entries(reqCounts).forEach(([skill, n]) => {
-            const short = n - (player.skills[skill] || 0);
+            const short = n - this.effectiveSkill(playerIndex, skill);
             if (short > 0) deficit[skill] = short;
         });
         const flex = player.flexSkills || [];
@@ -1426,9 +1426,11 @@ class FavorGame {
                 // neighboring players currently have.
                 {
                     const n = this.playerCount;
-                    const left = this.players[(playerIndex + n - 1) % n];
-                    const right = this.players[(playerIndex + 1) % n];
-                    const pow = (left.skills.power || 0) + (right.skills.power || 0);
+                    // "Power your neighbors currently have" = effective
+                    // power (Blind Faith pairings included) — same read
+                    // the missions and the panel use.
+                    const pow = this.effectiveSkill((playerIndex + n - 1) % n, 'power')
+                        + this.effectiveSkill((playerIndex + 1) % n, 'power');
                     const gained = 2 * pow;
                     player.gold += gained;
                     this.addLog(`${player.name}'s Melee Spectacular: neighbors' ${pow} Power → +${gained} Gold`);
@@ -2385,23 +2387,42 @@ class FavorGame {
         return results;
     }
 
+    /**
+     * Blind Faith pairings: Heaven's Blade AND Archeus each print
+     * "+6 Additional Power if you own Blind Faith" — ONGOING power while
+     * both cards are down (both partners owned = +12). It rides missions,
+     * card requirements and the skill panel, not just the Melee (Wyatt
+     * 7/17: a 15-Power mission must see it, and so must the borrow gate).
+     */
+    pairingPower(playerIndex) {
+        const player = this.players[playerIndex];
+        if (!player.playedCards.some(c => c.name === 'Blind Faith')) return 0;
+        let bonus = 0;
+        player.playedCards.forEach(c => {
+            if (c.special === 'power_6_if_blind_faith' || c.name === 'Archeus') bonus += 6;
+        });
+        return bonus;
+    }
+
+    /**
+     * A skill as the RULES see it right now — fixed skills plus any
+     * ongoing printed bonuses (today: the Blind Faith power pairings).
+     * Every requirement check reads through here so a bonus can never
+     * count in one phase and vanish in another.
+     */
+    effectiveSkill(playerIndex, skill) {
+        const base = this.players[playerIndex].skills[skill] || 0;
+        return skill === 'power' ? base + this.pairingPower(playerIndex) : base;
+    }
+
     calculatePower(playerIndex) {
         const player = this.players[playerIndex];
 
         // player.skills.power already includes all power from cards + slider
-        // (accumulated by applyCardEffects and applySliderAbilities)
-        let power = player.skills.power || 0;
-
-        // Blind Faith pairings: Heaven's Blade AND Archeus each print
-        // "+6 Additional Power if you own Blind Faith" — so each grants
-        // its own +6 while Blind Faith is down (both owned = +12).
-        if (player.playedCards.some(c => c.name === 'Blind Faith')) {
-            player.playedCards.forEach(c => {
-                if (c.special === 'power_6_if_blind_faith' || c.name === 'Archeus') {
-                    power += 6;
-                }
-            });
-        }
+        // (accumulated by applyCardEffects and applySliderAbilities); the
+        // Blind Faith pairing rides through the same ongoing-power helper
+        // the mission/requirement probes use — one source, no double count.
+        let power = (player.skills.power || 0) + this.pairingPower(playerIndex);
 
         // --- Apply special melee modifiers ---
 
@@ -2624,9 +2645,9 @@ class FavorGame {
             case 'favor_per_wisdom_x8':
                 return 8 * p.playedCards.filter(c => c.type === 'wisdom').length;
             case 'favor_per_neighbor_power': {
-                const left = this.players[(playerIndex + n - 1) % n];
-                const right = this.players[(playerIndex + 1) % n];
-                return (left.skills.power || 0) + (right.skills.power || 0);
+                // Effective power — the pairing counts here too.
+                return this.effectiveSkill((playerIndex + n - 1) % n, 'power')
+                    + this.effectiveSkill((playerIndex + 1) % n, 'power');
             }
             case 'double_adventure_favor':
                 // Chemical Y's printed pair bonus: "If you own Chemical X:
@@ -2750,7 +2771,10 @@ class FavorGame {
                 handSize: p.hand.length,
                 // Only show hand to the owning player
                 hand: (forPlayerIndex === i) ? p.hand : null,
-                skills: p.skills,
+                // Displays show what the RULES count — power reads through
+                // effectiveSkill so the Blind Faith pairing shows on the
+                // panel exactly as missions and requirements will see it.
+                skills: { ...p.skills, power: this.effectiveSkill(i, 'power') },
                 flexSkills: p.flexSkills || [],
                 pendingCard: this.pendingActivations[i] !== null
             })),
