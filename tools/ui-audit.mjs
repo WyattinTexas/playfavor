@@ -1900,12 +1900,29 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
     && document.querySelectorAll('#queueSeg button.on').length === 1),
     'the tapped segment lights and the old one dims');
 
-  // Rating points table (+25 / +10 / −10 / 0 middle).
-  const pts = await page.evaluate(() => [
-    FLB.ratingDelta(0, 3), FLB.ratingDelta(1, 3), FLB.ratingDelta(2, 3),
-    FLB.ratingDelta(2, 5), FLB.ratingDelta(4, 5),
-  ]);
-  ok(pts.join(',') === '25,10,-10,0,-10', `rating points table (+25/+10/mid 0/last −10) → ${pts.join(',')}`);
+  // Nation's Elo, table-shaped (1.00–7.00): a fresh player starts 1.00;
+  // beating two 1200 bots on provisional K64 must GAIN, capped ±K×1.5;
+  // display always two decimals; delta symmetric via the pairwise field.
+  const elo = await page.evaluate(() => {
+    const win = FLB.tableDelta([
+      { name: 'You' }, { name: 'A' }, { name: 'B' },
+    ], [null, null, null], 'knight');
+    const loss = FLB.tableDelta([
+      { name: 'A' }, { name: 'B' }, { name: 'You' },
+    ], [null, null, null], 'knight');
+    return {
+      winDelta: win.delta, lossDelta: loss.delta,
+      winShown: FLB.fmtRating(win.after), startShown: FLB.fmtRating(win.before),
+      capOk: Math.abs(win.delta) <= 64 * 1.5 && Math.abs(loss.delta) <= 64 * 1.5,
+      charTracks: win.charId === 'knight' && win.charDelta > 0,
+      floorCeil: FLB.fmtRating(-500) === '0.00' && FLB.fmtRating(9999) === '7.00',
+    };
+  });
+  ok(elo.startShown === '1.00', `a fresh player reads 1.00 (${elo.startShown})`);
+  ok(elo.winDelta > 0 && elo.lossDelta < 0 && elo.capOk,
+    `Elo moves the right way, capped (win +${elo.winDelta}, loss ${elo.lossDelta})`);
+  ok(elo.charTracks, 'the ridden hero\'s own ledger moves with the game');
+  ok(elo.floorCeil, 'display clamps to the 0.00–7.00 rails');
 
   // A finished game posts rating + daily best; bots never post.
   await page.evaluate(async () => {
@@ -1913,14 +1930,35 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
       { name: 'You', finalScore: 55 },
       { name: 'Prince Aldric', finalScore: 40 },
       { name: 'Lady Elara', finalScore: 30 },
-    ]);
+    ], [], { ratings: [null, null, null], myChar: 'knight' });
   });
   await sleep(600);
   await page.evaluate(() => FLB.openLeaderboard('alltime'));
   await sleep(900);
   const at = await page.evaluate(() => document.getElementById('lbBody').textContent);
-  ok(/Audit Herald/.test(at) && /25/.test(at), 'ALL-TIME shows your rating (+25 for the win)');
+  ok(/Audit Herald/.test(at) && /✦ 1\.0[0-9]/.test(at),
+    'ALL-TIME shows your rating on the 1.00–7.00 scale');
+  ok(!/\d+ W · \d+ G/.test(at), 'win/game counters left the board rows');
   ok(!/Aldric|Elara|Cassius/.test(at), 'bots stay OFF the leaderboard');
+  // The ten character chips ride under the tabs; the ridden hero's board
+  // carries your row, an unridden hero's board sits empty.
+  await page.evaluate(() => FLB.openLeaderboard('char:knight'));
+  await sleep(700);
+  const charKn = await page.evaluate(() => ({
+    chips: document.querySelectorAll('.lb-chartab').length,
+    on: !!document.querySelector('.lb-chartab.on'),
+    text: document.getElementById('lbBody').textContent,
+  }));
+  ok(charKn.chips === 10 && charKn.on, 'ten character chips, the open board\'s chip lit');
+  ok(/Audit Herald/.test(charKn.text) && /✦ 1\.0[0-9]/.test(charKn.text),
+    'the Knight board carries your Knight rating');
+  await page.evaluate(() => FLB.openLeaderboard('char:magician'));
+  await sleep(700);
+  const charMg = await page.evaluate(() => document.getElementById('lbBody').textContent);
+  ok(/No one has ridden the Magician/.test(charMg),
+    'an unridden hero\'s board says so instead of lying');
+  await page.evaluate(() => FLB.openLeaderboard('alltime'));
+  await sleep(400);
   await page.evaluate(() => FLB.openLeaderboard('daily'));
   await sleep(900);
   const daily = await page.evaluate(() => document.getElementById('lbBody').textContent);
@@ -2768,8 +2806,10 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
   ok(win.scornYou.t === '−2' && win.scornYou.bad, `scorn reads −2 in red (${win.scornYou.t})`);
   ok(win.totals.join(',') === '105,10,5', `totals = favor + prestige − scorn (${win.totals.join(',')})`);
   ok(win.noGoldCol, 'no gold tiebreaker column');
-  ok(win.ratingDelta === '+25', `rating delta reads +25 (${win.ratingDelta})`);
-  ok(win.ratingNew === '25', `fresh player's new rating target = 25 (${win.ratingNew})`);
+  ok(/^\+\d\.\d\d$/.test(win.ratingDelta),
+    `a win gains Elo, shown 1.00–7.00 style (${win.ratingDelta})`);
+  ok(+win.ratingNew > 1000 && +win.ratingNew <= 1096,
+    `fresh player's Elo target sits above 1000, inside the K-cap (${win.ratingNew})`);
   ok(win.starDelta === '+10', `win pays +10 Stars (${win.starDelta})`);
   ok(win.starNew === '10', `fresh player's star target = 10 (${win.starNew})`);
   ok(win.playAgain, 'Play Again survives');
@@ -2788,9 +2828,11 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
       top: b ? b.textContent : null,
       target: b ? b.dataset.total : null,
       rating: (document.querySelector('.vs-delta.rating .vs-d-new') || {}).textContent,
+      ratingTarget: (document.querySelector('.vs-delta.rating .vs-d-new') || { dataset: {} }).dataset.total,
     };
   });
-  ok(landed.top === landed.target && landed.rating === '25',
+  ok(landed.top === landed.target
+    && landed.rating === (parseInt(landed.ratingTarget, 10) / 1000).toFixed(2),
     `count-up lands (score ${landed.top}/${landed.target}, rating ${landed.rating})`);
   await page.screenshot({ path: join(SHOTS, 'vs-desktop-win.png') });
 
@@ -2811,7 +2853,8 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
   ok(!loss.rays, 'no rays when a rival takes the throne');
   ok(loss.personal === 'You finished 3rd.', `personal line (${loss.personal})`);
   ok(loss.myColIdx === 2, `your column stands 3rd on the sheet (idx ${loss.myColIdx})`);
-  ok(loss.ratingDelta === '−10', `last place reads −10 (${loss.ratingDelta})`);
+  ok(/^−\d\.\d\d$/.test(loss.ratingDelta),
+    `last place loses Elo, shown 1.00–7.00 style (${loss.ratingDelta})`);
   await page.screenshot({ path: join(SHOTS, 'vs-desktop-loss.png') });
 
   // ── Firebase hygiene: remove every trace of the audit player.
@@ -3356,21 +3399,26 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
       { name: 'Rival A', finalScore: 70, power: 20, playerIndex: 1 },
       { name: 'You', finalScore: 60, power: 34, playerIndex: 0 },
       { name: 'Rival B', finalScore: 50, power: 10, playerIndex: 2 },
-    ], []);
+    ], [], { ratings: [null, null, null], myChar: 'duchess' });
     await FLB.postGameResult([
       { name: 'You', finalScore: 80, power: 40, playerIndex: 0 },
       { name: 'Rival A', finalScore: 45, power: 15, playerIndex: 1 },
       { name: 'Rival B', finalScore: 30, power: 5, playerIndex: 2 },
-    ], []);
+    ], [], { ratings: [null, null, null], myChar: 'duchess' });
   });
   await sleep(400);
   const row = await page.evaluate((u) =>
     firebase.database().ref(`favor/players/${u}`).get().then(s => s.val()), AUDIT_UID);
-  ok(row && row.rating === 35 && row.stars === 16,
-    `rating 10+25=35, stars 6+10=16 in one row (${row && row.rating}/${row && row.stars})`);
+  // Elo, worked by hand: fresh 1000 vs two 1200 bots, provisional K64
+  // split 32/pair. 2nd of 3 → +17 (1017); then the win → +47 → 1064.
+  ok(row && row.rating === 1064 && row.ratingV === 2 && row.stars === 16,
+    `Elo lands 1017 → 1064 with ratingV 2, stars 6+10=16 (${row && row.rating}/${row && row.stars})`);
   ok(row && row.power === 74 && row.games === 2 && row.wins === 1 &&
      row.streak === 1 && row.bestStreak === 1,
     `power 74, 2 games, 1 win, streak 1 ride the same transaction`);
+  ok(row && row.chars && row.chars.duchess && row.chars.duchess.g === 2
+     && row.chars.duchess.r === 1064,
+    `the Duchess ledger rode both games to the same 1064 (${row && row.chars && JSON.stringify(row.chars.duchess)})`);
   ok(row && row.avatar === 'knight', 'the crest rides the game post too');
 
   // 3 · All-Time: medals on the podium, crest discs, your row glows.
@@ -3384,32 +3432,35 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
       discs: rows.every(r => r.querySelector('.av-disc')),
       me: !!mine, you: mine ? /You/.test(mine.textContent) : false,
       sub: mine ? /W · \d+ G/.test(mine.textContent) : false,
+      scale: mine ? /✦ \d\.\d\d/.test(mine.textContent) : false,
     };
   }, AUDIT_UID);
   ok(at.medals === 3, `top three wear medals (${at.medals})`);
   ok(at.discs, 'every row wears a crest disc');
   ok(at.me && at.you, 'YOUR row is highlighted and tagged You');
-  ok(at.sub, `your record rides the row (wins · games)`);
+  ok(!at.sub && at.scale, 'rows carry a 1.00–7.00 rating and NO win/game counters (Wyatt 7/17)');
   await page.screenshot({ path: join(SHOTS, 'lb-alltime.png') });
 
-  // 4 · Power: lifetime ⚔ accumulates; seeded personas anchor the top.
-  await page.evaluate(() => FLB.openLeaderboard('power'));
+  // 4 · Power is RETIRED; the ten character boards take its place.
+  const noPower = await page.evaluate(() =>
+    ![...document.querySelectorAll('.lb-tab')].some(t => /power/i.test(t.textContent)));
+  ok(noPower, 'the Power tab is gone from the tab row');
+  await page.evaluate(() => FLB.openLeaderboard('char:duchess'));
   await sleep(700);
-  const pw = await page.evaluate(() => {
+  const cb = await page.evaluate(() => {
     const rows = [...document.querySelectorAll('.lb-row')];
-    const scores = rows.map(r => parseInt(r.querySelector('.lb-score').textContent.replace(/[^\d]/g, ''), 10));
     const mine = rows.find(r => r.classList.contains('me'));
     return {
-      sorted: scores.every((s, i) => i === 0 || scores[i - 1] >= s),
-      top: rows[0] ? rows[0].textContent : '',
+      chips: document.querySelectorAll('.lb-chartab').length,
+      lit: !!document.querySelector('.lb-chartab.on'),
+      me: !!mine,
       myScore: mine ? mine.querySelector('.lb-score').textContent : '',
-      icon: rows[0] ? !!rows[0].querySelector('.lb-ico') : false,
     };
   });
-  ok(pw.sorted, 'Power board sorts by lifetime power');
-  ok(/HotshotGG/.test(pw.top), `seeded persona anchors the top under its 7/16 name (${pw.top.slice(0, 40).trim()}…)`);
-  ok(/74/.test(pw.myScore) && pw.icon, `your two games total ⚔ 74 (${pw.myScore.trim()})`);
-  await page.screenshot({ path: join(SHOTS, 'lb-power.png') });
+  ok(cb.chips === 10 && cb.lit, `ten character chips ride the panel, the open one lit (${cb.chips})`);
+  ok(cb.me && /✦ 1\.06/.test(cb.myScore),
+    `the Duchess board carries your Duchess rating 1.06 (${cb.myScore.trim()})`);
+  await page.screenshot({ path: join(SHOTS, 'lb-characters.png') });
 
   // 5 · Daily keeps the best single game, now with crests.
   await page.evaluate(() => FLB.openLeaderboard('daily'));
@@ -4523,10 +4574,10 @@ async function startSeeded(page, seedRig) {
   }, AUDIT_UID);
 
   await startSeeded(page, {
-    myRow: { uid: AUDIT_UID, rating: 100 },
-    topRow: { uid: P_UID, name: 'Lord Ashcroft', score: 240 },
+    myRow: { uid: AUDIT_UID, rating: 1400 },
+    topRow: { uid: P_UID, name: 'Lord Ashcroft', score: 1960 },
     personas: [{ key: 'ashcroft', uid: P_UID, name: 'Lord Ashcroft', hero: 'knight',
-                 seedRating: 240, rating: 240, strong: ['power', 'survival'] }],
+                 seedRating: 1960, rating: 1960, strong: ['power', 'survival'] }],
     forceSeats: ['ashcroft'],   // rig seam — real seeds never set it
   });
   await page.waitForFunction(() => typeof game !== 'undefined' && game
@@ -4593,9 +4644,11 @@ async function startSeeded(page, seedRig) {
     const row = (await firebase.database().ref(`favor/players/${puid}`).get()).val() || {};
     const key = FLB.currentDateKey();
     const daily = (await firebase.database().ref(`favor/daily/${key}/scores/${puid}`).get()).exists();
-    return { rating: row.rating, stars: row.stars === undefined ? null : row.stars, daily };
+    return { rating: row.rating, ratingV: row.ratingV,
+             stars: row.stars === undefined ? null : row.stars, daily };
   }, P_UID);
-  ok(post.rating === 25, `persona 1st place posted +25 to the uaudit row (${post.rating})`);
+  ok(post.rating > 1000 && post.rating <= 1096 && post.ratingV === 2,
+    `persona 1st place gained Elo on the uaudit row (${post.rating}, v${post.ratingV})`);
   ok(post.stars === null, 'persona earns no Stars');
   ok(!post.daily, 'persona stays off the daily board');
 

@@ -83,7 +83,7 @@
     // round (display + the deterministic lock via collectThrows) and ONE 'act'
     // move per card at their seat's activation slot. A v10 client publishes
     // pick-time decisions no v11 peer consumes and would hang the barrier.
-    const MPV = 11;
+    const MPV = 12;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

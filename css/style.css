@@ -396,7 +396,38 @@ html, body {
     text-shadow: 0 0 22px rgba(201,168,76,0.35);
 }
 
-.lb-tabs { display: flex; gap: 8px; justify-content: center; margin: 14px 0 10px; }
+.lb-tabs { display: flex; gap: 8px; justify-content: center; margin: 14px 0 8px; }
+
+/* The ten character boards — portrait chips in a row under the text
+   tabs (Wyatt 7/17). Round crests, gold ring when that board is open. */
+.lb-chartabs {
+    display: flex; gap: 6px; justify-content: center; flex-wrap: nowrap;
+    margin: 0 0 10px; padding: 0 6px 2px;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.lb-chartabs::-webkit-scrollbar { display: none; }
+.lb-chartab {
+    flex: 0 0 auto;
+    width: 34px; height: 34px; padding: 0;
+    border-radius: 50%; overflow: hidden;
+    border: 2px solid rgba(201, 168, 76, 0.3);
+    background: #1c150c; cursor: pointer;
+    opacity: 0.75;
+    transition: border-color 0.15s, opacity 0.15s, transform 0.15s;
+}
+.lb-chartab img {
+    width: 100%; height: 100%; object-fit: cover; object-position: 50% 20%;
+    display: block;
+}
+.lb-chartab:hover, .lb-chartab:focus-visible {
+    opacity: 1; border-color: var(--gold-light, #ffd97a); outline: none;
+    transform: translateY(-1px);
+}
+.lb-chartab.on {
+    opacity: 1; border-color: var(--gold, #d4af37);
+    box-shadow: 0 0 10px rgba(232, 195, 75, 0.5);
+}
 .lb-tab {
     font-family: 'Cinzel', serif;
     font-size: 11px;
@@ -1176,7 +1207,8 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
     background: linear-gradient(180deg, var(--royal-deep) 0%, #0a0612 100%);
     z-index: 900;
     overflow-y: auto;
-    padding: 40px 20px;
+    padding: max(40px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+             40px max(20px, env(safe-area-inset-left));
 }
 
 #character-select.active { display: flex; }
@@ -4183,7 +4215,7 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     .champ-card { padding: 26px 30px 24px; }
 
     /* ── Character select: compact + scrollable ── */
-    #character-select { padding: 14px 16px 22px; }
+    #character-select { padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 22px max(16px, env(safe-area-inset-left)); }
     #character-select .select-title { font-size: 20px; margin-bottom: 6px; }
     .character-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
     .character-info h3 { font-size: 14px; }
@@ -6284,7 +6316,8 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
 }
 .ach-gallery.open { display: flex; }
 .ach-inner {
-    width: min(880px, 94vw); max-height: 88vh; display: flex; flex-direction: column;
+    position: relative;
+    width: min(880px, 94vw); max-height: min(88vh, calc(100dvh - 14px)); display: flex; flex-direction: column;
     background: linear-gradient(#241b0f, #14100a);
     border: 2px solid #8a6a1f; border-radius: 10px;
     box-shadow: 0 24px 70px rgba(0,0,0,.7);
@@ -6300,8 +6333,15 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
     background: none; border: none; color: #a8926a; font-size: 18px; cursor: pointer;
 }
 .ach-x:hover, .ach-x:focus-visible { color: #f0dfb8; outline: none; }
+/* The grid scrolls; the fade says so — a half row at the panel's lip
+   read as "cut off" on Wyatt's phone (7/17), not as "more below". */
+.ach-inner::after {
+    content: ''; position: absolute; left: 3px; right: 3px; bottom: 3px;
+    height: 24px; border-radius: 0 0 8px 8px; pointer-events: none;
+    background: linear-gradient(transparent, rgba(18, 14, 9, 0.92));
+}
 .ach-grid {
-    padding: 16px; overflow-y: auto;
+    padding: 16px 16px 24px; overflow-y: auto;
     display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px;
 }
 .ach-cell {
@@ -6353,7 +6393,7 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
     position: relative;
     box-sizing: border-box;
     display: flex; flex-direction: column; align-items: center; gap: 8px;
-    max-width: min(420px, 92vw); max-height: 92vh; overflow-y: auto;
+    max-width: min(420px, 92vw); max-height: min(92vh, calc(100dvh - 16px)); overflow-y: auto;
     padding: 22px 26px;
     background: linear-gradient(160deg, rgba(46, 28, 12, 0.98), rgba(24, 13, 6, 0.98));
     border: 1px solid rgba(212, 175, 55, 0.55);
@@ -6624,6 +6664,24 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     .sk-sizes { gap: 10px; }
     .sk-size { width: 74px; padding: 10px 0 8px; }
     .sk-size b { font-size: 24px; }
+
+    /* Short-landscape fit (Wyatt's 7/17 phone shots): the WANTED intro
+       must fit WHOLE — buttons below the fold read as a broken screen,
+       and nobody scrolls a plaque. Art gives the ground; text tightens. */
+    .ri-inner { max-height: calc(100dvh - 14px); padding: 10px 18px 12px; gap: 4px; }
+    .ri-title { font-size: 14px; letter-spacing: 1px; }
+    .ri-art { width: auto; max-width: 58vw; max-height: 28dvh; }
+    .ri-name { font-size: 15px; }
+    .ri-sub { font-size: 11px; }
+    .ri-stakes { font-size: 11.5px; }
+    .ri-actions { margin-top: 2px; gap: 8px; }
+    .ri-actions .btn-royal { padding: 8px 8px; font-size: 11.5px; letter-spacing: 2px; }
+    .ri-stamp { font-size: 20px; padding: 1px 10px; }
+    .ach-inner { max-height: calc(100dvh - 12px); }
+    .ach-head { padding: 9px 16px 7px; }
+    .ach-title { font-size: 16px; }
+    .ach-sub { font-size: 11px; margin-top: 1px; }
+    .ach-grid { padding: 10px 12px 16px; gap: 7px; }
 }
 /* ── Table skins (cosmetic play surfaces) ──────────────────────────────
    A skin is a MATERIAL, never a scene: dark-to-mid value, low contrast,

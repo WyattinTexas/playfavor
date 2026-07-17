@@ -72,11 +72,11 @@
     // never change — rows are PATCH-only (tools/rename-personas.mjs did
     // the live rows in place).
     const PERSONAS = [
-        { key: 'ashcroft',   uid: 'persona_ashcroft',   name: 'HotshotGG',      hero: 'knight',    seedRating: 240, strong: ['power', 'survival'] },
-        { key: 'balthazar',  uid: 'persona_balthazar',  name: 'Athene',         hero: 'scientist', seedRating: 185, strong: ['alchemy', 'knowledge'] },
-        { key: 'vespertine', uid: 'persona_vespertine', name: 'Sneaky Penguin', hero: 'duchess',   seedRating: 140, strong: ['knowledge', 'prospecting'] },
-        { key: 'rosalind',   uid: 'persona_rosalind',   name: 'Mable Stadango', hero: 'fisherman', seedRating: 95,  strong: ['survival', 'knowledge'] },
-        { key: 'thorne',     uid: 'persona_thorne',     name: 'Papa Johns',     hero: 'bandit',    seedRating: 60,  strong: ['power', 'prospecting'] },
+        { key: 'ashcroft',   uid: 'persona_ashcroft',   name: 'HotshotGG',      hero: 'knight',    seedRating: 1960, strong: ['power', 'survival'] },
+        { key: 'balthazar',  uid: 'persona_balthazar',  name: 'Athene',         hero: 'scientist', seedRating: 1740, strong: ['alchemy', 'knowledge'] },
+        { key: 'vespertine', uid: 'persona_vespertine', name: 'Sneaky Penguin', hero: 'duchess',   seedRating: 1560, strong: ['knowledge', 'prospecting'] },
+        { key: 'rosalind',   uid: 'persona_rosalind',   name: 'Mable Stadango', hero: 'fisherman', seedRating: 1380,  strong: ['survival', 'knowledge'] },
+        { key: 'thorne',     uid: 'persona_thorne',     name: 'Papa Johns',     hero: 'bandit',    seedRating: 1240,  strong: ['power', 'prospecting'] },
     ];
 
     // Small gold crown — inline SVG so the champion mark is OURS (royal,
@@ -150,13 +150,89 @@
         return Math.max(0, next - et);
     }
 
-    // ── Rating points (deterministic, per finished game vs the table) ──
+    // ═══ Rating — Nation's Elo, worn table-wide (Wyatt 7/17) ═════════
+    // Same engine as Nation's OneVOneELORating asset: internal Elo int
+    // 0–7000, everyone starts at 1000, and the number a player SEES is
+    // elo/1000 → the 1.00–7.00 pickleball scale. K 32 (64 for the first
+    // ten games, doubled on a 3+ win streak), expected score clamped to
+    // [0.05, 0.95], per-game swing capped at ±K×1.5.
+    //
+    // FAVOR's tables aren't duels, so a game scores as PAIRWISE results
+    // vs every other seat — beat them if you placed higher — with K split
+    // across the pairs, so a whole table swings like one Nation duel.
+    // Personas and humans bring real ratings; generic bots stand in at
+    // the court's standard 1200.
+    const ELO = {
+        INIT: 1000, FLOOR: 0, CEIL: 7000,
+        K: 32, PROV_K: 64, PROV_GAMES: 10,
+        STREAK_MIN: 3, STREAK_CAP: 5, BOOST: 2,
+        E_MIN: 0.05, E_MAX: 0.95, MAX_MULT: 1.5, BOT: 1200,
+    };
+    const clampElo = (r) => Math.max(ELO.FLOOR, Math.min(ELO.CEIL, Math.round(r)));
 
-    function ratingDelta(place, count) {
-        if (place === 0) return 25;          // the throne
-        if (place === 1) return 10;          // runner-up
-        if (place === count - 1) return -10; // last
-        return 0;
+    // Legacy rows (the pre-7/17 +25-per-win scale, ints under ~700) read
+    // through this everywhere: old*4+1000 preserves order and lands the
+    // old board between 1.00 and ~2.20. ratingV:2 marks a migrated row;
+    // tools/migrate-ratings-70.mjs stamps the live tree in one pass.
+    function eloOf(row) {
+        if (!row || row.rating == null) return ELO.INIT;
+        return row.ratingV === 2 ? clampElo(row.rating) : clampElo(row.rating * 4 + 1000);
+    }
+    function fmtRating(elo) { return (clampElo(elo) / 1000).toFixed(2); }
+    function fmtRatingDelta(d) {
+        return (d >= 0 ? '+' : '−') + (Math.abs(d) / 1000).toFixed(2);
+    }
+
+    function eloExpected(a, b) {
+        const e = 1 / (1 + Math.pow(10, (b - a) / 400));
+        return Math.max(ELO.E_MIN, Math.min(ELO.E_MAX, e));
+    }
+    function kFor(games, streak) {
+        const base = (games || 0) < ELO.PROV_GAMES ? ELO.PROV_K : ELO.K;
+        return Math.min(streak || 0, ELO.STREAK_CAP) >= ELO.STREAK_MIN
+            ? base * ELO.BOOST : base;
+    }
+    function eloTableDelta(myElo, myPlace, opps, k) {
+        if (!opps.length) return 0;
+        const kk = k / opps.length;
+        let d = 0;
+        for (const o of opps) {
+            d += kk * ((myPlace < o.place ? 1 : 0) - eloExpected(myElo, o.elo));
+        }
+        const cap = k * ELO.MAX_MULT;
+        return Math.round(Math.max(-cap, Math.min(cap, d)));
+    }
+
+    // Everything one finished table means for MY row — computed the same
+    // way by the victory sheet (display) and postGameResult (the write).
+    // ratings[] = each seat's table rating (null → bot 1200; my own seat
+    // ignored); charId = the hero I rode, for the per-character ledger.
+    function tableDelta(scores, ratings, charId) {
+        const place = scores.findIndex(s => s.name === 'You');
+        if (place < 0) return null;
+        const me = _me || {};
+        const myElo = eloOf(me);
+        const opps = scores.map((s, i) => i === place ? null : ({
+            place: i,
+            elo: ratings && ratings[i] != null ? clampElo(ratings[i]) : ELO.BOT,
+        })).filter(Boolean);
+        const won = place === 0;
+        const k = kFor(me.games, won ? (me.streak || 0) + 1 : 0);
+        const delta = eloTableDelta(myElo, place, opps, k);
+        const out = {
+            place, opps, delta,
+            before: myElo, after: clampElo(myElo + delta),
+        };
+        if (charId) {
+            const cc = ((me.chars || {})[charId]) || {};
+            const cElo = cc.r == null ? ELO.INIT : clampElo(cc.r);
+            const cd = eloTableDelta(cElo, place, opps, kFor(cc.g || 0, 0));
+            out.charId = charId;
+            out.charDelta = cd;
+            out.charBefore = cElo;
+            out.charAfter = clampElo(cElo + cd);
+        }
+        return out;
     }
 
     // ═══ Backends — one interface, Firebase or localStorage ══════════
@@ -282,15 +358,15 @@
             // boon's rank 1, nothing else ever is.
             const rows = Object.entries(players)
                 .filter(([, p]) => p && p.name)
-                .map(([u, p]) => ({ uid: u, name: p.name, score: p.rating || 0 }))
+                .map(([u, p]) => ({ uid: u, name: p.name, score: eloOf(p) }))
                 .sort((a, b) => b.score - a.score);
             const me = players[uid()] || null;
             return {
-                myRow: me ? { uid: uid(), rating: me.rating || 0 } : null,
+                myRow: me ? { uid: uid(), rating: eloOf(me) } : null,
                 topRow: rows[0] || null,
                 personas: PERSONAS.map(p => ({
                     ...p,
-                    rating: players[p.uid] ? (players[p.uid].rating || 0) : p.seedRating,
+                    rating: players[p.uid] ? eloOf(players[p.uid]) : p.seedRating,
                 })),
             };
         })().catch(() => null);
@@ -302,30 +378,43 @@
     // posts in full; seated persona rivals post rating-only deltas to
     // their permanent rows. Generic bots stay off the board entirely.
 
-    async function postGameResult(scores, personaPlaces) {
+    async function postGameResult(scores, personaPlaces, ctx) {
+        // ctx (ui.js): { ratings: perSeatTableRating[], myChar: heroId }.
+        // Missing ctx (older rigs) → every opponent rates as a 1200 bot
+        // and the per-character ledger simply doesn't move.
+        const ratings = (ctx && ctx.ratings) || [];
+        const myChar = (ctx && ctx.myChar) || null;
         try {
             const place = scores.findIndex(s => s.name === 'You');
             if (place < 0) return;
             const mine = scores[place];
-            const delta = ratingDelta(place, scores.length);
             const starsWon = gameStars(place, scores.length);
             const won = place === 0;
             const myPower = Math.max(0, Math.round(mine.power || 0));
+            const opps = scores.map((s, i) => i === place ? null : ({
+                place: i,
+                elo: ratings[i] != null ? clampElo(ratings[i]) : ELO.BOT,
+            })).filter(Boolean);
 
             // ONE whole-row transaction: rating + Stars + lifetime Power +
             // wins/games/streak + identity land together or retry together
             // (the old three-txn chain could drop a leg on tab close, and
             // a racing Mint delivery is safe — the txn re-runs on conflict).
             // First result still materializes the record (lazy join).
+            // Elo runs INSIDE the txn against the server's row, so two
+            // tabs can't double-apply a delta computed off a stale read.
             await dbTxn(`players/${uid()}`, p => {
                 const cur = p || {};
                 const streak = won ? (cur.streak || 0) + 1 : 0;
-                return {
+                const myElo = eloOf(cur);
+                const delta = eloTableDelta(myElo, place, opps, kFor(cur.games, streak));
+                const out = {
                     ...cur,
                     name: myName(),
                     lastSeen: Date.now(),
                     avatar: cur.avatar || myAvatar() || null,
-                    rating: Math.max(0, (cur.rating || 0) + delta),
+                    rating: clampElo(myElo + delta),
+                    ratingV: 2,
                     stars: (cur.stars || 0) + starsWon,
                     power: (cur.power || 0) + myPower,
                     games: (cur.games || 0) + 1,
@@ -333,6 +422,16 @@
                     streak,
                     bestStreak: Math.max(cur.bestStreak || 0, streak),
                 };
+                if (myChar) {
+                    const cc = ((cur.chars || {})[myChar]) || {};
+                    const cElo = cc.r == null ? ELO.INIT : clampElo(cc.r);
+                    const cd = eloTableDelta(cElo, place, opps, kFor(cc.g || 0, 0));
+                    out.chars = {
+                        ...(cur.chars || {}),
+                        [myChar]: { r: clampElo(cElo + cd), g: (cc.g || 0) + 1 },
+                    };
+                }
+                return out;
             });
 
             // Daily board: best single-game Favor score in this window.
@@ -349,17 +448,28 @@
             // one whole-row txn each on their PERMANENT rows (never delete).
             // No daily post, no Stars: the nightly crowns stay a human race.
             // A row missing its rating starts from the persona's seed value.
+            // Their pairwise field: every other seat, with the human's own
+            // fresh elo standing in for the "You" seat.
+            const myEloNow = eloOf(_me);
             for (const pp of (personaPlaces || [])) {
                 try {
-                    const seedR = (PERSONAS.find(x => x.uid === pp.uid) || {}).seedRating || 0;
-                    const pDelta = ratingDelta(pp.place, scores.length);
+                    const seedR = (PERSONAS.find(x => x.uid === pp.uid) || {}).seedRating || ELO.INIT;
+                    const myPlace = scores.findIndex(s => s.name === 'You');
+                    const pOpps = scores.map((s, i) => i === pp.place ? null : ({
+                        place: i,
+                        elo: i === myPlace ? myEloNow
+                            : (ratings[i] != null ? clampElo(ratings[i]) : ELO.BOT),
+                    })).filter(Boolean);
                     await dbTxn(`players/${pp.uid}`, p => {
                         const cur = p || {};
-                        const base = cur.rating == null ? seedR : cur.rating;
+                        const base = cur.rating == null ? seedR
+                            : (cur.ratingV === 2 ? clampElo(cur.rating) : eloOf(cur));
+                        const pDelta = eloTableDelta(base, pp.place, pOpps, kFor(cur.games, 0));
                         return {
                             ...cur,
                             name: pp.name, lastSeen: Date.now(), persona: true,
-                            rating: Math.max(0, base + pDelta),
+                            rating: clampElo(base + pDelta),
+                            ratingV: 2,
                             power: (cur.power || 0) + Math.max(0, Math.round(pp.power || 0)),
                             games: (cur.games || 0) + 1,
                             wins: (cur.wins || 0) + (pp.place === 0 ? 1 : 0),
@@ -465,7 +575,11 @@
     // snapshots this BEFORE posting so its deltas measure THIS game.
     function snapshot() {
         const p = _me || {};
-        return { rating: p.rating || 0, stars: p.stars || 0 };
+        return {
+            rating: eloOf(p), stars: p.stars || 0,
+            games: p.games || 0, streak: p.streak || 0,
+            chars: p.chars || {},
+        };
     }
 
     // ── WANTED — daily rival (modes.js drives the UI; this owns the claim) ────
@@ -535,7 +649,7 @@
         chip.innerHTML = `
             ${avatarDisc(myAvatar(), 'pc-av')}
             <span class="pc-name">${myName()}</span>
-            <span class="pc-rating" title="Rating">${(_me && _me.rating) || 0}</span>
+            <span class="pc-rating" title="Rating">${fmtRating(eloOf(_me))}</span>
             ${gold > 0 ? `<span class="pc-crowns" title="Daily Championships">${CROWN_SVG}${gold}</span>` : ''}
         `;
     }
@@ -556,7 +670,7 @@
                     <img src="assets/characters/${c.filename}" alt="${c.name}">
                 </button>`).join('')}
             </div>
-            <div class="pf-row"><span class="pf-label">Rating</span><b>${p.rating || 0}</b></div>
+            <div class="pf-row"><span class="pf-label">Rating</span><b>✦ ${fmtRating(eloOf(p))}</b></div>
             <div class="pf-row"><span class="pf-label">Stars</span><b>★ ${p.stars || 0}</b></div>
             <div class="pf-row"><span class="pf-label">Lifetime Power</span><b>⚔ ${p.power || 0}</b></div>
             <div class="pf-row"><span class="pf-label">Record</span>
@@ -574,14 +688,15 @@
     }
     function closeProfile() { document.getElementById('profilePanel').classList.remove('active'); }
 
-    // Three boards, one renderer: All-Time (rating), Power (lifetime ⚔,
-    // accumulated every game), Daily (best single-game Favor). Top three
-    // wear medals, every row wears its player's crest, YOUR row glows —
-    // and if you're beyond the visible fifty, your true rank rides a
-    // separated row at the bottom (Nation is the quality bar).
+    // Boards, one renderer (Wyatt 7/17 overhaul): All-Time (rating), a
+    // tab per CHARACTER (your rating riding that hero), Daily (best
+    // single-game Favor). Power retired; win/game counters left the rows
+    // — a board line is a name and a number. Top three wear medals,
+    // every row wears its player's crest, YOUR row glows — and if you're
+    // beyond the visible fifty, your true rank rides a separated row at
+    // the bottom (Nation is the quality bar).
     const LB_EMPTY = {
         alltime: 'No champions yet — the realm awaits its first.',
-        power: 'No power yet forged — play a game and the ledger begins.',
         daily: 'No champions yet — the day awaits its first.',
     };
 
@@ -591,21 +706,28 @@
             ? `<span class="lb-medal m${rank}">${rank}</span>`
             : `<span class="lb-rank">${rank}</span>`;
         const crowns = r.gold > 0 ? `<span class="lb-crowns">${CROWN_SVG}${r.gold}</span>` : '';
-        const sub = tab !== 'daily' && r.games
-            ? `<span class="lb-sub">${r.wins || 0} W · ${r.games} G</span>` : '';
-        const score = tab === 'power'
-            ? `<img class="lb-ico" src="assets/icons/power.png" alt="">${(r.score || 0).toLocaleString()}`
-            : tab === 'daily'
-                ? `<img class="lb-ico" src="assets/icons/favor.png" alt="">${r.score}`
-                : `✦ ${r.score}`;
+        const score = tab === 'daily'
+            ? `<img class="lb-ico" src="assets/icons/favor.png" alt="">${r.score}`
+            : `✦ ${fmtRating(r.score)}`;
         return `
             <div class="lb-row${me ? ' me' : ''}${rank <= 3 ? ` podium p${rank}` : ''}${opts && opts.appendix ? ' appendix' : ''}" style="--li:${opts ? opts.idx : 0}">
                 ${medal}
                 ${avatarDisc(r.avatar, 'lb-av')}
                 <span class="lb-name">${r.name || 'Unknown Noble'}${crowns}${me ? '<span class="lb-you">You</span>' : ''}</span>
-                ${sub}
                 <b class="lb-score">${score}</b>
             </div>`;
+    }
+
+    // The ten character tabs, worn as portrait chips under the text tabs.
+    function renderCharTabs(tab) {
+        const host = document.getElementById('lbCharTabs');
+        if (!host) return;
+        const chars = ((window.FAVOR_DATA || {}).characters || []);
+        host.innerHTML = chars.map(c => `
+            <button class="lb-chartab${tab === 'char:' + c.id ? ' on' : ''}"
+                    title="${c.name} board" onclick="FLB.openLeaderboard('char:${c.id}')">
+                <img src="assets/characters/${c.filename}" alt="${c.name}">
+            </button>`).join('');
     }
 
     async function openLeaderboard(tab = 'alltime') {
@@ -613,17 +735,21 @@
         panel.classList.add('active');
         document.querySelectorAll('.lb-tab').forEach(t =>
             t.classList.toggle('on', t.dataset.tab === tab));
+        renderCharTabs(tab);
+        const charId = tab.startsWith('char:') ? tab.slice(5) : null;
+        const charDef = charId
+            ? ((window.FAVOR_DATA || {}).characters || []).find(c => c.id === charId)
+            : null;
         const body = document.getElementById('lbBody');
         body.innerHTML = '<div class="lb-loading">Consulting the heralds…</div>';
         document.getElementById('lbLocal').style.display = mode === 'local' ? 'block' : 'none';
 
         try {
-            // Players carry avatar/wins/games for every tab; daily rows
+            // Players carry avatar/champs for every tab; daily rows
             // borrow theirs by uid.
             const players = await dbGet('players') || {};
             const deck = (u, p) => ({
                 uid: u, name: p.name, avatar: p.avatar || null,
-                wins: p.wins || 0, games: p.games || 0,
                 gold: (p.champs && p.champs.gold) || 0,
             });
             let rows = [];
@@ -634,16 +760,24 @@
                     ...deck(p.uid, players[p.uid] || { name: p.name }),
                     name: p.name, score: p.best, gold: 0,
                 }));
+            } else if (charId) {
+                // Your rating WITH that hero — only players who've ridden
+                // them into a rated game hold a line on this board.
+                rows = Object.entries(players)
+                    .filter(([, p]) => p && p.name && p.chars && p.chars[charId]
+                        && (p.chars[charId].g || 0) > 0)
+                    .map(([u, p]) => ({ ...deck(u, p), score: clampElo(p.chars[charId].r) }))
+                    .sort((a, b) => b.score - a.score);
             } else {
-                const metric = tab === 'power' ? (p => p.power || 0) : (p => p.rating || 0);
                 rows = Object.entries(players)
                     .filter(([, p]) => p && p.name)   // nameless stubs stay off the board
-                    .map(([u, p]) => ({ ...deck(u, p), score: metric(p) }))
+                    .map(([u, p]) => ({ ...deck(u, p), score: eloOf(p) }))
                     .sort((a, b) => b.score - a.score);
-                if (tab === 'power') rows = rows.filter(r => r.score > 0);
             }
             if (!rows.length) {
-                body.innerHTML = `<div class="lb-loading">${LB_EMPTY[tab] || LB_EMPTY.alltime}</div>`;
+                body.innerHTML = `<div class="lb-loading">${charDef
+                    ? `No one has ridden the ${charDef.name} into a rated game yet.`
+                    : (LB_EMPTY[tab] || LB_EMPTY.alltime)}</div>`;
                 return;
             }
             const myIdx = rows.findIndex(r => r.uid === uid());
@@ -1179,7 +1313,8 @@
         postGameResult, openLeaderboard, closeLeaderboard, openProfile, closeProfile,
         queueSize, rename, renderProfileChip, snapshot, tableSeed,
         personaDefs, rivalDayClaimed, claimRivalWin, msUntilNextWindow,
-        settleDue, drainMsgs, currentDateKey, ratingDelta, generateName,
+        settleDue, drainMsgs, currentDateKey, generateName,
+        tableDelta, fmtRating, fmtRatingDelta, eloOf,
         gameStars, ownedIds, buyCharacter, openStore, closeStore, askBuy, confirmBuy,
         inspectChar, closeInspect,
         askBuyStars, buyStars, starCheckoutUrl, watchForStars,

@@ -1501,6 +1501,8 @@ async function buildSoloTable() {
         const gp = game.players[seat];
         gp._personaUid = def.uid;
         gp._personaAI = { key: def.key, strong: def.strong.slice() };
+        // Elo pairs against this seat's real rating at scoring time.
+        gp._tableRating = (typeof def.rating === 'number' && def.rating > 0) ? def.rating : null;
     });
     // The WANTED rival rides provisioned for the hunt (Wyatt 7/16): one
     // extra copy of the starting gold of the hero they ACTUALLY ride —
@@ -1696,6 +1698,10 @@ async function startMpGame({ game: rec, mySeat }) {
     for (let i = 1; i < n; i++) {
         const r = rec.roster[(mySeat + i) % n];
         const gp = game.players[i];
+        // Elo needs every seat's table rating at scoring time — humans
+        // and personas bring theirs from the roster; AI rows stay null
+        // and rate as the court's standard bot.
+        gp._tableRating = (typeof r.rating === 'number' && r.rating > 0) ? r.rating : null;
         if (r.human) { gp._remoteHuman = true; gp._mpUid = r.uid; gp._mpAvatar = r.avatar || null; }
         if (r.persona) {
             gp._personaUid = r.personaUid;
@@ -5775,7 +5781,16 @@ function showScoring() {
                 : null;
         }).filter(Boolean)
         : [];
-    if (window.FLB) FLB.postGameResult(scores, personaPlaces);
+    // Every seat's table rating, in placement order — the Elo pairwise
+    // field for my delta AND the personas' (null = generic bot).
+    const tableRatings = scores.map(s => {
+        const gp = game.players[s.playerIndex];
+        return gp && typeof gp._tableRating === 'number' ? gp._tableRating : null;
+    });
+    const myHeroId = game.players[0] && game.players[0].character
+        ? game.players[0].character.id : null;
+    if (window.FLB) FLB.postGameResult(scores, personaPlaces,
+        { ratings: tableRatings, myChar: myHeroId });
     // WANTED: finishing ahead of today's named rival pays Stars once
     // per window (modes.js owns the claim and the once-a-day gate).
     if (window.FMODES) FMODES.rivalGameOver(scores);
@@ -5812,14 +5827,15 @@ function showScoring() {
     // Rating + Stars deltas, shown BIG. Rating persists via postGameResult
     // (works offline too — the local adapter keeps the same ledgers);
     // per-game Stars appear once the store economy exposes FLB.gameStars.
-    const fmtDelta = (n) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '±0');
     let deltas = '';
     if (window.FLB && place >= 0) {
-        const rDelta = FLB.ratingDelta(place, scores.length);
-        const newRating = Math.max(0, (before.rating || 0) + rDelta);
-        deltas += `<div class="vs-delta rating">
-            <span class="vs-d-what">✦ Rating</span><b>${fmtDelta(rDelta)}</b>
-            <span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${newRating}">0</b>
+        // The same pairwise Elo the write uses (1.00–7.00 display) — the
+        // sheet and the ledger can never disagree on what this game did.
+        const rr = typeof FLB.tableDelta === 'function'
+            ? FLB.tableDelta(scores, tableRatings, myHeroId) : null;
+        if (rr) deltas += `<div class="vs-delta rating">
+            <span class="vs-d-what">✦ Rating</span><b>${FLB.fmtRatingDelta(rr.delta)}</b>
+            <span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${rr.after}" data-fmt="rating">0</b>
         </div>`;
         if (typeof FLB.gameStars === 'function') {
             const sDelta = FLB.gameStars(place, scores.length);
@@ -5887,14 +5903,18 @@ function showScoring() {
     `;
 
     // Roll every total up from 0 (the Melee splash count-up, ease-out).
+    // data-fmt="rating" totals hold internal Elo and read as 1.00–7.00.
     content.querySelectorAll('[data-total]').forEach(b => {
         const target = parseInt(b.dataset.total, 10) || 0;
+        const show = b.dataset.fmt === 'rating'
+            ? (v) => (Math.max(0, Math.min(7000, v)) / 1000).toFixed(2)
+            : (v) => Math.round(v);
         const dur = 900;
         let t0 = null;
         const tick = (t) => {
             if (t0 === null) t0 = t;
             const k = Math.min(1, (t - t0) / dur);
-            b.textContent = Math.round(target * (1 - Math.pow(1 - k, 3)));
+            b.textContent = show(target * (1 - Math.pow(1 - k, 3)));
             if (k < 1) requestAnimationFrame(tick);
         };
         setTimeout(() => requestAnimationFrame(tick), parseInt(b.dataset.cd, 10) || 350);

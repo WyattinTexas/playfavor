@@ -122,7 +122,7 @@
         if (idx === prevIdx) idx = (idx + 1) % pool.length;
         // A sharp table brain + a seat at the rated start, but NO
         // leaderboard identity (uid stays absent on purpose).
-        return { ...pool[idx], strong: pool[idx].strong.slice(), rating: 160 };
+        return { ...pool[idx], strong: pool[idx].strong.slice(), rating: 1640 };
     }
 
     function rivalBeatenToday() {
