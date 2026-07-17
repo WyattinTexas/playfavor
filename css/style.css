@@ -432,6 +432,32 @@ html, body {
     box-shadow: 0 0 10px rgba(232, 195, 75, 0.5);
 }
 
+/* The door out of a solo table — a quiet corner chip (Wyatt 7/17).
+   Sits under every overlay (z 2800 < thrown zone 2950 < overlays) so
+   open stages cover it exactly like they cover the rest of the chrome. */
+.game-leave {
+    position: fixed;
+    bottom: 22px;   /* above the version badge */
+    right: max(8px, env(safe-area-inset-right));
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+    font-size: 13px; line-height: 1;
+    color: rgba(232, 202, 160, 0.75);
+    background: rgba(24, 14, 7, 0.72);
+    border: 1px solid rgba(201, 168, 76, 0.4);
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 2800;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.game-leave:hover, .game-leave:focus-visible {
+    color: #f0dfb8; border-color: var(--gold-light, #ffd97a);
+    background: rgba(34, 20, 10, 0.9);
+    outline: none;
+}
+#game-screen:not(.active) .game-leave { display: none; }
+
 /* Melee runs its full ceremony — the Skip chip is retired (Wyatt 7/17).
    Hidden HERE, not in melee.js (Skylar's file, never hand-edited): the
    element stays in the DOM so rig el.click() fast-forwards still work. */
@@ -4228,6 +4254,14 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
         padding: 5px 11px; font-size: 10px; gap: 5px;
     }
     .update-pill .up-glyph { font-size: 12px; }
+    /* Compact tables keep their corners busy on the right — the door
+       moves to the quiet bottom-left, clear of purse, fan and badge. */
+    .game-leave {
+        right: auto;
+        left: max(8px, env(safe-area-inset-left));
+        bottom: max(8px, env(safe-area-inset-bottom));
+        width: 26px; height: 26px; font-size: 11px;
+    }
     .lb-inner, .pf-inner { max-height: 94dvh; padding: 12px 16px 10px; }
     .lb-title, .pf-title { font-size: 14px; letter-spacing: 3px; }
     .lb-chartabs { margin-bottom: 6px; gap: 5px; }

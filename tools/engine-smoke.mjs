@@ -1917,5 +1917,47 @@ console.log('\n— Blind Faith pairing: ONGOING power — missions, reqs, panel 
     'neighbor effective powers read 9 and 1');
 }
 
+console.log('\n— Map chains: cards free missions, missions free cards (tester report 7/17) —');
+{
+  // Direction 1: the Guardian CARD maps "Defend the Throne" (7 Pow & 7
+  // Kno OR Guardian Map) — held map completes it with zero skills.
+  const g = newGame();
+  const p = g.players[0];
+  g.currentAct = 3;
+  p.playedCards = [{ ...cardByName('Guardian'), id: 'g1' }];
+  p.missions = [{ ...missionByName('Defend the Throne') }];
+  const held = g.getPlayerMaps(0);
+  ok(held.includes('Guardian') && held.includes('Defend the Throne'),
+    'a played map card answers to both its names');
+  const probe = g.probeMissionRequirements(0, p.missions[0]);
+  ok(probe.success && probe.details.mapUsed, 'the mission probe honors the held map');
+  ok(g.turnInMission(0, 0).success, 'and the turn-in completes on the map alone');
+
+  // Direction 2: the "A Day With the Birds" MISSION maps "The
+  // Alchemist's Daughter" card (5 Cha & 5 Alc & 5 Pow) — plays free.
+  const g2 = newGame();
+  const p2 = g2.players[0];
+  g2.currentAct = 3;
+  p2.completedMissions = [{ ...missionByName('A Day With the Birds') }];
+  const alch = { ...cardByName("The Alchemist's Daughter"), id: 'al1' };
+  ok(g2.checkRequirements(0, alch).canPlay,
+    'a completed mission\'s map frees its destination card');
+  p2.hand = [alch, { ...cardByName('First Aid'), id: 'fa1' }];
+  g2.pickCard(0, 0);
+  g2.activateCard(0, 'al1', 'play');
+  ok(p2.playedCards.some(c => c.id === 'al1'), 'and the card actually lands on the table');
+
+  // AND-form: The Shadow Guide needs stats AND the A Hidden Door map.
+  const g3 = newGame();
+  const p3 = g3.players[0];
+  g3.currentAct = 2;
+  p3.skills.knowledge = 4; p3.skills.prospecting = 3;
+  p3.playedCards = [{ ...cardByName('Faded Treasure Map'), id: 'me1' }];   // any Mind's Eye source
+  const sg = { ...missionByName('The Shadow Guide') };
+  const noMap = g3.probeMissionRequirements(0, sg);
+  ok(!noMap.success && noMap.details.missing.some(m => /A Hidden Door/.test(m)),
+    `reqMapsAll: stats alone leave the map missing (${noMap.details.missing.join(', ')})`);
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);

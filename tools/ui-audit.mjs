@@ -68,6 +68,11 @@ async function startGame(page) {
     // assumes the human acts first and the table is the four generic bots.
     // The emblem/persona/boon flow rigs its own seed and skips this pin.
     window._pinEmblemSeed = 0;
+    // Solo save-resume must never leak between flows: no checkpoints from
+    // rigged tables, and no stale save intercepting the Play tap. The
+    // leave/resume flow un-sets the seam and manages its own save.
+    window._noSoloSave = true;
+    localStorage.removeItem('favorSoloSave');
   });
   await page.evaluate(() => {
     const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
@@ -4542,6 +4547,161 @@ console.log('── Quiet throw: no phase words, 3s take-back grace, Emblem flar
   await page.close();
 }
 
+console.log('── Leave & resume: skirmish walks away clean, a regular table keeps your seat');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('leave: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('leave pageerror: ' + e.message));
+  await page.setViewport({ width: 1440, height: 900 });
+  await startGame(page);
+  await sleep(400);
+  // The helper seams saves OFF for every other flow — this one manages
+  // its own. Clean the table (any early AI throws back to hands), park
+  // the rival timers, and re-open the round so the checkpoint fires.
+  await page.evaluate(() => {
+    window._noSoloSave = false;
+    // The pin built the deterministic table; releasing it now lets the
+    // checkpoint fire (pinned tables never save — the rig seam).
+    delete window._pinEmblemSeed;
+    for (let i = 0; i < game.playerCount; i++) {
+      if (game.pendingActivations[i]) game.unpickCard(i);
+    }
+    window.CINEMATIC_SPEED = 1000;
+    beginThrowPhase();
+  });
+  await sleep(300);
+
+  const saved = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('favorSoloSave') || 'null');
+    return {
+      exists: !!s, act: s && s.g.currentAct,
+      names: s ? s.g.players.map(p => p.name).join('|') : '',
+      liveNames: game.players.map(p => p.name).join('|'),
+      handIds: s ? s.g.players[0].hand.map(c => c.id).join(',') : 'save-missing',
+      liveHand: game.players[0].hand.map(c => c.id).join(','),
+      gold: s && s.g.players[0].gold,
+    };
+  });
+  ok(saved.exists && saved.names === saved.liveNames && saved.handIds === saved.liveHand,
+    'a regular round start checkpoints the whole table');
+
+  // The door: visible AND genuinely tappable (real hit-test).
+  const door = await page.evaluate(() => {
+    const d = document.getElementById('gameLeave');
+    const r = d.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return { visible: r.width > 10, hitsDoor: hit === d || d.contains(hit) };
+  });
+  ok(door.visible && door.hitsDoor, 'the leave door is visible and wins its own hit-test');
+
+  await page.evaluate(() => document.getElementById('gameLeave').click());
+  await sleep(250);
+  const sheet = await page.evaluate(() => ({
+    open: document.getElementById('leaveSheet').classList.contains('active'),
+    copy: document.getElementById('leaveSheet').textContent.replace(/\s+/g, ' '),
+  }));
+  ok(sheet.open && /seat is saved/i.test(sheet.copy) && /Save & Leave/i.test(sheet.copy),
+    'a regular game offers Save & Leave with honest copy');
+  await page.evaluate(() => {
+    [...document.querySelectorAll('#leaveSheet .btn-royal')]
+      .find(b => /keep playing/i.test(b.textContent)).click();
+  });
+  ok(await page.evaluate(() => !document.getElementById('leaveSheet').classList.contains('active')),
+    'Keep Playing closes the sheet');
+
+  const left = await page.evaluate(() => {
+    let reloads = 0;
+    const real = FLB.applyUpdate;
+    FLB.applyUpdate = () => reloads++;
+    document.getElementById('gameLeave').click();
+    [...document.querySelectorAll('#leaveSheet .btn-royal')]
+      .find(b => /save & leave/i.test(b.textContent)).click();
+    FLB.applyUpdate = real;
+    return { reloads, saveKept: !!localStorage.getItem('favorSoloSave') };
+  });
+  ok(left.reloads === 1 && left.saveKept, 'Save & Leave reloads out and KEEPS the checkpoint');
+
+  // Back at the menu (real reload): PLAY offers the waiting table.
+  await page.reload({ waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await page.evaluate(() => { startGame(); });
+  await sleep(300);
+  const resume = await page.evaluate(() => ({
+    open: document.getElementById('leaveSheet').classList.contains('active'),
+    copy: document.getElementById('leaveSheet').textContent.replace(/\s+/g, ' '),
+  }));
+  ok(resume.open && /A Table Awaits/i.test(resume.copy), 'PLAY offers the waiting table first');
+  await page.evaluate(() => {
+    [...document.querySelectorAll('#leaveSheet .btn-royal')]
+      .find(b => /resume game/i.test(b.textContent)).click();
+  });
+  await page.waitForFunction(() => typeof game !== 'undefined' && game
+    && document.getElementById('game-screen').classList.contains('active'), { timeout: 10000 });
+  await sleep(400);
+  const resumed = await page.evaluate(() => ({
+    names: game.players.map(p => p.name).join('|'),
+    hand: game.players[0].hand.map(c => c.id).join(','),
+    gold: game.players[0].gold,
+    act: game.currentAct,
+    phase: game.phase,
+    heroLinked: !!(game.players[0].character
+      && FAVOR_DATA.characters.includes(game.players[0].character)),
+  }));
+  ok(resumed.names === saved.liveNames && resumed.hand === saved.liveHand
+     && resumed.gold === saved.gold && resumed.act === saved.act && resumed.phase === 'gameplay',
+    `the table returns exactly as left (Act ${resumed.act}, hands byte-identical)`);
+  ok(resumed.heroLinked, 'characters re-link to canonical defs on resume');
+  await page.screenshot({ path: join(SHOTS, 'resume-table.png') });
+
+  // Finishing the table burns the save.
+  await page.evaluate(() => {
+    game.players.forEach((p, i) => { p.favor = 50 - i * 10; });
+    try { showScoring(); } catch (e) { /* the ceremony may want more rig — the save clear is what's under test */ }
+  });
+  await sleep(800);
+  ok(await page.evaluate(() => !localStorage.getItem('favorSoloSave')),
+    'a finished table clears its save');
+
+  // SKIRMISH: the same door, honest copy, and NO save behind.
+  await page.reload({ waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FMODES && window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await page.evaluate(() => {
+    window.shuffleArray = (a) => [...a];
+    window._pinEmblemSeed = 0;
+    localStorage.setItem('favorQueue', '3');
+    FMODES.beginSkirmish(3);
+  });
+  await page.waitForFunction(() => document.getElementById('character-select').classList.contains('active')
+    && document.querySelector('.character-card'), { timeout: 15000 });
+  await page.evaluate(() => {
+    const c = document.querySelector('.character-card');
+    selectCharacter(c.dataset.id, c);
+    document.getElementById('confirmBtn').click();
+  });
+  await page.waitForFunction(() => typeof game !== 'undefined' && game
+    && game.players.length && game.players[0].character
+    && document.getElementById('game-screen').classList.contains('active'), { timeout: 20000 });
+  await sleep(600);
+  const sk = await page.evaluate(() => {
+    let reloads = 0;
+    const real = FLB.applyUpdate;
+    FLB.applyUpdate = () => reloads++;
+    const doorR = document.getElementById('gameLeave').getBoundingClientRect();
+    document.getElementById('gameLeave').click();
+    const copy = document.getElementById('leaveSheet').textContent.replace(/\s+/g, ' ');
+    [...document.querySelectorAll('#leaveSheet .btn-royal')]
+      .find(b => /^leave$/i.test(b.textContent.trim())).click();
+    FLB.applyUpdate = real;
+    return { doorVisible: doorR.width > 10, copy, reloads,
+             save: !!localStorage.getItem('favorSoloSave') };
+  });
+  ok(sk.doorVisible, 'the skirmish table wears the same door');
+  ok(/skirmish/i.test(sk.copy) && /nothing is recorded/i.test(sk.copy),
+    'skirmish leave copy is honest');
+  ok(sk.reloads === 1 && !sk.save, 'leaving a skirmish reloads out with NO save behind');
+  await page.close();
+}
+
 console.log('── Blind Faith pairing: the panel, the probe and the melee agree');
 {
   const page = await browser.newPage();
@@ -4756,6 +4916,10 @@ async function startSeeded(page, seedRig) {
   await page.evaluate((rig) => {
     window.shuffleArray = (a) => [...a];
     window._mpSkipQueue = true;   // real seed path, no live queue
+    // Seeded fixtures are rigs too: no checkpoints out, no stale save
+    // intercepting the Play tap (same seam as the startGame helper).
+    window._noSoloSave = true;
+    localStorage.removeItem('favorSoloSave');
     localStorage.setItem('favorQueue', '3');
     FLB.tableSeed = async () => rig;
     const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]

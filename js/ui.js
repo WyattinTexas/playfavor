@@ -434,6 +434,10 @@ document.addEventListener('click', function initMusic() {
 let _queueUx = null;   // { size, offer, startedAt, state, solo, accepted, tickT, acceptT, ringT, pick }
 
 function startGame() {
+    // A saved regular table gets right of first refusal on PLAY.
+    // (Never for pinned rig builds — the suite's Play taps go straight
+    // to the select screen, exactly as before saves existed.)
+    if (window._pinEmblemSeed === undefined && loadSoloSave() && openResumeSheet()) return;
     window._mpConsumed = false;
     window._gameMode = null;   // Play Now is the queue — modes set their own
     // Straight-to-the-heroes seam: pinned/skip-queue builds (the audit's
@@ -1398,6 +1402,162 @@ async function confirmCharacter() {
     await buildSoloTable();
 }
 
+// ═══ Solo save — a REGULAR table survives leaving it (Wyatt 7/17) ═══
+// Checkpointed at every round start (beginThrowPhase): nothing pending,
+// hands dealt, decks exactly as shuffled — resuming rewinds at most to
+// the top of the round you left. Skirmish/Wanted never save (leave =
+// walk away); multiplayer never saves (the record lives in the realm).
+const SOLO_SAVE_KEY = 'favorSoloSave';
+const SOLO_SAVE_V = 1;
+
+function soloSaveEligible() {
+    // A checkpoint is only clean when NOTHING is face down — a mid-throw
+    // save would freeze hands that already gave cards to unsaved pendings.
+    // Rig seam: pinned tables (_pinEmblemSeed) are audit fixtures — they
+    // never checkpoint, so a suite flow can never leave a save behind
+    // that derails the next flow's Play tap.
+    return !!game && !mpActive() && !window._gameMode && !window._noSoloSave
+        && window._pinEmblemSeed === undefined
+        && game.phase === 'gameplay'
+        && game.pendingActivations.every(p => p === null);
+}
+
+function saveSoloCheckpoint() {
+    if (!soloSaveEligible()) return;
+    try {
+        const g = game;
+        localStorage.setItem(SOLO_SAVE_KEY, JSON.stringify({
+            v: SOLO_SAVE_V, at: Date.now(), hero: selectedCharacter,
+            g: {
+                playerCount: g.playerCount, currentAct: g.currentAct,
+                emblemHolder: g.emblemHolder, activePlayerIndex: g.activePlayerIndex,
+                turnInAct: g.turnInAct,
+                actDecks: g.actDecks, missionDecks: g.missionDecks,
+                visibleMissions: g.visibleMissions, discardPile: g.discardPile,
+                log: g.log.slice(-40),
+                players: g.players.map(p => ({
+                    ...p,
+                    character: p.character ? p.character.id : null,
+                    _actSlotEvents: [...(p._actSlotEvents || [])],
+                })),
+            },
+        }));
+    } catch (e) { /* a failed save must never break the table */ }
+}
+
+function loadSoloSave() {
+    try {
+        const s = JSON.parse(localStorage.getItem(SOLO_SAVE_KEY));
+        return s && s.v === SOLO_SAVE_V && s.g && Array.isArray(s.g.players) ? s : null;
+    } catch (e) { return null; }
+}
+
+function clearSoloSave() {
+    try { localStorage.removeItem(SOLO_SAVE_KEY); } catch (e) { /* fine */ }
+}
+
+function resumeSoloSave() {
+    const s = loadSoloSave();
+    if (!s) return false;
+    try {
+        const g = new FavorGame(s.g.playerCount);
+        Object.assign(g, s.g, {
+            phase: 'gameplay',
+            pendingActivations: new Array(s.g.playerCount).fill(null),
+            hands: [],
+            players: s.g.players.map(p => ({
+                ...p,
+                character: p.character
+                    ? window.FAVOR_DATA.characters.find(c => c.id === p.character) || null
+                    : null,
+                _actSlotEvents: new Set(p._actSlotEvents || []),
+            })),
+        });
+        game = g;
+        selectedCharacter = s.hero
+            || (g.players[0].character && g.players[0].character.id) || null;
+        window._gameMode = null;
+        window._uxThrownOnce = true;   // a returning table needs no gesture hint
+        const ts = document.getElementById('title-screen');
+        ts.classList.add('hidden');
+        ts.style.display = 'none';
+        document.getElementById('character-select').classList.remove('active');
+        document.getElementById('game-screen').classList.add('active');
+        addLogEntry('You retake your seat — the round restarts');
+        renderGameState();
+        beginThrowPhase();
+        return true;
+    } catch (e) {
+        clearSoloSave();
+        return false;
+    }
+}
+
+// The Play tap offers a waiting table first — Resume or start fresh.
+function openResumeSheet() {
+    const s = loadSoloSave();
+    if (!s) return false;
+    const heroDef = window.FAVOR_DATA.characters.find(c => c.id === s.hero);
+    const acts = ['I', 'II', 'III'];
+    const ov = document.getElementById('leaveSheet');
+    ov.innerHTML = `
+        <div class="ri-inner" onclick="event.stopPropagation()">
+            <div class="ri-title">A Table Awaits</div>
+            <div class="ri-stakes">Your game as <b>${heroDef ? 'the ' + heroDef.name : 'your hero'}</b>
+                stands at <b>Act ${acts[(s.g.currentAct || 1) - 1] || s.g.currentAct}</b> —
+                exactly where you left it.</div>
+            <div class="ri-actions">
+                <button class="btn-royal" onclick="discardSaveAndPlay()"><span>New Game</span></button>
+                <button class="btn-royal primary" onclick="closeLeaveSheet(); resumeSoloSave()"><span>Resume Game</span></button>
+            </div>
+        </div>`;
+    ov.classList.add('active');
+    ov.onclick = () => closeLeaveSheet();
+    return true;
+}
+
+function discardSaveAndPlay() {
+    clearSoloSave();
+    closeLeaveSheet();
+    startGame();
+}
+
+// ── The door out of a solo table ─────────────────────────────────
+function openLeaveSheet() {
+    if (!game || mpActive()) return;
+    const mode = window._gameMode;
+    const regular = !mode;
+    const ov = document.getElementById('leaveSheet');
+    ov.innerHTML = `
+        <div class="ri-inner" onclick="event.stopPropagation()">
+            <div class="ri-title">Leave the Table?</div>
+            <div class="ri-stakes">${regular
+                ? 'Your seat is saved — resume any time from <b>PLAY</b>. The round restarts when you return.'
+                : mode === 'rival'
+                    ? 'The rival keeps the bounty for now — this game is not recorded.'
+                    : 'A friendly skirmish — nothing is recorded.'}</div>
+            <div class="ri-actions">
+                <button class="btn-royal" onclick="closeLeaveSheet()"><span>Keep Playing</span></button>
+                <button class="btn-royal primary" onclick="confirmLeaveGame()"><span>${regular ? 'Save &amp; Leave' : 'Leave'}</span></button>
+            </div>
+        </div>`;
+    ov.classList.add('active');
+    ov.onclick = () => closeLeaveSheet();
+}
+
+function closeLeaveSheet() {
+    document.getElementById('leaveSheet').classList.remove('active');
+}
+
+function confirmLeaveGame() {
+    // Regular tables ride their round-start checkpoint; the modes walk
+    // away clean. The reload IS the teardown — same door the update
+    // pill uses, so the menu always comes back in a known-good state.
+    if (window._gameMode) clearSoloSave();
+    if (window.FLB && typeof FLB.applyUpdate === 'function') FLB.applyUpdate();
+    else location.reload();
+}
+
 // Fake-human names for REGULAR games (Wyatt 7/17): two things put
 // together, fun, realistic-username energy — never renaissance. The
 // thematic court names stay Skirmish/Wanted flavor; leaderboard
@@ -2251,6 +2411,11 @@ function renderGameState() {
     if (!game) return;
 
     const state = game.getState(0);
+
+    // The door out rides solo tables only — a multiplayer seat is a
+    // commitment to real people (the AFK flow handles vanishing).
+    const lv = document.getElementById('gameLeave');
+    if (lv) lv.style.display = mpActive() ? 'none' : '';
 
     renderPhaseBar(state);
     renderBoardThumb(state);
@@ -4112,6 +4277,7 @@ function _thrownLandClass(i) {
 
 function beginThrowPhase() {
     if (!game || game.phase !== 'gameplay') return;
+    saveSoloCheckpoint();   // a regular table survives leaving (Wyatt 7/17)
     _throwClearTimers();
     _throwUx = { round: throwRoundId(), locked: false, timers: [], mpThrown: null, seen: new Set() };
 
@@ -5909,6 +6075,7 @@ function showScoring() {
     });
     const myHeroId = game.players[0] && game.players[0].character
         ? game.players[0].character.id : null;
+    clearSoloSave();   // the table finished — nothing left to resume
     if (window.FLB) FLB.postGameResult(scores, personaPlaces,
         { ratings: tableRatings, myChar: myHeroId });
     // WANTED: finishing ahead of today's named rival pays Stars once
