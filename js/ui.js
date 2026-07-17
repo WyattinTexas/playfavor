@@ -358,9 +358,38 @@ function animateStatChanges() {
 
 // ─── NOTIFICATIONS ────────────────────────────────────────
 
+// Act-start fires three announcements at once (Act begins / Emblem holder /
+// Queen's boon) — stacked, they buried the board on Wyatt's 7/17 screenshot.
+// 'act' banners now play ONE AT A TIME through this queue; everything else
+// still shows immediately.
+let _actBannerQueue = [];
+let _actBannerActive = false;
+function _drainActBanners() {
+    const container = document.getElementById('notifications');
+    if (!container || !_actBannerQueue.length) { _actBannerActive = false; return; }
+    _actBannerActive = true;
+    const msg = _actBannerQueue.shift();
+    const toast = document.createElement('div');
+    toast.className = 'game-toast act';
+    toast.textContent = msg;
+    container.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => {
+        toast.classList.add('fade-out');
+        setTimeout(() => { toast.remove(); _drainActBanners(); }, 450);
+    }, 1900);
+}
+
 function showNotification(msg, type = 'info') {
     const container = document.getElementById('notifications');
     if (!container) return;
+
+    // One-at-a-time for act announcements so they never stack over the board.
+    if (type === 'act') {
+        _actBannerQueue.push(msg);
+        if (!_actBannerActive) _drainActBanners();
+        return;
+    }
 
     const toast = document.createElement('div');
     toast.className = `game-toast ${type}`;
@@ -625,13 +654,13 @@ function showMatchFound({ solo, size }) {
                 <img class="mf-ringart" src="assets/ui/slider-ring.png" alt="">
                 <div class="mf-core">
                     ${crest}
-                    <div class="mf-headline">A Table Awaits</div>
+                    <div class="mf-headline">Match Found</div>
                     <div class="mf-sub">${size} Players &bull; The Realm</div>
                     <div class="mf-clock" id="mfClock"></div>
                 </div>
             </div>
             <div class="mf-actions" id="mfActions">
-                <button type="button" class="btn-royal primary mf-accept" id="mfAccept"><span>Accept</span></button>
+                <button type="button" class="btn-royal primary mf-accept" id="mfAccept"><span>Ready</span></button>
                 <button type="button" class="mf-decline" id="mfDecline">Decline</button>
             </div>
         </div>`;
@@ -4451,7 +4480,7 @@ function renderThrownZone() {
         || (_throwUx.locked && mpActive());
     const note = locked
         ? 'Locked in — revealed on your turn'
-        : (pair ? 'Your last two go in together' : 'Thrown in — face down');
+        : (pair ? 'Your last two go in together' : 'Card set');
     zone.innerHTML = `
         <div class="tz-cards${pair ? ' pair' : ''}">
             <img class="tz-card" src="${CARD_BACK_IMG}" alt="Your face-down card">
@@ -4459,7 +4488,7 @@ function renderThrownZone() {
         </div>
         <div class="tz-side">
             <div class="tz-note">${note}</div>
-            ${locked ? '' : `<button class="btn-royal tz-undo" onclick="event.stopPropagation(); undoThrow()"><span>↩ Take it Back</span></button>`}
+            ${locked ? '' : `<button class="btn-royal tz-undo" onclick="event.stopPropagation(); undoThrow()"><span>↩ Undo</span></button>`}
         </div>`;
     zone.classList.add('active');
 }
@@ -4710,7 +4739,7 @@ function showCardChoice(card, cardIdx) {
                 }
             }
             html += btn('✕ Discard (+3g)', 'discard', false);
-            html += btn('⇄ Discard: Slide Ring', 'discard_slide_pick', false);
+            html += btn('⇄ Discard → Slide Ring (free)', 'discard_slide_pick', false);
             // The rulebook's optional beat: before choosing your action you
             // may pay gold to shift your ring (5g a space, one direction a
             // turn) — the board itself is the picker. Solo for now; paid
@@ -6120,10 +6149,14 @@ function showScoring() {
         // sheet and the ledger can never disagree on what this game did.
         const rr = typeof FLB.tableDelta === 'function'
             ? FLB.tableDelta(scores, tableRatings, myHeroId) : null;
-        if (rr) deltas += `<div class="vs-delta rating">
+        if (rr) {
+            const rc = (typeof FLB.ratingColor === 'function') ? FLB.ratingColor(rr.after) : '';
+            const rcStyle = rc ? ` style="color:${rc};text-shadow:0 0 12px ${rc}66"` : '';
+            deltas += `<div class="vs-delta rating">
             <span class="vs-d-what">✦ Rating</span><b>${FLB.fmtRatingDelta(rr.delta)}</b>
-            <span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${rr.after}" data-fmt="rating">0</b>
+            <span class="vs-d-arrow">→</span><b class="vs-d-new"${rcStyle} data-total="${rr.after}" data-fmt="rating">0</b>
         </div>`;
+        }
         if (typeof FLB.gameStars === 'function') {
             const sDelta = FLB.gameStars(place, scores.length);
             const newStars = (before.stars || 0) + sDelta;
@@ -6175,6 +6208,7 @@ function showScoring() {
         </div>`;
 
     content.innerHTML = `
+        <button class="vs-leave" onclick="location.reload()" title="Leave to Menu" aria-label="Leave">✕</button>
         <div class="vs-head${youWon ? ' win' : ''}">
             ${youWon ? '<div class="champ-rays"></div>' : ''}
             <div class="vs-headline">${headline}</div>
@@ -6183,6 +6217,9 @@ function showScoring() {
         ${deltas ? `<div class="vs-deltas">${deltas}</div>` : ''}
         <div class="scoring-scroll">${grid}</div>
         <div class="scoring-actions">
+            <button class="btn-royal" onclick="location.reload()">
+                <span>↩ Main Menu</span>
+            </button>
             <button class="btn-royal primary" onclick="location.reload()">
                 <span>Play Again</span>
             </button>

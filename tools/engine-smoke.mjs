@@ -96,6 +96,39 @@ console.log('── Her Lost Father: grants 1 Prospecting, 3 Gold, 3 Scorn + map
   ok(g2.checkRequirements(0, flc).canPlay === false, 'without map: still needs Mind\'s Eye ×2');
 }
 
+console.log('── Discard-to-Slide is FREE — the discard is the toll, no gold charged');
+{
+  const g = newGame();
+  const p = g.players[0];
+  p.gold = 40;
+  p.sliderPosition = 2;   // Center — room to slide either way
+  const before = p.gold;
+  const card = { ...cardByName('First Aid') };
+  p.hand = [card]; g.pendingActivations[0] = null; g.pickCard(0, 0);
+  const res = g.activateCard(0, card.id, 'discard_slide', 1);   // slide right
+  ok(res.success === true, 'discard_slide succeeds');
+  ok(p.gold === before, `no gold charged for the slide (${before} → ${p.gold})`);
+  ok(p.sliderPosition === 3, `ring moved one space (2 → ${p.sliderPosition})`);
+  ok(!p.playedCards.some(c => c.id === card.id), 'the card is discarded, not played');
+}
+
+console.log('── Reunited: credits a Philosopher\'s Stone and scores its gold conversion');
+{
+  const g = newGame();
+  const p = g.players[0];
+  // Map route (the practical path): Finding the Lost Corridor grants the
+  // Reunited map, waiving the 12-Knowledge/Mind's-Eye/Stone requirement.
+  p.playedCards.push({ ...cardByName('Finding the Lost Corridor') });
+  ok((p.philosopherStone || 0) === 0, 'no stone before Reunited');
+  playCard(g, 0, 'Reunited');
+  ok(p.playedCards.some(c => c.name === 'Reunited'), 'Reunited played via map');
+  ok((p.philosopherStone || 0) >= 1, `Reunited credits a Philosopher's Stone (${p.philosopherStone})`);
+  g.phase = 'scoring';
+  p.gold = 6;
+  const mine = g.calculateFinalScores().find(s => s.name === 'You');
+  ok(mine.stoneFavor === 6, `stone converts 6 Gold → 6 Favor at game end (${mine.stoneFavor})`);
+}
+
 console.log('── Marketplace Sales: 2 Gold per Alchemy around the table');
 {
   const g = newGame();

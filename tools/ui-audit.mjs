@@ -2000,7 +2000,7 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
     on: !!document.querySelector('.lb-chartab.on'),
     text: document.getElementById('lbBody').textContent,
   }));
-  ok(charKn.chips === 10 && charKn.on, 'ten character chips, the open board\'s chip lit');
+  ok(charKn.chips === 11 && charKn.on, 'hero rail: 10 heroes + All-Heroes chip, the open board\'s chip lit');
   ok(/Audit Herald/.test(charKn.text) && /✦ 1\.0[0-9]/.test(charKn.text),
     'the Knight board carries your Knight rating');
   await page.evaluate(() => FLB.openLeaderboard('char:magician'));
@@ -3508,7 +3508,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
       myScore: mine ? mine.querySelector('.lb-score').textContent : '',
     };
   });
-  ok(cb.chips === 10 && cb.lit, `ten character chips ride the panel, the open one lit (${cb.chips})`);
+  ok(cb.chips === 11 && cb.lit, `hero rail chips ride the panel (10 + All Heroes), the open one lit (${cb.chips})`);
   ok(cb.me && /✦ 1\.06/.test(cb.myScore),
     `the Duchess board carries your Duchess rating 1.06 (${cb.myScore.trim()})`);
   await page.screenshot({ path: join(SHOTS, 'lb-characters.png') });
@@ -4748,12 +4748,12 @@ console.log('── Phone leaderboard: character chips stand whole (no half-cut 
     const rs = [...document.querySelectorAll('.lb-chartab')].map(c => c.getBoundingClientRect());
     return {
       count: rs.length,
-      whole: rs.every(r => r.height >= 22 && r.top >= inner.top && r.bottom <= inner.bottom),
-      round: rs.every(r => Math.abs(r.width - r.height) < 2),
+      whole: rs.every(r => r.height >= 22 && r.left >= inner.left - 1 && r.right <= inner.right + 1),
+      pill: rs.every(r => r.width > r.height),   // rail rows now read as pills, not circles
     };
   });
-  ok(chips.count === 10 && chips.whole && chips.round,
-    `all ten chips render whole inside the panel at 932×430 (${chips.count})`);
+  ok(chips.count === 11 && chips.whole && chips.pill,
+    `the hero rail renders whole inside the panel at 932×430 (${chips.count})`);
   await page.screenshot({ path: join(SHOTS, 'lb-chips-phone.png') });
   await page.close();
 }
@@ -5309,14 +5309,14 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
       const mf = document.getElementById('matchFound');
       const mid = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
       return {
-        court: /A Table Awaits/i.test(mf.textContent) && /3 Players/.test(mf.textContent),
+        court: /Match Found/i.test(mf.textContent) && /3 Players/.test(mf.textContent),
         buttons: !!(document.getElementById('mfAccept') && document.getElementById('mfDecline')),
         onTop: !!(mid && mid.closest('#matchFound')),
         storeStill: document.getElementById('storePanel').classList.contains('active'),
         chipYielded: !document.getElementById('queueChip').classList.contains('on'),
       };
     });
-    ok(mfLook.court && mfLook.buttons, 'MATCH FOUND ring: court copy + ACCEPT/DECLINE');
+    ok(mfLook.court && mfLook.buttons, 'MATCH FOUND ring: "Match Found" copy + READY/DECLINE');
     ok(mfLook.onTop && mfLook.storeStill, 'the ring lands OVER the open store (root stacking)');
     ok(mfLook.chipYielded, 'the chip yields the stage to the ring');
     await page.screenshot({ path: join(SHOTS, 'queue-matchfound-store.png') });

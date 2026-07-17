@@ -179,6 +179,21 @@
         return row.ratingV === 2 ? clampElo(row.rating) : clampElo(row.rating * 4 + 1000);
     }
     function fmtRating(elo) { return (clampElo(elo) / 1000).toFixed(2); }
+    // Rating tiers wear a colour once you climb past 1.00 (Wyatt 7/17):
+    // 2 green · 3 blue · 4 purple · 5 red · 6 teal · 7 radiant gold.
+    // Tier = the whole-number floor of the 1.00–7.00 scale.
+    const RATING_TIER_COLORS = {
+        1: '', 2: '#46d17f', 3: '#5aa6ff', 4: '#b884ff',
+        5: '#ff5f6b', 6: '#2fd6c3', 7: '#ffd76a',
+    };
+    function ratingTier(elo) { return Math.floor(clampElo(elo) / 1000); }
+    function ratingColor(elo) { return RATING_TIER_COLORS[ratingTier(elo)] || ''; }
+    // A rating number wearing its tier colour + a soft glow of the same.
+    function ratingSpan(elo, cls) {
+        const c = ratingColor(elo);
+        const style = c ? ` style="color:${c};text-shadow:0 0 10px ${c}66"` : '';
+        return `<span class="${cls || 'rating-val'} rt-t${ratingTier(elo)}"${style}>${fmtRating(elo)}</span>`;
+    }
     function fmtRatingDelta(d) {
         return (d >= 0 ? '+' : '−') + (Math.abs(d) / 1000).toFixed(2);
     }
@@ -649,7 +664,7 @@
         chip.innerHTML = `
             ${avatarDisc(myAvatar(), 'pc-av')}
             <span class="pc-name">${myName()}</span>
-            <span class="pc-rating" title="Rating">${fmtRating(eloOf(_me))}</span>
+            ${ratingSpan(eloOf(_me), 'pc-rating')}
             ${gold > 0 ? `<span class="pc-crowns" title="Daily Championships">${CROWN_SVG}${gold}</span>` : ''}
         `;
     }
@@ -670,7 +685,7 @@
                     <img src="assets/characters/${c.filename}" alt="${c.name}">
                 </button>`).join('')}
             </div>
-            <div class="pf-row"><span class="pf-label">Rating</span><b>✦ ${fmtRating(eloOf(p))}</b></div>
+            <div class="pf-row"><span class="pf-label">Rating</span><b>✦ ${ratingSpan(eloOf(p))}</b></div>
             <div class="pf-row"><span class="pf-label">Stars</span><b>★ ${p.stars || 0}</b></div>
             <div class="pf-row"><span class="pf-label">Lifetime Power</span><b>⚔ ${p.power || 0}</b></div>
             <div class="pf-row"><span class="pf-label">Record</span>
@@ -708,7 +723,7 @@
         const crowns = r.gold > 0 ? `<span class="lb-crowns">${CROWN_SVG}${r.gold}</span>` : '';
         const score = tab === 'daily'
             ? `<img class="lb-ico" src="assets/icons/favor.png" alt="">${r.score}`
-            : `✦ ${fmtRating(r.score)}`;
+            : `✦ ${ratingSpan(r.score)}`;
         return `
             <div class="lb-row${me ? ' me' : ''}${rank <= 3 ? ` podium p${rank}` : ''}${opts && opts.appendix ? ' appendix' : ''}" style="--li:${opts ? opts.idx : 0}">
                 ${medal}
@@ -718,15 +733,25 @@
             </div>`;
     }
 
-    // The ten character tabs, worn as portrait chips under the text tabs.
+    // The character rail down the left (Wyatt 7/17): a big crest + name per
+    // hero, plus an "All Heroes" chip that returns to the overall board. The
+    // whole chip is the click target — inviting the tap the row chips missed.
     function renderCharTabs(tab) {
         const host = document.getElementById('lbCharTabs');
         if (!host) return;
         const chars = ((window.FAVOR_DATA || {}).characters || []);
-        host.innerHTML = chars.map(c => `
+        const overallOn = tab === 'alltime' || tab === 'daily';
+        const allChip = `
+            <button class="lb-chartab all${overallOn ? ' on' : ''}"
+                    title="Overall standings" onclick="FLB.openLeaderboard('alltime')">
+                <span class="lb-chartab-crown">♛</span>
+                <span class="lb-chartab-name">All Heroes</span>
+            </button>`;
+        host.innerHTML = allChip + chars.map(c => `
             <button class="lb-chartab${tab === 'char:' + c.id ? ' on' : ''}"
                     title="${c.name} board" onclick="FLB.openLeaderboard('char:${c.id}')">
                 <img src="assets/characters/${c.filename}" alt="${c.name}">
+                <span class="lb-chartab-name">${c.name}</span>
             </button>`).join('');
     }
 
@@ -1314,7 +1339,7 @@
         queueSize, rename, renderProfileChip, snapshot, tableSeed,
         personaDefs, rivalDayClaimed, claimRivalWin, msUntilNextWindow,
         settleDue, drainMsgs, currentDateKey, generateName,
-        tableDelta, fmtRating, fmtRatingDelta, eloOf,
+        tableDelta, fmtRating, fmtRatingDelta, eloOf, ratingColor, ratingTier, ratingSpan,
         gameStars, ownedIds, buyCharacter, openStore, closeStore, askBuy, confirmBuy,
         inspectChar, closeInspect,
         askBuyStars, buyStars, starCheckoutUrl, watchForStars,

@@ -179,7 +179,10 @@
                         <b></b>
                         <span></span>
                     </div>
-                    <div class="ach-cell-stars">${d.stars}★</div>
+                    <div class="ach-cell-stars">
+                        <span>${d.stars}★</span>
+                        <span class="ach-cell-tier">${t}</span>
+                    </div>
                 </div>`;
         };
 
