@@ -4100,10 +4100,15 @@ console.log('── Melee cinematic: forge rows, live coin, podium + prestige to
     combatants: document.querySelectorAll('.ms-combatant').length,
     rings: document.querySelectorAll('.ms-combatant .ms-ring').length,
     skip: !!document.querySelector('.ms-skip'),
+    skipShown: (() => {
+      const el = document.querySelector('.ms-skip');
+      return !!el && el.getBoundingClientRect().width > 0;
+    })(),
   }));
   ok(arena.combatants === 3, `all heirs enter the arena (${arena.combatants})`);
   ok(arena.rings === 3, 'every board wears its slider ring');
-  ok(arena.skip, 'Skip chip offered');
+  ok(arena.skip && !arena.skipShown,
+    'the Skip chip is retired for players (still in the DOM for rigs)');
 
   // Forge: the first fighter's contributors deal into the card row.
   await page.waitForFunction(() => document.querySelectorAll('.ms-cardrow .ms-rowitem').length >= 1, { timeout: 12000 });
@@ -4501,19 +4506,39 @@ console.log('── Quiet throw: no phase words, 3s take-back grace, Emblem flar
   ok(!cancelled.locked && cancelled.myPending === null,
     'a take-back inside the grace cancels the lock — nothing fires at 3s');
 
-  // Re-throw → fresh grace → the lock lands and the Emblem flares in
-  // place of any "reveals first" banner.
-  await page.evaluate(() => { throwCard(0); });
-  const flared = await page.waitForFunction(
-    () => document.querySelector('.em-first') || (_throwUx && _throwUx.locked),
-    { timeout: 8000 }).then(() => page.evaluate(() => ({
+  // Re-throw, then peek at the missions mid-grace: an open overlay hides
+  // the take-back, so the clock must WAIT — no lock behind your back
+  // (Wyatt 7/17: "the undo button didn't work at a key moment").
+  await page.evaluate(() => { throwCard(0); openMissionBrowser('realm'); });
+  await sleep(4600);
+  const deferred = await page.evaluate(() => ({
+    locked: !!(_throwUx && _throwUx.locked),
+    browserOpen: document.getElementById('missionLB').classList.contains('active'),
+  }));
+  ok(deferred.browserOpen && !deferred.locked,
+    'the grace clock waits while an overlay hides the take-back (4.6s in, still open)');
+  await page.evaluate(() => closeMissionLB());
+  const flared = await page.waitForFunction(() => _throwUx && _throwUx.locked,
+    { timeout: 9000 }).then(() => page.evaluate(() => ({
       flare: !!document.querySelector('.em-first'),
-      locked: !!(_throwUx && _throwUx.locked),
       toastText: document.getElementById('notifications').textContent,
+      undoOffered: !!document.querySelector('#thrownZone .tz-undo'),
     })));
-  ok(flared.locked, 'the fresh grace runs its three seconds and locks');
-  ok(flared.flare, 'the Emblem token flares to say who reveals first');
+  ok(flared.flare, 'after the overlay closes, a fresh beat runs and the Emblem flares');
   ok(!/reveals? first/i.test(flared.toastText), 'no "reveals first" banner anywhere');
+  ok(flared.undoOffered, 'SOLO: the take-back button rides through the lock beat');
+
+  // ...and it WORKS mid-beat: the pass is abandoned, the table re-opens.
+  const reopened = await page.evaluate(() => {
+    undoThrow();
+    return {
+      locked: !!(_throwUx && _throwUx.locked),
+      pending: game.pendingActivations[0],
+      phase: game.phase,
+    };
+  });
+  ok(!reopened.locked && reopened.pending === null && reopened.phase === 'gameplay',
+    'take-back DURING the lock beat re-opens the table (the pass is abandoned)');
   await page.close();
 }
 

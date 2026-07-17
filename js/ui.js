@@ -4161,7 +4161,22 @@ function throwCard(index) {
 // Take it back — the physical rule allows it until the last card goes in.
 function undoThrow() {
     if (!game || game.phase !== 'gameplay') return;
-    if (!_throwUx || _throwUx.locked) return;
+    if (!_throwUx) return;
+    if (_throwUx.locked) {
+        // SOLO: the lock beat (Emblem flare → hands pass) is still a
+        // legal take-back window — the engine refuses only after
+        // passHands. "It needs to work" = the WHOLE legal window
+        // (Wyatt 7/17). MP stays stream-locked: that lock is canonical.
+        if (mpActive()) return;
+        const res = game.unpickCard(0);
+        if (!res.success) return;
+        _throwUx.locked = false;
+        _throwUx.lockGen = (_throwUx.lockGen || 0) + 1;   // aborts the in-flight lockThrows
+        if (_throwUx.seen) _throwUx.seen.delete(0);
+        addLogEntry('You take your card back');
+        renderGameState();
+        return;
+    }
     const res = game.unpickCard(0);
     if (!res.success) return;
     if (_throwUx.lockT) { clearTimeout(_throwUx.lockT); _throwUx.lockT = null; }
@@ -4183,14 +4198,32 @@ function maybeLockThrows() {
     }
     // The table holds THREE seconds once the last card is in (Wyatt
     // 7/17) — your quiet take-back window, no banner. A take-back inside
-    // the grace cancels it; the re-throw starts a fresh one.
+    // the grace cancels it; the re-throw starts a fresh one. The clock
+    // NEVER runs out while an overlay (board, missions, rival peek)
+    // hides the take-back — that's how the button "didn't work at a key
+    // moment": the window expired behind a screen the player had open.
     if (_throwUx.lockT) return;
-    _throwUx.lockT = setTimeout(() => {
-        if (!_throwUx || _throwUx.locked || !game) return;
-        _throwUx.lockT = null;
-        if (game.phase === 'gameplay' && game.allPlayersPicked()) lockThrows();
-    }, 3000);
-    _throwUx.timers.push(_throwUx.lockT);
+    const armLock = (delay) => {
+        _throwUx.lockT = setTimeout(() => {
+            if (!_throwUx || _throwUx.locked || !game) return;
+            _throwUx.lockT = null;
+            if (game.phase !== 'gameplay' || !game.allPlayersPicked()) return;
+            const z = document.getElementById('thrownZone');
+            const visible = z && z.classList.contains('active')
+                && z.getBoundingClientRect().width > 2;
+            if (!visible) { _throwUx.hidGrace = true; armLock(700); return; }
+            if (_throwUx.hidGrace) {
+                // The overlay just closed — a fresh beat before the lock
+                // so the returning player can still reach the button.
+                _throwUx.hidGrace = false;
+                armLock(1500);
+                return;
+            }
+            lockThrows();
+        }, delay);
+        _throwUx.timers.push(_throwUx.lockT);
+    };
+    armLock(3000);
 }
 
 // The last card hit the table: everything locks instantly, hands pass,
@@ -4198,6 +4231,7 @@ function maybeLockThrows() {
 async function lockThrows() {
     if (!_throwUx || _throwUx.locked) return;
     _throwUx.locked = true;
+    const gen = _throwUx.lockGen = (_throwUx.lockGen || 0) + 1;
     _throwClearTimers();
     hideThrowHint();
     renderGameState();
@@ -4206,7 +4240,9 @@ async function lockThrows() {
     // first: it flares on the holder's seat as the reveal opens.
     flashEmblemFirst(game.emblemHolder);
     await new Promise(r => setTimeout(r, 900 * window.CINEMATIC_SPEED));
-    if (!game) return;
+    // A solo take-back during the beat bumps lockGen — this pass is
+    // abandoned and the table re-opens (see undoThrow).
+    if (!game || !_throwUx || _throwUx.lockGen !== gen || !_throwUx.locked) return;
 
     game.passHands();
     renderGameState();
@@ -4243,7 +4279,10 @@ function renderThrownZone() {
         return;
     }
     const pair = Array.isArray(pending);
-    const locked = !_throwUx || _throwUx.locked || game.phase === 'activate';
+    // SOLO keeps the take-back through the lock beat (undoable until
+    // hands pass); MP goes read-only the moment the stream locks.
+    const locked = !_throwUx || game.phase === 'activate'
+        || (_throwUx.locked && mpActive());
     const note = locked
         ? 'Locked in — revealed on your turn'
         : (pair ? 'Your last two go in together' : 'Thrown in — face down');

@@ -432,6 +432,11 @@ html, body {
     box-shadow: 0 0 10px rgba(232, 195, 75, 0.5);
 }
 
+/* Melee runs its full ceremony — the Skip chip is retired (Wyatt 7/17).
+   Hidden HERE, not in melee.js (Skylar's file, never hand-edited): the
+   element stays in the DOM so rig el.click() fast-forwards still work. */
+.ms-skip { display: none !important; }
+
 /* The Emblem flare — "who reveals first" with no words (Wyatt 7/17).
    Plays once when the throws lock and the reveal opens. */
 .em-first { animation: emFirst 1.9s ease-in-out; }
