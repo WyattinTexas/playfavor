@@ -3,10 +3,13 @@
 //
 //   SKIRMISH      pure vs-AI at the menu's table size; pick ANY owned
 //                 hero (the 3-card queue offer is a matchmaking thing).
-//   DAILY RIVAL   one named rival a day — a real leaderboard citizen.
-//                 Finish ahead of them and the crown pays Stars, once
-//                 per daily window (same 10 PM ET boundary as the
-//                 champions board). Same engine as Skirmish.
+//   WANTED        one named rival a day (the mode formerly titled Daily
+//                 Rival — Wyatt renamed it 7/16). Finish ahead of them
+//                 and the crown pays the bounty, once per daily window
+//                 (same 10 PM ET boundary as the champions board). The
+//                 Bandit's head is 100 ★; the rest drift 25–75 by day.
+//                 Same engine as Skirmish, but the rival rides with a
+//                 second copy of their starting gold.
 //   PRIVATE ROOM  host a table, hand friends the code, AI fills the
 //                 empty seats. Lobby here; the record handshake and the
 //                 pick/seal/live pipeline live in js/mp.js (FMP.rooms).
@@ -71,14 +74,13 @@
         titleToSelect(ownedChars());
     }
 
-    // ── DAILY RIVAL ──────────────────────────────────────────────────
+    // ── WANTED (the daily rival) ─────────────────────────────────────
     // TEN rivals — one for each character in the game, each with a name
     // worth facing (Wyatt 7/16). The day's pick is deterministic from the
     // daily key (10 PM ET boundary — the same day the champions live on):
     // every client, same rival. No repeat on consecutive days. Rivals are
     // NOT leaderboard citizens — they never post rows; they just play
     // sharp (persona brain) astride their own hero.
-    const RIVAL_STARS = 25;
     const RIVALS = [
         { key: 'explorer',  hero: 'explorer',  name: 'Marco Nadal',             strong: ['survival', 'prospecting'] },
         { key: 'knight',    hero: 'knight',    name: 'Ser Thomas',              strong: ['power', 'survival'] },
@@ -96,6 +98,16 @@
         let h = 0;
         for (let i = 0; i < s.length; i++) h = ((h * 31) + s.charCodeAt(i)) >>> 0;
         return h;
+    }
+
+    // The bounty (Wyatt 7/16): the Bandit's head is always worth 100 ★;
+    // every other head drifts day to day — 25..75 in steps of 5, hashed
+    // from the daily key so every client shows and pays the same number.
+    function rivalStars(rival, key) {
+        if (!rival) return 25;
+        if (rival.key === 'bandit') return 100;
+        const k = key || FLB.currentDateKey();
+        return 25 + (hashKey(k + '|' + rival.key) % 11) * 5;
     }
 
     function rivalOfDay(key) {
@@ -117,7 +129,7 @@
         return !!(window.FLB && FLB.rivalDayClaimed && FLB.rivalDayClaimed() === FLB.currentDateKey());
     }
 
-    // ── The menu plaque — the Daily Rival IS its own button, worn like
+    // ── The menu plaque — the WANTED rival IS its own button, worn like
     // Nation's Challenger: portrait, name plate, the ★ stakes, a live
     // countdown to the next rival, and a red ! while today's is unbeaten.
     let _plaqueT = null;
@@ -137,13 +149,13 @@
         card.classList.toggle('beaten', beaten);
         card.innerHTML = `
             ${beaten ? '' : '<span class="drp-badge">!</span>'}
-            <div class="drp-head">Daily Rival</div>
+            <div class="drp-head">Wanted</div>
             <div class="drp-frame">
                 <img class="drp-art" src="assets/characters/${hero ? hero.filename : ''}" alt="">
                 ${beaten ? '<div class="drp-stamp">BEATEN</div>' : ''}
             </div>
             <div class="drp-name">${rival.name}</div>
-            <div class="drp-stars">${beaten ? 'Next rival in' : `<b>★</b> +${RIVAL_STARS}`}</div>
+            <div class="drp-stars">${beaten ? 'Next rival in' : `<b>★</b> +${rivalStars(rival)}`}</div>
             <div class="drp-clock" id="drpClock">${fmtClock(FLB.msUntilNextWindow())}</div>`;
         clearInterval(_plaqueT);
         _plaqueT = setInterval(() => {
@@ -162,14 +174,14 @@
         const ov = $('rivalIntro');
         ov.innerHTML = `
             <div class="ri-inner" onclick="event.stopPropagation()">
-                <div class="ri-title">Rival of the Day</div>
+                <div class="ri-title">Wanted</div>
                 <img class="ri-art${beaten ? ' beaten' : ''}" src="assets/characters/${hero ? hero.filename : ''}" alt="">
                 ${beaten ? '<div class="ri-stamp">BEATEN</div>' : ''}
                 <div class="ri-name">${rival.name}</div>
                 <div class="ri-sub">${hero ? 'The ' + hero.name : ''} · a table of three</div>
                 <div class="ri-stakes">${beaten
                     ? 'Beaten today — the next rival arrives at 10 PM Eastern.'
-                    : `Finish <b>ahead of them</b> and the crown pays <b>+${RIVAL_STARS} ★</b> — once a day.`}</div>
+                    : `Finish <b>ahead of them</b> and the crown pays <b>+${rivalStars(rival)} ★</b> — once a day.`}</div>
                 <div class="ri-actions">
                     <button class="btn-royal" onclick="FMODES.closeRivalIntro()"><span>Not Today</span></button>
                     <button class="btn-royal primary" onclick="FMODES.beginRivalGame()"><span>${beaten ? 'Rematch' : 'Face Them'}</span></button>
@@ -201,10 +213,11 @@
         if (myPlace < 0 || rivalPlace < 0 || myPlace > rivalPlace) return;
         try {
             const key = FLB.currentDateKey();
-            const fresh = await FLB.claimRivalWin(key, RIVAL_STARS);
+            const stars = rivalStars(rival, key);
+            const fresh = await FLB.claimRivalWin(key, stars);
             if (fresh) {
-                showNotification(`Rival bested — ${rival.name} yields! +${RIVAL_STARS} ★`, 'act');
-                addLogEntry(`Daily Rival defeated: ${rival.name} (+${RIVAL_STARS} Stars)`);
+                showNotification(`Rival bested — ${rival.name} yields! +${stars} ★`, 'act');
+                addLogEntry(`Wanted rival defeated: ${rival.name} (+${stars} Stars)`);
                 renderRivalPlaque();   // the plaque wears its BEATEN stamp now
             }
         } catch (e) { /* the win itself still stands */ }
@@ -419,7 +432,7 @@
     window.FMODES = {
         openSkirmish, beginSkirmish, closeSkirmishPick,
         openDailyRival, closeRivalIntro, beginRivalGame,
-        rivalOfDay, rivalGameOver, renderRivalPlaque,
+        rivalOfDay, rivalStars, rivalGameOver, renderRivalPlaque,
         openPrivateRoom, closePrivateRoom, hostRoom, joinRoom,
         roomSetSize, startRoomGame,
         attachEmotes, detachEmotes, toggleEmoteTray, emote,

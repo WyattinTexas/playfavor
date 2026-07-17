@@ -1400,7 +1400,7 @@ async function confirmCharacter() {
 
 // The classic table — solo builds land here from Begin (skip-queue and
 // offline paths), from the queue theater's accepted solo pick, and from
-// the Skirmish / Daily Rival doors (modes.js sets window._gameMode).
+// the Skirmish / Wanted doors (modes.js sets window._gameMode).
 async function buildSoloTable() {
     const mode = window._gameMode || null;
     // Table size = the queue you joined on the menu (persisted; the old
@@ -1458,7 +1458,7 @@ async function buildSoloTable() {
         ? shuffleArray(['The Lady Vespurine', 'Count Balthazar', 'Lord Ashcropt', 'Dame Rosalind',
                         'Prince Aldric', 'Princess Sera', 'Lord Cassius', 'Lady Elara'])
         : ['Prince Aldric', 'Princess Sera', 'Lord Cassius', 'Lady Elara'];
-    // Skirmish is PURE vs-AI (no leaderboard personas). The Daily Rival
+    // Skirmish is PURE vs-AI (no leaderboard personas). The WANTED rival
     // seats exactly ONE — today's rival, at seat 1, under their own row.
     let personaSeats;
     if (mode === 'skirmish') {
@@ -1502,6 +1502,14 @@ async function buildSoloTable() {
         gp._personaUid = def.uid;
         gp._personaAI = { key: def.key, strong: def.strong.slice() };
     });
+    // The WANTED rival rides provisioned for the hunt (Wyatt 7/16): one
+    // extra copy of the starting gold of the hero they ACTUALLY ride —
+    // the same resource they already start with, doubled, so the daily
+    // head is harder to take than a skirmish bot.
+    if (mode === 'rival' && window._rivalDef) {
+        const rp = game.players.find(p => p.name === window._rivalDef.name);
+        if (rp && rp.character) rp.gold += rp.character.startingGold || 0;
+    }
 
     // ── Rated Emblem start: the highest rating at the table holds it in
     // Act 1. Rated = you (your favor/players row exists) or a seated
@@ -5768,7 +5776,7 @@ function showScoring() {
         }).filter(Boolean)
         : [];
     if (window.FLB) FLB.postGameResult(scores, personaPlaces);
-    // Daily Rival: finishing ahead of today's named rival pays Stars once
+    // WANTED: finishing ahead of today's named rival pays Stars once
     // per window (modes.js owns the claim and the once-a-day gate).
     if (window.FMODES) FMODES.rivalGameOver(scores);
     if (mpActive()) FMP.gameOver();   // host tidies the record; everyone detaches

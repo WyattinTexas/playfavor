@@ -2028,7 +2028,7 @@ console.log('── Phone: royal menu at 844×390');
   });
   ok(m.play && m.seg && m.chip, 'Play + table picker + profile chip all reachable on a phone');
   ok(m.skirm && m.privateGame, 'Skirmish and Private Game tiles reachable on a phone');
-  ok(m.plaque, 'the Daily Rival plaque renders with its name and ticking clock');
+  ok(m.plaque, 'the WANTED plaque renders with its name and ticking clock');
   ok(!m.hscroll, 'no horizontal scroll on the phone menu');
   await page.screenshot({ path: join(SHOTS, 'menu-phone.png') });
   await page.close();
@@ -5736,8 +5736,8 @@ console.log('── Skirmish: any owned hero, thematic AI, no leaderboard person
   await page.close();
 }
 
-// ═══ DAILY RIVAL — one named rival a day, Stars once per window ═══
-console.log('── Daily Rival: deterministic pick, intro plaque, claim-once');
+// ═══ WANTED (daily rival) — one named rival a day, Stars once per window ═══
+console.log('── Wanted: deterministic pick, drifting bounty, intro plaque, claim-once');
 {
   const page = await browser.newPage();
   page.on('console', m => { if (m.type() === 'error') consoleErrors.push('rival: ' + m.text()); });
@@ -5767,11 +5767,30 @@ console.log('── Daily Rival: deterministic pick, intro plaque, claim-once');
       const r = FMODES.rivalOfDay(d.toISOString().slice(0, 10));
       if (!pool.some(p => p.key === r.key)) pool.push(r);
     }
+    // The bounty (Wyatt 7/16): bandit = flat 100 ★; everyone else drifts
+    // 25..75 in steps of 5, deterministic per (day, rival).
+    const bounties = [];
+    for (let i = 0; i < 60; i++) {
+      const d = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
+      const r = FMODES.rivalOfDay(d);
+      bounties.push({ key: r.key, stars: FMODES.rivalStars(r, d), again: FMODES.rivalStars(r, d) });
+    }
+    const banditB = bounties.filter(b => b.key === 'bandit');
+    const otherB = bounties.filter(b => b.key !== 'bandit');
+    // Direct check — rivalStars keys off rival.key alone, so the bandit
+    // flat-100 must hold on ANY day, not just days the sample surfaced him.
+    const bandit100Direct = ['2026-01-01', '2026-07-16', '2027-03-09']
+      .every(k => FMODES.rivalStars({ key: 'bandit' }, k) === 100);
     return {
       days: days.join(','), stable, noAdjacentRepeat,
       poolSize: pool.length,
       allHeroes: pool.every(r => heroes.has(r.hero)),
       named: pool.every(r => r.name && r.name.length > 8 && r.name !== r.hero),
+      banditSeen: banditB.length,
+      bandit100: bandit100Direct && banditB.every(b => b.stars === 100),
+      othersRanged: otherB.every(b => b.stars >= 25 && b.stars <= 75 && b.stars % 5 === 0),
+      othersDrift: new Set(otherB.map(b => b.stars)).size > 1,
+      bountyStable: bounties.every(b => b.stars === b.again),
     };
   });
   ok(det.stable, 'the pick is deterministic for a given day');
@@ -5779,28 +5798,43 @@ console.log('── Daily Rival: deterministic pick, intro plaque, claim-once');
   ok(det.poolSize === 10 && det.allHeroes,
     `TEN rivals, one per character (${det.poolSize} seen across 40 days)`);
   ok(det.named, 'every rival wears a crafted name, not a character id');
+  ok(det.banditSeen > 0 && det.bandit100,
+    `the Bandit's head is always worth 100 ★ (${det.banditSeen} bandit days checked)`);
+  ok(det.othersRanged && det.othersDrift && det.bountyStable,
+    'every other bounty drifts 25–75 in steps of 5, deterministic per day');
 
   // The MENU plaque — Nation's Challenger look: name, ★ stakes, live clock.
   const plaque = await page.evaluate(() => {
     FMODES.renderRivalPlaque();
     const rival = FMODES.rivalOfDay();
     const card = document.getElementById('rivalPlaque');
+    const badge = card.querySelector('.drp-badge');
+    const cr = card.getBoundingClientRect();
+    const br = badge ? badge.getBoundingClientRect() : null;
     return {
       head: (card.querySelector('.drp-head') || {}).textContent || '',
       name: (card.querySelector('.drp-name') || {}).textContent || '',
       expect: rival.name,
       art: !!card.querySelector('.drp-art'),
-      stars: /\+25/.test((card.querySelector('.drp-stars') || {}).textContent || ''),
+      bounty: FMODES.rivalStars(rival),
+      stars: ((card.querySelector('.drp-stars') || {}).textContent || '')
+        .includes('+' + FMODES.rivalStars(rival)),
       clock: /^\d\d:\d\d:\d\d$/.test((document.getElementById('drpClock') || {}).textContent || ''),
-      badge: !!card.querySelector('.drp-badge'),
-      tall: card.getBoundingClientRect().height >= 120,
+      badge: !!badge,
+      // The ! overhangs the card's top-right corner OVER the edge (Wyatt
+      // 7/16) — the old ts-card overflow clip cut it off. Overhang plus
+      // overflow:visible together mean the full circle paints.
+      badgeOverhangs: !!br && br.top < cr.top && br.right > cr.right
+        && getComputedStyle(card).overflow === 'visible',
+      tall: cr.height >= 120,
     };
   });
-  ok(/daily rival/i.test(plaque.head) && plaque.name === plaque.expect,
-    `the menu plaque names today's rival (${plaque.name})`);
+  ok(/wanted/i.test(plaque.head) && plaque.name === plaque.expect,
+    `the WANTED plaque names today's rival (${plaque.name})`);
   ok(plaque.art && plaque.stars && plaque.clock,
-    'portrait, ★ +25 and a ticking HH:MM:SS clock on the plaque');
+    `portrait, today's bounty (★ +${plaque.bounty}) and a ticking HH:MM:SS clock on the plaque`);
   ok(plaque.badge, 'the red ! badge rides an unbeaten day');
+  ok(plaque.badgeOverhangs, 'the ! badge overhangs the corner un-clipped, over the card edge');
   ok(plaque.tall, 'the plaque stands tall in the menu grid');
   await page.screenshot({ path: join(SHOTS, 'rival-plaque.png') });
 
@@ -5809,15 +5843,31 @@ console.log('── Daily Rival: deterministic pick, intro plaque, claim-once');
   const intro = await page.evaluate(() => {
     const ov = document.getElementById('rivalIntro');
     const rival = FMODES.rivalOfDay();
+    const flat = ov.textContent.replace(/\s+/g, ' ');
+    const inner = ov.querySelector('.ri-inner').getBoundingClientRect();
+    const btnsFit = [...ov.querySelectorAll('.ri-actions .btn-royal')]
+      .every(b => {
+        const r = b.getBoundingClientRect();
+        const s = b.querySelector('span');
+        // Inside the panel AND the label inside the button (.btn-royal
+        // clips overflow — a too-wide nowrap span reads "NOT TODA").
+        return r.left >= inner.left - 1 && r.right <= inner.right + 1
+          && s && s.getBoundingClientRect().width <= r.width - 4;
+      });
     return {
       active: ov.classList.contains('active'),
+      titled: /Wanted/.test(flat),
       named: ov.textContent.includes(rival.name),
       art: !!ov.querySelector('.ri-art'),
-      stakes: /\+25\s*★/.test(ov.textContent.replace(/\s+/g, ' ')),
+      bounty: FMODES.rivalStars(rival),
+      stakes: flat.includes('+' + FMODES.rivalStars(rival) + ' ★'),
+      btnsFit,
     };
   });
-  ok(intro.active && intro.named, 'the intro plaque names today\'s rival');
-  ok(intro.art && intro.stakes, 'portrait + the +25★ stakes on the plaque');
+  ok(intro.active && intro.titled && intro.named,
+    'the WANTED intro names today\'s rival');
+  ok(intro.art && intro.stakes, `portrait + today's +${intro.bounty}★ stakes on the plaque`);
+  ok(intro.btnsFit, 'Not Today / Face Them sit inside the panel (no edge bleed)');
   await page.screenshot({ path: join(SHOTS, 'daily-rival-intro.png') });
 
   await page.evaluate(() => FMODES.beginRivalGame());
@@ -5844,12 +5894,20 @@ console.log('── Daily Rival: deterministic pick, intro plaque, claim-once');
       hero: seat && seat.character && seat.character.id,
       expectHero: rival.hero,
       uid: seat && seat._personaUid,
+      // The rival's head start (Wyatt 7/16): a second copy of the gold
+      // their ridden hero starts with — and ONLY the rival gets it.
+      gold: seat && seat.gold,
+      expectGold: seat && seat.character ? seat.character.startingGold * 2 : -1,
+      othersStock: game.players.every(p => p === seat
+        || p.gold === (p.character ? p.character.startingGold : 0)),
     };
   });
   ok(table.count === 3, `the rival table seats three (${table.count})`);
   ok(table.seated && table.sharp, 'today\'s rival sits at the table with the sharp persona brain');
   ok(table.hero === table.expectHero, `astride their own character (${table.hero})`);
   ok(!table.uid, 'and with NO leaderboard identity — a rival never posts a row');
+  ok(table.gold === table.expectGold && table.othersStock,
+    `the rival rides with a second copy of their starting gold (${table.gold} = 2× stock); everyone else starts stock`);
 
   // Claim path: stub the star grant, drive the scoring hook directly.
   const claims = await page.evaluate(async () => {
@@ -5862,10 +5920,10 @@ console.log('── Daily Rival: deterministic pick, intro plaque, claim-once');
     window._gameMode = 'rival';   // rigGameOver clears nothing; ensure mode intact for the 2nd win
     await FMODES.rivalGameOver([{ name: 'You' }, { name: rival.name }, { name: 'Filler' }]);   // claim refused (stub false)
     FLB.claimRivalWin = real;
-    return calls;
+    return { calls, expect: FMODES.rivalStars(rival, FLB.currentDateKey()) };
   });
-  ok(claims.length === 2 && claims.every(c => c.stars === 25),
-    `beating the rival claims +25★ through the once-a-day gate (${claims.length} claim calls)`);
+  ok(claims.calls.length === 2 && claims.calls.every(c => c.stars === claims.expect),
+    `beating the rival claims today's +${claims.expect}★ through the once-a-day gate (${claims.calls.length} claim calls)`);
   await page.close();
 }
 

@@ -35,7 +35,7 @@ console.log('room door:', await page.evaluate(() => ({
 await page.evaluate(() => FMODES.closePrivateRoom());
 
 // 4 · Skirmish → all owned select → begin → thematic table
-await page.evaluate(() => FMODES.openSkirmish());
+await page.evaluate(() => { FMODES.openSkirmish(); FMODES.beginSkirmish(3); });  // the door asks the size first
 await page.waitForFunction(() => document.getElementById('character-select').classList.contains('active') && document.querySelectorAll('.character-card').length > 0, { timeout: 15000 });
 console.log('skirmish select cards:', await page.evaluate(() => document.querySelectorAll('.character-card').length));
 await page.evaluate(() => {

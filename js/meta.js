@@ -138,7 +138,7 @@
         return `${p.y}-${p.m}-${p.d}`;
     }
 
-    // Time until the next 10 PM ET boundary — the Daily Rival plaque's
+    // Time until the next 10 PM ET boundary — the WANTED plaque's
     // countdown ticks on this. (ET wall-clock arithmetic: reading the
     // instant in the ET frame cancels the offset; the once-a-year DST
     // boundary night drifts an hour and nobody is harmed.)
@@ -468,7 +468,7 @@
         return { rating: p.rating || 0, stars: p.stars || 0 };
     }
 
-    // ── Daily Rival (modes.js drives the UI; this owns the claim) ────
+    // ── WANTED — daily rival (modes.js drives the UI; this owns the claim) ────
     // The reward is once per daily window — the SAME 10 PM ET window the
     // champions live on. One whole-row transaction flips rivalDay and adds
     // the Stars together, so two tabs can never double-pay.

@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Attach a processed build to FAVOR's TestFlight groups (internal +
+external) — the explicit one-line step every new build needs.
+
+  tf_attach.py <CFBundleVersion>      e.g. tf_attach.py 2
+
+Waits for the build to finish PROCESSING (polls up to ~25 min), then
+POSTs it onto every beta group. Idempotent — re-attaching is a no-op.
+Run with the same venv favor_store.py uses (pyjwt+cryptography+requests).
+"""
+import sys
+import time
+
+from favor_store import APP_ID, get, post
+
+want = sys.argv[1] if len(sys.argv) > 1 else "2"
+
+build = None
+for i in range(50):                       # ~25 min of patience
+    d = get("/v1/builds", **{"filter[app]": APP_ID, "filter[version]": want,
+                             "sort": "-uploadedDate", "limit": 1})
+    if d["data"]:
+        b = d["data"][0]
+        state = b["attributes"]["processingState"]
+        print(f"build {want}: {state}")
+        if state == "VALID":
+            build = b
+            break
+        if state in ("FAILED", "INVALID"):
+            sys.exit(f"build {want} landed {state} — see App Store Connect")
+    else:
+        print(f"build {want}: not visible yet")
+    time.sleep(30)
+
+if not build:
+    sys.exit(f"build {want} never finished processing — check ASC")
+
+groups = get("/v1/betaGroups", **{"filter[app]": APP_ID, "limit": 50})["data"]
+for g in groups:
+    name = g["attributes"]["name"]
+    if g["attributes"].get("isInternalGroup"):
+        # Internal groups receive every build automatically — ASC 422s an
+        # explicit assign ("Builds cannot be assigned to this internal group").
+        print(f"skipped internal group '{name}' (gets builds automatically)")
+        continue
+    post(f"/v1/betaGroups/{g['id']}/relationships/builds",
+         {"data": [{"type": "builds", "id": build["id"]}]})
+    print(f"attached build {want} -> group '{name}'")
+
+print("DONE — TestFlight testers get the new build once beta review clears.")

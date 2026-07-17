@@ -182,9 +182,10 @@ html, body {
 }
 
 .ts-play { grid-area: play; min-height: clamp(150px, 36dvh, 300px); }
-/* Play's vignette is a pre-cut clean slice of the Knight board (no chrome);
-   tall cards look at the tower top, short-wide phone cards at the walls. */
-.ts-art-play { background-image: url('../assets/ui/menu-play-vignette.jpg'); background-position: 50% 42%; }
+/* Play's vignette: the realm's open gates — castle, falls and the road in
+   (Wyatt 7/16); tall cards look through the arch, short-wide cards at the
+   castle. New filename on purpose: the stamped CSS busts the old cache. */
+.ts-art-play { background-image: url('../assets/ui/menu-play-gates.jpg'); background-position: 50% 42%; }
 /* Host Room + Skirmish: purpose-painted MJ vignettes, same family as the hero */
 .ts-art-host { background-image: url('../assets/ui/menu-host-vignette.jpg'); background-position: 50% 55%; }
 .ts-art-skirm { background-image: url('../assets/ui/menu-skirmish-vignette.jpg'); background-position: 50% 42%; }
@@ -6306,9 +6307,9 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
     border-radius: 6px; box-shadow: 0 6px 22px rgba(0,0,0,0.6);
 }
 
-/* ═══ MODE OVERLAYS — Daily Rival · Skirmish · Private Game ═══ */
+/* ═══ MODE OVERLAYS — Wanted · Skirmish · Private Game ═══ */
 
-/* ── Daily Rival intro plaque ── */
+/* ── Wanted (daily rival) intro plaque ── */
 .rival-intro {
     position: fixed; inset: 0; z-index: 10540;
     display: none; align-items: center; justify-content: center;
@@ -6352,7 +6353,13 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
     font-family: 'EB Garamond', serif; font-size: 15px; text-align: center;
     color: var(--parchment, #e8d9b5); padding: 4px 6px;
 }
-.ri-actions { display: flex; gap: 10px; margin-top: 6px; }
+/* Same fit rules the room lobby earned (7/16): two .btn-royal at their
+   280px min-width overflow a 420px panel — let them split the row instead.
+   The stock 48px side padding then eats the label (.btn-royal clips its
+   overflow), so action-row buttons wear slim sides. */
+.ri-actions { display: flex; gap: 10px; margin-top: 6px; width: 100%; }
+.ri-actions .btn-royal { flex: 1; min-width: 0; padding: 14px 10px; }
+.ri-actions .btn-royal span { white-space: nowrap; }
 
 /* ── Private room door + lobby ── */
 .room-overlay {
@@ -6489,6 +6496,12 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     min-height: 158px;
     border-color: rgba(232, 195, 75, 0.85);
     box-shadow: 0 0 22px rgba(201, 168, 76, 0.22), 0 6px 18px rgba(0, 0, 0, 0.55);
+    /* The ! badge overhangs the corner OVER the card edge (Wyatt 7/16) —
+       the ts-card overflow clip was cutting it off. Nothing else in this
+       card reaches the edges, so visible is safe; z-index keeps the badge
+       above the neighboring tiles it leans toward. */
+    overflow: visible;
+    z-index: 1;
 }
 .drp-head {
     font-family: 'Cinzel', serif; font-size: 12px; font-weight: 700;
