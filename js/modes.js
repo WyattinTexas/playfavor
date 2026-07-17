@@ -80,16 +80,16 @@
     // sharp (persona brain) astride their own hero.
     const RIVAL_STARS = 25;
     const RIVALS = [
-        { key: 'explorer',  hero: 'explorer',  name: 'Cassian the Far-Strider',      strong: ['survival', 'prospecting'] },
-        { key: 'knight',    hero: 'knight',    name: 'Ser Aldemar the Unbowed',      strong: ['power', 'survival'] },
-        { key: 'bandit',    hero: 'bandit',    name: 'Vesper Quickfingers',          strong: ['prospecting', 'power'] },
-        { key: 'merchant',  hero: 'merchant',  name: 'Barnaby Goldweight',           strong: ['charisma', 'knowledge'] },
-        { key: 'fisherman', hero: 'fisherman', name: 'Old Pike Whitmore',            strong: ['survival', 'knowledge'] },
-        { key: 'duchess',   hero: 'duchess',   name: 'Duchess Vivienne the Radiant', strong: ['charisma', 'knowledge'] },
-        { key: 'scientist', hero: 'scientist', name: 'Doctor Ambrose Quicksilver',   strong: ['alchemy', 'knowledge'] },
-        { key: 'doctor',    hero: 'doctor',    name: 'Rosamund the Mender',          strong: ['alchemy', 'charisma'] },
-        { key: 'fiddler',   hero: 'fiddler',   name: 'Fiddling Jack Merriweather',   strong: ['charisma', 'power'] },
-        { key: 'magician',  hero: 'magician',  name: 'Prospero the Wondermaker',     strong: ['alchemy', 'prospecting'] },
+        { key: 'explorer',  hero: 'explorer',  name: 'Marco Nadal',             strong: ['survival', 'prospecting'] },
+        { key: 'knight',    hero: 'knight',    name: 'Ser Thomas',              strong: ['power', 'survival'] },
+        { key: 'bandit',    hero: 'bandit',    name: 'Vivienne Quickfingers',   strong: ['prospecting', 'power'] },
+        { key: 'merchant',  hero: 'merchant',  name: 'Wim Goldweight',          strong: ['charisma', 'knowledge'] },
+        { key: 'fisherman', hero: 'fisherman', name: 'Angler Pete',             strong: ['survival', 'knowledge'] },
+        { key: 'duchess',   hero: 'duchess',   name: 'Elizabeth the Bold',      strong: ['charisma', 'knowledge'] },
+        { key: 'scientist', hero: 'scientist', name: 'John Quicksilver',        strong: ['alchemy', 'knowledge'] },
+        { key: 'doctor',    hero: 'doctor',    name: 'Doctor Black',            strong: ['alchemy', 'charisma'] },
+        { key: 'fiddler',   hero: 'fiddler',   name: 'Fiddling Al Gable',       strong: ['charisma', 'power'] },
+        { key: 'magician',  hero: 'magician',  name: 'Skylar Wondermaker',      strong: ['alchemy', 'prospecting'] },
     ];
 
     function hashKey(s) {
