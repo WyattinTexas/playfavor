@@ -6641,3 +6641,10 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     color: rgba(232,205,120,0.75);
 }
 .st-table-card.equipped .st-table-state { color: #ffe9ad; }
+
+/* ── Ambient life canvas (menu-ambient) — see js/ambient.js ── */
+#tsAmbient {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+}

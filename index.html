@@ -36,6 +36,11 @@
              and a loose grid of framed vignette cards — PLAY unmistakably
              biggest, HOST ROOM & SKIRMISH beside it, quiet minors below. -->
         <div class="ts-bg" id="tsBg"></div>
+        <!-- Ambient life layer (js/ambient.js): birds, pollen, butterflies.
+             Under the haze so life dims where the UI needs calm. To remove
+             ALL ambient elements: delete this canvas, the ambient.js script
+             tag, and js/ambient.js — nothing else references them. -->
+        <canvas id="tsAmbient"></canvas>
         <div class="ts-haze"></div>
 
         <div class="ts-frame">
@@ -450,6 +455,7 @@
     <script src="engine/gameState.js?v=20260716190918"></script>
     <script src="js/melee.js?v=20260716190918"></script>
     <script src="js/ui.js?v=20260716191814"></script>
+    <script src="js/ambient.js?v=20260716191814"></script>
     <script src="js/meta.js?v=20260716190918"></script>
     <script src="js/achievements.js?v=20260716190918"></script>
     <script src="js/mp.js?v=20260716190918"></script>
