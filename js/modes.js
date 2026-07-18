@@ -152,7 +152,7 @@
             <div class="drp-head">Wanted</div>
             <div class="drp-frame">
                 <img class="drp-art" src="assets/characters/${hero ? hero.filename : ''}" alt="">
-                ${beaten ? '<div class="drp-stamp">BEATEN</div>' : ''}
+                ${beaten ? '<div class="drp-stamp">CLAIMED</div>' : ''}
             </div>
             <div class="drp-name">${rival.name}</div>
             <div class="drp-stars">${beaten ? 'Next rival in' : `<b>★</b> +${rivalStars(rival)}`}</div>
@@ -176,7 +176,7 @@
             <div class="ri-inner" onclick="event.stopPropagation()">
                 <div class="ri-title">Wanted</div>
                 <img class="ri-art${beaten ? ' beaten' : ''}" src="assets/characters/${hero ? hero.filename : ''}" alt="">
-                ${beaten ? '<div class="ri-stamp">BEATEN</div>' : ''}
+                ${beaten ? '<div class="ri-stamp">CLAIMED</div>' : ''}
                 <div class="ri-name">${rival.name}</div>
                 <div class="ri-sub">${hero ? 'The ' + hero.name : ''} · a table of three</div>
                 <div class="ri-stakes">${beaten

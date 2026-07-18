@@ -199,7 +199,7 @@ window.FAVOR_DATA.cards = [
   { id: cid(), name: "Prospecting Journal", audit: "1 Knowledge & 1 Prospecting, Req: 1 Prospecting, Act 1", filename: "Prospecting Journal Card.jpg", act: 1, type: "wisdom",
     cost: null, skills: ["knowledge", "prospecting"], requirements: ["prospecting"], rewards: {} },
 
-  { id: cid(), name: "Badge of Courage", audit: "1 Knowledge * 5 Favor, Req: 5 Favor, Act 1", filename: "Badge of Courage Card.jpg", act: 1, type: "artifact",
+  { id: cid(), name: "Badge of Courage", audit: "1 Knowledge * 5 Favor, Req: 5 Favor, Act 1", filename: "Badge of Courage Card.jpg", act: 1, type: "adventure",
     cost: null, skills: ["knowledge"], reqFavor: 5, requirements: [],
     rewards: {}, favor: 5 },
 
@@ -266,7 +266,7 @@ window.FAVOR_DATA.cards = [
   { id: cid(), name: "Fortune Teller", audit: "1 Mind's Eye & 3 Scorn, Req: None, Act 2", filename: "Fortune Teller Card.jpg", act: 2, type: "artifact",
     cost: null, skills: [], requirements: [], rewards: { scorn: 3 }, special: "minds_eye" },
 
-  { id: cid(), name: "Forgotten Temple", grantsMap: "Sacred Chest", audit: "Map of Sacred Chest & 1 Knowledge & 2 Scorn, Req: None, Act 1", filename: "Forgotten Temple.jpg", act: 1, type: "adventure",
+  { id: cid(), name: "Forgotten Temple", grantsMap: "Sacred Chest", audit: "Map of Sacred Chest & 1 Knowledge & 2 Scorn, Req: None, Act 1", filename: "Forgotten Temple.jpg", act: 1, type: "wisdom",
     cost: null, skills: ["knowledge"], requirements: [], rewards: { scorn: 2 },
     special: "sacred_chest" },
 
