@@ -5311,6 +5311,10 @@ async function endActPhases() {
             if (attempt) m._attemptNow = true;
             else addLogEntry(`You hold ${m.name} — due at the end of Act ${game.missionDueAct(m)}`);
         }
+        // With more than one mission resolving this act, YOU choose the order —
+        // completing one can hand you the skills/Favor the next needs (Wyatt
+        // 7/17). Solo only: MP resolves in canonical seat order for lockstep.
+        await chooseMissionOrder();
     }
 
     const missionResults = game.resolveMissions();
@@ -5573,6 +5577,67 @@ function resolveBorrowPlan(card, chosen) {
 // again. Asked BEFORE resolveMissions so an attempt rides exactly the same
 // road as a due mission: checked before any failure penalty lands, and offered
 // the same borrow rescue.
+// ── Mission activation order (solo) — tap your missions in the order you
+// want to turn them in. resolveMissions walks player.missions in array order
+// and applies each success's rewards before checking the next, so ordering a
+// resource-granting mission first can complete the rest (Wyatt 7/17).
+function chooseMissionOrder() {
+    return new Promise((resolve) => {
+        const p = game.players[0];
+        // Missions that WILL resolve this act: due (forced) or attempted.
+        const resolving = (p.missions || []).filter(m =>
+            m.activationRound && m.activationRound <= game.currentAct
+            && (game.missionDueAct(m) <= game.currentAct || m._attemptNow === true));
+        const ov = document.getElementById('promisePicker');
+        if (!ov || resolving.length < 2) { resolve(); return; }
+
+        const order = [];   // missions in chosen order
+        const render = () => {
+            const cards = resolving.map(m => {
+                const pos = order.indexOf(m);
+                const picked = pos >= 0;
+                return `<div class="mo-card${picked ? ' picked' : ''}" data-id="${m.id}">
+                        <img src="assets/cards/missions/${m.filename}" alt="${m.name}">
+                        ${picked ? `<span class="mo-badge">${pos + 1}</span>` : ''}
+                        <span class="mo-name">${m.name}</span>
+                    </div>`;
+            }).join('');
+            const ready = order.length === resolving.length;
+            ov.innerHTML = `
+                <div class="pp-inner mo-due">
+                    <div class="pp-title">Turn-In Order</div>
+                    <div class="pp-sub">You hold <b>${resolving.length} missions</b> this act — tap them in the order to attempt.
+                        An earlier success can hand you what the next one needs.</div>
+                    <div class="mo-grid">${cards}</div>
+                    <div class="pp-actions">
+                        <button class="btn-royal" id="moReset"><span>Reset</span></button>
+                        <button class="btn-royal primary" id="moGo" ${ready ? '' : 'disabled style="opacity:.35"'}><span>Confirm Order</span></button>
+                    </div>
+                </div>`;
+            ov.querySelectorAll('.mo-card').forEach(el => {
+                el.onclick = () => {
+                    const m = resolving.find(x => String(x.id) === el.dataset.id);
+                    if (!m || order.includes(m)) return;
+                    order.push(m);
+                    render();
+                };
+            });
+            ov.querySelector('#moReset').onclick = () => { order.length = 0; render(); };
+            const go = ov.querySelector('#moGo');
+            if (go) go.onclick = () => {
+                ov.classList.remove('active');
+                // Reorder player.missions: chosen resolving order first, rest after.
+                const rest = p.missions.filter(m => !order.includes(m));
+                p.missions = [...order, ...rest];
+                addLogEntry(`You set the turn-in order: ${order.map(m => m.name).join(' → ')}`);
+                resolve();
+            };
+        };
+        render();
+        ov.classList.add('active');
+    });
+}
+
 function showEarlyMissionChoice(mission) {
     return new Promise((resolve) => {
         const ov = document.getElementById('promisePicker');
@@ -6353,7 +6418,7 @@ function showScoreBreakdown(pi, cat) {
     if (!ov) { ov = document.createElement('div'); ov.id = 'scoreBreakdown'; document.body.appendChild(ov); }
     const rows = items.map(it => `
         <div class="sb-row">
-            <img class="sb-thumb" src="${it.img}" alt="">
+            <img class="sb-thumb" src="${it.img}" alt="" onclick="event.stopPropagation(); zoomCard('${it.img}')">
             <span class="sb-name">${it.label}</span>
             <b class="sb-val">${it.val >= 0 ? '+' : ''}${it.val}</b>
         </div>`).join('');

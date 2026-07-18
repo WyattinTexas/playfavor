@@ -817,14 +817,21 @@ html, body {
     .st-pack-buy { font-size: 11px; padding: 4px 12px; }
 }
 
+/* The single scroll region for the whole store (Wyatt 7/17): awning + sign
+   stay pinned above; mint, hero shelf, Table Maker and foot scroll together
+   so the heroes are no longer trapped in a narrow band. */
+.st-scroll {
+    flex: 1 1 auto; min-height: 0;
+    overflow-y: auto; overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 2px;
+}
 .st-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
     gap: 30px 16px;                   /* tall row gap: planks + tags live between rows */
     margin-top: 16px;
-    overflow-y: auto;
-    overflow-x: hidden;               /* plank/tag overhang must never grow a sideways scroll */
-    min-height: 0;   /* flex child: without this the grid refuses to shrink-and-scroll */
+    overflow: visible;                /* the whole store scrolls now, not the grid */
     padding: 14px 14px 18px;          /* side padding gives the overhang room INSIDE the box */
 }
 @keyframes shelfIn {
@@ -3408,10 +3415,11 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
 .sb-who { color: var(--gold-light); font-weight: 700; }
 .sb-total { margin-left: auto; color: var(--gold-light); font-size: 15px; font-variant-numeric: tabular-nums; }
 .sb-list { overflow-y: auto; padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
-.sb-row { display: flex; align-items: center; gap: 12px; padding: 6px 2px; border-bottom: 1px solid rgba(201, 168, 76, 0.08); }
-.sb-thumb { width: 34px; height: 46px; object-fit: cover; object-position: top; border-radius: 4px; flex: 0 0 auto; background: #120c06; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5); }
-.sb-name { flex: 1; font-family: 'EB Garamond', serif; font-size: 13.5px; color: #e8d9bf; min-width: 0; }
-.sb-val { font-family: 'Cinzel', serif; font-weight: 700; color: var(--gold-light); font-variant-numeric: tabular-nums; }
+.sb-row { display: flex; align-items: center; gap: 14px; padding: 7px 2px; border-bottom: 1px solid rgba(201, 168, 76, 0.08); }
+.sb-thumb { width: 58px; height: 80px; object-fit: cover; object-position: top; border-radius: 6px; flex: 0 0 auto; background: #120c06; box-shadow: 0 3px 9px rgba(0, 0, 0, 0.55); cursor: zoom-in; transition: transform .12s; }
+.sb-thumb:hover { transform: scale(1.04); }
+.sb-name { flex: 1; font-family: 'EB Garamond', serif; font-size: 15px; color: #e8d9bf; min-width: 0; }
+.sb-val { font-family: 'Cinzel', serif; font-weight: 700; font-size: 15px; color: var(--gold-light); font-variant-numeric: tabular-nums; }
 .sb-note { font-size: 12px; color: #9c8a68; font-style: italic; padding: 5px 2px; }
 
 .scoring-scroll { max-width: 96vw; overflow-x: auto; }
@@ -6366,6 +6374,28 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
    neighbor with nothing to lend sits grayed with the reason. */
 /* Multi-skill borrows can outgrow the screen: the section list scrolls
    on its own while the title and Confirm/Cancel stay pinned in reach. */
+/* Mission turn-in order picker (solo) — tap cards to number them. */
+.mo-due { max-width: min(760px, 94vw); }
+.mo-grid { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; padding: 8px 4px; max-height: 60dvh; overflow-y: auto; }
+.mo-card {
+    position: relative; width: 130px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    border-radius: 10px; padding: 6px; border: 2px solid rgba(201,168,76,0.35);
+    background: rgba(18,10,5,0.6); transition: transform .15s, border-color .15s, box-shadow .15s;
+}
+.mo-card img { width: 100%; border-radius: 7px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+.mo-card:hover { transform: translateY(-3px); border-color: var(--gold-light); }
+.mo-card.picked { border-color: var(--gold); box-shadow: 0 0 16px rgba(232,195,75,0.45); opacity: .92; }
+.mo-badge {
+    position: absolute; top: -8px; right: -8px; z-index: 2;
+    width: 30px; height: 30px; border-radius: 50%;
+    display: grid; place-items: center;
+    font: 700 15px 'Cinzel', serif; color: #2a1810;
+    background: linear-gradient(180deg, #f0d278, #c9a84c); border: 2px solid #8a6a1f;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+.mo-name { font-family: 'Cinzel', serif; font-size: 11px; font-weight: 700; color: var(--gold-light); text-align: center; line-height: 1.15; }
+
 .pp-inner.bw { flex-wrap: nowrap; }
 
 /* Mission-due chooser: mission card on the SIDE, boards + fail door beside it
