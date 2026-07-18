@@ -456,11 +456,14 @@
                 return out;
             });
 
-            // Daily board: best single-game Favor score in this window.
+            // Daily board: best single-game Favor score in this window. ROUNDED
+            // to match the chars ledger above -- the two disagreed, and these
+            // rows are now also the Top Scores board's whole data source.
             const key = currentDateKey();
+            const myBest = Math.round(mine.finalScore || 0);
             await dbTxn(`daily/${key}/scores/${uid()}`, cur => {
-                if (cur && cur.best >= mine.finalScore) return cur;
-                return { name: myName(), best: mine.finalScore, at: Date.now() };
+                if (cur && cur.best >= myBest) return cur;
+                return { name: myName(), best: myBest, at: Date.now() };
             });
             renderProfileChip();
         } catch (e) {
@@ -674,6 +677,11 @@
             ${ratingSpan(eloOf(_me), 'pc-rating')}
             ${gold > 0 ? `<span class="pc-crowns" title="Daily Championships">${CROWN_SVG}${gold}</span>` : ''}
         `;
+        // _me just landed -- repaint the WANTED plaque so its CLAIMED stamp is
+        // driven by the row arriving rather than by a guessed timer. modes.js
+        // loads after this file, so on the very first boot FMODES may not exist
+        // yet; its own load-time render covers that ordering.
+        if (window.FMODES && FMODES.renderRivalPlaque) FMODES.renderRivalPlaque();
     }
 
     function openProfile() {
@@ -720,6 +728,7 @@
     const LB_EMPTY = {
         alltime: 'No champions yet — the realm awaits its first.',
         daily: 'No champions yet — the day awaits its first.',
+        topscores: 'No marks set yet — the first great game is still to be played.',
     };
 
     // Test residue from the ui-audit suite posts under these names; they are
@@ -761,7 +770,7 @@
             ? `<span class="lb-medal m${rank}">${rank}</span>`
             : `<span class="lb-rank">${rank}</span>`;
         const crowns = r.gold > 0 ? `<span class="lb-crowns">${CROWN_SVG}${r.gold}</span>` : '';
-        const score = tab === 'daily'
+        const score = (tab === 'daily' || tab === 'topscores')
             ? `<img class="lb-ico" src="assets/icons/favor.png" alt="">${r.score}`
             : `✦ ${ratingSpan(r.score)}`;
         // On a hero's board, each row wears its best single-game score with
@@ -786,7 +795,9 @@
         const host = document.getElementById('lbCharTabs');
         if (!host) return;
         const chars = ((window.FAVOR_DATA || {}).characters || []);
-        const overallOn = tab === 'alltime' || tab === 'daily';
+        // Every non-character tab lights the "All Heroes" chip. Miss a new tab
+        // key here and the rail silently mis-lights - this is the one line.
+        const overallOn = tab === 'alltime' || tab === 'daily' || tab === 'topscores';
         const allChip = `
             <button class="lb-chartab all${overallOn ? ' on' : ''}"
                     title="Overall standings" onclick="FLB.openLeaderboard('alltime')">
@@ -831,6 +842,31 @@
                     ...deck(p.uid, players[p.uid] || { name: p.name }),
                     name: p.name, score: p.best, gold: 0,
                 }));
+            } else if (tab === 'topscores') {
+                // The archive already exists: daily/* is never pruned in
+                // production (settleDue only ever writes settled/{key}), and
+                // every row under it is BY CONSTRUCTION one game's score. So
+                // the all-time high table is a flatten of all days x all uids,
+                // collapsed to each player's best. Ties break earliest-first,
+                // matching podiumSort.
+                const days = await dbGet('daily') || {};
+                const bestBy = new Map();
+                for (const day of Object.values(days)) {
+                    for (const [u, s] of Object.entries((day && day.scores) || {})) {
+                        if (!s || typeof s.best !== 'number') continue;
+                        const prev = bestBy.get(u);
+                        if (!prev || s.best > prev.best
+                            || (s.best === prev.best && (s.at || 0) < prev.at)) {
+                            bestBy.set(u, { uid: u, name: s.name, best: s.best, at: s.at || 0 });
+                        }
+                    }
+                }
+                rows = [...bestBy.values()]
+                    .sort((a, b) => (b.best - a.best) || (a.at - b.at))
+                    .map(p => ({
+                        ...deck(p.uid, players[p.uid] || { name: p.name }),
+                        name: p.name, score: p.best, gold: 0,
+                    }));
             } else if (charId) {
                 // Your rating WITH that hero — only players who've ridden
                 // them into a rated game hold a line on this board.
@@ -853,10 +889,14 @@
                     : (LB_EMPTY[tab] || LB_EMPTY.alltime)}</div>`;
                 return;
             }
+            // Top Scores is a TOP TWENTY (Wyatt 7/18); every other board runs
+            // fifty deep. Sliced after cleanBoardRows so residue can't eat a
+            // slot, and your own rank still rides the appendix row below.
+            const limit = tab === 'topscores' ? 20 : 50;
             const myIdx = rows.findIndex(r => r.uid === uid());
-            const shown = rows.slice(0, 50);
+            const shown = rows.slice(0, limit);
             let html = shown.map((r, i) => lbRowHtml(r, i + 1, tab, { idx: i })).join('');
-            if (myIdx >= 50) {
+            if (myIdx >= limit) {
                 html += '<div class="lb-gap">···</div>'
                     + lbRowHtml(rows[myIdx], myIdx + 1, tab, { idx: shown.length, appendix: true });
             }

@@ -77,6 +77,79 @@
                      the next. modes.js renders and ticks it (renderRivalPlaque). -->
                 <div class="ts-card ga-rival drp" id="rivalPlaque" role="button" tabindex="0"
                      onclick="FMODES.openDailyRival()"></div>
+                <!-- PREBOOT (Wyatt 7/18: "the wanted character wasn't showing up
+                     and I closed the app"). Which rival is wanted, what the head
+                     is worth and when the next one arrives are PURE functions of
+                     the date key - nothing about them needs a round trip. They
+                     were only late because renderRivalPlaque first runs inside
+                     the last of 14 parser-blocking scripts, ~760 KB in. This
+                     paints them at parse time; modes.js repaints over it with the
+                     network state (the ! badge, the CLAIMED stamp) when the
+                     profile row lands. Deterministic content first.
+                     The rival table is duplicated from js/modes.js deliberately -
+                     ui-audit asserts the two agree, so they cannot drift. -->
+                <script>
+                (function () {
+                    var ROSTER = [
+                        ['explorer',  'Marco Nadal'],           ['knight',    'Ser Thomas'],
+                        ['bandit',    'Vivienne Quickfingers'], ['merchant',  'Wim Goldweight'],
+                        ['fisherman', 'Angler Pete'],           ['duchess',   'Elizabeth the Bold'],
+                        ['scientist', 'John Quicksilver'],      ['doctor',    'Doctor Black'],
+                        ['fiddler',   'Fiddling Al Gable'],     ['magician',  'Skylar Wondermaker']
+                    ];
+                    function hashKey(s) {
+                        var h = 0;
+                        for (var i = 0; i < s.length; i++) h = ((h * 31) + s.charCodeAt(i)) >>> 0;
+                        return h;
+                    }
+                    function dateKey(now) {
+                        var f = new Intl.DateTimeFormat('en-CA', {
+                            timeZone: 'America/New_York', hourCycle: 'h23',
+                            year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit' });
+                        var p = {};
+                        f.formatToParts(now).forEach(function (x) { p[x.type] = x.value; });
+                        if (parseInt(p.hour, 10) % 24 >= 22) {
+                            var d = new Date(Date.UTC(+p.year, +p.month - 1, +p.day));
+                            d.setUTCDate(d.getUTCDate() + 1);
+                            return d.toISOString().slice(0, 10);
+                        }
+                        return p.year + '-' + p.month + '-' + p.day;
+                    }
+                    function msLeft(now) {
+                        var et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+                        var next = new Date(et);
+                        next.setHours(22, 0, 0, 0);
+                        if (et >= next) next.setDate(next.getDate() + 1);
+                        return Math.max(0, next - et);
+                    }
+                    function pad(n) { return String(n).length < 2 ? '0' + n : String(n); }
+                    try {
+                        var now = new Date(), k = dateKey(now);
+                        var idx = hashKey(k) % ROSTER.length;
+                        var prev = new Date(k + 'T12:00:00Z');
+                        prev.setUTCDate(prev.getUTCDate() - 1);
+                        if (idx === hashKey(prev.toISOString().slice(0, 10)) % ROSTER.length) {
+                            idx = (idx + 1) % ROSTER.length;
+                        }
+                        var hero = ROSTER[idx][0], name = ROSTER[idx][1];
+                        var stars = hero === 'bandit' ? 100 : 25 + (hashKey(k + '|' + hero) % 11) * 5;
+                        var art = 'assets/characters/' + hero.charAt(0).toUpperCase() + hero.slice(1) + '.jpg';
+                        var s = Math.floor(msLeft(now) / 1000);
+                        var clock = pad(Math.floor(s / 3600)) + ':' + pad(Math.floor((s % 3600) / 60)) + ':' + pad(s % 60);
+
+                        var link = document.createElement('link');
+                        link.rel = 'preload'; link.as = 'image'; link.href = art;
+                        document.head.appendChild(link);
+
+                        document.getElementById('rivalPlaque').innerHTML =
+                            '<div class="drp-head">Wanted</div>' +
+                            '<div class="drp-frame"><img class="drp-art" src="' + art + '" alt=""></div>' +
+                            '<div class="drp-name">' + name + '</div>' +
+                            '<div class="drp-stars"><b>★</b> +' + stars + '</div>' +
+                            '<div class="drp-clock" id="drpClock">' + clock + '</div>';
+                    } catch (e) { /* the real render still runs; never break the menu */ }
+                })();
+                </script>
                 <div class="ts-card ts-sm ga-lead" role="button" tabindex="0" onclick="FLB.openLeaderboard()">
                     <span class="ts-plaque">Leaderboard</span>
                 </div>
@@ -107,8 +180,12 @@
         <div class="lb-inner" onclick="event.stopPropagation()">
             <div class="lb-title">Leaderboard</div>
             <div class="lb-tabs">
-                <button class="lb-tab on" data-tab="alltime" onclick="FLB.openLeaderboard('alltime')">All-Time</button>
+                <!-- The 'alltime' KEY is kept on purpose (five consumers in
+                     meta.js); only the label changed. That board has always
+                     sorted by rating - it was mislabelled, not miscomputed. -->
+                <button class="lb-tab on" data-tab="alltime" onclick="FLB.openLeaderboard('alltime')">Rating</button>
                 <button class="lb-tab" data-tab="daily" onclick="FLB.openLeaderboard('daily')">Daily</button>
+                <button class="lb-tab" data-tab="topscores" onclick="FLB.openLeaderboard('topscores')">Top Scores</button>
             </div>
             <!-- Two columns (Wyatt 7/17): a prominent character rail down the
                  LEFT — bigger crests, easy to see, inviting a tap — with the
@@ -463,26 +540,28 @@
     <div id="coach"></div>
 
     <!-- ═══ AUDIO ═══ -->
-    <audio id="themeMusic" preload="auto">
+    <!-- preload="none": 482 KB was being fetched before the player pressed
+         anything. The theme starts on the first interaction anyway. -->
+    <audio id="themeMusic" preload="none">
         <source src="assets/audio/favor_theme.mp3" type="audio/mpeg">
     </audio>
 
     <!-- ═══ SCRIPTS ═══ -->
     <!-- Firebase compat (leaderboard/Daily Champions backend — meta.js
          falls back to local standings if these can't reach the project) -->
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="data/cards.js?v=20260718150654"></script>
-    <script src="data/missions.js?v=20260718150654"></script>
-    <script src="data/characters.js?v=20260718150654"></script>
-    <script src="data/achievements.js?v=20260718150654"></script>
-    <script src="engine/gameState.js?v=20260718150654"></script>
-    <script src="js/melee.js?v=20260718150654"></script>
-    <script src="js/ui.js?v=20260718150654"></script>
-    <script src="js/ambient.js?v=20260718150654"></script>
-    <script src="js/meta.js?v=20260718150654"></script>
-    <script src="js/achievements.js?v=20260718150654"></script>
-    <script src="js/mp.js?v=20260718150654"></script>
-    <script src="js/modes.js?v=20260718150654"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script defer src="data/cards.js?v=20260718150654"></script>
+    <script defer src="data/missions.js?v=20260718150654"></script>
+    <script defer src="data/characters.js?v=20260718150654"></script>
+    <script defer src="data/achievements.js?v=20260718150654"></script>
+    <script defer src="engine/gameState.js?v=20260718150654"></script>
+    <script defer src="js/melee.js?v=20260718150654"></script>
+    <script defer src="js/ui.js?v=20260718150654"></script>
+    <script defer src="js/ambient.js?v=20260718150654"></script>
+    <script defer src="js/meta.js?v=20260718150654"></script>
+    <script defer src="js/achievements.js?v=20260718150654"></script>
+    <script defer src="js/mp.js?v=20260718150654"></script>
+    <script defer src="js/modes.js?v=20260718150654"></script>
 </body>
 </html>

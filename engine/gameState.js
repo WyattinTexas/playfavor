@@ -930,9 +930,8 @@ class FavorGame {
             if (c.special === 'knowledge_x5') {
                 player.skills.knowledge = (player.skills.knowledge || 0) + 4;
             }
-            if (c.special === 'knowledge_x2') {
-                player.skills.knowledge = (player.skills.knowledge || 0) + 1;
-            }
+            // Family Ring grants NO skill -- it is a scoring card. See the
+            // favor_per_knowledge_x2 case in dynamicCardFavor.
             if (c.special === 'minds_eye_x2_philosopher_stone_x5') {
                 player.skills.knowledge = (player.skills.knowledge || 0) + 2;
             }
@@ -1034,9 +1033,15 @@ class FavorGame {
      * name is unambiguous. Returns true if the grant paid out.
      */
     grantSlotStones(player, key, n) {
-        if (!player._slotStoneGranted) player._slotStoneGranted = new Set();
-        if (player._slotStoneGranted.has(key)) return false;
-        player._slotStoneGranted.add(key);
+        // ⚠ A PLAIN OBJECT, deliberately, not a Set: a Set does not survive a
+        // JSON round-trip. Nothing serializes players today, but the moment
+        // save/resume or MP sync JSON-encodes them the gate would silently
+        // reset and slot stones would re-grant on every landing -- runaway
+        // inflation, and the sliding-back-and-forth farm this gate exists to
+        // stop. An object survives the trip.
+        if (!player._slotStoneGranted) player._slotStoneGranted = {};
+        if (player._slotStoneGranted[key]) return false;
+        player._slotStoneGranted[key] = true;
         player.philosopherStone = (player.philosopherStone || 0) + n;
         return true;
     }
@@ -1317,11 +1322,12 @@ class FavorGame {
                 this.addLog(`${player.name}'s Royal Library: +5 Knowledge total`);
                 break;
 
-            case 'knowledge_x2':
-                // Family Ring: grants 2 knowledge total (card already gave some, add 1 more)
-                player.skills.knowledge = (player.skills.knowledge || 0) + 1;
-                this.addLog(`${player.name}'s Family Ring: +2 Knowledge total`);
-                break;
+            // Family Ring used to land here as a SKILL grant (+1 Knowledge,
+            // logged as "+2 Knowledge total"), but the printed card reads
+            // "Favor equal to your total Knowledge x2" -- the engine was
+            // playing a different card than the box, and the phantom Knowledge
+            // also inflated requirement checks. It scores in dynamicCardFavor
+            // now, like every other favor_per_* artifact.
 
             // --- Melee power modifiers (stored as flags, applied in calculatePower) ---
 
@@ -1930,6 +1936,43 @@ class FavorGame {
         return { success: false, mission };
     }
 
+    /**
+     * Run `fn` and report everything it changed, from the point of view of
+     * seat `idx`. Used for every mission resolution and by the UI for the
+     * failure paths that happen outside resolveMissions.
+     */
+    measureResolution(idx, fn) {
+        const snap = (q) => ({
+            favor: q.favor, gold: q.gold, prestige: q.prestige,
+            scorn: q.scorn, stones: q.philosopherStone || 0,
+        });
+        const diff = (a, b) => ({
+            favor: b.favor - a.favor, gold: b.gold - a.gold,
+            prestige: b.prestige - a.prestige, scorn: b.scorn - a.scorn,
+            stones: b.stones - a.stones,
+        });
+        const before = this.players.map(snap);
+        const beforeEye = this.getMindsEyeCount(idx);
+        const ledger = { discarded: [], gates: [] };
+        this._resLedger = ledger;
+        try { fn(); } finally { this._resLedger = null; }
+        const after = this.players.map(snap);
+
+        const d = diff(before[idx], after[idx]);
+        d.mindsEye = this.getMindsEyeCount(idx) - beforeEye;
+        d.discarded = ledger.discarded;
+        d.gates = ledger.gates;
+        d.others = [];
+        this.players.forEach((q, j) => {
+            if (j === idx) return;
+            const dd = diff(before[j], after[j]);
+            if (dd.favor || dd.gold || dd.prestige || dd.scorn || dd.stones) {
+                d.others.push({ playerIndex: j, name: q.name, ...dd });
+            }
+        });
+        return d;
+    }
+
     resolveMissions() {
         const results = [];
 
@@ -1941,22 +1984,24 @@ class FavorGame {
         // What each resolution actually PAID or COST — the mission ceremony
         // shows these honest deltas. Per-asset favor depends on the player's
         // state at this exact moment, so recomputing later would lie.
-        const measure = (idx, fn) => {
-            const p = this.players[idx];
-            const before = {
-                favor: p.favor, gold: p.gold, prestige: p.prestige, scorn: p.scorn,
-                stones: p.philosopherStone || 0, mindsEye: this.getMindsEyeCount(idx),
-            };
-            fn();
-            return {
-                favor: p.favor - before.favor,
-                gold: p.gold - before.gold,
-                prestige: p.prestige - before.prestige,
-                scorn: p.scorn - before.scorn,
-                stones: (p.philosopherStone || 0) - before.stones,
-                mindsEye: this.getMindsEyeCount(idx) - before.mindsEye,
-            };
-        };
+        //
+        // Wyatt 7/18: "Who got gold? Who is affected by this?" The old snapshot
+        // was SIX SCALARS ON ONE SEAT, so three whole classes of consequence
+        // were structurally invisible. Measured now, alongside them:
+        //   others    — every OTHER seat the resolution moved. others_gain_5_gold
+        //               and friends mutate players outside the measured seat, so
+        //               "who got gold" had no answer to give.
+        //   discarded — the actual CARD OBJECTS a bulk discard took. The engine
+        //               flattened them to a count, so a Secret Grotto failure
+        //               showed the prestige it paid and never the cards it cost.
+        //   gates     — conditional failure rewards, and whether they FIRED. A
+        //               gate that missed must be able to say so, or a mission
+        //               like The Labyrinth renders a literally empty beat.
+        // measureResolution lives on the class so the UI's out-of-band failure
+        // paths (a declined borrow, a deliberate turn-in-and-fail) measure a
+        // mission EXACTLY the way a due-date resolution does, and their
+        // ceremony beats carry the same information.
+        const measure = (idx, fn) => this.measureResolution(idx, fn);
 
         // Start with emblem holder, go clockwise
         let pi = this.emblemHolder;
@@ -2288,6 +2333,13 @@ class FavorGame {
             // both come off the books together.
             this.applySlotSkills(player);
             this.addLog(`${player.name} discards ${removed.map(c => c.name).join(', ')}`);
+            // Hand the CARDS to whoever is measuring this resolution (Wyatt
+            // 7/18: "we never got to see which cards he discarded, which is
+            // important because otherwise we just see the prestige he gets for
+            // it"). Outside a measured resolution there is no ledger and this
+            // is a no-op, so every existing caller is untouched -- they all
+            // consume the count, which is still what this returns.
+            if (this._resLedger) this._resLedger.discarded.push(...removed);
         }
         return removed.length;
     }
@@ -2344,13 +2396,27 @@ class FavorGame {
                     }
                 }
                 break;
-            case 'fortune_teller_50_prestige':
-                if (player.playedCards.some(c => c.name === 'Fortune Teller')) {
+            case 'fortune_teller_50_prestige': {
+                // A CONDITIONAL failure reward. The Labyrinth also carries an
+                // EMPTY failurePenalties, so when this gate misses, literally
+                // nothing moves -- every measured delta comes back 0 and the
+                // ceremony renders a card, a Failed stamp and an empty reward
+                // row (Wyatt 7/18: "if someone fails Labyrinth, you don't
+                // really see it happen"). Record the gate either way so the
+                // beat can state the counterfactual instead of showing nothing.
+                const held = player.playedCards.some(c => c.name === 'Fortune Teller');
+                if (held) {
                     player.prestige += 50;
                     player.foretoldDoom = true;   // secret achievement: "She Saw It Coming"
                     this.addLog(`${player.name}'s Fortune Teller foresaw this: +50 Prestige!`);
                 }
+                if (this._resLedger) {
+                    this._resLedger.gates.push({
+                        card: 'Fortune Teller', met: held, value: 50, unit: 'prestige',
+                    });
+                }
                 break;
+            }
             case 'lose_all_prestige_and_scorn':
                 this.addLog(`${player.name} loses all Prestige (${player.prestige}) and Scorn (${player.scorn})`);
                 player.prestige = 0;
@@ -2710,6 +2776,11 @@ class FavorGame {
                 return 2 * (p.skills.survival || 0);
             case 'favor_per_quest_x5':
                 return 5 * (p.completedMissions || []).length;
+            case 'favor_per_knowledge_x2':
+                // Family Ring, exactly as printed: "Favor equal to your total
+                // Knowledge x2". Reads the plain skill tally, matching its
+                // siblings favor_per_knowledge_x1 and favor_per_survival_x2.
+                return 2 * (p.skills.knowledge || 0);
             case 'favor_per_sur_cha_pro':
                 return (p.skills.survival || 0) + (p.skills.charisma || 0) + (p.skills.prospecting || 0);
             case 'favor_per_wisdom_x8':

@@ -443,9 +443,11 @@
         EMOTES,
     };
 
-    // The plaque draws at load and again once the profile row lands (the
-    // BEATEN state reads the cached row, which arrives a beat later).
+    // The plaque draws at load, over the inline preboot paint in index.html.
+    // The BEATEN state reads _me, which only exists after meta.js's connect()
+    // resolves -- and that races a 6s timeout, so the old 1600/4500ms retries
+    // could BOTH fire before the row landed and the CLAIMED stamp would never
+    // appear on a slow connection. renderProfileChip now calls back into this
+    // the moment _me is assigned, however long that takes.
     renderRivalPlaque();
-    setTimeout(renderRivalPlaque, 1600);
-    setTimeout(renderRivalPlaque, 4500);
 })();

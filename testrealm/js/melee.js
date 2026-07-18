@@ -799,10 +799,20 @@
         setTimeout(() => { host.innerHTML = ''; resolve(); }, 320 * speed);
       };
 
-      // Taps: ONLY the Continue button advances the battle (stray taps —
-      // e.g. while scrolling the card row on a phone — must not skip a
-      // fighter). A tap on the final result closes; Skip ▸▸ jumps to it.
-      host.onclick = () => {
+      // Taps: anywhere on the stage advances the forge, not just the Continue
+      // button (Wyatt 7/18). The ONE exclusion is .ms-cardrow — it is
+      // overflow-x:auto and swipe-scrolled on phones, and a swipe that ends
+      // without enough movement still emits a click, which is the original
+      // reason taps were button-only. .ms-continue and .ms-skip need no
+      // exclusion; both already stopPropagation.
+      // No debounce is needed: waitContinue's done() nulls advanceTap before
+      // resolving, so a double-tap no-ops for free. The coronation is likewise
+      // safe without a guard — state is 'playing' from the clash through
+      // markRevealed(), but advanceTap is null across that whole span.
+      // A tap on the final result closes; Skip ▸▸ jumps to it.
+      host.onclick = (e) => {
+        if (e.target.closest && e.target.closest('.ms-cardrow')) return;
+        if (state === 'playing') { if (advanceTap) advanceTap(); return; }
         if (state === 'revealed' && Date.now() - revealedAt >= revealHoldMs) close();
       };
       skipEl.onclick = (e) => { e.stopPropagation(); if (state === 'playing') finalize(); };

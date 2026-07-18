@@ -44,7 +44,7 @@ const SPECIAL_DESCRIPTIONS = {
     "discard_opponent_weapon":       "Destroys one weapon from each opponent!",
     "sacred_chest":                  "Unlocks the Sacred Chest for treasure.",
     "knowledge_x5":                  "Gain 5 Knowledge!",
-    "knowledge_x2":                  "Doubles your Knowledge!",
+    "favor_per_knowledge_x2":        "Favor equal to your Knowledge x2!",
     "philosopher_stone_x10":         "10x Philosopher's Stone conversion!",
     "minds_eye_x2_philosopher_stone_x5": "2x Mind's Eye + 5x Philosopher's Stone!",
     "map":                           "A fragment of the ancient map.",
@@ -2292,7 +2292,11 @@ async function mpEndActStages(borrowsPendingLocal) {
                     // same deterministic first-available plan.
                     const chosen = (mv && Array.isArray(mv.borrowFrom)) ? mv.borrowFrom : null;
                     const res = game.completeMissionWithBorrow(li, idx, chosen);
-                    if (!res.success) game.failMissionByChoice(li, idx);
+                    // The borrow could not close the gap after all. That is a
+                    // real failure with real consequences — give it the same
+                    // beat a due-date failure gets (completeMissionWithBorrow
+                    // returns before splicing, so idx is still valid).
+                    if (!res.success) await failMissionWithBeat(li, idx);
                     else {
                         const names = [...new Set(res.borrowFrom
                             ? res.borrowFrom.map(b => game.players[b.neighborIndex].name)
@@ -2300,8 +2304,11 @@ async function mpEndActStages(borrowsPendingLocal) {
                         addLogEntry(`${p.name} borrows${names ? ` from ${names}` : ''} to complete ${m.name}`);
                     }
                 } else {
-                    game.failMissionByChoice(li, idx);
+                    // A remote or AI seat letting a mission go used to be a
+                    // bare log line — no beat, on any table. Same ceremony
+                    // as everyone else now.
                     addLogEntry(`${p.name} lets ${m.name} fail`);
+                    await failMissionWithBeat(li, idx);
                 }
                 renderGameState();
             }
@@ -2321,6 +2328,7 @@ async function mpEndActStages(borrowsPendingLocal) {
             const mv = p._remoteHuman ? await FMP.waitFor(cs, 'penalty') : null;
             mpWaitHide();
             const ids = (mv && Array.isArray(mv.cardIds)) ? mv.cardIds : [];
+            const had = [...p.playedCards];
             let taken = ids.length
                 ? game.discardPlayedCards(li, c => ids.includes(c.id), Math.min(owed, ids.length))
                 : 0;
@@ -2330,7 +2338,13 @@ async function mpEndActStages(borrowsPendingLocal) {
                 game.penaltyDiscard(li, owed - taken);
                 if (mv) p._remoteHuman = true;
             }
-            addLogEntry(`${p.name} discards ${owed} card(s) to a failed mission`);
+            // NAME the cards. A bare count told the table nothing about what
+            // a rival just lost (Wyatt 7/18 on the same class of silence:
+            // "we never got to see which cards he discarded").
+            const gone = had.filter(c => !p.playedCards.includes(c));
+            addLogEntry(`${p.name} discards ${gone.length
+                ? gone.map(c => c.name).join(', ')
+                : `${owed} card(s)`} to a failed mission`);
             renderGameState();
         }
     }
@@ -4226,15 +4240,18 @@ function renderMissionLBTurnIn(name) {
     if (borrowBtn) {
         borrowBtn.onclick = (e) => {
             e.stopPropagation();
-            const res = game.completeMissionWithBorrow(0, mi);
             closeMissionLB();
-            if (res.success) {
-                showNotification(`Mission complete: ${name}! (−${res.cost}g to your neighbor)`, 'mission');
-                addLogEntry(`You borrow skills (−${res.cost}g) and complete ${name}`);
-            } else {
-                showNotification(res.error || 'Borrow fell through', 'error');
-            }
-            renderGameState();
+            // An early borrow-and-complete used to toast and vanish; it now
+            // plays the same ceremony beat as every other resolution, and the
+            // lender's payment shows up in the beat's "Also affected" line.
+            missionBeat(0, mi, () => game.completeMissionWithBorrow(0, mi)).then(res => {
+                if (res && res.success) {
+                    addLogEntry(`You borrow skills (−${res.cost}g) and complete ${name}`);
+                } else {
+                    showNotification((res && res.error) || 'Borrow fell through', 'error');
+                }
+                renderGameState();
+            });
         };
     }
     const btn = holder.querySelector('#missionTurnIn');
@@ -4246,22 +4263,22 @@ function renderMissionLBTurnIn(name) {
             btn.querySelector('span').textContent = 'Click again to fail it — penalties apply';
             return;
         }
-        const res = game.turnInMission(0, mi);
         closeMissionLB();
-        if (res.success) {
-            showNotification(`Mission complete: ${name}!`, 'mission');
-            addLogEntry(`You turn in ${name} — success!`);
-        } else {
-            showNotification(`Mission failed: ${name}`, 'error');
-            addLogEntry(`You turn in ${name} — failed`);
-        }
-        // Crazy Lou-style penalties: the discard picker fires right away.
-        const pend = game.players[0]._pendingPenaltyDiscard || 0;
-        if (pend) {
-            game.players[0]._pendingPenaltyDiscard = 0;
-            showPenaltyDiscardPicker(pend).then(() => renderGameState());
-        }
-        renderGameState();
+        // A deliberate early turn-in — win or lose — is a real resolution and
+        // gets a real beat. Failing on purpose is a legitimate play, and its
+        // penalties (Scorn, forced discards, a Fortune Teller that wasn't
+        // there) were previously summarised as a one-line toast.
+        missionBeat(0, mi, () => game.turnInMission(0, mi)).then(res => {
+            addLogEntry(`You turn in ${name} — ${res && res.success ? 'success!' : 'failed'}`);
+            // Crazy Lou-style penalties: the discard picker follows the beat,
+            // so the player sees WHY they are being asked to discard.
+            const pend = game.players[0]._pendingPenaltyDiscard || 0;
+            if (pend) {
+                game.players[0]._pendingPenaltyDiscard = 0;
+                showPenaltyDiscardPicker(pend).then(() => renderGameState());
+            }
+            renderGameState();
+        });
     };
 }
 
@@ -5698,6 +5715,40 @@ function showEarlyMissionChoice(mission) {
     });
 }
 
+// A mission resolved OUTSIDE resolveMissions still deserves the same beat,
+// for ANY seat. Wyatt 7/18: "it really needs to be understandable for all
+// players, each mission that gets played." Five paths reached a mission's end
+// with nothing but a toast or a log line — a remote seat declining a borrow in
+// MP, the local player's deliberate turn-in-and-fail, an early turn-in
+// success, an early borrow-and-complete. They share this now.
+//
+// `apply` must be the engine call that resolves the mission; whatever it
+// returns is read for {success, cost}. Measured through the engine so the
+// beat carries the discarded cards, the conditional gates that missed and
+// every OTHER seat it moved — exactly like a due-date resolution.
+function missionBeat(playerIndex, idx, apply) {
+    const p = game.players[playerIndex];
+    const mission = p && p.missions[idx];
+    if (!mission) { const r = apply(); renderGameState(); return Promise.resolve(r); }
+    // Read the shortfall BEFORE the resolution applies — afterwards the
+    // mission is off the books and a discard penalty may have stripped the
+    // very skills we want to report on.
+    const { details } = game.checkMissionRequirements(playerIndex, mission);
+    let res;
+    const deltas = game.measureResolution(playerIndex, () => { res = apply(); });
+    renderGameState();
+    const beat = {
+        mission, success: !!(res && res.success), deltas, details,
+        borrowed: (res && res.cost) || 0,
+    };
+    return showMissionCeremony([{ playerIndex, results: [beat] }], game.currentAct)
+        .then(() => res);
+}
+
+function failMissionWithBeat(playerIndex, idx) {
+    return missionBeat(playerIndex, idx, () => game.failMissionByChoice(playerIndex, idx));
+}
+
 function showMissionBorrowChooser(mission) {
     return new Promise((resolve) => {
         const ov = document.getElementById('promisePicker');
@@ -5709,24 +5760,7 @@ function showMissionBorrowChooser(mission) {
         // reward landed with zero feedback on 7/18's recording. Fail it with
         // measured deltas and give it a real ceremony beat; the promise chain
         // holds the next chooser until the beat has played.
-        const failWithBeat = (idx) => {
-            const p = game.players[0];
-            const before = {
-                favor: p.favor, gold: p.gold, prestige: p.prestige, scorn: p.scorn,
-                stones: p.philosopherStone || 0, mindsEye: game.getMindsEyeCount(0),
-            };
-            game.failMissionByChoice(0, idx);
-            const deltas = {
-                favor: p.favor - before.favor, gold: p.gold - before.gold,
-                prestige: p.prestige - before.prestige, scorn: p.scorn - before.scorn,
-                stones: (p.philosopherStone || 0) - before.stones,
-                mindsEye: game.getMindsEyeCount(0) - before.mindsEye,
-            };
-            renderGameState();
-            return showMissionCeremony(
-                [{ playerIndex: 0, results: [{ mission, success: false, deltas }] }],
-                game.currentAct);
-        };
+        const failWithBeat = (idx) => failMissionWithBeat(0, idx);
 
         if (!ov || mi < 0 || !plan) {
             // The window closed between phases — resolve it honestly as the
@@ -6291,13 +6325,21 @@ function showScoring() {
     // The score sheet from the box — one color-coded grid, heirs across,
     // categories down, tallied the way the table does it after a real game
     // (Missions / Adventures / Artifacts / Character / Prestige / Scorn).
-    // Artifacts carries every non-adventure card's favor plus the
-    // Philosopher's Stone gold conversion, so the columns sum to the total.
-    const artAll = (s) => (s.artFavor || 0) + (s.otherCardFavor || 0) + (s.stoneFavor || 0);
+    // Artifacts carries every non-adventure card's favor. The Philosopher's
+    // Stone gold conversion used to be folded in here too, which is why Wyatt
+    // kept seeing the Stone "sticking itself in there" on the Artifacts row of
+    // players who never held the card: the conversion keys off the fungible
+    // stone COUNTER (character-board slots, adventure cards, Sacred Chest x10,
+    // Secret Lab x5, mission rewards), never off playedCards -- and since
+    // stones started stacking on 7/18 that counter is non-zero for most
+    // players at end of game. It is a gold exchange, not an artifact, so it
+    // gets its own row and says what it is. The columns still sum to Total.
+    const artAll = (s) => (s.artFavor || 0) + (s.otherCardFavor || 0);
     const SHEET_ROWS = [
         { label: 'Missions',   key: 'missions',  drill: true, icon: 'assets/icons/mission.png',  c: '#c2a14d', v: s => s.missionFavor || 0 },
         { label: 'Adventures', key: 'adventure', drill: true, icon: 'assets/icons/maps.png',     c: '#4c8a63', v: s => s.advFavor || 0 },
         { label: 'Artifacts',  key: 'artifact',  drill: true, icon: 'assets/icons/philosopher.png', c: '#8a63a8', v: s => artAll(s) },
+        { label: 'Gold Exchange', key: 'stone',  drill: true, icon: 'assets/icons/philosopher.png', c: '#b08a3e', v: s => s.stoneFavor || 0 },
         { label: 'Character',  key: 'character', drill: true, icon: 'assets/icons/favor.png',    c: '#75695a', v: s => s.characterFavor || 0 },
         { label: 'Prestige',   key: 'prestige',  icon: 'assets/icons/prestige.png', c: '#3f9fd0', v: s => s.prestige || 0 },
         { label: 'Scorn',      key: 'scorn',     icon: 'assets/icons/scorn.png',    c: '#c0463e', v: s => s.scorn || 0, neg: true },
@@ -6324,13 +6366,16 @@ function showScoring() {
         }).join('');
         return `<div class="vsg-label" style="--rowC:${r.c};--ri:${ri + 1}">${r.icon ? `<img src="${r.icon}" alt="">` : ''}<span>${r.label}</span></div>${cells}`;
     }).join('');
+    // The total row's stagger index follows the row count, so adding a sheet
+    // row can never leave it animating on top of the last body row.
+    const totalRi = SHEET_ROWS.length + 1;
     const totalCells = scores.map((s, i) =>
-        `<div class="vsg-cell total${s.playerIndex === 0 ? ' me' : ''}${i === 0 ? ' win' : ''}" style="--ri:7"><b data-total="${s.finalScore}" data-cd="1150">0</b></div>`).join('');
+        `<div class="vsg-cell total${s.playerIndex === 0 ? ' me' : ''}${i === 0 ? ' win' : ''}" style="--ri:${totalRi}"><b data-total="${s.finalScore}" data-cd="1150">0</b></div>`).join('');
     const grid = `
         <div class="vs-grid" style="--vsgCols:${scores.length}">
             <div class="vsg-corner" style="--ri:0"></div>${heads}
             ${bodyRows}
-            <div class="vsg-label total" style="--rowC:#efe6cf;--ri:7"><img src="${PURSE_ICONS.favor}" alt=""><span>Total</span></div>${totalCells}
+            <div class="vsg-label total" style="--rowC:#efe6cf;--ri:${totalRi}"><img src="${PURSE_ICONS.favor}" alt=""><span>Total</span></div>${totalCells}
         </div>`;
 
     content.innerHTML = `
@@ -6403,19 +6448,41 @@ function showScoreBreakdown(pi, cat) {
         if (!items.length) notes.push('No Adventure cards played.');
     } else if (cat === 'artifact') {
         title = 'Artifacts';
-        // The sheet's Artifacts cell = artifact cards + every OTHER card's Favor
-        // + the Philosopher's Stone gold conversion (artAll).
+        // The sheet's Artifacts cell = artifact cards + every OTHER card's
+        // Favor. The stone conversion has its own row now (cat 'stone').
         (gp.playedCards || []).forEach(c => {
             if (c.type === 'adventure') return;
+            // NO truthiness guard: a card the player actually HELD renders its
+            // +0 rather than disappearing. Wyatt 7/18 on the Family Ring --
+            // "I had the family ring, but it didn't come up as artifacts at the
+            // end". "Where did my card go" is a worse bug than a zero.
             const v = cardFav(c);
-            if (v) { items.push({ img: `assets/cards/regular/${c.filename}`, label: c.name, val: v }); total += v; }
+            items.push({ img: `assets/cards/regular/${c.filename}`, label: c.name, val: v });
+            total += v;
         });
-        if (gp.philosopherStone > 0 && gp.gold > 0) {
-            const sv = gp.gold * gp.philosopherStone;
-            items.push({ img: 'assets/icons/philosopher.png', label: `Philosopher's Stone — ${gp.gold} Gold × ${gp.philosopherStone}`, val: sv });
-            total += sv;
-        }
         if (!items.length) notes.push('No Artifacts or Favor-bearing cards played.');
+    } else if (cat === 'stone') {
+        title = 'Gold Exchange';
+        // Not an artifact and never was: the Philosopher's Stone tally turns
+        // your leftover Gold into Favor at the end of the game. It comes from
+        // board slots, adventure cards and mission rewards as well as the
+        // artifact itself, which is exactly why it does not belong in the
+        // Artifacts cell.
+        const stones = gp.philosopherStone || 0;
+        if (stones > 0 && (gp.gold || 0) > 0) {
+            items.push({
+                img: 'assets/icons/philosopher.png',
+                label: `${gp.gold} Gold × ${stones} Philosopher's Stone`,
+                val: gp.gold * stones,
+            });
+            total += gp.gold * stones;
+        } else if (stones > 0) {
+            notes.push(`${stones} Philosopher's Stone, but no Gold left to convert.`);
+        } else if ((gp.gold || 0) > 0) {
+            notes.push(`${gp.gold} Gold, but no Philosopher's Stone to convert it.`);
+        } else {
+            notes.push('No Gold and no Philosopher\'s Stone.');
+        }
     } else if (cat === 'character') {
         title = 'Character';
         const running = gp.favor || 0;
@@ -6931,6 +6998,72 @@ function showMissionCeremony(missionResults, actNum) {
         const chip = (icon, label, cls) =>
             `<span class="mc-chip ${cls}"><img src="assets/icons/${icon}.png" alt="">${label}</span>`;
 
+        // ── Did they even have the prerequisites? ────────────────────────
+        // probeMissionRequirements has always computed `missing`, and
+        // resolveMissions has always forwarded it as `details` on every
+        // result -- and no renderer has ever read it. Wyatt 7/18: "you don't
+        // know if they had the prerequisites to get the big reward."
+        const REQ_NAMES = { minds_eye: "Mind's Eye", philosopher_stone: "Philosopher's Stone" };
+        const prettyReq = (r) => {
+            const m = /^([a-z_]+)(\s*×\s*\d+)?$/.exec(String(r));
+            return m ? (REQ_NAMES[m[1]] || cap(m[1])) + (m[2] || '') : String(r);
+        };
+        const reqLine = (b) => {
+            const miss = ((b.r.details || {}).missing) || [];
+            if (b.r.success) {
+                return `<div class="mc-req ok">${b.r.borrowed
+                    ? 'Requirements met — with borrowed help'
+                    : 'Requirements met'}</div>`;
+            }
+            if (!miss.length) return '';
+            return `<div class="mc-req bad">Short of ${miss.map(prettyReq).join(', ')}</div>`;
+        };
+
+        // ── WHICH cards a bulk discard actually took ─────────────────────
+        // The engine used to flatten them to a count, so a Secret Grotto
+        // failure showed the prestige it paid and never the cards it cost
+        // (Wyatt 7/18: "we never got to see which cards he discarded").
+        const discardStrip = (b) => {
+            const cards = ((b.r.deltas || {}).discarded) || [];
+            if (!cards.length) return '';
+            return `<div class="mc-took"><span class="mc-took-lab">Discarded</span>
+                ${cards.map(c => `<span class="mc-took-card">
+                    <img src="assets/cards/regular/${c.filename}" alt="">
+                    <em>${c.name}</em></span>`).join('')}</div>`;
+        };
+
+        // ── Who ELSE this resolution moved ───────────────────────────────
+        // "Who got gold? Who is affected by this?" -- others_gain_5_gold and
+        // friends pay every other seat, and a borrow fee lands in a specific
+        // lender's purse. None of it was measured before.
+        const othersRow = (b) => {
+            const others = ((b.r.deltas || {}).others) || [];
+            const sign = (n, w) => `${n > 0 ? '+' : '−'}${Math.abs(n)} ${w}`;
+            const bits = others.map(o => {
+                const parts = [];
+                if (o.gold) parts.push(sign(o.gold, 'Gold'));
+                if (o.prestige) parts.push(sign(o.prestige, 'Prestige'));
+                if (o.scorn) parts.push(sign(o.scorn, 'Scorn'));
+                if (o.favor) parts.push(sign(o.favor, 'Favor'));
+                if (o.stones) parts.push(sign(o.stones, 'Stone'));
+                return parts.length
+                    ? `<span class="mc-other ${(o.gold + o.prestige + o.favor) >= 0 ? 'good' : 'bad'}">
+                        <b>${o.playerIndex === 0 ? 'You' : o.name}</b>${parts.join(', ')}</span>`
+                    : '';
+            }).filter(Boolean);
+            return bits.length
+                ? `<div class="mc-others"><span class="mc-others-lab">Also affected</span>${bits.join('')}</div>`
+                : '';
+        };
+
+        // ── A conditional reward that MISSED ─────────────────────────────
+        // Recording only the payout meant a gate that failed said nothing at
+        // all. Asserting the counterfactual is the whole point of the beat.
+        const gateChips = (b) => (((b.r.deltas || {}).gates) || [])
+            .filter(g => !g.met)
+            .map(g => chip(g.unit, `No ${g.card} — ${g.value} ${cap(g.unit)} lost`, 'bad'))
+            .join('');
+
         // Honest payout chips from the engine's measured deltas — plus the
         // printed skill grants and map, which deltas can't see.
         const rewardChips = (b) => {
@@ -6981,6 +7114,35 @@ function showMissionCeremony(missionResults, actNum) {
             return chips.join('');
         };
 
+        // The whole beat body, in reading order: what they needed, what moved,
+        // what a missed gate cost, which cards it took, who else it touched.
+        //
+        // ⚠ THE EMPTY BEAT. The Labyrinth carries failurePenalties:{} and a
+        // conditional failSpecial, so failing it without the Fortune Teller
+        // moved NOTHING -- all six measured deltas 0, every one of the
+        // thirteen chip conditionals false, rewardChips returning "". The beat
+        // rendered a card and a Failed stamp over an empty rewards div and,
+        // with no headline chip, held the SHORT window and moved on. That is
+        // exactly Wyatt's "if someone fails Labyrinth, you don't really see it
+        // happen". A beat must never render nothing: when nothing measurable
+        // moved, state the mission's printed consequence instead.
+        const beatBody = (b) => {
+            const chips = rewardChips(b);
+            const gates = gateChips(b);
+            const took = discardStrip(b);
+            const others = othersRow(b);
+            let fallback = '';
+            if (!chips && !gates && !took && !others) {
+                const worth = b.r.mission.favorValue || 0;
+                fallback = b.r.success
+                    ? `<span class="mc-chip flat">Completed — no further reward</span>`
+                    : (worth > 0
+                        ? chip('favor', `${worth} Favor forfeit`, 'bad big')
+                        : `<span class="mc-chip flat">Failed — no penalty, the mission is simply lost</span>`);
+            }
+            return reqLine(b) + chips + gates + fallback + took + others;
+        };
+
         const renderBeat = (b) => {
             const p = game.players[b.pi];
             const char = p.character;
@@ -7009,12 +7171,17 @@ function showMissionCeremony(missionResults, actNum) {
             stage.classList.add('stamped');
             if (!b.r.success) stage.classList.add('fail');
             const rw = stage.querySelector('.mc-rewards');
-            rw.innerHTML = rewardChips(b);
+            rw.innerHTML = beatBody(b);
             [...rw.children].forEach((c, i) => { c.style.animationDelay = `${0.12 + i * 0.13}s`; });
             // A real consequence (the headline chip) gets extra time on screen —
-            // 30 Scorn should land, not scroll by.
+            // 30 Scorn should land, not scroll by. Wyatt also says the endgame
+            // "happens really quick", and Act 3 puts many missions in play, so
+            // the hold is CAPPED: legibility is the right seconds, not more of
+            // them. Beats can no longer be empty, so the short window is now
+            // only ever spent on a genuinely light beat.
             const heavy = rw.querySelector('.mc-chip.big');
-            timer = setTimeout(next, ((heavy ? 2700 : 1700) + rw.children.length * 260) * speed());
+            const hold = Math.min((heavy ? 2700 : 1700) + rw.children.length * 260, 5200);
+            timer = setTimeout(next, hold * speed());
         };
 
         const next = () => {

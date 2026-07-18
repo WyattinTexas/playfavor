@@ -294,7 +294,7 @@ window.FAVOR_DATA.cards = [
 
   { id: cid(), name: "Family Ring", audit: "Favor equal to your total Knowledge x2,Req: 3 Knowledge & 1 Philosopher's Stone, Act 3", filename: "Time Turner Card.jpg", act: 3, type: "artifact",
     cost: null, skills: [], requirements: ["knowledge", "knowledge", "knowledge", "philosopher_stone"], rewards: {},
-    special: "knowledge_x2" },
+    special: "favor_per_knowledge_x2" },
 
   { id: cid(), name: "Lucky Pendant", special: "favor_per_quest_x5", audit: "Favor equal to your total Successful Quests x5,Req: 5 Prospecting, Act 3", filename: "Lucky Pendant Card.jpg", act: 3, type: "artifact",
     cost: null, skills: [], requirements: ["prospecting", "prospecting", "prospecting", "prospecting", "prospecting"], rewards: {} },

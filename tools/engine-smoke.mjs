@@ -2124,5 +2124,112 @@ console.log('\n— Philosopher\'s Stones STACK (Wyatt 7/18: "we had 3 and it reg
   ok(p2.philosopherStone === 4, `slot and card stones sum (got ${p2.philosopherStone})`);
 }
 
+console.log('\n— The resolution ledger: WHICH cards, WHO else, and gates that MISSED —');
+{
+  // Wyatt 7/18: "we never got to see which cards he discarded, which is
+  // important because otherwise we just see the prestige he gets for it."
+  // discardPlayedCards flattened its removals to a COUNT; the cards now ride
+  // a per-resolution ledger that measureResolution collects.
+  // Secret Grotto is the exact mission from Wyatt's game: failSpecial
+  // discard_power_gain_10_prestige, which filters c.type === 'weapon' (the
+  // cards are PRINTED "Power", which is why he described weapons).
+  const g = newGame();
+  const p = g.players[0];
+  p.playedCards = [
+    { ...cardByName('Enchanted Flames'), id: 'w1' },   // weapon
+    { ...cardByName('Royal Hilt'), id: 'w2' },         // weapon
+    { ...cardByName('Negotiate'), id: 'k1' },          // wisdom — must survive
+  ];
+  const prestige0 = p.prestige;
+  const d = g.measureResolution(0,
+    () => g.resolveMissionFailSpecial(0, { failSpecial: 'discard_power_gain_10_prestige' }));
+  ok(d.discarded.length === 2,
+    `the ledger carries the CARDS, not a count (${d.discarded.map(c => c.name).join(', ') || 'none'})`);
+  ok(d.discarded.every(c => c.name && c.filename && c.type === 'weapon'),
+    'each discarded card keeps its name and art so the beat can show it');
+  ok(p.playedCards.length === 1 && p.playedCards[0].name === 'Negotiate',
+    'only the weapons were taken');
+  ok(d.prestige === 20 && p.prestige === prestige0 + 20,
+    `and the 10-per-card Prestige still pays (${d.prestige})`);
+
+  // measure() was six scalars on ONE seat, so "who got gold?" had no answer.
+  const g2 = newGame();
+  const before = g2.players.map(q => q.gold);
+  const d2 = g2.measureResolution(0, () => g2.resolveMissionFailSpecial(0, { failSpecial: 'others_gain_5_gold' }));
+  ok(d2.others.length === g2.playerCount - 1,
+    `every OTHER seat a failure paid is measured (${d2.others.length} of ${g2.playerCount - 1})`);
+  ok(d2.others.every(o => o.gold === 5) && d2.gold === 0,
+    'others_gain_5_gold pays the table 5 each and costs the failing seat nothing');
+  ok(d2.others.every(o => o.name && g2.players[o.playerIndex].gold === before[o.playerIndex] + 5),
+    'each affected seat is named, so the beat can say WHO got gold');
+
+  // The Labyrinth: failurePenalties {} + a conditional failSpecial. Without
+  // the Fortune Teller NOTHING moves, which is how the beat came to render
+  // literally empty. The gate is recorded either way now.
+  const g3 = newGame();
+  const lab = missionByName('The Labyrinth');
+  const d3 = g3.measureResolution(0, () => g3.applyMissionFailure(0, lab));
+  const flat = !d3.favor && !d3.gold && !d3.prestige && !d3.scorn && !d3.stones;
+  ok(flat, 'failing The Labyrinth without the Fortune Teller moves nothing measurable');
+  ok(d3.gates.length === 1 && d3.gates[0].met === false && d3.gates[0].value === 50,
+    `the MISSED gate is recorded so the beat can state what was lost (${JSON.stringify(d3.gates)})`);
+
+  const g4 = newGame();
+  g4.players[0].playedCards = [{ ...cardByName('Fortune Teller'), id: 'ft1' }];
+  const d4 = g4.measureResolution(0, () => g4.applyMissionFailure(0, lab));
+  ok(d4.prestige === 50 && d4.gates[0].met === true,
+    `held, the Fortune Teller pays its 50 and the gate reads met (${d4.prestige})`);
+}
+
+console.log('\n— Family Ring scores what the CARD says (Wyatt 7/18) —');
+{
+  // The card prints "Favor equal to your total Knowledge x2". The engine was
+  // granting a phantom +1 Knowledge instead — playing a different card than
+  // the box, and inflating requirement checks with a skill never printed.
+  const ring = cardByName('Family Ring');
+  ok(ring.special === 'favor_per_knowledge_x2',
+    `Family Ring carries a favor_per_* special like every other scoring artifact (${ring.special})`);
+
+  const g = newGame();
+  const p = g.players[0];
+  const knowledgeBefore = p.skills.knowledge || 0;
+  g.applyCardEffects(0, { ...ring, id: 'fr1' });
+  ok((p.skills.knowledge || 0) === knowledgeBefore,
+    `it grants NO Knowledge — the phantom skill is gone (${p.skills.knowledge})`);
+
+  p.skills.knowledge = 4;
+  p.playedCards = [{ ...ring, id: 'fr2' }];
+  ok(g.dynamicCardFavor(0, p.playedCards[0]) === 8,
+    `4 Knowledge scores 8 Favor (${g.dynamicCardFavor(0, p.playedCards[0])})`);
+  p.skills.knowledge = 0;
+  ok(g.dynamicCardFavor(0, p.playedCards[0]) === 0,
+    'with no Knowledge it is worth 0 — and the sheet must still SHOW it');
+
+  // It is an artifact, so it lands in the Artifacts column, not Adventures.
+  p.skills.knowledge = 3;
+  const sc = g.calculateFinalScores()[0];
+  ok(sc.artFavor === 6, `Family Ring's 6 Favor lands in the Artifacts cell (${sc.artFavor})`);
+}
+
+console.log('\n— grantSlotStones survives a JSON round-trip —');
+{
+  // The once-per-game gate was a Set. A Set JSON-encodes to {} — so the first
+  // save/resume or MP sync would silently reset it and slot stones would
+  // re-grant on every landing: runaway inflation, and exactly the sliding
+  // farm the gate exists to prevent.
+  const g = newGame();
+  const p = g.players[0];
+  g.grantSlotStones(p, 'philosopher_stone', 1);
+  ok(p.philosopherStone === 1, `the first landing grants (${p.philosopherStone})`);
+  ok(g.grantSlotStones(p, 'philosopher_stone', 1) === false,
+    'a second landing on the same slot pays nothing');
+
+  const revived = JSON.parse(JSON.stringify({ _slotStoneGranted: p._slotStoneGranted, philosopherStone: p.philosopherStone }));
+  ok(g.grantSlotStones(revived, 'philosopher_stone', 1) === false,
+    'and STILL pays nothing after a JSON round-trip (a Set would have reset here)');
+  ok(revived.philosopherStone === 1,
+    `no re-grant across serialization (${revived.philosopherStone})`);
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);

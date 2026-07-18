@@ -1722,6 +1722,127 @@ console.log('── Desktop: declined mission plays a fail beat — the prestige
   await page.close();
 }
 
+// ═══ ENDGAME LEGIBILITY: every beat says who, what was missing, what it took ═══
+// Wyatt 7/18: "the whole end of the game happens really quick, so you can't
+// even really know what happens... it really needs to be understandable for
+// all players, each mission that gets played. What's happening? Who got gold?
+// Who is affected by this?"
+console.log('── Endgame legibility: shortfalls, discarded card art, who else got paid, missed gates');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('legibility: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('legibility pageerror: ' + e.message));
+  await page.setViewport({ width: 1420, height: 900 });
+  await startGame(page);
+
+  // Drive showMissionCeremony with a REAL engine resolution each time, so the
+  // beat is rendering engine truth rather than a hand-built fixture.
+  const playBeat = async (rig) => {
+    await page.evaluate((body) => {
+      window.CINEMATIC_SPEED = 1;          // beats must stay up long enough to read
+      // eslint-disable-next-line no-new-func
+      new Function(body)();
+    }, rig);
+    await page.waitForFunction(() =>
+      document.querySelector('.mc-stage')
+      && document.querySelector('.mc-stage').classList.contains('stamped'), { timeout: 10000 });
+    await sleep(350);                      // chips animate in
+    return page.evaluate(() => {
+      const rw = document.querySelector('.mc-rewards');
+      return {
+        text: rw ? rw.textContent.replace(/\s+/g, ' ').trim() : '',
+        children: rw ? rw.children.length : 0,
+        req: (document.querySelector('.mc-req') || {}).textContent || '',
+        tookCards: [...document.querySelectorAll('.mc-took-card img')].map(i => i.getAttribute('src')),
+        tookNames: [...document.querySelectorAll('.mc-took-card em')].map(e => e.textContent),
+        others: [...document.querySelectorAll('.mc-other')].map(o => o.textContent.replace(/\s+/g, ' ').trim()),
+      };
+    });
+  };
+  const closeBeat = async () => {
+    await page.evaluate(() => {
+      const el = document.getElementById('missionCeremony');
+      if (el) el.classList.remove('active');
+    });
+    await sleep(120);
+  };
+
+  // 1 · THE LABYRINTH, no Fortune Teller. failurePenalties {} plus a
+  // conditional failSpecial meant every measured delta was 0 and rewardChips
+  // returned "" — the beat rendered a card and a stamp over an empty div and
+  // held the SHORT window. "If someone fails Labyrinth, you don't really see
+  // it happen."
+  const lab = await playBeat(`
+    const p = game.players[0];
+    const m = { ...FAVOR_DATA.missions.find(x => x.name === 'The Labyrinth') };
+    p.missions = [m]; p.playedCards = [];
+    p.skills.survival = 1; p.skills.knowledge = 0;
+    const det = game.checkMissionRequirements(0, m).details;
+    const d = game.measureResolution(0, () => game.applyMissionFailure(0, m));
+    showMissionCeremony([{ playerIndex: 0, results: [{ mission: m, success: false, deltas: d, details: det }] }], 3);
+  `);
+  ok(lab.children > 0, 'a zero-delta failure no longer renders an EMPTY beat');
+  ok(/Fortune Teller/.test(lab.text) && /50/.test(lab.text),
+    `the conditional reward that MISSED states what was lost (${lab.text})`);
+  ok(/Short of/.test(lab.req) && /Survival|Knowledge|Mind/.test(lab.req),
+    `and the beat says what they were short of (${lab.req.trim()})`);
+  await page.screenshot({ path: join(SHOTS, 'beat-labyrinth-empty-fixed.png') });
+  await closeBeat();
+
+  // 2 · SECRET GROTTO — the discard Wyatt watched happen invisibly. "We never
+  // got to see which cards he discarded, which is important because otherwise
+  // we just see the prestige he gets for it."
+  const grotto = await playBeat(`
+    const p = game.players[0];
+    const m = { ...FAVOR_DATA.missions.find(x => x.name === 'Secret Grotto') };
+    p.missions = [m];
+    p.playedCards = ['Enchanted Flames', 'Royal Hilt']
+      .map((n, i) => ({ ...FAVOR_DATA.cards.find(c => c.name === n), id: 'wg' + i }));
+    const det = game.checkMissionRequirements(0, m).details;
+    const d = game.measureResolution(0, () => game.applyMissionFailure(0, m));
+    showMissionCeremony([{ playerIndex: 0, results: [{ mission: m, success: false, deltas: d, details: det }] }], 2);
+  `);
+  ok(grotto.tookNames.length === 2,
+    `a bulk discard names the cards it took (${grotto.tookNames.join(', ') || 'none'})`);
+  ok(grotto.tookCards.length === 2 && grotto.tookCards.every(s => /assets\/cards\/regular\//.test(s)),
+    'and shows their ART, not just a count');
+  ok(/Prestige/.test(grotto.text),
+    `the prestige it paid is still on screen beside them (${grotto.text.slice(0, 90)})`);
+  await page.screenshot({ path: join(SHOTS, 'beat-discard-cards.png') });
+  await closeBeat();
+
+  // 3 · WHO GOT GOLD. others_gain_5_gold pays every other seat — mutations
+  // entirely outside the measured seat, so the question had no answer.
+  const paid = await playBeat(`
+    const p = game.players[0];
+    const m = { ...FAVOR_DATA.missions.find(x => (x.failSpecial || '') === 'others_gain_5_gold') };
+    p.missions = [m];
+    const det = game.checkMissionRequirements(0, m).details;
+    const d = game.measureResolution(0, () => game.applyMissionFailure(0, m));
+    showMissionCeremony([{ playerIndex: 0, results: [{ mission: m, success: false, deltas: d, details: det }] }], 2);
+  `);
+  ok(paid.others.length >= 2,
+    `the beat names every OTHER seat the failure moved (${paid.others.length})`);
+  ok(paid.others.every(t => /\+5 Gold/.test(t)),
+    `and says what each of them got (${paid.others.join(' | ')})`);
+  await page.screenshot({ path: join(SHOTS, 'beat-who-got-gold.png') });
+  await closeBeat();
+
+  // 4 · A SUCCESS states its requirements were met — the other half of
+  // "you don't know if they had the prerequisites to get the big reward".
+  const won = await playBeat(`
+    const p = game.players[0];
+    const m = { ...FAVOR_DATA.missions.find(x => x.name === 'A Day With the Birds') };
+    p.missions = [m]; p.skills.knowledge = 9;
+    const det = game.checkMissionRequirements(0, m).details;
+    const d = game.measureResolution(0, () => { game.applyMissionRewards(0, m); });
+    showMissionCeremony([{ playerIndex: 0, results: [{ mission: m, success: true, deltas: d, details: det }] }], 1);
+  `);
+  ok(/Requirements met/.test(won.req), `a success confirms the requirements were met (${won.req.trim()})`);
+  await closeBeat();
+  await page.close();
+}
+
 // ═══ DESKTOP: Turn In Now can borrow too ═══
 console.log('── Desktop: Turn In Now offers Borrow & Complete when a neighbor covers the gap');
 {
@@ -2078,11 +2199,32 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
   ok(charKn.chips === 11 && charKn.on, 'hero rail: 10 heroes + All-Heroes chip, the open board\'s chip lit');
   ok(/Audit Herald/.test(charKn.text) && /✦ 1\.0[0-9]/.test(charKn.text),
     'the Knight board carries your Knight rating');
-  await page.evaluate(() => FLB.openLeaderboard('char:magician'));
-  await sleep(700);
-  const charMg = await page.evaluate(() => document.getElementById('lbBody').textContent);
-  ok(/No one has ridden the Magician/.test(charMg),
-    'an unridden hero\'s board says so instead of lying');
+  // Pick the unridden hero from LIVE data instead of hardcoding one. This
+  // asserted 'magician' until 7/18, when a real player (Banana71) rode the
+  // Magician into a rated game and the board correctly stopped being empty —
+  // the test was encoding "nobody plays the Magician", which is not a fact
+  // about the code and gets less true every week.
+  const unridden = await page.evaluate(async () => {
+    let all = {};
+    try {
+      all = await (await fetch('https://testroom-75200-default-rtdb.firebaseio.com/favor/players.json')).json() || {};
+    } catch (e) { /* offline — fall through to the null branch */ }
+    const ridden = new Set();
+    Object.values(all).forEach(p => {
+      if (p && p.chars) Object.entries(p.chars).forEach(([id, c]) => { if ((c || {}).g > 0) ridden.add(id); });
+    });
+    const pick = ((window.FAVOR_DATA || {}).characters || []).find(c => !ridden.has(c.id));
+    return pick ? { id: pick.id, name: pick.name } : null;
+  });
+  if (unridden) {
+    await page.evaluate((id) => FLB.openLeaderboard('char:' + id), unridden.id);
+    await sleep(700);
+    const charMg = await page.evaluate(() => document.getElementById('lbBody').textContent);
+    ok(new RegExp(`No one has ridden the ${unridden.name}`).test(charMg),
+      `an unridden hero's board says so instead of lying (${unridden.name})`);
+  } else {
+    ok(true, 'every hero has been ridden into a rated game — no empty board left to check');
+  }
   await page.evaluate(() => FLB.openLeaderboard('alltime'));
   await sleep(400);
   await page.evaluate(() => FLB.openLeaderboard('daily'));
@@ -2905,8 +3047,27 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
         trophy: !!h.querySelector('svg.vs-trophy'),
       })) : [],
       cells: cells.length,
-      charYou: cells[9] ? cells[9].textContent : null,       // Character row × your column
-      scornYou: cells[15] ? { t: cells[15].textContent, bad: cells[15].classList.contains('bad') } : {},
+      // Addressed BY ROW LABEL, not by a hardcoded index. These were literal
+      // offsets (cells[9], cells[15]) until 7/18, when the Gold Exchange row
+      // landed between Artifacts and Character and silently moved every one
+      // of them. A sheet row is a thing the design will keep adding.
+      byLabel: (() => {
+        if (!g) return {};
+        const cols = [...g.querySelectorAll('.vsg-head')].length;
+        const labels = [...g.querySelectorAll('.vsg-label')]
+          .map(l => (l.querySelector('span') || {}).textContent);
+        const at = (label, col) => {
+          const ri = labels.indexOf(label);
+          return ri < 0 ? null : cells[ri * cols + col];
+        };
+        const cell = (label) => {
+          const c = at(label, 0);
+          return c ? { t: c.textContent, bad: c.classList.contains('bad'), drill: c.classList.contains('drill') } : null;
+        };
+        return { character: cell('Character'), scorn: cell('Scorn'),
+                 prestige: cell('Prestige'), stone: cell('Gold Exchange'),
+                 artifacts: cell('Artifacts') };
+      })(),
       totals: g ? [...g.querySelectorAll('.vsg-cell.total b')].map(b => b.dataset.total) : [],
       noGoldCol: g ? !/tiebreak/i.test(g.textContent) : false,
       ratingDelta: (document.querySelector('.vs-delta.rating b') || {}).textContent,
@@ -2921,15 +3082,24 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
   ok(win.rays, 'gold rays crown a human win');
   ok(win.personal === 'The realm bows before its new sovereign.', `win personal line (${win.personal})`);
   ok(!win.oldH1, '"The Queen Has Decided" h1 is gone');
-  ok(win.rowLabels.join('|') === 'Missions|Adventures|Artifacts|Character|Prestige|Scorn|Total',
+  // Gold Exchange is its OWN row as of 7/18. The Philosopher's Stone gold
+  // conversion used to be folded into Artifacts, so it showed up on the
+  // Artifacts line of players who had never held the card — it keys off the
+  // fungible stone counter, not playedCards (Wyatt: "Philosopher's Stone
+  // keeps sticking itself in there, even though that's not really...").
+  ok(win.rowLabels.join('|') === 'Missions|Adventures|Artifacts|Gold Exchange|Character|Prestige|Scorn|Total',
     `score sheet rows as printed (${win.rowLabels.join(', ')})`);
   ok(win.heads.length === 3 && win.heads[0].name === 'You' && /\bwin\b/.test(win.heads[0].cls)
     && win.heads[0].trophy && win.heads[0].face,
     '1st column: You — portrait, trophy, champion glow');
   ok(win.heads.every(h => h.face), 'every heir wears their portrait');
-  ok(win.cells === 21, `7 rows × 3 heirs of cells (${win.cells})`);
-  ok(win.charYou === '100', `rigged favor lands in the Character row (${win.charYou})`);
-  ok(win.scornYou.t === '−2' && win.scornYou.bad, `scorn reads −2 in red (${win.scornYou.t})`);
+  ok(win.cells === 24, `8 rows × 3 heirs of cells (${win.cells})`);
+  ok(win.byLabel.character && win.byLabel.character.t === '100',
+    `rigged favor lands in the Character row (${(win.byLabel.character || {}).t})`);
+  ok(win.byLabel.scorn && win.byLabel.scorn.t === '−2' && win.byLabel.scorn.bad,
+    `scorn reads −2 in red (${(win.byLabel.scorn || {}).t})`);
+  ok(win.byLabel.stone && win.byLabel.stone.drill,
+    'the Gold Exchange row exists and drills down like the other Favor rows');
   ok(win.totals.join(',') === '105,10,5', `totals = favor + prestige − scorn (${win.totals.join(',')})`);
   ok(win.noGoldCol, 'no gold tiebreaker column');
   ok(/^\+\d\.\d\d$/.test(win.ratingDelta),
@@ -2942,9 +3112,8 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
   ok(!win.hscroll, 'no horizontal scroll');
 
   // The prestige row carries the rigged 7 — sheet cells are engine truth.
-  const presYou = await page.evaluate(() =>
-    [...document.querySelectorAll('.vs-grid .vsg-cell')][12].textContent);
-  ok(presYou === '7', `prestige row reads the rigged 7 (${presYou})`);
+  ok(win.byLabel.prestige && win.byLabel.prestige.t === '7',
+    `prestige row reads the rigged 7 (${(win.byLabel.prestige || {}).t})`);
 
   // Count-up actually lands on the totals (grid totals start ~1150ms in).
   await sleep(2400);
@@ -3596,6 +3765,47 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
     return mine ? mine.textContent : '';
   });
   ok(/80/.test(daily), `daily carries your best single-game Favor (80)`);
+
+  // 5b · Rating + Top Scores (Wyatt 7/18). The All-Time board always sorted
+  // by rating — only the LABEL was wrong. Top Scores flattens every past
+  // daily window, so it is an all-time high table with no new write path.
+  const tabs = await page.evaluate(() =>
+    [...document.querySelectorAll('.lb-tab')].map(t => t.textContent.trim()));
+  ok(tabs.length === 3 && tabs[0] === 'Rating' && tabs[2] === 'Top Scores',
+    `three text tabs: ${tabs.join(' / ')}`);
+  ok(!tabs.some(t => /all.?time/i.test(t)), 'the All-Time label is retired for Rating');
+
+  await page.evaluate(() => FLB.openLeaderboard('topscores'));
+  await sleep(900);
+  const top = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.lb-row')];
+    const scores = rows.map(r => parseInt((r.querySelector('.lb-score') || {}).textContent || '0', 10));
+    return {
+      rows: rows.length,
+      descending: scores.every((s, i) => i === 0 || scores[i - 1] >= s),
+      favorIcon: rows.length > 0 && !!rows[0].querySelector('.lb-score .lb-ico'),
+      noRating: !rows.some(r => /✦/.test(r.textContent)),
+      railLit: !!document.querySelector('.lb-chartab.all.on'),
+      tabLit: (document.querySelector('.lb-tab.on') || {}).dataset
+        ? document.querySelector('.lb-tab.on').dataset.tab : '',
+      capped: rows.length <= 21,   // 20 + your own appendix row
+    };
+  });
+  ok(top.rows >= 1 && top.descending, `Top Scores ranks single-game highs descending (${top.rows} rows)`);
+  ok(top.favorIcon && top.noRating, 'Top Scores rows carry a Favor score, not a rating');
+  ok(top.capped, `the board is a TOP TWENTY (${top.rows} rows incl. any appendix)`);
+  ok(top.tabLit === 'topscores', 'the Top Scores tab lights when open');
+
+  // ⚠ The one line that silently breaks: overallOn in renderCharTabs. A new
+  // tab key that misses it mis-lights the "All Heroes" rail chip.
+  const rail = [];
+  for (const t of ['alltime', 'daily', 'topscores']) {
+    await page.evaluate((x) => FLB.openLeaderboard(x), t);
+    await sleep(500);
+    rail.push(await page.evaluate(() => !!document.querySelector('.lb-chartab.all.on')));
+  }
+  ok(rail.every(Boolean), `the All Heroes rail chip lights on all three overall tabs (${rail.join(',')})`);
+  await page.screenshot({ path: join(SHOTS, 'lb-topscores.png') });
   await page.evaluate(() => FLB.closeLeaderboard());
 
   // 6 · The crest is home in-game: the board thumb's plate carries your
@@ -4242,6 +4452,65 @@ console.log('── Melee cinematic: forge rows, live coin, podium + prestige to
     `phone: coronation fits 844×390 (champ ${pfitm.champ}, hscroll ${pfitm.hscroll}, onStage ${pfitm.onStage})`);
   await phone.screenshot({ path: join(SHOTS, 'melee-phone.png') });
   await phone.close();
+}
+
+// ═══ MELEE: tap anywhere advances the forge — except the scroll strip ═══
+console.log('── Melee taps: the whole stage advances the forge, .ms-cardrow stays a scroller');
+{
+  // Own page at a SLOWER speed than the flow above: forgeHoldMs is 15000 ×
+  // speed, and at 0.15 the 2.25 s unattended fallback would race the taps
+  // we are trying to observe. 0.5 leaves a 7.5 s window.
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('melee-tap: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('melee-tap pageerror: ' + e.message));
+  await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);
+  await page.evaluate(() => {
+    window.CINEMATIC_SPEED = 0.5;
+    const pick = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    const [p0, p1, p2] = game.players;
+    p0.skills.power = 6; p0.playedCards = [pick('Reckless Training')];
+    p1.skills.power = 4; p1.playedCards = [pick('Shot of Courage')];
+    p2.skills.power = 2;
+    window._tapDone = false;
+    showMeleeSplash(game.resolveMelee(), 1).then(() => { window._tapDone = true; });
+  });
+  // The Continue button appearing is exactly when advanceTap is armed.
+  await page.waitForFunction(() => !!document.querySelector('.ms-continue'), { timeout: 15000 });
+
+  // 1 · A tap on empty forge background advances (this is the whole ask).
+  await page.evaluate(() => document.getElementById('meleeSplash').click());
+  const advanced = await page.waitForFunction(() => !document.querySelector('.ms-continue'), { timeout: 4000 })
+    .then(() => true).catch(() => false);
+  ok(advanced, 'a tap on empty forge background advances the fighter (Wyatt 7/18)');
+
+  // 2 · A tap on the card row does NOT — it is overflow-x:auto and swipe
+  // scrolled on phones, and a swipe that ends short still emits a click.
+  await page.waitForFunction(() => !!document.querySelector('.ms-continue')
+    && !!document.querySelector('.ms-cardrow'), { timeout: 15000 });
+  const rowIsScroller = await page.evaluate(() =>
+    getComputedStyle(document.querySelector('.ms-cardrow')).overflowX === 'auto');
+  await page.evaluate(() => document.querySelector('.ms-cardrow').click());
+  await sleep(600);
+  const held = await page.evaluate(() => !!document.querySelector('.ms-continue'));
+  ok(rowIsScroller, '.ms-cardrow is still a horizontal scroller (the reason for the exclusion)');
+  ok(held, 'a tap on .ms-cardrow does NOT advance — swipe-scrolling stays safe');
+
+  // 3 · The Continue button still works, and double-tapping cannot skip a
+  // fighter: waitContinue nulls advanceTap before it resolves.
+  await page.evaluate(() => {
+    const b = document.querySelector('.ms-continue');
+    b.click(); b.click();
+  });
+  await sleep(600);
+  const oneStep = await page.evaluate(() => ({
+    fighters: document.querySelectorAll('.ms-tuck').length,
+    combatants: document.querySelectorAll('.ms-combatant').length,
+  }));
+  ok(oneStep.fighters <= oneStep.combatants,
+    `a double-tap advances one fighter, never two (${oneStep.fighters} tucked of ${oneStep.combatants})`);
+  await page.screenshot({ path: join(SHOTS, 'melee-tap-anywhere.png') });
+  await page.close();
 }
 
 // ═══ OPPONENT VIEW: summed stats in the inspect overlay + the play spotlight ═══
@@ -6341,6 +6610,41 @@ console.log('── Wanted: deterministic pick, drifting bounty, intro plaque, c
   ok(plaque.badgeOverhangs, 'the ! badge overhangs the corner un-clipped, over the card edge');
   ok(plaque.tall, 'the plaque stands tall in the menu grid');
   await page.screenshot({ path: join(SHOTS, 'rival-plaque.png') });
+
+  // The PREBOOT (Wyatt 7/18: "the wanted character wasn't really showing up
+  // ... and I closed the app"). index.html paints the plaque at parse time
+  // from its own copy of the rival table. That copy is the drift hazard, so
+  // it is pinned here: rename or reorder a rival in modes.js without touching
+  // index.html and this goes red.
+  const pre = await page.evaluate(async () => {
+    const src = await (await fetch('index.html?preboot=' + Date.now())).text();
+    const block = src.slice(src.indexOf('var ROSTER'), src.indexOf('function hashKey'));
+    const pairs = [...block.matchAll(/\['([a-z]+)',\s*'([^']+)'\]/g)]
+      .map(m => m[1] + '|' + m[2]).sort();
+    // What modes.js actually serves, swept wide enough to see every rival.
+    const live = new Set();
+    const d = new Date();
+    for (let i = 0; i < 40; i++) {
+      d.setDate(d.getDate() + 1);
+      live.add((r => r.hero + '|' + r.name)(FMODES.rivalOfDay(d.toISOString().slice(0, 10))));
+    }
+    const tags = [...src.matchAll(/<script([^>]*)\ssrc=/g)].map(m => m[1]);
+    return {
+      pairs, live: [...live].sort(),
+      before: src.indexOf('var ROSTER') > 0 && src.indexOf('var ROSTER') < src.indexOf('js/modes.js'),
+      deferred: tags.filter(t => /\bdefer\b/.test(t)).length,
+      tags: tags.length,
+      audio: (document.getElementById('themeMusic') || {}).getAttribute('preload'),
+      preload: !!document.querySelector('link[rel="preload"][as="image"]'),
+    };
+  });
+  ok(pre.pairs.length === 10 && pre.pairs.join() === pre.live.join(),
+    `the preboot rival table matches modes.js exactly (${pre.pairs.length} rivals pinned)`);
+  ok(pre.before, 'the plaque paints before modes.js is even requested');
+  ok(pre.deferred === pre.tags && pre.tags >= 14,
+    `every script tag is deferred, so 762 KB never blocks the parser (${pre.deferred}/${pre.tags})`);
+  ok(pre.audio === 'none', 'the 482 KB theme is not fetched before the player presses anything');
+  ok(pre.preload, "the rival's portrait is preloaded from the head");
 
   await page.evaluate(() => FMODES.openDailyRival());
   await sleep(300);
