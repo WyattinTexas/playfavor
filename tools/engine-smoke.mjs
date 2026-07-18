@@ -2231,5 +2231,154 @@ console.log('\n— grantSlotStones survives a JSON round-trip —');
     `no re-grant across serialization (${revived.philosopherStone})`);
 }
 
+// ── The rating ladder (js/meta.js) ───────────────────────────────────
+// meta.js is a browser IIFE that reaches for localStorage/firebase/document,
+// so it cannot be loaded whole here. The ladder math is pure, though, so we
+// slice it out the same way this file slices the engine. If the anchors ever
+// move, the slice comes back empty and the checks below fail loudly rather
+// than quietly testing nothing.
+const metaSrc = src('js/meta.js');
+const ladderSlice = metaSrc.slice(metaSrc.indexOf('const ELO = {'), metaSrc.indexOf('// ═══ Backends'));
+const LAD = ladderSlice.includes('function ladderDelta')
+  ? new Function(ladderSlice + `
+      return { ELO, LADDER, isWin, bandMult, fieldAdj, ladderDelta, personaDelta,
+               clampElo, fmtRatingDelta };`)()
+  : null;
+
+console.log('\n— The rating ladder: two rules, and personas get neither —');
+{
+  ok(!!LAD, 'the ladder math sliced cleanly out of meta.js');
+}
+if (LAD) {
+  const { LADDER, isWin, bandMult, ladderDelta, personaDelta, fmtRatingDelta } = LAD;
+  // A table of n seats where every opponent is rated `elo`.
+  const field = (n, elo) => Array.from({ length: n - 1 }, (_, i) => ({ place: i, elo }));
+  const curve = (myElo, n, oppElo, streak) =>
+    Array.from({ length: n }, (_, place) => ladderDelta(myElo, place, field(n, oppElo), streak || 0));
+
+  // ── ONE definition of a win, shared by the record, the streak and the
+  // persona drop rule. "Coming in 2nd in a 5 player game should be a win."
+  ok(isWin(0, 5) && isWin(1, 5) && !isWin(2, 5), 'n=5: 1st and 2nd are wins, 3rd is not');
+  ok(isWin(0, 4) && isWin(1, 4) && !isWin(2, 4), 'n=4: 1st and 2nd are wins, 3rd is not');
+  ok(isWin(0, 3) && isWin(1, 3) && !isWin(2, 3), 'n=3: 1st and 2nd are wins, 3rd is not');
+
+  // ── RULE 1 — below 2.00 NOBODY ever falls, at any placement, at any n.
+  let allPositive = true, sloped = true, lastIsToken = true;
+  for (const n of [3, 4, 5]) {
+    for (const oppElo of [800, 1200, 2500, 6800]) {
+      const c = curve(1000, n, oppElo);
+      if (c.some(d => d <= 0)) allPositive = false;
+      if (!c.every((d, i) => i === 0 || c[i - 1] > d)) sloped = false;
+      if (c[n - 1] !== LADDER.MIN_LAST) lastIsToken = false;
+    }
+  }
+  ok(allPositive, 'sub-2.00: every placement GAINS, at n=3/4/5 against every field');
+  ok(sloped, 'and the curve is strictly monotonic — every placement is distinguishable');
+  ok(lastIsToken, `last place gets exactly its consolation token (${LADDER.MIN_LAST})`);
+
+  // ── RULE 2 — at or above 2.00, ONLY last place can fall.
+  let onlyLastFalls = true;
+  for (const myElo of [2000, 2600, 3500, 5200, 6900]) {
+    for (const n of [3, 4, 5]) {
+      const c = curve(myElo, n, 2400);
+      c.forEach((d, place) => {
+        if (place !== n - 1 && d < LADDER.MIN_NONLAST) onlyLastFalls = false;
+      });
+    }
+  }
+  ok(onlyLastFalls, 'at/above 2.00: no placement but last is ever negative, at any rating');
+  ok(curve(2000, 5, 2000)[4] < 0, 'and at exactly 2.00 the fall switches ON for last place');
+  ok(curve(1999, 5, 2000)[4] > 0, 'one point below 2.00 it is still protected — the band boundary is exact');
+
+  // ── The 2.00 line self-heals: fall from exactly SOFT and you land below
+  // it, where nothing can fall you further. A soft floor, intended.
+  const fell = 2000 + curve(2000, 5, 2000)[4];
+  ok(fell < LADDER.SOFT && curve(fell, 5, 2000).every(d => d > 0),
+    `falling from exactly 2.00 lands at ${fell}, back under the no-fall floor`);
+
+  // ── Nobody who has played can end below 1.00: INIT is 1000 and sub-2000
+  // never falls, which retires the unstyled tier-0 worry.
+  ok(curve(1000, 5, 6900).every(d => d > 0), 'a 1.00 player seated against 6.90 opponents still cannot fall');
+
+  // ── adj clamps at both rails rather than running away. Tested as
+  // clamping: past the rail, making the field even more extreme must stop
+  // changing the answer. (2nd place, not 1st, so MAX_SWING is not what is
+  // doing the work.)
+  const strong = [7000, 5000].map(e => ladderDelta(1000, 1, field(5, e), 0));
+  ok(strong[0] === strong[1] && strong[0] === Math.round(
+      LADDER.BASE * (1 - LADDER.PS_SLOPE * 0.25) * LADDER.ADJ_MAX * bandMult(1000)),
+    `adj clamps at ADJ_MAX — a 7.00 and a 5.00 field pay the same (${strong.join(' / ')})`);
+  const weak = [0, 500].map(e => ladderDelta(3000, 1, field(5, e), 0));
+  ok(weak[0] === weak[1] && weak[0] === Math.round(
+      LADDER.BASE * (1 - LADDER.PS_SLOPE * 0.25) * LADDER.ADJ_MIN * bandMult(3000)),
+    `and at ADJ_MIN — a 0.00 and a 0.50 field pay the same (${weak.join(' / ')})`);
+  ok(curve(1000, 5, 7000).every(d => Math.abs(d) <= LADDER.MAX_SWING)
+     && curve(6999, 5, 0).every(d => Math.abs(d) <= LADDER.MAX_SWING),
+    `nothing ever exceeds the MAX_SWING rail (${LADDER.MAX_SWING})`);
+
+  // ── Bands: gains scale, FALLS DO NOT. A fall is a fall at every tier.
+  const g2 = ladderDelta(2500, 0, field(5, 2500), 0);
+  const g3 = ladderDelta(3500, 0, field(5, 3500), 0);
+  ok(g2 > g3, `the same 1st place pays less as the tier rises (${g2} at 2.50 vs ${g3} at 3.50)`);
+  const f2 = ladderDelta(2500, 4, field(5, 2500), 0);
+  const f6 = ladderDelta(6500, 4, field(5, 6500), 0);
+  ok(f2 === f6, `an identical last place costs the same at 2.50 and 6.50 (${f2}) — bands never scale falls`);
+
+  // ── The dead zone is gone by construction: MIN_LAST 10 and MIN_NONLAST 8
+  // both round to +0.01, so nothing renders "+0.00" against a real write.
+  let noDeadZone = true;
+  for (const myElo of [1000, 1500, 2000, 3000, 4500, 6000]) {
+    for (const n of [3, 4, 5]) {
+      curve(myElo, n, 2000).forEach(d => { if (fmtRatingDelta(d) === '+0.00') noDeadZone = false; });
+    }
+  }
+  ok(noDeadZone, 'no placement at any rating renders "+0.00" — the old 4th-place dead zone');
+
+  // ── PERSONAS get NONE of it. Every non-winning finish is strictly
+  // negative at EVERY rating — no floor, no band, no streak, no exemption.
+  let personaAlwaysDrops = true, personaWinsRise = true;
+  for (const cur of [900, 1500, 1999, 2000, 2001, 3400, 6200, 6900]) {
+    for (const n of [3, 4, 5]) {
+      for (let place = 0; place < n; place++) {
+        const d = personaDelta(cur, cur, place, field(n, cur));
+        if (!isWin(place, n) && d >= 0) personaAlwaysDrops = false;
+        if (place === 0 && d <= 0) personaWinsRise = false;
+      }
+    }
+  }
+  ok(personaAlwaysDrops,
+    'a persona LOSES rating on every non-winning finish, at every rating and table size');
+  ok(personaWinsRise, 'and still gains on a win');
+
+  // No band multiplier: an identical win pays a persona the same at 1.50
+  // and at 3.50, where a human would get 2.0x then 0.55x.
+  const pLow = personaDelta(1500, 1500, 0, field(5, 1500));
+  const pHigh = personaDelta(3500, 3500, 0, field(5, 3500));
+  ok(pLow === pHigh, `no band multiplier for personas (${pLow} at 1.50 = ${pHigh} at 3.50)`);
+  ok(ladderDelta(1500, 0, field(5, 1500), 0) !== ladderDelta(3500, 0, field(5, 3500), 0),
+    'while the HUMAN curve is band-scaled at exactly those ratings');
+
+  // No sub-2.00 no-fall floor: the protection humans get does not exist.
+  ok(personaDelta(1100, 1100, 4, field(5, 1100)) < 0,
+    'a sub-2.00 persona falls where a sub-2.00 human is protected');
+
+  // Mean reversion cushions but NEVER rescues. Worked example from the
+  // spec: seeded 2800, sitting at 1500, finishing last of 5.
+  const drifted = personaDelta(1500, 2800, 4, field(5, 1500 + 0));
+  const anchored = personaDelta(1500, 1500, 4, field(5, 1500));
+  ok(drifted > anchored && drifted < 0,
+    `a persona far BELOW its seed drops by less, but still drops (${drifted} vs ${anchored})`);
+  const above = personaDelta(3100, 2800, 4, field(5, 3100));
+  ok(above < anchored, `and one above its seed feels extra drag (${above})`);
+  ok(personaDelta(1500, 2800, 0, field(5, 1500)) > 0,
+    'a displaced persona can still win its way back up');
+
+  // A persona seeded far above the table still moves coherently rather
+  // than saturating at a rail.
+  const stranger = personaDelta(3500, 3500, 0, field(5, 1100));
+  ok(stranger > 0 && stranger < LADDER.MAX_SWING,
+    `a 3.50 persona beating a 1.10 table gains a small, sane amount (${stranger})`);
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);

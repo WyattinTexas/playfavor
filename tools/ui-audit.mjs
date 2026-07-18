@@ -17,6 +17,9 @@ import puppeteer from 'puppeteer-core';
 
 // testrealm2 is retired (Wyatt 7/15) — the repo root IS playfavor.net.
 const URL = process.env.AUDIT_URL || 'http://localhost:8891/';
+// Wall-clock at launch — the final integrity gate uses it to bound its
+// persona-contamination sweep to THIS run's window.
+const RUN_START = Date.now();
 const SHOTS = join(dirname(fileURLToPath(import.meta.url)), 'audit-shots');
 mkdirSync(SHOTS, { recursive: true });
 
@@ -2147,27 +2150,44 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
     && document.querySelectorAll('#queueSeg button.on').length === 1),
     'the tapped segment lights and the old one dims');
 
-  // Nation's Elo, table-shaped (1.00–7.00): a fresh player starts 1.00;
-  // beating two 1200 bots on provisional K64 must GAIN, capped ±K×1.5;
-  // display always two decimals; delta symmetric via the pairwise field.
+  // ⚠ THE LADDER CHANGED THE SIGN, not just the magnitude (Wyatt 7/18).
+  // This rig is a fresh player at 1.00 — BELOW the 2.00 no-fall line — so
+  // last place now GAINS its consolation token. The old assertion demanded
+  // lossDelta < 0 and would fail on a correct ladder. Sub-SOFT rules are
+  // asserted here; the full rule set lives in engine-smoke.
   const elo = await page.evaluate(() => {
-    const win = FLB.tableDelta([
-      { name: 'You' }, { name: 'A' }, { name: 'B' },
-    ], [null, null, null], 'knight');
-    const loss = FLB.tableDelta([
-      { name: 'A' }, { name: 'B' }, { name: 'You' },
-    ], [null, null, null], 'knight');
+    // The 4th arg is the ROW to compute against — the same parameter
+    // postGameResult uses to hand the txn's server row in. Passing a fresh
+    // {} makes this hermetic: the audit uid's real row accumulates a streak
+    // across runs, and a 3-win streak doubles gains, which would have made
+    // these numbers drift run to run.
+    const at = (order) => FLB.tableDelta(
+      order.map(n => ({ name: n })), [null, null, null], 'knight', {});
+    const win = at(['You', 'A', 'B']);
+    const mid = at(['A', 'You', 'B']);
+    const loss = at(['A', 'B', 'You']);
     return {
-      winDelta: win.delta, lossDelta: loss.delta,
+      winDelta: win.delta, lossDelta: loss.delta, midDelta: mid.delta,
       winShown: FLB.fmtRating(win.after), startShown: FLB.fmtRating(win.before),
-      capOk: Math.abs(win.delta) <= 64 * 1.5 && Math.abs(loss.delta) <= 64 * 1.5,
+      capOk: [win.delta, loss.delta, mid.delta].every(d => Math.abs(d) <= 300),
+      sloped: win.delta > mid.delta && mid.delta > loss.delta,
+      noDeadZone: [win.delta, mid.delta, loss.delta]
+        .every(d => FLB.fmtRatingDelta(d) !== '+0.00'),
       charTracks: win.charId === 'knight' && win.charDelta > 0,
       floorCeil: FLB.fmtRating(-500) === '0.00' && FLB.fmtRating(9999) === '7.00',
     };
   });
   ok(elo.startShown === '1.00', `a fresh player reads 1.00 (${elo.startShown})`);
-  ok(elo.winDelta > 0 && elo.lossDelta < 0 && elo.capOk,
-    `Elo moves the right way, capped (win +${elo.winDelta}, loss ${elo.lossDelta})`);
+  // Fresh 1.00 vs two 1200 bots: adj 1.1, band 2.0x, no streak.
+  // 1st  ps 1.00 -> 100 x 1.00 x 1.1 x 2.0 = 220
+  // 2nd  ps 0.30 -> 100 x 0.30 x 1.1 x 2.0 = 66
+  // 3rd  ps −0.40 -> −44, floored to MIN_LAST 10 because 1000 < SOFT
+  ok(elo.winDelta === 220 && elo.lossDelta === 10,
+    `sub-2.00: a win pays 220 and LAST PLACE STILL GAINS its token (win +${elo.winDelta}, last +${elo.lossDelta})`);
+  ok(elo.sloped, `every placement is distinguishable (${elo.winDelta} > ${elo.midDelta} > ${elo.lossDelta})`);
+  ok(elo.noDeadZone,
+    'no placement renders "+0.00" — the dead zone that made 4th place read as nothing');
+  ok(elo.capOk, 'nothing exceeds the MAX_SWING rail of 300');
   ok(elo.charTracks, 'the ridden hero\'s own ledger moves with the game');
   ok(elo.floorCeil, 'display clamps to the 0.00–7.00 rails');
 
@@ -3130,6 +3150,25 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
     && landed.rating === (parseInt(landed.ratingTarget, 10) / 1000).toFixed(2),
     `count-up lands (score ${landed.top}/${landed.target}, rating ${landed.rating})`);
   await page.screenshot({ path: join(SHOTS, 'vs-desktop-win.png') });
+
+  // ⚠⚠ THE DISPLAY/LEDGER SEAM. The sheet computed from the local _me cache
+  // while the write computed from the server row inside its transaction.
+  // Under Elo a stale cache meant a slightly wrong number; under the ladder
+  // it can mean a DIFFERENT RULE — the sheet showing a floor-protected gain
+  // while the write applies a fall, because the two disagreed about which
+  // side of the 2.00 line the game started on. They must agree exactly.
+  const seam = await page.evaluate(async (u) => {
+    const shown = parseInt((document.querySelector('.vs-delta.rating .vs-d-new') || { dataset: {} }).dataset.total, 10);
+    let wrote = null;
+    for (let i = 0; i < 40; i++) {
+      const s = await firebase.database().ref(`favor/players/${u}/rating`).get();
+      if (s.exists()) { wrote = s.val(); if (wrote === shown) break; }
+      await new Promise(r => setTimeout(r, 250));
+    }
+    return { shown, wrote };
+  }, AUDIT_UID);
+  ok(seam.shown === seam.wrote,
+    `the sheet's rating and the ledger's write agree exactly (shown ${seam.shown}, wrote ${seam.wrote})`);
 
   // ── NON-WIN (finish 3rd) — startGame navigates fresh ──
   await startGame(page);
@@ -5350,7 +5389,9 @@ async function startSeeded(page, seedRig) {
   ok(pass2.railBadgeOn === '2', `the badge moved with it (pi=${pass2.railBadgeOn})`);
   await page.screenshot({ path: join(SHOTS, 'emblem-act2-pass.png') });
 
-  // Persona placement posts to ITS row: rating only — no Stars, no daily.
+  // Persona placement posts to ITS row: rating AND — new on 7/18 — a daily
+  // score, "just like regular players". Still no Stars, and the podium
+  // filter keeps it off the crowns (asserted in its own beat below).
   await page.evaluate(() => {
     game.players[0].favor = 50; game.players[1].favor = 100; game.players[2].favor = 5;
     showScoring();
@@ -5363,14 +5404,17 @@ async function startSeeded(page, seedRig) {
     }
     const row = (await firebase.database().ref(`favor/players/${puid}`).get()).val() || {};
     const key = FLB.currentDateKey();
-    const daily = (await firebase.database().ref(`favor/daily/${key}/scores/${puid}`).get()).exists();
-    return { rating: row.rating, ratingV: row.ratingV,
-             stars: row.stars === undefined ? null : row.stars, daily };
+    const d = (await firebase.database().ref(`favor/daily/${key}/scores/${puid}`).get()).val();
+    return { rating: row.rating, ratingV: row.ratingV, wins: row.wins,
+             stars: row.stars === undefined ? null : row.stars, daily: d };
   }, P_UID);
-  ok(post.rating > 1000 && post.rating <= 1096 && post.ratingV === 2,
-    `persona 1st place gained Elo on the uaudit row (${post.rating}, v${post.ratingV})`);
-  ok(post.stars === null, 'persona earns no Stars');
-  ok(!post.daily, 'persona stays off the daily board');
+  ok(post.rating > 1000 && post.rating <= 1300 && post.ratingV === 2,
+    `persona 1st place gained rating on the uaudit row (${post.rating}, v${post.ratingV})`);
+  ok(post.stars === null, 'persona earns no Stars — a currency it could never spend');
+  ok(post.daily && post.daily.best > 0,
+    `the persona's high score reaches the daily board (best ${post.daily && post.daily.best})`);
+  ok(post.daily && post.daily.persona === true,
+    'and is stamped persona:true so settlement can filter it');
 
   // Leave no trace — remove-verify-retry for BOTH uids across every daily
   // key, then prove the REAL persona rows never felt any of this.
@@ -5396,6 +5440,76 @@ async function startSeeded(page, seedRig) {
   }, [AUDIT_UID, P_UID]);
   ok(scrub.verdict === 'clean', `audit rows scrubbed from favor/* (${scrub.verdict})`);
   ok(scrub.real === realBefore, `REAL persona_ashcroft row untouched (rating ${scrub.real}, was ${realBefore})`);
+  await page.close();
+}
+
+// ── Beat 1b: ⚠⚠ THE CROWN COLLISION. Personas rank on the daily board now,
+//    and settleDue pays Stars, increments champs and pushes a royal overlay
+//    for each of the top three. Unfiltered, a persona would take a crown and
+//    its Stars FROM A REAL HUMAN, wear crowns on the leaderboard, and grow an
+//    orphan msgQueue on a permanent row that will never log in. The filter
+//    belongs at the PODIUM, not on the board — Wyatt: "prevent them from
+//    getting the crowns. That's fine."
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('crown-filter: ' + m.text()); });
+  await page.setViewport({ width: 1280, height: 800 });
+  const H_UID = 'uauditcrown' + Math.random().toString(36).slice(2, 6);
+  const P_UID = H_UID + 'persona';
+  // A CLOSED window far in the past, so settleDue must settle it and no real
+  // board can be touched. Cleaned up unconditionally below.
+  const KEY = '2019-03-04';
+  await page.evaluateOnNewDocument((u) => {
+    localStorage.setItem('favorUid', u);
+    localStorage.setItem('favorName', 'Audit Sovereign');
+  }, H_UID);
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+
+  const crown = await page.evaluate(async ({ key, h, p }) => {
+    const db = firebase.database();
+    await db.ref(`favor/settled/${key}`).remove();
+    // The persona posts the HIGHEST score of the window. If it were eligible
+    // it would take gold outright.
+    await db.ref(`favor/daily/${key}/scores/${p}`).set({ name: 'Audit Persona', best: 9999, at: 1, persona: true });
+    await db.ref(`favor/daily/${key}/scores/${h}`).set({ name: 'Audit Sovereign', best: 12, at: 2 });
+    await FLB.settleDue();
+    const settled = (await db.ref(`favor/settled/${key}`).get()).val() || {};
+    const prow = (await db.ref(`favor/players/${p}`).get()).val() || {};
+    const hrow = (await db.ref(`favor/players/${h}`).get()).val() || {};
+    return {
+      podium: (settled.podium || []).map(x => x.uid),
+      topName: (settled.podium || [])[0] ? settled.podium[0].name : null,
+      personaStars: prow.stars === undefined ? null : prow.stars,
+      personaChamps: prow.champs || null,
+      personaMsgs: prow.msgQueue ? Object.keys(prow.msgQueue).length : 0,
+      humanStars: hrow.stars === undefined ? null : hrow.stars,
+      humanGold: ((hrow.champs || {}).gold) || 0,
+    };
+  }, { key: KEY, h: H_UID, p: P_UID });
+
+  ok(!crown.podium.includes(P_UID),
+    `the persona is filtered OUT of the podium despite the top score (podium: ${crown.podium.length})`);
+  ok(crown.podium.includes(H_UID) && crown.topName === 'Audit Sovereign',
+    `and the crown goes to the human below it (${crown.topName})`);
+  ok(crown.personaStars === null && !crown.personaChamps,
+    'a persona takes no Stars and accrues no champs crowns');
+  ok(crown.personaMsgs === 0,
+    'and no royal overlay is queued on a row that will never log in');
+  ok(crown.humanGold === 1 && crown.humanStars > 0,
+    `the human really was paid — gold crown ${crown.humanGold}, stars ${crown.humanStars}`);
+
+  const swept = await page.evaluate(async ({ key, h, p }) => {
+    const db = firebase.database();
+    await db.ref(`favor/daily/${key}`).remove();
+    await db.ref(`favor/settled/${key}`).remove();
+    await db.ref(`favor/players/${h}`).remove();
+    await db.ref(`favor/players/${p}`).remove();
+    await new Promise(r => setTimeout(r, 400));
+    return !(await db.ref(`favor/daily/${key}`).get()).exists()
+      && !(await db.ref(`favor/players/${h}`).get()).exists();
+  }, { key: KEY, h: H_UID, p: P_UID });
+  ok(swept, 'the fabricated window and both audit rows are swept');
   await page.close();
 }
 
@@ -6986,6 +7100,44 @@ console.log('── Private room: host/join by code, size in-room, Start → pic
   } catch (e) {
     ok(false, 'private-room flow crashed', e.message);
   }
+}
+
+// ═══ FINAL INTEGRITY GATE: no audit run may leave a mark on a REAL row ═══
+// Personas post daily scores as of 7/18, which opens a contamination path
+// that did not exist before: an audit game that seated a real persona would
+// write favor/daily/{key}/scores/persona_* into the LIVE tree, and that row
+// would rank on Daily and Top Scores as a score no human ever played.
+// startGame pins _pinEmblemSeed, which leaves `seed` null and seats no
+// personas at all — but that is one flag away from being wrong, so it is
+// checked rather than assumed. The never-delete rule protects the permanent
+// players/persona_* ROW; a daily entry is disposable, so anything found
+// inside this run's window is swept. Bounded by RUN_START so a legitimate
+// persona score from a real game is never destroyed.
+{
+  const page = await browser.newPage();
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  const contam = await page.evaluate(async (since) => {
+    const db = firebase.database();
+    const days = (await db.ref('favor/daily').get()).val() || {};
+    const hits = [];
+    for (const [key, day] of Object.entries(days)) {
+      for (const [u, s] of Object.entries((day && day.scores) || {})) {
+        if (u.startsWith('persona_') && s && (s.at || 0) >= since) {
+          hits.push(`${key}/${u} (best ${s.best})`);
+          await db.ref(`favor/daily/${key}/scores/${u}`).remove();
+        }
+      }
+    }
+    const stray = Object.keys((await db.ref('favor/players').get()).val() || {})
+      .filter(u => /^uaudit/.test(u));
+    return { hits, stray };
+  }, RUN_START);
+  ok(contam.hits.length === 0,
+    `no REAL persona posted a daily score during this run (${contam.hits.join(', ') || 'clean'})`);
+  ok(contam.stray.length === 0,
+    `no uaudit* rows left in favor/players (${contam.stray.join(', ') || 'clean'})`);
+  await page.close();
 }
 
 ok(consoleErrors.length === 0, 'zero console errors across all flows', consoleErrors.slice(0, 3).join(' | '));

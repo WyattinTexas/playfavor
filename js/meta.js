@@ -71,12 +71,22 @@
     // Balthazar…) moved to the Skirmish AI pool in ui.js. The uids/keys
     // never change — rows are PATCH-only (tools/rename-personas.mjs did
     // the live rows in place).
+    // ⚠ RESEEDED 7/18 for the ladder. The old spread (1960/1740/1560/1380/
+    // 1240) all sat inside the range humans now clear in a couple of weeks —
+    // every real player was 1.04–1.24 with a median of 1.10, and the top
+    // persona sat at 1.96. Under the ladder the population would have passed
+    // the whole table and had nobody left to chase. These rungs span the
+    // range the ladder actually covers, so there is something above the
+    // population for months. Reseeding is cheap now and awkward later.
+    // ⚠ PATCH-only: persona_* rows are NEVER deleted, and seedRating only
+    // applies to a row that has no rating yet — tools/reseed-personas.mjs
+    // stamps the live rows in place, idempotently.
     const PERSONAS = [
-        { key: 'ashcroft',   uid: 'persona_ashcroft',   name: 'HotshotGG',      hero: 'knight',    seedRating: 1960, strong: ['power', 'survival'] },
-        { key: 'balthazar',  uid: 'persona_balthazar',  name: 'Athene',         hero: 'scientist', seedRating: 1740, strong: ['alchemy', 'knowledge'] },
-        { key: 'vespertine', uid: 'persona_vespertine', name: 'Sneaky Penguin', hero: 'duchess',   seedRating: 1560, strong: ['knowledge', 'prospecting'] },
-        { key: 'rosalind',   uid: 'persona_rosalind',   name: 'Mable Stadango', hero: 'fisherman', seedRating: 1380,  strong: ['survival', 'knowledge'] },
-        { key: 'thorne',     uid: 'persona_thorne',     name: 'Papa Johns',     hero: 'bandit',    seedRating: 1240,  strong: ['power', 'prospecting'] },
+        { key: 'thorne',     uid: 'persona_thorne',     name: 'Papa Johns',     hero: 'bandit',    seedRating: 1200, strong: ['power', 'prospecting'] },
+        { key: 'rosalind',   uid: 'persona_rosalind',   name: 'Mable Stadango', hero: 'fisherman', seedRating: 1700, strong: ['survival', 'knowledge'] },
+        { key: 'vespertine', uid: 'persona_vespertine', name: 'Sneaky Penguin', hero: 'duchess',   seedRating: 2200, strong: ['knowledge', 'prospecting'] },
+        { key: 'balthazar',  uid: 'persona_balthazar',  name: 'Athene',         hero: 'scientist', seedRating: 2800, strong: ['alchemy', 'knowledge'] },
+        { key: 'ashcroft',   uid: 'persona_ashcroft',   name: 'HotshotGG',      hero: 'knight',    seedRating: 3500, strong: ['power', 'survival'] },
     ];
 
     // Small gold crown — inline SVG so the champion mark is OURS (royal,
@@ -150,23 +160,53 @@
         return Math.max(0, next - et);
     }
 
-    // ═══ Rating — Nation's Elo, worn table-wide (Wyatt 7/17) ═════════
-    // Same engine as Nation's OneVOneELORating asset: internal Elo int
-    // 0–7000, everyone starts at 1000, and the number a player SEES is
-    // elo/1000 → the 1.00–7.00 pickleball scale. K 32 (64 for the first
-    // ten games, doubled on a 3+ win streak), expected score clamped to
-    // [0.05, 0.95], per-game swing capped at ±K×1.5.
+    // ═══ Rating — a banded PROGRESSION LADDER (Wyatt 7/18) ═══════════
+    // Internal int 0–7000; the number a player SEES is elo/1000 → the
+    // 1.00–7.00 pickleball scale. Everyone starts at 1000.
     //
-    // FAVOR's tables aren't duels, so a game scores as PAIRWISE results
-    // vs every other seat — beat them if you placed higher — with K split
-    // across the pairs, so a whole table swings like one Nation duel.
-    // Personas and humans bring real ratings; generic bots stand in at
-    // the court's standard 1200.
+    // This replaced table Elo, which felt like nothing. Elo split K across
+    // the pairs (k/opps.length), so a 1000-rated player finishing 3rd of 5
+    // against 1200 bots moved EIGHT points — "+0.01". The full curve was
+    // −0.01 / +0.00 / +0.01 / +0.02 / +0.02: a total dynamic range of three
+    // hundredths, 4th place literally rendering "+0.00", and 1st and 2nd
+    // indistinguishable after toFixed(2). Wyatt's reported "0.1 rating" was
+    // him reading +0.01 aloud. Neither the swing cap nor the expected clamp
+    // was anywhere near binding — it was the pairwise split.
+    //
+    // Elo's zero-sum property is deliberately abandoned. Rating is now a
+    // progression track with diminishing returns per tier, and TWO RULES
+    // define the entire feel:
+    //   1. Below 2.00 nobody ever falls. Every placement gains, on a slope;
+    //      last place gains a token "thanks for playing".
+    //   2. At or above 2.00, only last place can fall. No other placement is
+    //      ever negative, at any rating.
+    // "Hit 2 kind of quick, 3 slow, or 4, because it goes to 7."
     const ELO = {
-        INIT: 1000, FLOOR: 0, CEIL: 7000,
-        K: 32, PROV_K: 64, PROV_GAMES: 10,
+        INIT: 1000, FLOOR: 0, CEIL: 7000, BOT: 1200,
+        // The streak boost survives the rewrite as a small extra multiplier
+        // on GAINS only — on-theme for "we want people to feel good".
         STREAK_MIN: 3, STREAK_CAP: 5, BOOST: 2,
-        E_MIN: 0.05, E_MAX: 0.95, MAX_MULT: 1.5, BOT: 1200,
+    };
+    // Every knob lives here. Reach for them in this order: BASE (overall
+    // speed) → BANDS (tier difficulty) → PS_SLOPE (how much placement
+    // matters vs just showing up) → MIN_LAST/MIN_STEP (the consolation
+    // slope below 2.00).
+    const LADDER = {
+        BASE: 100,                    // elo for a 1st-place finish vs an even field
+        PS_SLOPE: 1.4,                // placement spread
+        ADJ_SPAN: 2000, ADJ_MIN: 0.5, ADJ_MAX: 1.5,
+        SOFT: 2000,                   // the 2.00 line — below it nobody falls
+        BANDS: [[2000, 2.0], [3000, 1.0], [4000, 0.55],
+                [5000, 0.30], [6000, 0.18], [7000, 0.10]],
+        MIN_LAST: 10, MIN_STEP: 10,   // sub-2.00 guaranteed slope: 10/20/30/40/50 at n=5
+        MIN_NONLAST: 8,               // at/above 2.00, non-last never renders +0.00
+        // A safety RAIL, not a routine constraint. At 200 the cap would bind
+        // on essentially every first-place finish in the fast band, flattening
+        // adj exactly where beating a strong table should pay most. At 300 it
+        // only binds at the theoretical maximum (ps 1.0 x adj 1.5 x band 2.0).
+        MAX_SWING: 300,
+        PULL: 0.05,                   // persona mean-reversion toward its seed
+        MIN_DROP: 8,                  // a persona's non-win ALWAYS costs at least this
     };
     const clampElo = (r) => Math.max(ELO.FLOOR, Math.min(ELO.CEIL, Math.round(r)));
 
@@ -198,50 +238,125 @@
         return (d >= 0 ? '+' : '−') + (Math.abs(d) / 1000).toFixed(2);
     }
 
-    function eloExpected(a, b) {
-        const e = 1 / (1 + Math.pow(10, (b - a) / 400));
-        return Math.max(ELO.E_MIN, Math.min(ELO.E_MAX, e));
+    // ONE definition of "a win" (Wyatt 7/18: "coming in 2nd in a 5 player
+    // game should be considered a win"). Drives the human W/L record, the
+    // human streak AND the persona drop rule, so both populations agree on
+    // what a win is. n=5 → 1st/2nd · n=4 → 1st/2nd · n=3 → 1st/2nd.
+    function isWin(place, n) { return place < Math.ceil((n || 0) * 0.4); }
+
+    // The difficulty curve. Looked up on the PRE-GAME rating, so one award
+    // never straddles two bands: a win from 1990 lands at ~2190 entirely at
+    // 2.0x. Deliberately not over-engineered.
+    function bandMult(elo) {
+        for (const [ceil, mult] of LADDER.BANDS) if (elo < ceil) return mult;
+        return LADDER.BANDS[LADDER.BANDS.length - 1][1];
     }
-    function kFor(games, streak) {
-        const base = (games || 0) < ELO.PROV_GAMES ? ELO.PROV_K : ELO.K;
-        return Math.min(streak || 0, ELO.STREAK_CAP) >= ELO.STREAK_MIN
-            ? base * ELO.BOOST : base;
+
+    // Opponent strength — a skill signal without Elo's zero-sum property.
+    // A strong persona at the table raises the human's adj, so hard tables
+    // become worth seeking out.
+    function fieldAdj(myElo, opps) {
+        if (!opps.length) return 1;
+        const avg = opps.reduce((s, o) => s + o.elo, 0) / opps.length;
+        return Math.max(LADDER.ADJ_MIN,
+            Math.min(LADDER.ADJ_MAX, 1 + (avg - myElo) / LADDER.ADJ_SPAN));
     }
-    function eloTableDelta(myElo, myPlace, opps, k) {
-        if (!opps.length) return 0;
-        const kk = k / opps.length;
-        let d = 0;
-        for (const o of opps) {
-            d += kk * ((myPlace < o.place ? 1 : 0) - eloExpected(myElo, o.elo));
+
+    // Clamp the DELTA against the rails, not just the total. tableDelta used
+    // to return an unclamped delta while writing clampElo(myElo + delta), so
+    // near 7000 the sheet printed "+0.20 → 7.00" while the ledger moved 4.
+    function railed(myElo, delta) {
+        return Math.max(ELO.FLOOR - myElo, Math.min(ELO.CEIL - myElo, delta));
+    }
+
+    // THE HUMAN LADDER. Rules 1 and 2 live in the two floors at the bottom.
+    function ladderDelta(myElo, place, opps, streak) {
+        const n = opps.length + 1;
+        if (n < 2) return 0;
+        // Placement score: +1.00 for 1st, sloping across the seats actually
+        // played. n=5: +1.00 +0.65 +0.30 −0.05 −0.40
+        const ps = 1 - LADDER.PS_SLOPE * (place / (n - 1));
+        let delta = LADDER.BASE * ps * fieldAdj(myElo, opps);
+        // GAINS SCALE, FALLS DO NOT. The band is a progression device; a fall
+        // is a fall.
+        if (delta > 0) {
+            delta *= bandMult(myElo);
+            if (Math.min(streak || 0, ELO.STREAK_CAP) >= ELO.STREAK_MIN) delta *= ELO.BOOST;
         }
-        const cap = k * ELO.MAX_MULT;
-        return Math.round(Math.max(-cap, Math.min(cap, d)));
+        delta = Math.max(-LADDER.MAX_SWING, Math.min(LADDER.MAX_SWING, delta));
+        // Rule 1 — below 2.00 nobody falls, and the slope is guaranteed.
+        if (myElo < LADDER.SOFT) {
+            delta = Math.max(delta, LADDER.MIN_LAST + (n - 1 - place) * LADDER.MIN_STEP);
+        // Rule 2 — at or above 2.00, only last place can fall.
+        } else if (place !== n - 1) {
+            delta = Math.max(delta, LADDER.MIN_NONLAST);
+        }
+        return Math.round(railed(myElo, delta));
+    }
+
+    // PERSONAS RIDE THE SAME TABLE WITH NONE OF THE PROTECTIONS.
+    // Every protection in the human rule set exists because humans have
+    // feelings. Personas are the measuring stick (Wyatt 7/18: "the personas
+    // don't get the benefits that human players do. Personas will go down in
+    // rating when they lose, no matter where they are, no matter what tier").
+    // Give a sub-2.00 persona the no-fall floor and the 2.0x band and they
+    // could only ever go up: every persona would inflate into a pile at 2.00,
+    // precisely the opposite of a ladder with a shape.
+    function personaDelta(current, seedRating, place, opps) {
+        const n = opps.length + 1;
+        if (n < 2) return 0;
+        // SYMMETRIC, unlike the human curve: the human ps is positively
+        // biased so mid-table still feels rewarding; personas get the honest
+        // zero-centred version. +1.00 +0.50 0.00 −0.50 −1.00 at n=5.
+        const psP = 1 - 2 * (place / (n - 1));
+        let delta = LADDER.BASE * psP * fieldAdj(current, opps);
+        // Mean reversion holds the ladder's SHAPE over thousands of games
+        // while still letting results move a persona visibly. Applied BEFORE
+        // the clamp, so it cushions a loss but can never rescue it.
+        delta += (seedRating - current) * LADDER.PULL;
+        // A non-winning finish ALWAYS costs a persona rating. No tier, no
+        // rating level, no floor, no seed distance exempts them. 3rd of 5
+        // sits at exactly 0.00 on the curve, so without this clamp a median
+        // finish would be a silent no-op.
+        if (!isWin(place, n)) delta = Math.min(delta, -LADDER.MIN_DROP);
+        delta = Math.max(-LADDER.MAX_SWING, Math.min(LADDER.MAX_SWING, delta));
+        return Math.round(railed(current, delta));
     }
 
     // Everything one finished table means for MY row — computed the same
     // way by the victory sheet (display) and postGameResult (the write).
     // ratings[] = each seat's table rating (null → bot 1200; my own seat
     // ignored); charId = the hero I rode, for the per-character ledger.
-    function tableDelta(scores, ratings, charId) {
+    // ⚠⚠ THE DISPLAY/LEDGER SEAM, and why `row` exists.
+    // Display used to compute from the local _me cache while the ledger
+    // computed from the server row inside its transaction. Under Elo a stale
+    // cache meant a slightly wrong number. Under the ladder it can mean a
+    // DIFFERENT RULE — the sheet showing a floor-protected gain while the
+    // write applies a fall, because the two disagreed about which side of
+    // SOFT the player was on. Both callers run this one function now, and
+    // postGameResult passes the server row it is transacting against.
+    function tableDelta(scores, ratings, charId, row) {
         const place = scores.findIndex(s => s.name === 'You');
         if (place < 0) return null;
-        const me = _me || {};
+        const me = row || _me || {};
         const myElo = eloOf(me);
         const opps = scores.map((s, i) => i === place ? null : ({
             place: i,
             elo: ratings && ratings[i] != null ? clampElo(ratings[i]) : ELO.BOT,
         })).filter(Boolean);
-        const won = place === 0;
-        const k = kFor(me.games, won ? (me.streak || 0) + 1 : 0);
-        const delta = eloTableDelta(myElo, place, opps, k);
+        const streak = isWin(place, scores.length) ? (me.streak || 0) + 1 : 0;
+        const delta = ladderDelta(myElo, place, opps, streak);
         const out = {
-            place, opps, delta,
+            place, opps, delta, streak,
             before: myElo, after: clampElo(myElo + delta),
         };
         if (charId) {
+            // The hero's own ledger runs the same ladder against the hero's
+            // own elo, so a fresh hero gets the 2.0x band: a veteran picking
+            // up a new character climbs that board fast. Intended.
             const cc = ((me.chars || {})[charId]) || {};
             const cElo = cc.r == null ? ELO.INIT : clampElo(cc.r);
-            const cd = eloTableDelta(cElo, place, opps, kFor(cc.g || 0, 0));
+            const cd = ladderDelta(cElo, place, opps, 0);
             out.charId = charId;
             out.charDelta = cd;
             out.charBefore = cElo;
@@ -404,12 +519,13 @@
             if (place < 0) return;
             const mine = scores[place];
             const starsWon = gameStars(place, scores.length);
-            const won = place === 0;
+            // ⚠ `won` has THREE consumers below — the wins count, the
+            // streak/bestStreak pair, and (through the streak) the gain
+            // boost. It is no longer `place === 0`: a top-40% finish is a
+            // win, so a streak becomes a run of top-40% finishes, which is
+            // the right reading of a hot streak.
+            const won = isWin(place, scores.length);
             const myPower = Math.max(0, Math.round(mine.power || 0));
-            const opps = scores.map((s, i) => i === place ? null : ({
-                place: i,
-                elo: ratings[i] != null ? clampElo(ratings[i]) : ELO.BOT,
-            })).filter(Boolean);
 
             // ONE whole-row transaction: rating + Stars + lifetime Power +
             // wins/games/streak + identity land together or retry together
@@ -421,14 +537,16 @@
             await dbTxn(`players/${uid()}`, p => {
                 const cur = p || {};
                 const streak = won ? (cur.streak || 0) + 1 : 0;
-                const myElo = eloOf(cur);
-                const delta = eloTableDelta(myElo, place, opps, kFor(cur.games, streak));
+                // SERVER TRUTH into the same function the victory sheet ran,
+                // so the number shown and the number written cannot disagree
+                // about which side of the 2.00 line this game started on.
+                const rr = tableDelta(scores, ratings, myChar, cur);
                 const out = {
                     ...cur,
                     name: myName(),
                     lastSeen: Date.now(),
                     avatar: cur.avatar || myAvatar() || null,
-                    rating: clampElo(myElo + delta),
+                    rating: rr ? rr.after : eloOf(cur),
                     ratingV: 2,
                     stars: (cur.stars || 0) + starsWon,
                     power: (cur.power || 0) + myPower,
@@ -437,17 +555,15 @@
                     streak,
                     bestStreak: Math.max(cur.bestStreak || 0, streak),
                 };
-                if (myChar) {
+                if (myChar && rr && rr.charId) {
                     const cc = ((cur.chars || {})[myChar]) || {};
-                    const cElo = cc.r == null ? ELO.INIT : clampElo(cc.r);
-                    const cd = eloTableDelta(cElo, place, opps, kFor(cc.g || 0, 0));
                     out.chars = {
                         ...(cur.chars || {}),
                         // `best` = your highest single-game score with this hero
                         // (Wyatt 7/17) — players love hunting their own high, and
                         // seeing a rival's big number on a hero's board.
                         [myChar]: {
-                            r: clampElo(cElo + cd),
+                            r: rr.charAfter,
                             g: (cc.g || 0) + 1,
                             best: Math.max(cc.best || 0, Math.round(mine.finalScore || 0)),
                         },
@@ -471,11 +587,16 @@
         } finally {
             // Seated personas: their placements are as real as yours —
             // one whole-row txn each on their PERMANENT rows (never delete).
-            // No daily post, no Stars: the nightly crowns stay a human race.
             // A row missing its rating starts from the persona's seed value.
             // Their pairwise field: every other seat, with the human's own
             // fresh elo standing in for the "You" seat.
+            //
+            // They post daily scores now and rank on Daily + Top Scores, but
+            // they take NO Stars and NO crowns — see the podium filter in
+            // podiumSort. "Just like regular players" applies to SCORES, not
+            // to payouts.
             const myEloNow = eloOf(_me);
+            const dailyKey = currentDateKey();
             for (const pp of (personaPlaces || [])) {
                 try {
                     const seedR = (PERSONAS.find(x => x.uid === pp.uid) || {}).seedRating || ELO.INIT;
@@ -489,17 +610,28 @@
                         const cur = p || {};
                         const base = cur.rating == null ? seedR
                             : (cur.ratingV === 2 ? clampElo(cur.rating) : eloOf(cur));
-                        const pDelta = eloTableDelta(base, pp.place, pOpps, kFor(cur.games, 0));
                         return {
                             ...cur,
                             name: pp.name, lastSeen: Date.now(), persona: true,
-                            rating: clampElo(base + pDelta),
+                            rating: clampElo(base + personaDelta(base, seedR, pp.place, pOpps)),
                             ratingV: 2,
                             power: (cur.power || 0) + Math.max(0, Math.round(pp.power || 0)),
                             games: (cur.games || 0) + 1,
-                            wins: (cur.wins || 0) + (pp.place === 0 ? 1 : 0),
+                            // The SAME predicate the human record uses, so both
+                            // populations agree on what a win is.
+                            wins: (cur.wins || 0) + (isWin(pp.place, scores.length) ? 1 : 0),
                         };
                     });
+                    // "They'll also need to have their own high scores posted,
+                    // just like regular players." Marked persona:true so
+                    // settlement can filter and boards can style.
+                    const pBest = Math.round(pp.finalScore || 0);
+                    if (pBest > 0) {
+                        await dbTxn(`daily/${dailyKey}/scores/${pp.uid}`, cur => {
+                            if (cur && cur.best >= pBest) return cur;
+                            return { name: pp.name, best: pBest, at: Date.now(), persona: true };
+                        });
+                    }
                 } catch (e) {
                     console.warn('[FAVOR meta] persona post failed:', e.message);
                 }
@@ -511,9 +643,21 @@
 
     // ═══ Daily Champions — lazy idempotent settlement ════════════════
 
-    function podiumSort(scores) {
+    // `forPodium` drops personas — Wyatt 7/18: "prevent them from getting the
+    // crowns. That's fine." Personas post daily scores and RANK publicly on
+    // Daily and Top Scores, but the nightly settlement pays Stars, increments
+    // champs and pushes a royal msgQueue overlay for each podium seat. Left
+    // unfiltered, a persona would take a crown and its Stars from a real
+    // human, wear crowns on the leaderboard, and grow an orphan message queue
+    // on a permanent row that will never log in. Filtering at the PODIUM (not
+    // off the board) is what keeps "just like regular players" true of scores
+    // while payouts stay a human race. It also defuses the 22:00 ET audit
+    // hazard instead of escalating it: a run straddling the boundary can no
+    // longer crown a persona.
+    function podiumSort(scores, forPodium) {
         return Object.entries(scores || {})
-            .map(([u, s]) => ({ uid: u, name: s.name, best: s.best, at: s.at || 0 }))
+            .filter(([, s]) => !(forPodium && s && s.persona))
+            .map(([u, s]) => ({ uid: u, name: s.name, best: s.best, at: s.at || 0, persona: !!(s && s.persona) }))
             .sort((a, b) => (b.best - a.best) || (a.at - b.at));   // ties → earliest
     }
 
@@ -530,7 +674,7 @@
                 });
                 if (!claim.committed || !claim.value || claim.value.by !== uid()) continue;
 
-                const podium = podiumSort((days[key] || {}).scores).slice(0, 3);
+                const podium = podiumSort((days[key] || {}).scores, true).slice(0, 3);
                 for (let i = 0; i < podium.length; i++) {
                     const p = podium[i];
                     await dbTxn(`players/${p.uid}/stars`, s => (s || 0) + STAR_AWARDS[i]);

@@ -6246,8 +6246,12 @@ function showScoring() {
     const personaPlaces = (!mpActive() || FMP.isHost())
         ? scores.map((s, i) => {
             const gp = game.players[s.playerIndex];
+            // finalScore rides along so personas can post to the daily board
+            // "just like regular players" (Wyatt 7/18) — it was not in the
+            // payload, so the persona daily post had nothing to write.
             return gp && gp._personaUid
-                ? { uid: gp._personaUid, name: gp.name, place: i, power: s.power || 0 }
+                ? { uid: gp._personaUid, name: gp.name, place: i,
+                    power: s.power || 0, finalScore: s.finalScore || 0 }
                 : null;
         }).filter(Boolean)
         : [];
