@@ -828,13 +828,95 @@
         if (window.FMODES && FMODES.renderRivalPlaque) FMODES.renderRivalPlaque();
     }
 
+    // Wyatt 7/18: "Viewing profile is bad — you just see the different avatars
+    // you can choose and then you don't really see much else." He was right:
+    // the panel led with a ten-crest picker grid (the visual mass) and then
+    // five thin text rows. EVERYTHING below already sat in _me and none of it
+    // was rendered. Order now: standing, then the per-hero ledgers, then
+    // achievements, then today's bounty — with the picker demoted from
+    // centrepiece to a control at the bottom.
     function openProfile() {
         const p = _me || { rating: 0, stars: 0, champs: {} };
         const ch = p.champs || {};
         const chars = ((window.FAVOR_DATA || {}).characters || []);
+        const elo = eloOf(p);
+        const games = p.games || 0;
+        const wins = p.wins || 0;
+        const rate = games ? Math.round((wins / games) * 100) : 0;
+
+        // p.chars: per-hero { r, g, best }. The biggest win in the panel.
+        const ledger = chars
+            .map(c => ({ c, s: (p.chars || {})[c.id] }))
+            .filter(x => x.s && (x.s.g || 0) > 0)
+            .sort((a, b) => (b.s.r || 0) - (a.s.r || 0));
+
+        // ⚠ NEVER await FACH.sync() in a render: it is async, it WRITES, and
+        // it awaits celebrate(), which blocks on user clicks — awaiting it
+        // here would hang the panel on a modal. Read the row we already hold,
+        // exactly as openGallery does.
+        const have = p.achievements || {};
+        const defs = (window.FACH && typeof FACH.defs === 'function') ? FACH.defs() : [];
+        const got = defs.filter(d => have[d.id]);
+        const achStars = got.reduce((n, d) => n + (d.stars || 0), 0);
+        const recent = got
+            .slice()
+            .sort((a, b) => (have[b.id] || 0) - (have[a.id] || 0))
+            .slice(0, 3);
+
+        // Today's bounty is free — rivalOfDay and rivalStars are both pure,
+        // and the claim state is already on the row we are rendering.
+        const rival = (window.FMODES && FMODES.rivalOfDay) ? FMODES.rivalOfDay() : null;
+        const rivalHero = rival ? chars.find(c => c.id === rival.hero) : null;
+        const claimed = rivalDayClaimed() === currentDateKey();
+
         document.getElementById('profileBody').innerHTML = `
-            <div class="pf-row pf-namerow">
+            <div class="pf-standing">
                 ${avatarDisc(myAvatar(), 'pf-av-current')}
+                <div class="pf-standing-main">
+                    <div class="pf-rating">${ratingSpan(elo, 'pf-rating-val')}
+                        <span class="pf-tier">Tier ${ratingTier(elo)}</span></div>
+                    <div class="pf-record">
+                        <b>${wins}</b> W · <b>${games}</b> played${games ? ` · <b>${rate}%</b>` : ''}${(p.bestStreak || 0) > 1 ? ` · best streak <b>${p.bestStreak}</b>` : ''}
+                    </div>
+                </div>
+                <div class="pf-purse">
+                    <span title="Stars">★ ${p.stars || 0}</span>
+                    <span title="Daily Championships" class="pf-champs">${CROWN_SVG} ${ch.gold || 0}</span>
+                </div>
+            </div>
+
+            ${ledger.length ? `
+            <div class="pf-sec">Your Heroes</div>
+            <div class="pf-heroes">${ledger.map(({ c, s }) => `
+                <div class="pf-hero" title="${c.name}">
+                    <img src="assets/characters/${c.filename}" alt="${c.name}">
+                    <span class="pf-hero-name">${c.name}</span>
+                    <span class="pf-hero-r">${ratingSpan(clampElo(s.r))}</span>
+                    <span class="pf-hero-g">${s.g} game${s.g === 1 ? '' : 's'}</span>
+                    ${(s.best || 0) > 0 ? `<span class="lb-best"><img class="lb-ico" src="assets/icons/favor.png" alt="">${s.best}</span>` : ''}
+                </div>`).join('')}</div>` : `
+            <div class="pf-sec">Your Heroes</div>
+            <div class="pf-note">No hero has ridden into a rated game yet — every one you play keeps its own rating and high score.</div>`}
+
+            ${defs.length ? `
+            <div class="pf-sec">Achievements
+                <button class="pf-seeall" onclick="FLB.closeProfile(); FACH.openGallery()">See all</button></div>
+            <div class="pf-ach">
+                <b>${got.length}</b> of ${defs.length} unlocked · <b>★ ${achStars}</b> earned
+                ${recent.length ? `<div class="pf-ach-recent">${recent
+                    .map(d => `<span title="${(d.desc || '').replace(/"/g, '&quot;')}">${d.name}</span>`).join('')}</div>` : ''}
+            </div>` : ''}
+
+            ${rival ? `
+            <div class="pf-sec">Today's Bounty</div>
+            <div class="pf-bounty${claimed ? ' done' : ''}">
+                ${rivalHero ? `<img src="assets/characters/${rivalHero.filename}" alt="">` : ''}
+                <span class="pf-bounty-name">${rival.name}</span>
+                <span class="pf-bounty-stars">${claimed ? 'Claimed' : `★ +${FMODES.rivalStars(rival)}`}</span>
+            </div>` : ''}
+
+            <div class="pf-sec">Name &amp; Crest</div>
+            <div class="pf-row pf-namerow">
                 <input id="pfName" maxlength="24" value="${myName().replace(/"/g, '&quot;')}">
                 <button class="btn-royal" id="pfSave"><span>Save</span></button>
             </div>
@@ -844,13 +926,6 @@
                     <img src="assets/characters/${c.filename}" alt="${c.name}">
                 </button>`).join('')}
             </div>
-            <div class="pf-row"><span class="pf-label">Rating</span><b>✦ ${ratingSpan(eloOf(p))}</b></div>
-            <div class="pf-row"><span class="pf-label">Stars</span><b>★ ${p.stars || 0}</b></div>
-            <div class="pf-row"><span class="pf-label">Lifetime Power</span><b>⚔ ${p.power || 0}</b></div>
-            <div class="pf-row"><span class="pf-label">Record</span>
-                <b>${p.wins || 0} W · ${p.games || 0} played${(p.bestStreak || 0) > 1 ? ` · best streak ${p.bestStreak}` : ''}</b></div>
-            <div class="pf-row"><span class="pf-label">Daily Championships</span>
-                <b class="pf-champs">${CROWN_SVG} ${ch.gold || 0} · 2nd ${ch.silver || 0} · 3rd ${ch.bronze || 0}</b></div>
             <div class="pf-note">Champions are crowned nightly at 10 PM Eastern.${mode === 'local' ? '<br><b class="pf-local">LOCAL PROFILE — leaderboard offline</b>' : ''}</div>
         `;
         document.getElementById('pfSave').onclick = async () => {

@@ -3724,6 +3724,82 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   ok(crest.picked && crest.mirror === 'knight', `crest picked + mirrored (${crest.mirror})`);
   ok(crest.chip, 'the profile chip wears the crest');
   await page.screenshot({ path: join(SHOTS, 'profile-crests.png') });
+
+  // 1b · The profile leads with STANDING, not the crest picker (Wyatt 7/18:
+  // "viewing profile is bad — you just see the different avatars you can
+  // choose and then you don't really see much else").
+  const pf = await page.evaluate(() => {
+    const body = document.getElementById('profileBody');
+    const kids = [...body.children];
+    const idx = (sel) => kids.findIndex(k => k.matches(sel) || k.querySelector(sel));
+    const cs = getComputedStyle(body);
+    return {
+      standingFirst: kids.length > 0 && kids[0].classList.contains('pf-standing'),
+      standingBeforePicker: idx('.pf-standing') < idx('.pf-avatars'),
+      rating: !!body.querySelector('.pf-standing .pf-rating-val'),
+      tier: /Tier \d/.test((body.querySelector('.pf-tier') || {}).textContent || ''),
+      record: /\d+ W · \d+ played/.test((body.querySelector('.pf-record') || {}).textContent || ''),
+      sections: [...body.querySelectorAll('.pf-sec')].map(s => s.firstChild.textContent.trim()),
+      pickerStill: body.querySelectorAll('.pf-avatars .pf-av').length,
+      scrolls: cs.overflowY === 'auto',
+      // The panel must not hang on a modal: FACH.sync() is async, WRITES,
+      // and awaits celebrate(), which blocks on user clicks.
+      openedSync: true,
+    };
+  });
+  ok(pf.standingFirst && pf.standingBeforePicker,
+    'the profile LEADS with standing; the crest picker is demoted below it');
+  ok(pf.rating && pf.tier && pf.record,
+    'standing carries rating, tier and record at a glance');
+  ok(pf.sections.length >= 2, `it has real sections now (${pf.sections.join(' / ')})`);
+  ok(pf.pickerStill === 10, 'all ten crests are still pickable, just no longer the centrepiece');
+  ok(pf.scrolls, '#profileBody scrolls on its own so the title stays pinned');
+
+  // Per-hero ledgers — the biggest win, and every field was already in _me.
+  await page.evaluate(async (u) => {
+    await firebase.database().ref(`favor/players/${u}/chars`).update({
+      knight: { r: 1240, g: 3, best: 88 }, duchess: { r: 1080, g: 1, best: 41 },
+    });
+    // renderProfileChip is what reassigns _me — readRow only fetches.
+    await FLB.renderProfileChip();
+    FLB.closeProfile(); FLB.openProfile();
+  }, AUDIT_UID);
+  await sleep(500);
+  const heroes = await page.evaluate(() => {
+    const cells = [...document.querySelectorAll('.pf-hero')];
+    return {
+      n: cells.length,
+      first: cells[0] ? cells[0].textContent.replace(/\s+/g, ' ').trim() : '',
+      ordered: cells.length >= 2
+        && parseFloat(cells[0].querySelector('.pf-hero-r').textContent)
+           >= parseFloat(cells[1].querySelector('.pf-hero-r').textContent),
+      bests: cells.filter(c => c.querySelector('.lb-best')).length,
+    };
+  });
+  ok(heroes.n >= 2, `every ridden hero carries its own ledger row (${heroes.n})`);
+  ok(/1\.24/.test(heroes.first) && /3 games/.test(heroes.first),
+    `each shows crest, rating, games and best score (${heroes.first})`);
+  ok(heroes.ordered, 'ranked by your rating with that hero');
+  ok(heroes.bests >= 2, 'and each carries its high score');
+  await page.screenshot({ path: join(SHOTS, 'profile-standing.png') });
+
+  // Phone portrait AND landscape: the richer panel must still fit.
+  for (const [w, h, tag] of [[375, 667, 'portrait'], [667, 375, 'landscape']]) {
+    await page.setViewport({ width: w, height: h });
+    await sleep(350);
+    const fit = await page.evaluate(() => {
+      const inner = document.querySelector('.pf-inner');
+      const r = inner.getBoundingClientRect();
+      return {
+        onScreen: r.top >= -1 && r.bottom <= window.innerHeight + 2,
+        hscroll: document.documentElement.scrollWidth > window.innerWidth + 1,
+      };
+    });
+    ok(fit.onScreen && !fit.hscroll, `the profile fits ${w}x${h} ${tag} with no horizontal scroll`);
+    await page.screenshot({ path: join(SHOTS, `profile-${tag}.png`) });
+  }
+  await page.setViewport({ width: 1280, height: 800 });
+  await page.evaluate(() => FLB.closeProfile());
   await page.evaluate(() => FLB.closeProfile());
 
   // 2 · One finished game = ONE whole-row post: rating, stars, power,
