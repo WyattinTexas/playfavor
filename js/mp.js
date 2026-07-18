@@ -83,7 +83,23 @@
     // round (display + the deterministic lock via collectThrows) and ONE 'act'
     // move per card at their seat's activation slot. A v10 client publishes
     // pick-time decisions no v11 peer consumes and would hang the barrier.
-    const MPV = 13;   // 13: Philosopher's Stones stack (sum, not max)
+    // 14 (7/18): ARCHEUS gives its victims a CHOICE. The card prints "All
+    // other Players must discard 1 weapon card they have", and the engine took
+    // the first weapon in play order by findIndex — silently, from everyone,
+    // including humans. That determinism was the only reason tables didn't
+    // fork here; letting the victim pick makes the outcome client-specific, so
+    // there is a new streamed 'weapon' move staged in canonical seat order. A
+    // v13 client publishes no 'weapon' move (a v14 peer would wait on it until
+    // the AFK clock boots them) and would splice its own first weapon while
+    // everyone else applied the chosen one — a straight fork of the played
+    // rows, skills and Melee power.
+    // ⚠ This bump also carries the day's other rules changes so clients do not
+    // have to update twice: Family Ring scores its printed "Favor equal to
+    // your total Knowledge x2" instead of granting a phantom +1 Knowledge
+    // (which also inflated requirement checks), and grantSlotStones' once-per
+    // -game gate is a plain object rather than a Set that no JSON round-trip
+    // could survive.
+    const MPV = 14;   // 14: Archeus victims choose their weapon (+ 7/18 rules)
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

@@ -1553,21 +1553,47 @@ class FavorGame {
                 break;
 
             case 'discard_opponent_weapon':
-                // Archeus: each opponent discards one weapon
+                // ARCHEUS, as printed: "All other Players must discard 1 weapon
+                // card they have." The VICTIM chooses which weapon.
+                //
+                // This used to findIndex the first weapon in play order and
+                // splice it, unconditionally, for every victim — including
+                // seat 0 and remote humans. Wyatt 7/18: "Arceus got played by
+                // another player, and then I never had to discard a card. I
+                // should have had to discard a weapon card, but it never even
+                // told me." Every other human-choice special guards with
+                // (playerIndex === 0 || _remoteHuman) and sets a pause flag for
+                // the phase loop to await; this one set none, so there was
+                // nothing for endActPhases or mpEndActStages to wait on.
+                //
+                // ⚠ That silent findIndex was also the ONLY reason MP tables
+                // did not fork here: every client independently computed the
+                // same first weapon. Giving the victim a choice makes the
+                // outcome client-specific, which is why this needs a streamed
+                // move and MPV 14.
+                // ⚠ The only notice this ever gave was addLog(), which feeds
+                // the save/serialize snapshot and NOTHING the player sees --
+                // the visible feed is ui.js's addLogEntry. grep "forced to
+                // discard" across js/ and engine/ returned exactly one hit,
+                // this line. So the AI victims' losses are recorded here for
+                // the UI to narrate; human victims narrate their own pick.
+                this._archeusTook = [];
                 for (let i = 0; i < this.playerCount; i++) {
-                    if (i !== playerIndex) {
-                        const opponent = this.players[i];
-                        const weaponIndex = opponent.playedCards.findIndex(c => c.type === 'weapon');
-                        if (weaponIndex !== -1) {
-                            const weapon = opponent.playedCards.splice(weaponIndex, 1)[0];
-                            this.discardPile.push(weapon);
-                            // Recalculate skills after removing the weapon
-                            this.recalcPlayerSkillsFromCards(i);
-                            this.addLog(`${opponent.name} forced to discard ${weapon.name} by Archeus`);
-                        } else {
-                            this.addLog(`${opponent.name} has no weapons to discard`);
-                        }
+                    if (i === playerIndex) continue;
+                    const opponent = this.players[i];
+                    if (!opponent.playedCards.some(c => c.type === 'weapon')) {
+                        this.addLog(`${opponent.name} has no weapons to discard`);
+                        continue;
                     }
+                    // Humans defer to a picker; AI seats resolve immediately
+                    // on the same keep-score every penalty discard uses.
+                    const had = [...opponent.playedCards];
+                    this.penaltyDiscard(i, 1, {
+                        filter: c => c.type === 'weapon',
+                        pend: '_pendingWeaponDiscard',
+                    });
+                    const gone = had.filter(c => !opponent.playedCards.includes(c));
+                    if (gone.length) this._archeusTook.push({ playerIndex: i, cards: gone });
                 }
                 break;
 
@@ -2303,21 +2329,35 @@ class FavorGame {
      * AI: sacrifice dead weight — protect cards feeding remaining missions,
      * maps, specials, and skill grants.
      */
-    penaltyDiscard(playerIndex, n) {
+    /**
+     * opts.filter — restrict what may be given up (Archeus takes a WEAPON,
+     *   not any played card). Without it, anything on the table is fair game.
+     * opts.pend — which pause flag a human seat's deferral lands on, so a
+     *   weapon discard and a mission-failure discard cannot be conflated in
+     *   one counter (they have different constraints and different prompts).
+     */
+    penaltyDiscard(playerIndex, n, opts) {
+        const filter = opts && opts.filter;
+        const pend = (opts && opts.pend) || '_pendingPenaltyDiscard';
         const player = this.players[playerIndex];
-        if (!player.playedCards.length) return;
+        const pool = filter ? player.playedCards.filter(filter) : player.playedCards;
+        if (!pool.length) return 0;
         if (playerIndex === 0 || player._remoteHuman) {
-            player._pendingPenaltyDiscard = (player._pendingPenaltyDiscard || 0) + n;
-            return;
+            // The FULL debt is recorded, not what they happen to hold right
+            // now: the pickers clamp to the cards actually on the table at
+            // display time, and a discard owed is still owed.
+            player[pend] = (player[pend] || 0) + n;
+            return 0;
         }
+        const take = Math.min(n, pool.length);
         const needed = new Set();
         (player.missions || []).forEach(m => (m.requirements || []).forEach(r => needed.add(r)));
         const keepScore = (c) =>
             ((c.skills || []).some(sk => needed.has(sk)) ? 100 : 0) +
             (c.grantsMap ? 50 : 0) + (c.special ? 25 : 0) +
             ((c.skills || []).length * 10) + (c.favor || 0);
-        const dump = [...player.playedCards].sort((a, b) => keepScore(a) - keepScore(b)).slice(0, n);
-        this.discardPlayedCards(playerIndex, c => dump.includes(c), n);
+        const dump = [...pool].sort((a, b) => keepScore(a) - keepScore(b)).slice(0, take);
+        return this.discardPlayedCards(playerIndex, c => dump.includes(c), take);
     }
 
     // Remove played cards (mission failure effects). Their skill grants come

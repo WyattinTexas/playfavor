@@ -5111,6 +5111,14 @@ async function activateAllCards() {
                 await new Promise(r => setTimeout(r, (mine ? 900 : 350) * window.CINEMATIC_SPEED));
             }
 
+            // ARCHEUS — "All other Players must discard 1 weapon card they
+            // have", resolved right where it was played. Drained here, OUTSIDE
+            // any `pi === 0` gate, because the seats it hits are by definition
+            // not the seat that played it: an AI playing Archeus has to be able
+            // to prompt YOU. In MP the picks stream in canonical seat order so
+            // every table applies the same weapons.
+            await drainWeaponDiscards();
+
             // Breath between two cards from the SAME player. Yours arrive as a
             // pair on the final round, so they get room to read as two separate
             // moves instead of one smear. (Rivals keep the old brisk 300ms —
@@ -5960,6 +5968,130 @@ function showPenaltyDiscardPicker(n) {
         render();
         ov.classList.add('active');
     });
+}
+
+// ═══ ARCHEUS — the victim chooses which weapon they give up ══════════
+// "All other Players must discard 1 weapon card they have." The engine used
+// to take the first weapon in play order, silently, from everyone.
+function showWeaponDiscardPicker(mustPick) {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        const player = game.players[0];
+        const weapons = player.playedCards.filter(c => c.type === 'weapon');
+        if (!ov || !weapons.length || !mustPick) { resolve(); return; }
+        const need = Math.min(mustPick, weapons.length);
+
+        const chosen = new Set();
+        const render = () => {
+            const cards = weapons.map((c, i) => `
+                <div class="pp-card${chosen.has(i) ? ' chosen' : ''}" data-i="${i}">
+                    <img src="assets/cards/regular/${c.filename}" alt="${c.name}">
+                    <span class="pp-x">✕</span>
+                </div>`).join('');
+            const ready = chosen.size === need;
+            ov.innerHTML = `
+                <div class="pp-inner">
+                    <div class="pp-title">Archeus Demands a Blade</div>
+                    <div class="pp-sub">Choose <b>${need}</b> weapon${need > 1 ? 's' : ''} to discard (${chosen.size}/${need})</div>
+                    <div class="pp-cards">${cards}</div>
+                    <div class="pp-actions">
+                        <button class="btn-royal primary" id="ppConfirm" ${ready ? '' : 'disabled style="opacity:.35"'}>
+                            <span>Discard ${need}</span>
+                        </button>
+                    </div>
+                </div>`;
+            ov.querySelectorAll('.pp-card').forEach(el => {
+                el.onclick = () => {
+                    const i = parseInt(el.dataset.i, 10);
+                    if (chosen.has(i)) chosen.delete(i);
+                    else if (chosen.size < need) chosen.add(i);
+                    render();
+                };
+            });
+            ov.querySelector('#ppConfirm').onclick = () => {
+                if (chosen.size !== need) return;
+                const picked = [...chosen].map(i => weapons[i]);
+                mpPub('weapon', { cardIds: picked.map(c => c.id) });
+                game.discardPlayedCards(0, c => picked.includes(c), need);
+                addLogEntry(`Archeus forces you to discard ${picked.map(c => c.name).join(', ')}`);
+                ov.classList.remove('active');
+                renderGameState();
+                resolve();
+            };
+        };
+        render();
+        ov.classList.add('active');
+    });
+}
+
+// Drain Archeus's demand across EVERY seat it hit, in canonical order.
+// Unlike the play-time pickers this is not gated on the seat that just
+// played — Archeus hits everyone ELSE by definition, which is exactly why
+// the old `pi === 0` shaped drains would never have fired for it.
+// In MP the local pick is published and remote humans are awaited, so all
+// clients apply the same weapons in the same order; a booted or silent seat
+// falls back to the engine's deterministic keep-score, which every client
+// computes identically.
+async function drainWeaponDiscards() {
+    const n = game.playerCount;
+    const owed = (p) => p._pendingWeaponDiscard || 0;
+
+    // AI victims already resolved inside the engine — narrate them into the
+    // VISIBLE feed. The engine's addLog only ever reached the save snapshot,
+    // which is why Wyatt's first-played weapon went silently.
+    (game._archeusTook || []).forEach(({ playerIndex, cards }) => {
+        addLogEntry(`Archeus forces ${game.players[playerIndex].name} to discard ${cards.map(c => c.name).join(', ')}`);
+    });
+    game._archeusTook = [];
+
+    if (!game.players.some(owed)) return;
+
+    if (!mpActive()) {
+        for (let i = 0; i < n; i++) {
+            const p = game.players[i];
+            if (!owed(p)) continue;
+            const k = owed(p);
+            p._pendingWeaponDiscard = 0;
+            if (i === 0) {
+                renderGameState();
+                await showWeaponDiscardPicker(k);
+            }
+        }
+        return;
+    }
+
+    for (let cs = 0; cs < n; cs++) {
+        const li = FMP.localIdx(cs);
+        const p = game.players[li];
+        if (!owed(p)) continue;
+        const k = owed(p);
+        p._pendingWeaponDiscard = 0;
+        if (li === 0) {
+            await showWeaponDiscardPicker(k);       // publishes inside
+        } else {
+            mpWaitShow(li, 'choosing a weapon to give up');
+            const mv = p._remoteHuman ? await FMP.waitFor(cs, 'weapon') : null;
+            mpWaitHide();
+            const ids = (mv && Array.isArray(mv.cardIds)) ? mv.cardIds : [];
+            const had = [...p.playedCards];
+            const taken = ids.length
+                ? game.discardPlayedCards(li, c => ids.includes(c.id) && c.type === 'weapon', k)
+                : 0;
+            if (taken < k) {
+                // Short or booted — the engine's own keep-score fills in, and
+                // it is deterministic, so every client lands on the same card.
+                const wasRemote = p._remoteHuman;
+                p._remoteHuman = false;
+                game.penaltyDiscard(li, k - taken, { filter: c => c.type === 'weapon' });
+                p._remoteHuman = wasRemote;
+            }
+            const gone = had.filter(c => !p.playedCards.includes(c));
+            if (gone.length) {
+                addLogEntry(`Archeus forces ${p.name} to discard ${gone.map(c => c.name).join(', ')}`);
+            }
+            renderGameState();
+        }
+    }
 }
 
 // ═══ A PROMISE — choose any number of played cards to sacrifice ═══════

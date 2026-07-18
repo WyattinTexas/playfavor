@@ -4628,6 +4628,71 @@ console.log('── Melee taps: the whole stage advances the forge, .ms-cardrow 
   await page.close();
 }
 
+// ═══ ARCHEUS: the victim is ASKED, and the table is TOLD ═══
+// Wyatt 7/18: "Arceus got played by another player, and then I never had to
+// discard a card. I should have had to discard a weapon card, but it never
+// even told me." Both halves — no prompt, and no visible feed entry.
+console.log('── Archeus: a human victim picks their weapon; every loss reaches the feed');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('archeus: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('archeus pageerror: ' + e.message));
+  await page.setViewport({ width: 1420, height: 860 });
+  await startGame(page);
+
+  // A rival plays Archeus. You hold two weapons; an AI holds one.
+  await page.evaluate(() => {
+    const w = (n, id) => ({ ...FAVOR_DATA.cards.find(c => c.name === n), id });
+    game.players[0].playedCards = [w('Enchanted Flames', 'z1'), w('Royal Hilt', 'z2')];
+    game.players[1].playedCards = [w('Tombstone', 'z3')];
+    game.phase = 'gameplay';
+    game.resolveSpecial(2, { ...FAVOR_DATA.cards.find(c => c.name === 'Archeus'), id: 'zarch' });
+    window._archeusDone = false;
+    drainWeaponDiscards().then(() => { window._archeusDone = true; });
+  });
+  const asked = await page.waitForFunction(() =>
+    document.getElementById('promisePicker').classList.contains('active')
+    && /Archeus/i.test(document.getElementById('promisePicker').textContent),
+    { timeout: 8000 }).then(() => true).catch(() => false);
+  ok(asked, 'playing Archeus PROMPTS the human victim instead of taking a weapon silently');
+
+  const picker = await page.evaluate(() => ({
+    cards: document.querySelectorAll('#promisePicker .pp-card').length,
+    sub: (document.querySelector('#promisePicker .pp-sub') || {}).textContent || '',
+    confirmOff: !!document.querySelector('#promisePicker #ppConfirm[disabled]'),
+  }));
+  ok(picker.cards === 2, `only your WEAPONS are offered, not your whole table (${picker.cards})`);
+  ok(/1 weapon/i.test(picker.sub), `it asks for exactly one (${picker.sub.trim()})`);
+  ok(picker.confirmOff, 'and will not confirm until you pick');
+  await page.screenshot({ path: join(SHOTS, 'archeus-picker.png') });
+
+  // Pick the SECOND weapon — the one the old findIndex would never have
+  // taken, which is what proves the choice is real.
+  const out = await page.evaluate(async () => {
+    const before = game.players[0].playedCards.map(c => c.name);
+    document.querySelectorAll('#promisePicker .pp-card')[1].click();
+    document.querySelector('#promisePicker #ppConfirm').click();
+    await new Promise(r => setTimeout(r, 400));
+    return {
+      before,
+      after: game.players[0].playedCards.map(c => c.name),
+      aiLeft: game.players[1].playedCards.length,
+      feed: document.getElementById('logEntries').innerText,
+      closed: !document.getElementById('promisePicker').classList.contains('active'),
+    };
+  });
+  ok(out.closed && out.after.length === 1 && out.after[0] === 'Enchanted Flames',
+    `the weapon YOU chose is the one taken (${out.before.join(', ')} -> ${out.after.join(', ')})`);
+  ok(out.aiLeft === 0, 'an AI victim gives up its weapon too');
+  ok(/Archeus forces you to discard Royal Hilt/i.test(out.feed),
+    'your loss is named in the VISIBLE feed (addLog only ever reached the save snapshot)');
+  ok(/Archeus forces .*Tombstone/i.test(out.feed),
+    `and so is the rival's (${(out.feed.match(/Archeus[^\n]*/g) || []).join(' | ')})`);
+  await page.evaluate(() => window._archeusDone);
+  await page.screenshot({ path: join(SHOTS, 'archeus-feed.png') });
+  await page.close();
+}
+
 // ═══ OPPONENT VIEW: summed stats in the inspect overlay + the play spotlight ═══
 console.log('── Opponent view: inspect panel/chips sum their spread; spotlight = who + BIG card + chips');
 {

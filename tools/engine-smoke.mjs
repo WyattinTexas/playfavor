@@ -2231,6 +2231,73 @@ console.log('\n— grantSlotStones survives a JSON round-trip —');
     `no re-grant across serialization (${revived.philosopherStone})`);
 }
 
+console.log('\n— Archeus: the VICTIM picks the weapon (Wyatt 7/18) —');
+{
+  // "All other Players must discard 1 weapon card they have." The engine
+  // took the first weapon in play order by findIndex, unconditionally, from
+  // every victim including seat 0 and remote humans -- so a human was never
+  // prompted and never told. The suite had zero weapon-discard coverage.
+  const arch = cardByName('Archeus');
+  const weapon = (n, id) => ({ ...cardByName(n), id });
+
+  // 1 · A HUMAN victim is asked, not robbed.
+  const g = newGame();
+  g.players[0].playedCards = [weapon('Enchanted Flames', 'a1'), weapon('Royal Hilt', 'a2')];
+  g.players[1].playedCards = [];
+  g.resolveSpecial(2, { ...arch, id: 'arch1' });
+  ok(g.players[0]._pendingWeaponDiscard === 1,
+    `seat 0 is PROMPTED, exactly as every other human-choice special does (${g.players[0]._pendingWeaponDiscard})`);
+  ok(g.players[0].playedCards.length === 2,
+    'and nothing is taken from them until they choose');
+
+  // 2 · A REMOTE HUMAN is a human too. ⚠ pi === 0 means "the local seat",
+  // never "the human" — keying on it is how tables fork.
+  const g2 = newGame();
+  g2.players[1]._remoteHuman = true;
+  g2.players[1].playedCards = [weapon('Enchanted Flames', 'b1')];
+  g2.resolveSpecial(0, { ...arch, id: 'arch2' });
+  ok(g2.players[1]._pendingWeaponDiscard === 1 && g2.players[1].playedCards.length === 1,
+    'a REMOTE human is prompted too, not auto-resolved');
+
+  // 3 · An AI victim resolves immediately, and the cards are recorded so the
+  // UI can name them in the VISIBLE feed (the engine's own addLog only ever
+  // reached the save snapshot).
+  const g3 = newGame();
+  g3.players[1].playedCards = [weapon('Enchanted Flames', 'c1'), weapon('Royal Hilt', 'c2')];
+  g3.players[2].playedCards = [{ ...cardByName('Negotiate'), id: 'c3' }];
+  g3.resolveSpecial(0, { ...arch, id: 'arch3' });
+  ok(g3.players[1].playedCards.length === 1, 'an AI victim gives up exactly one weapon');
+  ok(g3.players[2].playedCards.length === 1,
+    'a seat with no weapon keeps its non-weapon cards');
+  ok((g3._archeusTook || []).length === 1 && g3._archeusTook[0].playerIndex === 1
+     && g3._archeusTook[0].cards.length === 1,
+    `what it took is recorded for the feed (${JSON.stringify((g3._archeusTook[0] || {}).cards.map(c => c.name))})`);
+
+  // 4 · Only WEAPONS, and never the caster's own.
+  const g4 = newGame();
+  g4.players[0].playedCards = [{ ...cardByName('Negotiate'), id: 'd1' }];
+  g4.players[1].playedCards = [weapon('Enchanted Flames', 'd2')];
+  g4.players[2].playedCards = [weapon('Royal Hilt', 'd3')];
+  g4.resolveSpecial(2, { ...arch, id: 'arch4' });
+  ok(g4.players[0].playedCards.length === 1 && !g4.players[0]._pendingWeaponDiscard,
+    'a seat holding no weapon is not asked for one');
+  ok(g4.players[2].playedCards.length === 1,
+    'the caster never discards to their own Archeus');
+
+  // 5 · The filtered penalty discard cannot reach a non-weapon.
+  const g5 = newGame();
+  g5.players[1].playedCards = [
+    { ...cardByName('Negotiate'), id: 'e1' }, weapon('Royal Hilt', 'e2'),
+  ];
+  g5.penaltyDiscard(1, 1, { filter: c => c.type === 'weapon' });
+  ok(g5.players[1].playedCards.length === 1 && g5.players[1].playedCards[0].name === 'Negotiate',
+    'a weapon-filtered penalty discard takes the weapon and only the weapon');
+
+  // 6 · The printed card, still intact.
+  ok((arch.rewards || {}).scorn === 5 && arch.type === 'weapon',
+    `Archeus still costs its printed 5 Scorn (${JSON.stringify(arch.rewards)})`);
+}
+
 // ── The rating ladder (js/meta.js) ───────────────────────────────────
 // meta.js is a browser IIFE that reaches for localStorage/firebase/document,
 // so it cannot be loaded whole here. The ladder math is pure, though, so we

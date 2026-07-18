@@ -29,6 +29,13 @@ export const CARD_TEXT_SPECIALS = {
   'Marketplace Sales': 'gold_2_per_alchemy_triangle', // 2 Gold per Alchemy (you + both neighbors)
   'Royal Hilt': 'favor_per_neighbor_power',       // 1 Favor per Power your neighbors have
   'Melee Spectacular': 'gold_2_per_power_neighbors', // 2 Gold per Power your neighbors have
+  // Added 7/18: Archeus had NO entry here, so the card the audit tooling was
+  // supposed to be checking was simply never checked. card-audit.html also
+  // carried a different Archeus (favor 5 where cards.js has scorn 5 — the
+  // opposite sign — plus skills:["power"] and 1+1 requirements against 4+4+
+  // minds_eye); that divergence is fixed in the same commit.
+  'Archeus': 'discard_opponent_weapon',           // all others discard 1 weapon
+  'Family Ring': 'favor_per_knowledge_x2',        // Favor = your Knowledge ×2
 };
 
 export const MISSION_SUCCESS_SPECIALS = {
