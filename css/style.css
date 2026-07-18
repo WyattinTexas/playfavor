@@ -6335,26 +6335,37 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
 .pp-inner.bw { flex-wrap: nowrap; }
 
 /* Mission-due chooser: mission card on the SIDE, boards + fail door beside it
-   so nothing hides below the fold (Wyatt 7/17). Stacks on narrow portrait. */
-.pp-inner.bw.mb-due { max-width: min(1040px, 96vw); }
+   so nothing hides below the fold (Wyatt 7/17). The boards SCROLL and the
+   Confirm/Fail row stays pinned — a multi-skill borrow used to push the
+   buttons off-screen and strand the player (Wyatt 7/17 pm). Stacks on narrow. */
+.pp-inner.bw.mb-due { max-width: min(1040px, 96vw); max-height: 94dvh; overflow: hidden; }
 .mb-due .mb-layout {
     display: flex; align-items: center; justify-content: center;
     gap: 26px; min-height: 0; width: 100%;
+    max-height: calc(94dvh - 56px);
 }
-.mb-due .mb-mission { flex: 0 0 auto; }
+.mb-due .mb-mission { flex: 0 0 auto; align-self: center; }
 .mb-due .mb-mission img {
-    display: block; width: auto; height: min(52dvh, 380px);
+    display: block; width: auto; height: min(46dvh, 340px);
     border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
 }
 .mb-due .mb-choose {
     display: flex; flex-direction: column; align-items: center;
-    gap: 12px; min-height: 0; min-width: 0;
+    gap: 10px; min-height: 0; min-width: 0;
 }
-.mb-due .mb-choose .bw-scroll { padding: 4px 10px; }
-.mb-due .mb-choose .pp-sub { text-align: center; max-width: 460px; }
+.mb-due .mb-choose .pp-sub { flex: 0 0 auto; text-align: center; max-width: 460px; }
+/* The boards scroll within a viewport-bounded band; the Confirm/Fail row
+   sits OUTSIDE it and always stays on screen (fixes the multi-skill stuck). */
+.mb-due .mb-choose .bw-scroll {
+    flex: 0 1 auto; min-height: 0; max-height: calc(94dvh - 210px);
+    overflow-y: auto; padding: 4px 10px;
+    display: flex; flex-direction: column; gap: 14px;
+}
+.mb-due .mb-choose .pp-actions { flex: 0 0 auto; }
 @media (max-width: 720px), (max-aspect-ratio: 1/1) {
-    .mb-due .mb-layout { flex-direction: column; gap: 12px; }
-    .mb-due .mb-mission img { height: min(30dvh, 240px); }
+    .mb-due .mb-layout { flex-direction: column; gap: 10px; }
+    .mb-due .mb-mission img { height: min(24dvh, 190px); }
+    .mb-due .mb-choose .bw-scroll { max-height: calc(94dvh - 300px); }
 }
 .pp-inner.bw .bw-scroll {
     display: flex;

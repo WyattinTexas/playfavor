@@ -84,6 +84,10 @@
       const cardsFx = opts.cardsFx !== false;
       const heraldOn = opts.herald !== false;
       const autoCloseMs = (opts.autoCloseMs == null) ? 9000 : opts.autoCloseMs;
+      // Per-fighter forge hold: the whole melee should auto-play at a calm
+      // pace, never waiting for a tap at each fighter (Wyatt 7/17). The
+      // Continue button still lets an eager player skip ahead.
+      const forgeHoldMs = (opts.forgeHoldMs == null) ? 15000 : opts.forgeHoldMs;
       const maxPower = Math.max(1, ...results.map(r => r.power || 0));
 
       // ── Podium grouping (ties share a tier) ─────────────────────────
@@ -619,7 +623,7 @@
           stage.appendChild(btn);              // outside the scroll strip
           void btn.offsetWidth;
           btn.classList.add('show');
-          await waitContinue(15000);
+          await waitContinue(forgeHoldMs);
           btn.remove();
           if (run.killed) return;
           // Dismissed cards TUCK beside the fighter (mini overlapped strip),

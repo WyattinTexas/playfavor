@@ -311,7 +311,7 @@ function captureStats() {
         gold: p.gold,
         prestige: p.prestige,
         scorn: p.scorn,
-        favor: p.favor
+        favor: game.currentFavor(0)   // held favor — jumps when a Favor card lands
     };
 }
 
@@ -325,7 +325,7 @@ function animateStatChanges() {
         { key: 'gold', prev: _prevStats.gold, curr: p.gold, cls: 'gold-change', label: 'Gold' },
         { key: 'prestige', prev: _prevStats.prestige, curr: p.prestige, cls: 'prestige-change', label: 'Prestige' },
         { key: 'scorn', prev: _prevStats.scorn, curr: p.scorn, cls: 'scorn-change', label: 'Scorn' },
-        { key: 'favor', prev: _prevStats.favor, curr: p.favor, cls: 'favor-change', label: 'Favor' },
+        { key: 'favor', prev: _prevStats.favor, curr: game.currentFavor(0), cls: 'favor-change', label: 'Favor' },
     ];
 
     changes.forEach(c => {
@@ -2604,7 +2604,7 @@ function buildStatsPanelHtml(playerIndex, state) {
             </span>
             <span class="resource-token favor-token" data-stat="favor" title="Favor — the points that win the throne">
                 <img src="${PURSE_ICONS.favor}" alt="Favor" class="token-img">
-                <span class="token-val favor-val">${player.favor || 0}</span>
+                <span class="token-val favor-val">${player.favorHeld ?? player.favor ?? 0}</span>
             </span>
             <span class="resource-token scorn-token" data-stat="scorn">
                 <img src="assets/tokens/Copy of Tokens_Design_v1_Scorn_1_v1.jpg" alt="Scorn" class="token-img">
@@ -2693,7 +2693,7 @@ function buildStatChipsHtml(playerIndex, state) {
 
     let h = purse('gold', PURSE_ICONS.gold, p.gold, 'Gold')
           + purse('prestige', TOKEN_IMG.prestige, p.prestige, 'Prestige')
-          + purse('favor', PURSE_ICONS.favor, p.favor || 0, 'Favor')
+          + purse('favor', PURSE_ICONS.favor, p.favorHeld ?? p.favor ?? 0, 'Favor')
           + purse('scorn', PURSE_ICONS.scorn, p.scorn, 'Scorn');
 
     const skills = p.skills || {};
@@ -2983,7 +2983,7 @@ function renderBottomStats(state) {
         <div class="stat gold">${player.gold}</div>
         <div class="stat prestige">${player.prestige}</div>
         <div class="stat scorn">${player.scorn}</div>
-        <div class="stat favor">${player.favor}</div>
+        <div class="stat favor">${player.favorHeld ?? player.favor}</div>
     `;
 }
 
@@ -3032,7 +3032,7 @@ function statPillsHtml(ps) {
     return `
         <span class="stat-pill gold"><img class="pill-icon" src="${PURSE_ICONS.gold}" alt="Gold"> ${ps.gold}</span>
         <span class="stat-pill prestige"><img class="pill-icon" src="${TOKEN_IMG.prestige}" alt="Prestige"> ${ps.prestige}</span>
-        <span class="stat-pill favor"><img class="pill-icon" src="${PURSE_ICONS.favor}" alt="Favor"> ${ps.favor || 0} Favor</span>
+        <span class="stat-pill favor"><img class="pill-icon" src="${PURSE_ICONS.favor}" alt="Favor"> ${ps.favorHeld ?? ps.favor ?? 0} Favor</span>
         <span class="stat-pill scorn"><img class="pill-icon" src="${PURSE_ICONS.scorn}" alt="Scorn"> ${ps.scorn} Scorn</span>
     `;
 }
@@ -3049,7 +3049,7 @@ function renderTvPurse(state) {
     el.innerHTML =
         chip('gold', PURSE_ICONS.gold, p.gold, 'Gold')
       + chip('prestige', TOKEN_IMG.prestige, p.prestige, 'Prestige')
-      + chip('favor', PURSE_ICONS.favor, p.favor || 0, 'Favor')
+      + chip('favor', PURSE_ICONS.favor, p.favorHeld ?? p.favor ?? 0, 'Favor')
       + chip('scorn', PURSE_ICONS.scorn, p.scorn, 'Scorn');
 }
 
@@ -3724,16 +3724,23 @@ function renderBoardOvSlots() {
     if (!holder) return;
     // Chemical X ("move to ANY slot") lights every circle and charges nothing.
     const freeMove = picking && _slidePick.mode === 'free';
+    // One direction per turn is shared with paid slides: once you've slid a
+    // way this turn, a discard-slide can only go the SAME way (Wyatt 7/17).
+    const slideLock = (game.players[0] && game.players[0]._paidSlideDir) || 0;
     holder.innerHTML = BOARD_OV_TRACK.lefts.map((L, i) => {
         const steps = Math.abs(i - cur);
-        const pickable = picking && (freeMove ? i !== cur : steps === 1);
+        const dirOK = !slideLock || Math.sign(i - cur) === slideLock;
+        const pickable = picking && (freeMove ? i !== cur : (steps === 1 && dirOK));
         const reachable = reach.has(i);
         const tip = i === cur
             ? 'Your ring is here'
             : picking
                 ? (freeMove
                     ? `Move to ${posNames[i]} \u2014 free`
-                    : (pickable ? `Slide to ${posNames[i]} \u2014 the discard pays` : 'One space per discard'))
+                    : (pickable ? `Slide to ${posNames[i]} \u2014 the discard pays`
+                        : (steps === 1 && !dirOK
+                            ? `Already slid ${slideLock < 0 ? 'left' : 'right'} this turn`
+                            : 'One space per discard')))
                 : (reachable ? `Slide to ${posNames[i]} \u2014 ${steps * 5} Gold` : _ovWhyBlocked(i));
         const cls = 'board-ov-slot'
             + (i === cur ? ' current' : '')
@@ -3780,6 +3787,12 @@ function boardOvSlotClick(i) {
             return;
         }
         if (Math.abs(step) !== 1) return;
+        // One direction per turn — reject an opposite-way discard-slide.
+        const lock = player._paidSlideDir || 0;
+        if (lock && Math.sign(step) !== lock) {
+            showNotification(`Already slid ${lock < 0 ? 'left' : 'right'} this turn`, 'error');
+            return;
+        }
         const pick = _slidePick;
         _slidePick = null;
         closeBoardOverlay();
@@ -4502,7 +4515,7 @@ function renderThrownZone() {
         </div>
         <div class="tz-side">
             <div class="tz-note">${note}</div>
-            ${locked ? '' : `<button class="btn-royal tz-undo" onclick="event.stopPropagation(); undoThrow()"><span>↩ Undo</span></button>`}
+            ${locked ? '' : `<button class="btn-royal tz-undo" onclick="event.stopPropagation(); undoThrow()"><span>Undo</span></button>`}
         </div>`;
     zone.classList.add('active');
 }
@@ -4737,10 +4750,10 @@ function showCardChoice(card, cardIdx) {
                     html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>Need 1g for Mission Letter</span></button>`;
                 }
             } else if (canPlay) {
-                html += btn('▶ Play', 'play', true);
+                html += btn('Play', 'play', true);
             } else {
                 const needed = [...missingSkills, ...missingSpecial];
-                html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>▶ Need: ${needed.join(', ')}</span></button>`;
+                html += `<button class="btn-royal action-btn" disabled style="opacity:0.3;cursor:default"><span>Need: ${needed.join(', ')}</span></button>`;
                 if (missingSpecial.length === 0 && missingSkills.length > 0) {
                     const borrowable = game.getBorrowableSkills(0);
                     const canBorrowAll = missingSkills.every(s => borrowable[s] && borrowable[s].length > 0);
@@ -5404,7 +5417,13 @@ async function endActPhases() {
     showMissionCeremony(missionResults, actNum)
         .then(() => showMissionDrawBeat())
         .then(() => renderGameState())
-        .then(afterBorrows).then(afterPenalty).then(afterPromise).then(startMelee);
+        .then(afterBorrows).then(afterPenalty).then(afterPromise)
+        // A mission FAILED by declining its borrow (Let it Fail) records its
+        // draws HERE, after the first beat already ran — surface them now so a
+        // Midnight-Crash Act-3 mission is never handed out in silence (Wyatt 7/17).
+        .then(() => showMissionDrawBeat())
+        .then(() => renderGameState())
+        .then(startMelee);
 }
 
 // ═══ BORROW & PLAY — "from whom?" ═══════════════════════════════════
@@ -6237,7 +6256,7 @@ function showScoring() {
         <div class="scoring-scroll">${grid}</div>
         <div class="scoring-actions">
             <button class="btn-royal" onclick="location.reload()">
-                <span>↩ Main Menu</span>
+                <span>Main Menu</span>
             </button>
             <button class="btn-royal primary" onclick="location.reload()">
                 <span>Play Again</span>
@@ -6924,6 +6943,10 @@ function showMeleeSplash(results, actNum) {
     }
     return playMeleeCinematic(el, results, actNum, {
         speed: window.CINEMATIC_SPEED || 1,
+        // Auto-play the whole melee at a calm, thematic pace — never wait on a
+        // tap at each fighter (Wyatt 7/17). Continue still lets you skip ahead.
+        forgeHoldMs: 3600,
+        autoCloseMs: 5200,
         powerIcon: 'assets/icons/power.png',
         portraitFor: (pi) => {
             const p = (pi != null && game.players[pi]) ? game.players[pi] : null;

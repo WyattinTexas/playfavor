@@ -198,8 +198,12 @@
     function beginRivalGame() {
         closeRivalIntro();
         window._gameMode = 'rival';
-        window._rivalDef = rivalOfDay();
-        titleToSelect(ownedChars());
+        const rival = rivalOfDay();
+        window._rivalDef = rival;
+        // You can't take the seat the rival already holds (Wyatt 7/17) — drop
+        // their hero from your offer. Guard against a one-hero roster.
+        const roster = ownedChars().filter(c => c.id !== rival.hero);
+        titleToSelect(roster.length ? roster : ownedChars());
     }
 
     // Called by showScoring with the final placements. A daily win pays

@@ -339,6 +339,29 @@ class FavorGame {
      * - Mind's Eye / Philosopher's Stone / Gold / Favor (NOT borrowable) → missingSpecial
      * - reqMaps: holding any listed map waives the whole requirement clause ("... OR [X] Map")
      */
+    /**
+     * The Favor a player HOLDS right now — the threshold "Req: N Favor" cards
+     * and missions read against. player.favor is only the running-rewards
+     * bucket; card favor and mission favor are summed SEPARATELY at scoring, so
+     * a check against player.favor alone never saw the 7 Favor from a played
+     * "Forming a Bond" and made Favor-cost cards impossible (Wyatt 7/17). Held
+     * favor = rewards + played-card favor + completed-mission favor + the slot
+     * bonus; the end-game Philosopher's-Stone gold conversion is NOT held.
+     */
+    currentFavor(playerIndex) {
+        const p = this.players[playerIndex];
+        let f = p.favor || 0;
+        (p.playedCards || []).forEach(card => {
+            f += (card.favor ? card.favor * (card._favorDoubled ? 2 : 1) : 0)
+               + this.dynamicCardFavor(playerIndex, card);
+        });
+        (p.completedMissions || []).forEach(m => { if (m.favorValue) f += m.favorValue; });
+        const char = p.character;
+        const slot = char && char.slots ? char.slots[p.sliderPosition] : null;
+        if (slot && slot.favor) f += slot.favor;
+        return f;
+    }
+
     checkRequirements(playerIndex, card) {
         const player = this.players[playerIndex];
         const missing = [];
@@ -384,7 +407,7 @@ class FavorGame {
         if (card.reqGold && player.gold < card.reqGold) {
             missingSpecial.push(`${card.reqGold} Gold`);
         }
-        if (card.reqFavor && player.favor < card.reqFavor) {
+        if (card.reqFavor && this.currentFavor(playerIndex) < card.reqFavor) {
             missingSpecial.push(`${card.reqFavor} Favor`);
         }
 
@@ -614,13 +637,20 @@ class FavorGame {
             this.discardPile.push(card);
             this.removePendingCard(playerIndex, cardId);
 
-            // Move slider instead of gaining gold
+            // One direction per turn — a discard-slide shares the lock with the
+            // paid slide (Wyatt 7/17: paying right then discard-sliding left in
+            // the same turn was possible and is not allowed). The card is still
+            // discarded either way; the ring only moves if the direction is free.
             const newPos = player.sliderPosition + direction;
-            if (newPos >= 0 && newPos <= (SLIDER_POSITIONS - 1)) {
+            const dirClash = player._paidSlideDir && direction !== player._paidSlideDir;
+            if (!dirClash && newPos >= 0 && newPos <= (SLIDER_POSITIONS - 1)) {
                 player.sliderPosition = newPos;
+                player._paidSlideDir = direction;   // locks the turn's slide direction
                 this.applySliderAbilities(player);
                 const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
                 this.addLog(`${player.name} discards ${card.name} to slide to ${posNames[newPos]}`);
+            } else if (dirClash) {
+                this.addLog(`${player.name} discards ${card.name} — ring held (already slid ${player._paidSlideDir < 0 ? 'left' : 'right'} this turn)`);
             }
             return { success: true };
 
@@ -1792,7 +1822,7 @@ class FavorGame {
                 skillReqs[req] = n;
             }
         }
-        if (mission.reqFavor && player.favor < mission.reqFavor) return null;
+        if (mission.reqFavor && this.currentFavor(playerIndex) < mission.reqFavor) return null;
         if (mission.reqMaps && mission.reqMaps.length) {
             const held = this.getPlayerMaps(playerIndex);
             // A map ALTERNATIVE already completes it → nothing to borrow;
@@ -2067,7 +2097,7 @@ class FavorGame {
         if (mission.reqGold && player.gold < mission.reqGold) {
             missing.push(`${mission.reqGold} Gold`); met = false;
         }
-        if (mission.reqFavor && player.favor < mission.reqFavor) {
+        if (mission.reqFavor && this.currentFavor(playerIndex) < mission.reqFavor) {
             missing.push(`${mission.reqFavor} Favor`); met = false;
         }
         // Mission maps come in two printed forms: an ALTERNATIVE ("7 Power &
@@ -2778,6 +2808,9 @@ class FavorGame {
                 prestige: p.prestige,
                 scorn: p.scorn,
                 favor: p.favor,
+                // Favor the player HOLDS (rewards + card + mission + slot) —
+                // what the HUD shows and Req: N Favor reads (Wyatt 7/17).
+                favorHeld: this.currentFavor(i),
                 playedCards: p.playedCards,
                 missions: p.missions,
                 completedMissions: p.completedMissions,

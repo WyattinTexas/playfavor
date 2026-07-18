@@ -138,6 +138,68 @@ console.log('── Discard-to-Slide is FREE — the discard is the toll, no gol
   ok(!p.playedCards.some(c => c.id === card.id), 'the card is discarded, not played');
 }
 
+console.log('── Blind Faith grants exactly 1 Power (never Knowledge)');
+{
+  const g = newGame();
+  const p = g.players[0];
+  const beforeK = p.skills.knowledge || 0, beforeP = p.skills.power || 0;
+  playCard(g, 0, 'Blind Faith');
+  ok((p.skills.power || 0) === beforeP + 1, `Power +1 (${beforeP} → ${p.skills.power})`);
+  ok((p.skills.knowledge || 0) === beforeK, 'Knowledge unchanged');
+  ok(cardByName('Blind Faith').type === 'weapon', 'Blind Faith is a Weapon (groups under Weapons, not Wisdom)');
+}
+
+console.log('── Favor-cost cards count the Favor printed on played cards');
+{
+  // Forming a Bond banks 7 Favor (top-level card.favor). Badge of Courage
+  // needs "Req: 5 Favor" — impossible before because the check read only
+  // player.favor (0), ignoring card favor (Wyatt 7/17).
+  const g = newGame();
+  const p = g.players[0];
+  p.skills.charisma = 1;                       // Forming a Bond needs 1 Charisma
+  ok(g.currentFavor(0) === 0, 'held favor starts at 0');
+  playCard(g, 0, 'Forming a Bond');
+  ok(p.favor === 0, 'player.favor stays 0 (card favor is scored, not banked to .favor)');
+  ok(g.currentFavor(0) === 7, `held favor now counts the card's 7 (${g.currentFavor(0)})`);
+  const badge = cardByName('Badge of Courage');   // Req: 5 Favor
+  ok(g.checkRequirements(0, badge).canPlay === true, 'Badge of Courage is now playable with 7 held Favor');
+  // And a favor-cost mission reads the same held favor.
+  const g2 = newGame();
+  g2.players[0].skills.charisma = 1;
+  playCard(g2, 0, 'Forming a Bond');           // 7 held favor
+  g2.players[0].skills.prospecting = 2;        // Trust of the Elders also needs 2 Prospecting
+  const trust = { ...missionByName('Trust of the Elders') };
+  ok(g2.checkMissionRequirements(0, trust).success === true,
+    'Trust of the Elders (5 Favor & 2 Prospecting) succeeds on held card favor');
+}
+
+console.log('── One direction per turn spans paid AND discard slides');
+{
+  // Pay to slide RIGHT, then a discard-slide LEFT must NOT move the ring
+  // (Wyatt 7/17 pm: doing both in one turn was possible and is illegal).
+  const g = newGame();
+  const p = g.players[0];
+  p.gold = 40; p.sliderPosition = 2;
+  const paid = g.moveSlider(0, 1);           // pay to slide right
+  ok(paid.success && p.sliderPosition === 3, 'paid slide right lands (2 → 3)');
+  const card = { ...cardByName('First Aid') };
+  p.hand = [card]; g.pendingActivations[0] = null; g.pickCard(0, 0);
+  g.activateCard(0, card.id, 'discard_slide', -1);   // try to discard-slide LEFT
+  ok(p.sliderPosition === 3, 'opposite discard-slide is refused — ring holds at 3');
+  ok(!p.playedCards.some(c => c.id === card.id), 'the card is still discarded');
+
+  // Same lock the other way: discard-slide left first, then paid slide right fails.
+  const g2 = newGame();
+  const q = g2.players[0];
+  q.gold = 40; q.sliderPosition = 2;
+  const c2 = { ...cardByName('First Aid') };
+  q.hand = [c2]; g2.pendingActivations[0] = null; g2.pickCard(0, 0);
+  g2.activateCard(0, c2.id, 'discard_slide', -1);    // discard-slide left → locks left
+  ok(q.sliderPosition === 1, 'discard-slide left lands (2 → 1)');
+  const paid2 = g2.moveSlider(0, 1);                  // now try to pay-slide right
+  ok(!paid2.success && q.sliderPosition === 1, 'opposite paid slide refused after a discard-slide');
+}
+
 console.log('── Reunited: credits a Philosopher\'s Stone and scores its gold conversion');
 {
   const g = newGame();
@@ -1005,7 +1067,9 @@ console.log('── Paid slide: one direction per turn (5g a space, repeatable)'
   const rEdge = g.moveSlider(0, 1);
   ok(rEdge.success === false, 'board edge still refuses');
 
-  // Discard-to-slide is a DIFFERENT mechanic — the paid lock never binds it.
+  // One direction per turn now binds discard-slides too (Wyatt 7/17 pm): a
+  // paid slide right locks the turn, so a discard-slide left holds the ring
+  // (the card is still discarded). A SAME-direction discard-slide still moves.
   const g2 = newGame();
   const p2 = g2.players[0];
   p2.gold = 50;
@@ -1015,8 +1079,15 @@ console.log('── Paid slide: one direction per turn (5g a space, repeatable)'
   p2.hand = [card];
   g2.pendingActivations[0] = null;
   g2.pickCard(0, 0);
-  g2.activateCard(0, card.id, 'discard_slide', -1);
-  ok(p2.sliderPosition === posAfterPay - 1, 'discard-slide may still go the other way');
+  g2.activateCard(0, card.id, 'discard_slide', -1);   // opposite way — refused
+  ok(p2.sliderPosition === posAfterPay, 'opposite discard-slide holds the ring (locked this turn)');
+
+  const card2 = { ...cardByName('First Aid') };
+  p2.hand = [card2];
+  g2.pendingActivations[0] = null;
+  g2.pickCard(0, 0);
+  g2.activateCard(0, card2.id, 'discard_slide', 1);   // same way — allowed
+  ok(p2.sliderPosition === posAfterPay + 1, 'same-direction discard-slide still moves the ring');
 }
 
 console.log('── Borrow & Play: the CHOSEN lender is the one who gets paid');
