@@ -84,6 +84,12 @@
       const cardsFx = opts.cardsFx !== false;
       const heraldOn = opts.herald !== false;
       const autoCloseMs = (opts.autoCloseMs == null) ? 9000 : opts.autoCloseMs;
+      // Once the champion is crowned the picture HOLDS — a stray tap-through
+      // used to dismiss the coronation ~1.5s after the crown landed (Wyatt
+      // 7/18: "hold the final melee phase picture another two seconds").
+      // Taps are ignored and the continue hint stays hidden until this
+      // window passes; autoClose still counts from the reveal as before.
+      const revealHoldMs = ((opts.revealHoldMs == null) ? 2000 : opts.revealHoldMs) * speed;
       // Per-fighter forge hold: the whole melee should auto-play at a calm
       // pace, never waiting for a tap at each fighter (Wyatt 7/17). The
       // Continue button still lets an eager player skip ahead.
@@ -238,6 +244,7 @@
       const timers = [];
       const run = { killed: false };
       let state = 'playing';
+      let revealedAt = 0;      // when the final result finished revealing
       let advanceTap = null;   // pending "Continue" resolver during the forge
 
       host._meleeCancel = () => {
@@ -753,8 +760,9 @@
       const markRevealed = () => {
         if (state !== 'playing') return;
         state = 'revealed';
+        revealedAt = Date.now();
         skipEl.style.display = 'none';
-        hintEl.classList.add('show');
+        timers.push(setTimeout(() => hintEl.classList.add('show'), revealHoldMs));
       };
       const finalize = () => {                 // Skip ▸▸ → jump to the result
         run.killed = true;
@@ -778,8 +786,9 @@
         });
         heraldSay(championLine());
         skipEl.style.display = 'none';
-        hintEl.classList.add('show');
         state = 'revealed';
+        revealedAt = Date.now();
+        timers.push(setTimeout(() => hintEl.classList.add('show'), revealHoldMs));
       };
       const close = () => {
         if (state === 'closed') return;
@@ -794,7 +803,7 @@
       // e.g. while scrolling the card row on a phone — must not skip a
       // fighter). A tap on the final result closes; Skip ▸▸ jumps to it.
       host.onclick = () => {
-        if (state === 'revealed') close();
+        if (state === 'revealed' && Date.now() - revealedAt >= revealHoldMs) close();
       };
       skipEl.onclick = (e) => { e.stopPropagation(); if (state === 'playing') finalize(); };
 

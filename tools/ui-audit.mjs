@@ -1647,6 +1647,81 @@ console.log('── Desktop: due mission short a borrowable skill — chooser of
   await page.close();
 }
 
+// ═══ DESKTOP: Let it Fail gets a real ceremony beat ═══
+// 7/18 recording: declining Alchemic Seige paid its +20-Prestige fail reward
+// in total silence — the toast fired behind the NEXT chooser. The decline now
+// plays a mission-ceremony beat whose headline is the prestige that landed.
+console.log('── Desktop: declined mission plays a fail beat — the prestige reward LANDS');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('fail-beat: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('fail-beat pageerror: ' + e.message));
+  await page.setViewport({ width: 1420, height: 800 });
+  await startGame(page);
+
+  await page.evaluate(() => {
+    const p = game.players[0];
+    // Alchemic Seige: short its (borrowable) Alchemy, stone in hand, so the
+    // due-date chooser opens; its failure pays +20 Prestige and no scorn.
+    p.missions = [{ ...FAVOR_DATA.missions.find(m => m.name === 'Alchemic Seige') }];
+    p.philosopherStone = 1;
+    p.skills.alchemy = 0;
+    const aCard = FAVOR_DATA.cards.find(c => (c.skills || []).includes('alchemy'));
+    game.players[1].playedCards.push({ ...aCard });
+    // Fire the chooser directly — never await an evaluate gated on a UI click.
+    showMissionBorrowChooser(p.missions[0]);
+  });
+  await page.waitForFunction(() =>
+    document.getElementById('promisePicker').classList.contains('active') &&
+    /Mission Due/i.test(document.getElementById('promisePicker').textContent), { timeout: 8000 });
+  const prestigeBefore = await page.evaluate(() => game.players[0].prestige);
+  await page.evaluate(() => document.getElementById('mbFail').click());
+
+  let beatUp = false;
+  try {
+    await page.waitForFunction(() =>
+      document.getElementById('missionCeremony').classList.contains('active'), { timeout: 6000 });
+    beatUp = true;
+  } catch (e) {}
+  ok(beatUp, 'declining plays a ceremony beat instead of a buried toast');
+
+  if (beatUp) {
+    await page.waitForFunction(() =>
+      document.querySelector('.mc-stage').classList.contains('stamped'), { timeout: 8000 });
+    await sleep(400);   // chips animate in
+    const beat = await page.evaluate(() => {
+      const chips = [...document.querySelectorAll('.mc-chip')];
+      const lead = chips[0];
+      return {
+        stamp: document.querySelector('.mc-stamp').textContent,
+        card: document.querySelector('.mc-card').alt,
+        chips: chips.map(c => c.textContent.trim()),
+        leadBig: !!lead && lead.classList.contains('big') && lead.classList.contains('good'),
+        leadText: lead ? lead.textContent.trim() : '(none)',
+      };
+    });
+    ok(beat.stamp === 'Failed' && beat.card === 'Alchemic Seige',
+      `the beat stamps the declined mission FAILED (${beat.card})`);
+    ok(beat.chips.some(t => /\+20 Prestige/.test(t)),
+      `the +20 Prestige fail reward is on screen (${beat.chips.join(' · ')})`);
+    ok(beat.leadBig && /\+20 Prestige/.test(beat.leadText),
+      `a scorn-less fail HEADLINES its prestige ("${beat.leadText}")`);
+    await page.screenshot({ path: join(SHOTS, 'mission-fail-beat.png') });
+
+    // The beat closes on its own and the engine really paid out.
+    await page.waitForFunction(() =>
+      !document.getElementById('missionCeremony').classList.contains('active'), { timeout: 15000 });
+    const eng = await page.evaluate(() => ({
+      prestige: game.players[0].prestige,
+      failed: game.players[0].failedMissions.length,
+    }));
+    ok(eng.prestige === prestigeBefore + 20,
+      `engine banked the prestige (${prestigeBefore}→${eng.prestige})`);
+    ok(eng.failed === 1, 'and the mission sits in failedMissions');
+  }
+  await page.close();
+}
+
 // ═══ DESKTOP: Turn In Now can borrow too ═══
 console.log('── Desktop: Turn In Now offers Borrow & Complete when a neighbor covers the gap');
 {

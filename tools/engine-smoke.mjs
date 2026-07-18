@@ -2099,5 +2099,30 @@ console.log('\n— Map chains: cards free missions, missions free cards (tester 
     `reqMapsAll: stats alone leave the map missing (${noMap.details.missing.join(', ')})`);
 }
 
+console.log('\n— Philosopher\'s Stones STACK (Wyatt 7/18: "we had 3 and it registered as 1") —');
+{
+  // Three stone cards = three stones. The old Math.max grant capped any
+  // number of stone cards at the single biggest grant.
+  const g = newGame();
+  const p = g.players[0];
+  ['Philosopher\'s Stone', 'Philosopher\'s Scepter', 'Sacred Stone']
+    .forEach((n, i) => g.applyCardEffects(0, { ...cardByName(n), id: `st${i}` }));
+  ok(p.philosopherStone === 3, `three stone cards stack to 3 (got ${p.philosopherStone})`);
+
+  // Slot grants pay ONCE per game — slot events re-fire on every landing,
+  // and a stacking tally must not be farmable by sliding over the slot.
+  const g2 = newGame();
+  const p2 = g2.players[0];
+  g2.resolveSlotSpecial(p2, 'philosopher_stone', {});
+  g2.resolveSlotSpecial(p2, 'philosopher_stone', {});
+  g2.resolveSlotSpecial(p2, 'philosopher_stone_x2', {});
+  g2.resolveSlotSpecial(p2, 'philosopher_stone_x2', {});
+  ok(p2.philosopherStone === 3, `slot stone grants pay once each: 1+2 (got ${p2.philosopherStone})`);
+
+  // Slot + card sources sum into one tally.
+  g2.applyCardEffects(0, { ...cardByName('Philosopher\'s Scepter'), id: 'st9' });
+  ok(p2.philosopherStone === 4, `slot and card stones sum (got ${p2.philosopherStone})`);
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);

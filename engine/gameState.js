@@ -1026,6 +1026,22 @@ class FavorGame {
     }
 
     /**
+     * Grant N Philosopher's Stones from a character-board slot, once per
+     * game per slot special. Slot events re-fire on every landing (see
+     * applySlotBonus) and the stone tally now STACKS, so without this gate
+     * a player could farm stones by sliding back and forth over the slot.
+     * No board carries the same stone special twice, so keying by special
+     * name is unambiguous. Returns true if the grant paid out.
+     */
+    grantSlotStones(player, key, n) {
+        if (!player._slotStoneGranted) player._slotStoneGranted = new Set();
+        if (player._slotStoneGranted.has(key)) return false;
+        player._slotStoneGranted.add(key);
+        player.philosopherStone = (player.philosopherStone || 0) + n;
+        return true;
+    }
+
+    /**
      * Resolve one-time special effects from character board slots.
      */
     resolveSlotSpecial(player, special, slot) {
@@ -1081,15 +1097,18 @@ class FavorGame {
                 break;
 
             case 'philosopher_stone':
-                if (!player.philosopherStone) player.philosopherStone = 0;
-                player.philosopherStone = Math.max(player.philosopherStone, 1);
-                this.addLog(`${player.name} gains Philosopher's Stone (1:1 gold\u2192favor)`);
+                // Stones STACK (3 stone cards = 3 stones, Wyatt 7/18), so the
+                // old Math.max idempotency no longer guards slot re-fires.
+                // Each slot's stone grant pays once per game instead.
+                if (this.grantSlotStones(player, 'philosopher_stone', 1)) {
+                    this.addLog(`${player.name} gains Philosopher's Stone (1:1 gold\u2192favor)`);
+                }
                 break;
 
             case 'philosopher_stone_x2':
-                if (!player.philosopherStone) player.philosopherStone = 0;
-                player.philosopherStone = Math.max(player.philosopherStone, 2);
-                this.addLog(`${player.name} gains 2\u00D7 Philosopher's Stone (2:1 gold\u2192favor)`);
+                if (this.grantSlotStones(player, 'philosopher_stone_x2', 2)) {
+                    this.addLog(`${player.name} gains 2\u00D7 Philosopher's Stone (2:1 gold\u2192favor)`);
+                }
                 break;
 
             case 'minds_eye':
@@ -1104,9 +1123,9 @@ class FavorGame {
 
             case 'minds_eye_and_philosopher':
                 // Mind's Eye (+1 knowledge ongoing) + Philosopher's Stone (1:1)
-                if (!player.philosopherStone) player.philosopherStone = 0;
-                player.philosopherStone = Math.max(player.philosopherStone, 1);
-                this.addLog(`${player.name} gains Mind's Eye + Philosopher's Stone from character board`);
+                if (this.grantSlotStones(player, 'minds_eye_and_philosopher', 1)) {
+                    this.addLog(`${player.name} gains Mind's Eye + Philosopher's Stone from character board`);
+                }
                 break;
 
             case 'borrow_any_player':
@@ -1242,16 +1261,16 @@ class FavorGame {
             // --- Philosopher's Stone variants (end-of-game gold→favor) ---
 
             case 'philosopher_stone':
-                // 1:1 gold→favor at end of game
-                if (!player.philosopherStone) player.philosopherStone = 0;
-                player.philosopherStone = Math.max(player.philosopherStone, 1);
+                // 1:1 gold→favor at end of game. Card grants STACK — each
+                // played stone card adds its stones (3 cards = 3 stones); a
+                // card only ever resolves once, so += is safe here.
+                player.philosopherStone = (player.philosopherStone || 0) + 1;
                 this.addLog(`${player.name} gains Philosopher's Stone (1:1 gold→favor at game end)`);
                 break;
 
             case 'philosopher_stone_x10':
-                // Sacred Chest: 10:1 gold→favor at end of game
-                if (!player.philosopherStone) player.philosopherStone = 0;
-                player.philosopherStone = Math.max(player.philosopherStone, 10);
+                // Sacred Chest: 10 more stones (10:1 gold→favor at game end)
+                player.philosopherStone = (player.philosopherStone || 0) + 10;
                 this.addLog(`${player.name} gains Sacred Chest (10:1 gold→favor at game end)`);
                 // Also check Forgotten Temple combo (works both directions)
                 {
@@ -1267,8 +1286,7 @@ class FavorGame {
             case 'minds_eye_x2_philosopher_stone_x5':
                 // Secret Lab: +2 Knowledge AND philosopher_stone at 5:1
                 player.skills.knowledge = (player.skills.knowledge || 0) + 2;
-                if (!player.philosopherStone) player.philosopherStone = 0;
-                player.philosopherStone = Math.max(player.philosopherStone, 5);
+                player.philosopherStone = (player.philosopherStone || 0) + 5;
                 this.addLog(`${player.name}'s Secret Lab: +2 Knowledge, Philosopher's Stone (5:1)`);
                 break;
 
@@ -2157,7 +2175,8 @@ class FavorGame {
         }
         if (s.mindsEye) player.bonusMindsEye = (player.bonusMindsEye || 0) + s.mindsEye;
         if (s.philosopherStone) {
-            player.philosopherStone = Math.max(player.philosopherStone || 0, s.philosopherStone);
+            // Mission stone rewards stack too (a mission resolves once).
+            player.philosopherStone = (player.philosopherStone || 0) + s.philosopherStone;
         }
         if (mission.successSpecial) this.resolveMissionSuccessSpecial(playerIndex, mission);
         this.addLog(`${player.name} completes mission: ${mission.name}`);
@@ -2185,7 +2204,7 @@ class FavorGame {
                 break;
             }
             case 'philosopher_stone_x2_grant':
-                player.philosopherStone = Math.max(player.philosopherStone || 0, 2);
+                player.philosopherStone = (player.philosopherStone || 0) + 2;
                 this.addLog(`${player.name} gains 2 Philosopher's Stones`);
                 break;
             case 'scorn_to_prestige_all': {

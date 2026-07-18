@@ -5703,14 +5703,35 @@ function showMissionBorrowChooser(mission) {
         const ov = document.getElementById('promisePicker');
         const mi = game.players[0].missions.indexOf(mission);
         const plan = mi >= 0 ? game.missionBorrowPlan(0, mission) : null;
+
+        // A declined mission used to die as a toast — fired while the NEXT
+        // chooser was already on stage, so Alchemic Seige's +20 Prestige fail
+        // reward landed with zero feedback on 7/18's recording. Fail it with
+        // measured deltas and give it a real ceremony beat; the promise chain
+        // holds the next chooser until the beat has played.
+        const failWithBeat = (idx) => {
+            const p = game.players[0];
+            const before = {
+                favor: p.favor, gold: p.gold, prestige: p.prestige, scorn: p.scorn,
+                stones: p.philosopherStone || 0, mindsEye: game.getMindsEyeCount(0),
+            };
+            game.failMissionByChoice(0, idx);
+            const deltas = {
+                favor: p.favor - before.favor, gold: p.gold - before.gold,
+                prestige: p.prestige - before.prestige, scorn: p.scorn - before.scorn,
+                stones: (p.philosopherStone || 0) - before.stones,
+                mindsEye: game.getMindsEyeCount(0) - before.mindsEye,
+            };
+            renderGameState();
+            return showMissionCeremony(
+                [{ playerIndex: 0, results: [{ mission, success: false, deltas }] }],
+                game.currentAct);
+        };
+
         if (!ov || mi < 0 || !plan) {
             // The window closed between phases — resolve it honestly as the
             // failure it already was at its due date.
-            if (mi >= 0) {
-                game.failMissionByChoice(0, mi);
-                showNotification(`Mission failed: ${mission.name}`, 'error');
-                renderGameState();
-            }
+            if (mi >= 0) { failWithBeat(mi).then(resolve); return; }
             resolve();
             return;
         }
@@ -5757,11 +5778,8 @@ function showMissionBorrowChooser(mission) {
                 borrowFrom: chosen || null,
             });
             if (!chosen) {
-                game.failMissionByChoice(0, idx);
-                showNotification(`Mission failed: ${mission.name}`, 'error');
                 addLogEntry(`You let ${mission.name} fail`);
-                renderGameState();
-                resolve();
+                failWithBeat(idx).then(resolve);
                 return;
             }
             const res = game.completeMissionWithBorrow(0, idx, chosen);
@@ -5771,9 +5789,9 @@ function showMissionBorrowChooser(mission) {
                 addLogEntry(`You borrow from ${names} (−${res.cost}g) and complete ${mission.name}`);
             } else {
                 // The plan died under the click — the due date still rules.
-                game.failMissionByChoice(0, idx);
-                showNotification(`Mission failed: ${mission.name}`, 'error');
                 addLogEntry(`You fail ${mission.name}`);
+                failWithBeat(idx).then(resolve);
+                return;
             }
             renderGameState();
             resolve();
@@ -6907,7 +6925,7 @@ function showMissionCeremony(missionResults, actNum) {
             </div>`;
         const stage = el.querySelector('.mc-stage');
 
-        let bi = 0, timer = null, closed = false;
+        let bi = 0, timer = null, closed = false, stampedAt = 0;
 
         const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
         const chip = (icon, label, cls) =>
@@ -6925,17 +6943,28 @@ function showMissionCeremony(missionResults, actNum) {
             // player is getting 30 Scorn." A failure leads with what it cost you;
             // a success leads with what it paid. Everything else follows as
             // ordinary chips, and the beat holds longer when a headline lands.
+            // A mission's printed favorValue is banked at SCORING, not at the
+            // resolution — the deltas can't see it, which is why a success
+            // used to land with a bare stamp and no payoff (Wyatt 7/18:
+            // "missions being successful and then nothing's happening").
+            // Fold it into the success headline so the win reads on screen.
+            const favorGain = (d.favor || 0) + (b.r.success ? (m.favorValue || 0) : 0);
+            // A fail that PAYS (Alchemic Seige's +20 Prestige, the Fortune
+            // Teller's 50 on The Labyrinth) headlines its prestige when no
+            // scorn landed — those rewards used to resolve invisibly.
             const lead = b.r.success
-                ? ((d.favor || 0) > 0 ? 'favor' : null)
-                : ((d.scorn || 0) > 0 ? 'scorn' : null);
+                ? (favorGain > 0 ? 'favor' : null)
+                : ((d.scorn || 0) > 0 ? 'scorn'
+                    : ((d.prestige || 0) > 0 ? 'prestige' : null));
 
             const chips = [];
             if (lead === 'scorn') chips.push(chip('scorn', `+${d.scorn} Scorn`, 'bad big'));
-            if (lead === 'favor') chips.push(chip('favor', `+${d.favor} Favor`, 'good big'));
+            if (lead === 'favor') chips.push(chip('favor', `+${favorGain} Favor`, 'good big'));
+            if (lead === 'prestige') chips.push(chip('prestige', `+${d.prestige} Prestige`, 'good big'));
 
-            if (d.favor > 0 && lead !== 'favor') chips.push(chip('favor', `+${d.favor} Favor`, 'good'));
+            if (favorGain > 0 && lead !== 'favor') chips.push(chip('favor', `+${favorGain} Favor`, 'good'));
             if (goldGain > 0) chips.push(chip('gold', `+${goldGain} Gold`, 'good'));
-            if (d.prestige > 0) chips.push(chip('prestige', `+${d.prestige} Prestige`, 'good'));
+            if (d.prestige > 0 && lead !== 'prestige') chips.push(chip('prestige', `+${d.prestige} Prestige`, 'good'));
             if (d.scorn < 0) chips.push(chip('scorn', `−${-d.scorn} Scorn`, 'good'));
             if (d.stones > 0) chips.push(chip('philosopher', `+${d.stones} Philosopher's Stone`, 'good'));
             if (d.mindsEye > 0) chips.push(chip('minds_eye', `+${d.mindsEye} Mind's Eye`, 'good'));
@@ -6976,6 +7005,7 @@ function showMissionCeremony(missionResults, actNum) {
         const stamp = (b) => {
             if (closed || stage.classList.contains('stamped')) return;
             clearTimeout(timer);
+            stampedAt = Date.now();
             stage.classList.add('stamped');
             if (!b.r.success) stage.classList.add('fail');
             const rw = stage.querySelector('.mc-rewards');
@@ -7004,10 +7034,15 @@ function showMissionCeremony(missionResults, actNum) {
             setTimeout(resolve, 280);
         };
 
-        // Tap once = reveal the verdict now; tap again = next mission.
+        // Tap once = reveal the verdict now; tap again = next mission. A
+        // quick double-tap used to swallow a verdict whole (Turbo Grandma's
+        // Royal Ball advanced with no stamp on 7/18's recording) — the
+        // second tap must wait until the stamp has actually been seen.
+        // Input debounce, not cinema: scale by CINEMATIC_SPEED alone, NOT
+        // MISSION_PACE (the 1.4 pushed the gate past the audit's tap cadence).
         el.onclick = () => {
             if (!stage.classList.contains('stamped')) stamp(beats[bi]);
-            else next();
+            else if (Date.now() - stampedAt > 380 * (window.CINEMATIC_SPEED || 1)) next();
         };
 
         el.classList.add('active');
