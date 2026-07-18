@@ -3380,6 +3380,40 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
 }
 .vs-grid > * { animation: vsgIn 0.45s both; animation-delay: calc(var(--ri, 0) * 90ms + 250ms); }
 
+/* Drillable score cells invite the tap; a breakdown opens over the sheet. */
+.vsg-cell.drill { cursor: pointer; }
+.vsg-cell.drill:hover { box-shadow: inset 0 0 0 2px rgba(232, 212, 139, 0.55); }
+#scoreBreakdown {
+    position: fixed; inset: 0; z-index: 970; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(8, 5, 2, 0.82); backdrop-filter: blur(6px);
+}
+#scoreBreakdown.active { display: flex; animation: vsgFade 0.2s both; }
+@keyframes vsgFade { from { opacity: 0; } to { opacity: 1; } }
+.sb-inner {
+    width: min(460px, 92vw); max-height: 82dvh; position: relative;
+    display: flex; flex-direction: column;
+    background: linear-gradient(#241b0f, #14100a);
+    border: 2px solid var(--gold-dark); border-radius: 12px;
+    padding: 16px 18px 14px; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.7);
+    animation: ovZoom 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sb-x { position: absolute; top: 9px; right: 12px; background: none; border: none; color: #a8926a; font-size: 18px; cursor: pointer; }
+.sb-x:hover { color: #f0dfb8; }
+.sb-head {
+    font-family: 'Cinzel', serif; font-size: 15px; color: #f0dfb8; letter-spacing: 0.5px;
+    padding: 0 22px 10px 0; border-bottom: 1px solid #3a2d17;
+    display: flex; align-items: center; gap: 7px;
+}
+.sb-who { color: var(--gold-light); font-weight: 700; }
+.sb-total { margin-left: auto; color: var(--gold-light); font-size: 15px; font-variant-numeric: tabular-nums; }
+.sb-list { overflow-y: auto; padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.sb-row { display: flex; align-items: center; gap: 12px; padding: 6px 2px; border-bottom: 1px solid rgba(201, 168, 76, 0.08); }
+.sb-thumb { width: 34px; height: 46px; object-fit: cover; object-position: top; border-radius: 4px; flex: 0 0 auto; background: #120c06; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5); }
+.sb-name { flex: 1; font-family: 'EB Garamond', serif; font-size: 13.5px; color: #e8d9bf; min-width: 0; }
+.sb-val { font-family: 'Cinzel', serif; font-weight: 700; color: var(--gold-light); font-variant-numeric: tabular-nums; }
+.sb-note { font-size: 12px; color: #9c8a68; font-style: italic; padding: 5px 2px; }
+
 .scoring-scroll { max-width: 96vw; overflow-x: auto; }
 
 .scoring-actions {
@@ -6515,9 +6549,13 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
 .ach-grid {
     padding: 16px 16px 24px; overflow-y: auto;
     display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 10px;
+    /* start (not stretch): each cell sizes to its OWN content so the name +
+       description are never clipped to a collapsed row (Wyatt 7/17: couldn't
+       read any of them — cells were squished to one line). */
+    align-items: start;
 }
 .ach-cell {
-    position: relative; overflow: hidden;
+    position: relative; min-height: 62px;
     display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px;
     padding: 12px 14px; border-radius: 9px;
     background: #1c150c; border: 1px solid #3a2d17;
@@ -6548,7 +6586,7 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
 .ach-cell-body { min-width: 0; }
 .ach-cell-body b { display: block; font-size: 14.5px; color: #f2e4c2; line-height: 1.25; }
 .ach-cell.got .ach-cell-body b { color: #fff3d6; }
-.ach-cell-body span { display: block; font-size: 12px; color: #9c8a68; line-height: 1.4; margin-top: 2px; }
+.ach-cell-body span { display: block; font-size: 12.5px; color: #cbb488; line-height: 1.4; margin-top: 3px; }
 .ach-cell.secret .ach-cell-body b { letter-spacing: .12em; }
 .ach-cell-stars {
     display: flex; flex-direction: column; align-items: flex-end; gap: 2px;

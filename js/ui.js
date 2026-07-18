@@ -6212,12 +6212,12 @@ function showScoring() {
     // Philosopher's Stone gold conversion, so the columns sum to the total.
     const artAll = (s) => (s.artFavor || 0) + (s.otherCardFavor || 0) + (s.stoneFavor || 0);
     const SHEET_ROWS = [
-        { label: 'Missions',   icon: 'assets/icons/mission.png',  c: '#c2a14d', v: s => s.missionFavor || 0 },
-        { label: 'Adventures', icon: 'assets/icons/maps.png',     c: '#4c8a63', v: s => s.advFavor || 0 },
-        { label: 'Artifacts',  icon: 'assets/icons/philosopher.png', c: '#8a63a8', v: s => artAll(s) },
-        { label: 'Character',  icon: 'assets/icons/favor.png',    c: '#75695a', v: s => s.characterFavor || 0 },
-        { label: 'Prestige',   icon: 'assets/icons/prestige.png', c: '#3f9fd0', v: s => s.prestige || 0 },
-        { label: 'Scorn',      icon: 'assets/icons/scorn.png',    c: '#c0463e', v: s => s.scorn || 0, neg: true },
+        { label: 'Missions',   key: 'missions',  drill: true, icon: 'assets/icons/mission.png',  c: '#c2a14d', v: s => s.missionFavor || 0 },
+        { label: 'Adventures', key: 'adventure', drill: true, icon: 'assets/icons/maps.png',     c: '#4c8a63', v: s => s.advFavor || 0 },
+        { label: 'Artifacts',  key: 'artifact',  drill: true, icon: 'assets/icons/philosopher.png', c: '#8a63a8', v: s => artAll(s) },
+        { label: 'Character',  key: 'character', drill: true, icon: 'assets/icons/favor.png',    c: '#75695a', v: s => s.characterFavor || 0 },
+        { label: 'Prestige',   key: 'prestige',  icon: 'assets/icons/prestige.png', c: '#3f9fd0', v: s => s.prestige || 0 },
+        { label: 'Scorn',      key: 'scorn',     icon: 'assets/icons/scorn.png',    c: '#c0463e', v: s => s.scorn || 0, neg: true },
     ];
     const heads = scores.map((s, i) => {
         const ch = game.players[s.playerIndex].character;
@@ -6232,7 +6232,12 @@ function showScoring() {
         const cells = scores.map((s, i) => {
             const raw = r.v(s);
             const txt = r.neg && raw > 0 ? `−${raw}` : `${raw}`;
-            return `<div class="vsg-cell${s.playerIndex === 0 ? ' me' : ''}${i === 0 ? ' win' : ''}${r.neg && raw > 0 ? ' bad' : ''}" style="--rowC:${r.c};--ri:${ri + 1}">${txt}</div>`;
+            // Missions / Adventures / Artifacts / Character cells open a
+            // breakdown of the cards & missions behind the number (Wyatt 7/17).
+            const drill = r.drill
+                ? ` drill" onclick="showScoreBreakdown(${s.playerIndex}, '${r.key}')" title="See what made up this ${r.label} score`
+                : '';
+            return `<div class="vsg-cell${s.playerIndex === 0 ? ' me' : ''}${i === 0 ? ' win' : ''}${r.neg && raw > 0 ? ' bad' : ''}${drill}" style="--rowC:${r.c};--ri:${ri + 1}">${txt}</div>`;
         }).join('');
         return `<div class="vsg-label" style="--rowC:${r.c};--ri:${ri + 1}">${r.icon ? `<img src="${r.icon}" alt="">` : ''}<span>${r.label}</span></div>${cells}`;
     }).join('');
@@ -6281,6 +6286,90 @@ function showScoring() {
         };
         setTimeout(() => requestAnimationFrame(tick), parseInt(b.dataset.cd, 10) || 350);
     });
+}
+
+// ═══ SCORE BREAKDOWN — tap a sheet cell, see the cards behind the number ══
+// Missions / Adventures / Artifacts / Character each open the exact cards or
+// missions that fed that score, per player (Wyatt 7/17). Prestige & Scorn have
+// no breakdown. Every value is recomputed the same way calculateFinalScores
+// does, so the rows always sum to the cell.
+function showScoreBreakdown(pi, cat) {
+    const gp = game.players[pi];
+    if (!gp) return;
+    const cardFav = (c) => (c.favor ? c.favor * (c._favorDoubled ? 2 : 1) : 0)
+        + (typeof game.dynamicCardFavor === 'function' ? game.dynamicCardFavor(pi, c) : 0);
+    const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+    const name = pi === 0 ? 'You' : gp.name;
+
+    let title = '', items = [], notes = [], total = 0;
+
+    if (cat === 'missions') {
+        title = 'Missions';
+        (gp.completedMissions || []).forEach(m => {
+            const v = m.favorValue || 0;
+            if (v) { items.push({ img: `assets/cards/missions/${m.filename}`, label: m.name, val: v }); total += v; }
+        });
+        if (!items.length) notes.push('No missions completed for Favor.');
+    } else if (cat === 'adventure') {
+        title = 'Adventures';
+        (gp.playedCards || []).filter(c => c.type === 'adventure').forEach(c => {
+            const v = cardFav(c);
+            items.push({ img: `assets/cards/regular/${c.filename}`, label: c.name + (c._favorDoubled ? ' (×2)' : ''), val: v });
+            total += v;
+        });
+        if (!items.length) notes.push('No Adventure cards played.');
+    } else if (cat === 'artifact') {
+        title = 'Artifacts';
+        // The sheet's Artifacts cell = artifact cards + every OTHER card's Favor
+        // + the Philosopher's Stone gold conversion (artAll).
+        (gp.playedCards || []).forEach(c => {
+            if (c.type === 'adventure') return;
+            const v = cardFav(c);
+            if (v) { items.push({ img: `assets/cards/regular/${c.filename}`, label: c.name, val: v }); total += v; }
+        });
+        if (gp.philosopherStone > 0 && gp.gold > 0) {
+            const sv = gp.gold * gp.philosopherStone;
+            items.push({ img: 'assets/icons/philosopher.png', label: `Philosopher's Stone — ${gp.gold} Gold × ${gp.philosopherStone}`, val: sv });
+            total += sv;
+        }
+        if (!items.length) notes.push('No Artifacts or Favor-bearing cards played.');
+    } else if (cat === 'character') {
+        title = 'Character';
+        const running = gp.favor || 0;
+        if (running) items.push({ img: PURSE_ICONS.favor, label: 'Favor earned in play (rewards & missions)', val: running });
+        const char = gp.character;
+        const slot = char && char.slots ? char.slots[gp.sliderPosition] : null;
+        if (slot && slot.favor) {
+            const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
+            items.push({ img: char ? `assets/characters/${char.filename}` : PURSE_ICONS.favor,
+                label: `${char ? char.name : 'Board'} slot bonus (${posNames[gp.sliderPosition] || 'slot'})`, val: slot.favor });
+        }
+        total = items.reduce((n, x) => n + x.val, 0);
+        notes.push('Your standing on the character board when the game ended.');
+        if (!items.length) notes.push('No Favor from the character board.');
+    } else { return; }
+
+    let ov = document.getElementById('scoreBreakdown');
+    if (!ov) { ov = document.createElement('div'); ov.id = 'scoreBreakdown'; document.body.appendChild(ov); }
+    const rows = items.map(it => `
+        <div class="sb-row">
+            <img class="sb-thumb" src="${it.img}" alt="">
+            <span class="sb-name">${it.label}</span>
+            <b class="sb-val">${it.val >= 0 ? '+' : ''}${it.val}</b>
+        </div>`).join('');
+    ov.innerHTML = `
+        <div class="sb-inner" onclick="event.stopPropagation()">
+            <button class="sb-x" onclick="closeScoreBreakdown()" aria-label="Close">✕</button>
+            <div class="sb-head"><span class="sb-who">${name}</span> · ${title}
+                <b class="sb-total">${total} Favor</b></div>
+            <div class="sb-list">${rows}${notes.map(n => `<div class="sb-note">${n}</div>`).join('')}</div>
+        </div>`;
+    ov.classList.add('active');
+    ov.onclick = () => closeScoreBreakdown();
+}
+function closeScoreBreakdown() {
+    const ov = document.getElementById('scoreBreakdown');
+    if (ov) ov.classList.remove('active');
 }
 
 // ─── PLAYER STATS (renderStats alias for backward compat) ──

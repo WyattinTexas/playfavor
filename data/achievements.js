@@ -86,14 +86,44 @@ window.FAVOR_DATA.achievements = [
         check: (s) => s.dailyCrowns >= 5,
     },
 
-    // ── Single-game feats ─────────────────────────────────────────────
+    // ── Skill mastery: reach 10 of a skill in one game (Wyatt 7/17) ───
     {
-        id: 'power_10',
+        id: 'skill_power_10',
         name: 'Force of Arms',
-        desc: 'Reach more than 10 Power in a single game.',
+        desc: 'Reach 10 Power in a single game.',
         stars: 10,                               // Bronze
-        check: (s) => s.peakPower > 10,
+        check: (s) => (s.peakSkills && s.peakSkills.power >= 10),
     },
+    {
+        id: 'skill_knowledge_10',
+        name: 'The Great Scholar',
+        desc: 'Reach 10 Knowledge in a single game.',
+        stars: 10,
+        check: (s) => (s.peakSkills && s.peakSkills.knowledge >= 10),
+    },
+    {
+        id: 'skill_alchemy_10',
+        name: 'Master Alchemist',
+        desc: 'Reach 10 Alchemy in a single game.',
+        stars: 10,
+        check: (s) => (s.peakSkills && s.peakSkills.alchemy >= 10),
+    },
+    {
+        id: 'skill_prospecting_10',
+        name: 'Deep Prospector',
+        desc: 'Reach 10 Prospecting in a single game.',
+        stars: 10,
+        check: (s) => (s.peakSkills && s.peakSkills.prospecting >= 10),
+    },
+    {
+        id: 'skill_charisma_10',
+        name: 'The Silver Tongue',
+        desc: 'Reach 10 Charisma in a single game.',
+        stars: 10,
+        check: (s) => (s.peakSkills && s.peakSkills.charisma >= 10),
+    },
+
+    // ── Single-game feats ─────────────────────────────────────────────
     {
         id: 'gold_30',
         name: "A Merchant's Purse",

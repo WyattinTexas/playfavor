@@ -46,7 +46,7 @@
 
         const snap = {
             won: false, characterId: null, peakPower: 0, peakGold: 0,
-            potionsPlayed: 0, foretoldDoom: false,
+            potionsPlayed: 0, foretoldDoom: false, peakSkills: {},
             ...(gameSnap || {}),
             charWins,
             dailyCrowns: champs.gold || 0,
@@ -106,13 +106,26 @@
     function seatSnapshot(game, placedFirst) {
         const p = game && game.players && game.players[0];
         if (!p) return null;
+        // Peak of each skill — max of what was sampled during play and the
+        // final tally (skills only grow, so the finish is a safe floor). Power
+        // reads through effectiveSkill so Blind Faith pairings count.
+        const peak = p.peakSkills || {};
+        const SK = ['survival', 'charisma', 'alchemy', 'prospecting', 'knowledge', 'power'];
+        const peakSkills = {};
+        SK.forEach(sk => {
+            const fin = sk === 'power'
+                ? (typeof game.effectiveSkill === 'function' ? game.effectiveSkill(0, 'power') : (p.skills.power || 0))
+                : (p.skills[sk] || 0);
+            peakSkills[sk] = Math.max(peak[sk] || 0, fin || 0);
+        });
         return {
             won: !!placedFirst,
             characterId: (p.character && p.character.id) || null,
-            peakPower: p.peakPower || 0,
+            peakPower: Math.max(p.peakPower || 0, peakSkills.power),
             peakGold: p.peakGold || 0,
             potionsPlayed: p.potionsPlayed || 0,
             foretoldDoom: !!p.foretoldDoom,
+            peakSkills,
         };
     }
 

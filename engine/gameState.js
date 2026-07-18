@@ -977,6 +977,13 @@ class FavorGame {
         player.peakGold = Math.max(player.peakGold || 0, player.gold || 0);
         player.peakPower = Math.max(player.peakPower || 0, this.calculatePower(i) || 0);
         player.potionsPlayed = (player.playedCards || []).filter(c => c.type === 'potion').length;
+        // Peak of every skill this game — the "reach 10 X" achievements read
+        // these (Wyatt 7/17). Power uses effectiveSkill so Blind Faith etc. count.
+        player.peakSkills = player.peakSkills || {};
+        ['survival', 'charisma', 'alchemy', 'prospecting', 'knowledge', 'power'].forEach(sk => {
+            const v = sk === 'power' ? this.effectiveSkill(i, 'power') : (player.skills[sk] || 0);
+            player.peakSkills[sk] = Math.max(player.peakSkills[sk] || 0, v || 0);
+        });
     }
 
     /**

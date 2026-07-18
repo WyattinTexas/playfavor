@@ -32,7 +32,7 @@ function achEvaluate(row, gameSnap) {
   if (gameSnap && gameSnap.won && gameSnap.characterId) charWins[gameSnap.characterId] = true;
   const snap = {
     won: false, characterId: null, peakPower: 0, peakGold: 0,
-    potionsPlayed: 0, foretoldDoom: false,
+    potionsPlayed: 0, foretoldDoom: false, peakSkills: {},
     ...(gameSnap || {}),
     charWins,
     dailyCrowns: champs.gold || 0,
@@ -1628,7 +1628,7 @@ console.log("── Art audit: The Alchemist's Daughter can be played via its ma
 console.log('── Achievements: hero victories, feats, The Master, the secret');
 {
   const HEROES = ['explorer','knight','bandit','merchant','fisherman','duchess','scientist','doctor','fiddler','magician'];
-  ok(ACH().length === 17, '17 achievements (10 heroes + The Master + 2 daily + 3 feats + 1 secret)', String(ACH().length));
+  ok(ACH().length === 21, '21 achievements (10 heroes + The Master + 2 daily + 5 skill-10 + 2 feats + 1 secret)', String(ACH().length));
 
   // Tier derives purely from the Stars number, same thresholds as Nation.
   const tier = window.FAVOR_DATA.achievementTier;
@@ -1661,9 +1661,13 @@ console.log('── Achievements: hero victories, feats, The Master, the secret'
   ok(!achEvaluate({ charWins: eight }, { won: true, characterId: 'fiddler' }).ids.includes('master_of_all'),
     'and NOT at nine heroes');
 
-  // Single-game feats — strictly "over", per the card text.
-  ok(achEvaluate({}, { peakPower: 11 }).ids.includes('power_10'), 'over 10 Power grants Force of Arms');
-  ok(!achEvaluate({}, { peakPower: 10 }).ids.includes('power_10'), 'exactly 10 does NOT');
+  // Skill mastery — reaching exactly 10 of a skill fires it (Wyatt 7/17).
+  ok(achEvaluate({}, { peakSkills: { power: 10 } }).ids.includes('skill_power_10'), '10 Power grants Force of Arms');
+  ok(!achEvaluate({}, { peakSkills: { power: 9 } }).ids.includes('skill_power_10'), '9 Power does NOT');
+  ok(achEvaluate({}, { peakSkills: { knowledge: 10 } }).ids.includes('skill_knowledge_10'), '10 Knowledge grants The Great Scholar');
+  ok(achEvaluate({}, { peakSkills: { alchemy: 12 } }).ids.includes('skill_alchemy_10'), '12 Alchemy grants Master Alchemist');
+  ok(achEvaluate({}, { peakSkills: { prospecting: 10 } }).ids.includes('skill_prospecting_10'), '10 Prospecting grants Deep Prospector');
+  ok(achEvaluate({}, { peakSkills: { charisma: 10 } }).ids.includes('skill_charisma_10'), '10 Charisma grants The Silver Tongue');
   ok(achEvaluate({}, { peakGold: 31 }).ids.includes('gold_30'), "over 30 Gold grants A Merchant's Purse");
   ok(!achEvaluate({}, { peakGold: 30 }).ids.includes('gold_30'), 'exactly 30 does NOT');
   ok(achEvaluate({}, { potionsPlayed: 5 }).ids.includes('potions_5'), 'five potions grants The Apothecary');
