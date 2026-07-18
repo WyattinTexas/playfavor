@@ -122,6 +122,29 @@ window.FAVOR_DATA.achievements = [
         stars: 10,
         check: (s) => (s.peakSkills && s.peakSkills.charisma >= 10),
     },
+    {
+        id: 'skill_survival_10',
+        name: 'Born Survivor',
+        desc: 'Reach 10 Survival in a single game.',
+        stars: 10,
+        check: (s) => (s.peakSkills && s.peakSkills.survival >= 10),
+    },
+
+    // ── Mission feats (Wyatt 7/17) ────────────────────────────────────
+    {
+        id: 'missions_5',
+        name: 'The Realm\'s Champion',
+        desc: 'Complete five missions in a single game.',
+        stars: 20,                               // Silver
+        check: (s) => (s.missionsCompleted || 0) >= 5,
+    },
+    {
+        id: 'missions_failed_5',
+        name: 'Best-Laid Plans',
+        desc: 'Fail five missions in a single game.',
+        stars: 20,                               // Silver
+        check: (s) => (s.missionsFailed || 0) >= 5,
+    },
 
     // ── Single-game feats ─────────────────────────────────────────────
     {

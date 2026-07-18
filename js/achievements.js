@@ -47,6 +47,7 @@
         const snap = {
             won: false, characterId: null, peakPower: 0, peakGold: 0,
             potionsPlayed: 0, foretoldDoom: false, peakSkills: {},
+            missionsCompleted: 0, missionsFailed: 0,
             ...(gameSnap || {}),
             charWins,
             dailyCrowns: champs.gold || 0,
@@ -126,6 +127,8 @@
             potionsPlayed: p.potionsPlayed || 0,
             foretoldDoom: !!p.foretoldDoom,
             peakSkills,
+            missionsCompleted: (p.completedMissions || []).length,
+            missionsFailed: (p.failedMissions || []).length,
         };
     }
 

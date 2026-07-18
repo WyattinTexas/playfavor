@@ -5696,7 +5696,7 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
       sub: document.querySelector('#achGallery .ach-sub').textContent,
     };
   });
-  ok(gal.count === 21, `the gallery lists all 21 achievements (${gal.count})`);
+  ok(gal.count === 24, `the gallery lists all 24 achievements (${gal.count})`);
   ok(gal.got === 2, `and marks the 2 just earned as unlocked (${gal.got})`);
   ok(gal.secretMasked === '???', `the SECRET stays hidden until it fires ("${gal.secretMasked}")`);
   await page.screenshot({ path: join(SHOTS, 'achievement-gallery.png') });

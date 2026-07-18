@@ -33,6 +33,7 @@ function achEvaluate(row, gameSnap) {
   const snap = {
     won: false, characterId: null, peakPower: 0, peakGold: 0,
     potionsPlayed: 0, foretoldDoom: false, peakSkills: {},
+    missionsCompleted: 0, missionsFailed: 0,
     ...(gameSnap || {}),
     charWins,
     dailyCrowns: champs.gold || 0,
@@ -1628,7 +1629,7 @@ console.log("── Art audit: The Alchemist's Daughter can be played via its ma
 console.log('── Achievements: hero victories, feats, The Master, the secret');
 {
   const HEROES = ['explorer','knight','bandit','merchant','fisherman','duchess','scientist','doctor','fiddler','magician'];
-  ok(ACH().length === 21, '21 achievements (10 heroes + The Master + 2 daily + 5 skill-10 + 2 feats + 1 secret)', String(ACH().length));
+  ok(ACH().length === 24, '24 achievements (10 heroes + The Master + 2 daily + 6 skill-10 + 2 mission feats + 2 feats + 1 secret)', String(ACH().length));
 
   // Tier derives purely from the Stars number, same thresholds as Nation.
   const tier = window.FAVOR_DATA.achievementTier;
@@ -1668,6 +1669,11 @@ console.log('── Achievements: hero victories, feats, The Master, the secret'
   ok(achEvaluate({}, { peakSkills: { alchemy: 12 } }).ids.includes('skill_alchemy_10'), '12 Alchemy grants Master Alchemist');
   ok(achEvaluate({}, { peakSkills: { prospecting: 10 } }).ids.includes('skill_prospecting_10'), '10 Prospecting grants Deep Prospector');
   ok(achEvaluate({}, { peakSkills: { charisma: 10 } }).ids.includes('skill_charisma_10'), '10 Charisma grants The Silver Tongue');
+  ok(achEvaluate({}, { peakSkills: { survival: 10 } }).ids.includes('skill_survival_10'), '10 Survival grants Born Survivor');
+  ok(achEvaluate({}, { missionsCompleted: 5 }).ids.includes('missions_5'), '5 missions completed grants The Realm\'s Champion');
+  ok(!achEvaluate({}, { missionsCompleted: 4 }).ids.includes('missions_5'), '4 completed does NOT');
+  ok(achEvaluate({}, { missionsFailed: 5 }).ids.includes('missions_failed_5'), '5 missions failed grants Best-Laid Plans');
+  ok(!achEvaluate({}, { missionsFailed: 4 }).ids.includes('missions_failed_5'), '4 failed does NOT');
   ok(achEvaluate({}, { peakGold: 31 }).ids.includes('gold_30'), "over 30 Gold grants A Merchant's Purse");
   ok(!achEvaluate({}, { peakGold: 30 }).ids.includes('gold_30'), 'exactly 30 does NOT');
   ok(achEvaluate({}, { potionsPlayed: 5 }).ids.includes('potions_5'), 'five potions grants The Apothecary');
