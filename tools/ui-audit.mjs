@@ -749,8 +749,11 @@ console.log('── Desktop: stacks group by card family — a played potion is 
   await page.evaluate(() => {
     const p = game.players[0];
     const pick = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
-    p.playedCards = [pick('Great North Connection'), pick('Concoction'),
-                     pick('Mining Guild'), pick("Philosopher's Stone")];
+    // Mind Eraser is the rulebook's POTION exemplar. Concoction stood here
+    // until 7/19, when the card-art audit found it wearing a blue ENDEAVOR
+    // frame — one of 20 cards typed from a false "border colour = act" premise.
+    p.playedCards = [pick('Great North Connection'), pick('Family Ring'),
+                     pick('Mind Eraser'), pick('Mining Guild'), pick("Philosopher's Stone")];
     renderGameState();
   });
   await sleep(400);
@@ -759,8 +762,10 @@ console.log('── Desktop: stacks group by card family — a played potion is 
     colored: [...document.querySelectorAll('#cardStacks .card-stack')]
       .every(s => (s.getAttribute('style') || '').includes('--typeC')),
   }));
-  ok(st.labels.join('|') === 'Adventures|Artifacts|Endeavors|Potions',
-    `stacks read by family, the potion is on the field (${st.labels.join(', ')})`);
+  // Five families, in the rulebook's own IDEAL CARD PLACEMENT order (p.11):
+  // Adventures -> Artifacts -> Weapons -> Wisdom -> Endeavors -> Potions.
+  ok(st.labels.join('|') === 'Adventures|Artifacts|Wisdom|Endeavors|Potions',
+    `stacks read by family, in placement order (${st.labels.join(', ')})`);
   ok(st.colored, 'every family label wears its color');
   await page.screenshot({ path: join(SHOTS, 'stacks-by-family.png') });
   await page.close();
@@ -1807,7 +1812,7 @@ console.log('── Endgame legibility: shortfalls, discarded card art, who else
     const p = game.players[0];
     const m = { ...FAVOR_DATA.missions.find(x => x.name === 'Secret Grotto') };
     p.missions = [m];
-    p.playedCards = ['Enchanted Flames', 'Royal Hilt']
+    p.playedCards = ['Enchanted Flames', 'Tombstone']   // Royal Hilt is an ARTIFACT since 7/19
       .map((n, i) => ({ ...FAVOR_DATA.cards.find(c => c.name === n), id: 'wg' + i }));
     const det = game.checkMissionRequirements(0, m).details;
     const d = game.measureResolution(0, () => game.applyMissionFailure(0, m));
@@ -3052,9 +3057,12 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
   // zero favor, so these values ARE the finish order. A known purse +
   // skill spread rides along so the holdings strip can be asserted.
   const rigScoring = (pg, youFavor, p1Favor, p2Favor) => pg.evaluate((a, b, c) => {
-    game.players[0].favor = a;
-    game.players[1].favor = b;
-    game.players[2].favor = c;
+    // Through the ledger, never a raw write: player.favor is DERIVED from
+    // favorLog since 7/19, so a direct assignment scores nothing. 'character'
+    // is the source this rig is standing in for.
+    game.awardFavor(0, a, 'character', 'Rigged standing');
+    game.awardFavor(1, b, 'character', 'Rigged standing');
+    game.awardFavor(2, c, 'character', 'Rigged standing');
     game.players[0].gold = 12;
     game.players[0].prestige = 7;
     game.players[0].scorn = 2;
@@ -4616,62 +4624,249 @@ console.log('── Melee cinematic: forge rows, live coin, podium + prestige to
 }
 
 // ═══ MELEE: tap anywhere advances the forge — except the scroll strip ═══
-console.log('── Melee taps: the whole stage advances the forge, .ms-cardrow stays a scroller');
+console.log('── Score sheet: every drill-down sums to its own cell (Wyatt 7/19)');
 {
-  // Own page at a SLOWER speed than the flow above: forgeHoldMs is 15000 ×
-  // speed, and at 0.15 the 2.25 s unattended fallback would race the taps
-  // we are trying to observe. 0.5 leaves a 7.5 s window.
+  // "Sum of all breakdown panels === final Favor shown on the scoreboard",
+  // and "Character panel value is reconstructable from an itemized log."
+  // Before the ledger, a Knowledge-scaling mission paid into the opaque
+  // player.favor, surfaced under CHARACTER as "+6 · Favor earned in play
+  // (rewards & missions)", and the Missions panel said "No missions completed
+  // for Favor" — two panels disagreeing about the same payment.
+  const AUDIT_UID = 'uaudit' + Math.random().toString(36).slice(2, 8);
   const page = await browser.newPage();
-  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('melee-tap: ' + m.text()); });
-  page.on('pageerror', e => consoleErrors.push('melee-tap pageerror: ' + e.message));
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('sheet: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('sheet pageerror: ' + e.message));
+  await page.evaluateOnNewDocument((u) => {
+    localStorage.setItem('favorUid', u);
+    localStorage.setItem('favorName', 'Audit Ledger');
+    localStorage.setItem('favorQueue', '3');
+  }, AUDIT_UID);
   await page.setViewport({ width: 1280, height: 800 });
   await startGame(page);
+
+  // One seat paid from every source at once: a mission that prints NO flat
+  // Favor and pays entirely by formula (Golden Fiddle, "2 Favor for Each
+  // Charisma"), a flat-value mission, an Adventure, an Artifact, and two
+  // cards that pay nothing — one of which (Fortune Teller) Wyatt found
+  // sitting in the Artifacts panel while wearing a magenta wisdom frame.
   await page.evaluate(() => {
-    window.CINEMATIC_SPEED = 0.5;
-    const pick = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
-    const [p0, p1, p2] = game.players;
-    p0.skills.power = 6; p0.playedCards = [pick('Reckless Training')];
-    p1.skills.power = 4; p1.playedCards = [pick('Shot of Courage')];
-    p2.skills.power = 2;
-    window._tapDone = false;
-    showMeleeSplash(game.resolveMelee(), 1).then(() => { window._tapDone = true; });
+    const card = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+    const mission = (n) => ({ ...FAVOR_DATA.missions.find(m => m.name === n) });
+    const p = game.players[0];
+    p.bonusSkills = { charisma: 4, knowledge: 3 };
+    game.applySlotSkills(p);
+    p.playedCards = [card('Generous Donations'), card('Family Ring'),
+                     card('Fortune Teller'), card('Forbidden Lab')];
+    const gf = mission('Golden Fiddle');
+    game.applyMissionRewards(0, gf);
+    p.completedMissions.push(gf);
+    p.completedMissions.push(mission('Tavern Legend'));
+    showScoring();
   });
-  // The Continue button appearing is exactly when advanceTap is armed.
-  await page.waitForFunction(() => !!document.querySelector('.ms-continue'), { timeout: 15000 });
+  await sleep(400);
 
-  // 1 · A tap on empty forge background advances (this is the whole ask).
-  await page.evaluate(() => document.getElementById('meleeSplash').click());
-  const advanced = await page.waitForFunction(() => !document.querySelector('.ms-continue'), { timeout: 4000 })
-    .then(() => true).catch(() => false);
-  ok(advanced, 'a tap on empty forge background advances the fighter (Wyatt 7/18)');
+  const cells = await page.evaluate(() => {
+    const g = document.querySelector('.vs-grid');
+    const cols = [...g.querySelectorAll('.vsg-head')].length;
+    const cs = [...g.querySelectorAll('.vsg-cell')];
+    const labels = [...g.querySelectorAll('.vsg-label')].map(l => (l.querySelector('span') || {}).textContent);
+    const out = {};
+    ['Missions', 'Adventures', 'Artifacts', 'Character'].forEach(L => {
+      const ri = labels.indexOf(L);
+      out[L] = ri < 0 ? null : parseInt(cs[ri * cols + 0].textContent, 10);
+    });
+    return out;
+  });
+  const panelOf = (cat) => page.evaluate((c) => {
+    showScoreBreakdown(0, c);
+    const ov = document.getElementById('scoreBreakdown');
+    const r = {
+      rows: [...ov.querySelectorAll('.sb-row')].map(x => ({
+        name: (x.querySelector('.sb-name') || {}).textContent || '',
+        val: parseInt((x.querySelector('.sb-val') || {}).textContent, 10) || 0,
+      })),
+      total: parseInt((ov.querySelector('.sb-total') || {}).textContent, 10),
+      notes: [...ov.querySelectorAll('.sb-note')].map(n => n.textContent).join(' | '),
+    };
+    closeScoreBreakdown();
+    return r;
+  }, cat);
 
-  // 2 · A tap on the card row does NOT — it is overflow-x:auto and swipe
-  // scrolled on phones, and a swipe that ends short still emits a click.
-  await page.waitForFunction(() => !!document.querySelector('.ms-continue')
-    && !!document.querySelector('.ms-cardrow'), { timeout: 15000 });
-  const rowIsScroller = await page.evaluate(() =>
+  for (const [label, cat] of [['Missions', 'missions'], ['Adventures', 'adventure'],
+                              ['Artifacts', 'artifact'], ['Character', 'character']]) {
+    const pan = await panelOf(cat);
+    const sum = pan.rows.reduce((n, r) => n + r.val, 0);
+    ok(sum === cells[label] && pan.total === cells[label],
+      `${label}: its rows sum to its cell (rows ${sum} · panel ${pan.total} · cell ${cells[label]})`);
+  }
+
+  const miss = await panelOf('missions');
+  ok(miss.rows.some(r => /Golden Fiddle/.test(r.name) && r.val > 0),
+    `Golden Fiddle pays a real, non-zero amount under Missions (${miss.rows.map(r => r.name + ' ' + r.val).join(' · ') || 'none'})`);
+  ok(miss.rows.some(r => /Golden Fiddle/.test(r.name) && /per Charisma/.test(r.name)),
+    'and the row names the formula, so the number is checkable against the card');
+  ok(!/No missions completed for Favor/.test(miss.notes),
+    'no "No missions completed for Favor" over a game that paid out');
+
+  const arts = await panelOf('artifact');
+  ok(arts.rows.every(r => !/Fortune Teller|Forbidden Lab|Marketplace Sales|Mind's Eye/.test(r.name)),
+    `the Artifacts panel holds only artifacts (${arts.rows.map(r => r.name).join(', ') || 'empty'})`);
+  ok(arts.rows.some(r => /Family Ring/.test(r.name)),
+    'and it does hold the one real artifact played');
+
+  const chr = await panelOf('character');
+  ok(!/rewards & missions/i.test(chr.rows.map(r => r.name).join(' ')),
+    `the Character panel no longer claims mission Favor (${chr.rows.map(r => r.name).join(', ') || 'empty'})`);
+
+  // Shoot the PANEL, not whatever is on top of it. Winning this rig unlocks
+  // "The Explorer's Victory", and its .ach-pop celebration covered the whole
+  // sheet in the first run of this block — the assertions read the DOM and
+  // passed, but the screenshot was of a modal. A shot nobody can read is not
+  // evidence.
+  await page.evaluate(async () => {
+    for (const ov of document.querySelectorAll('.ach-pop')) {
+      const b = ov.querySelector('.ach-ok');
+      if (b) b.click();
+    }
+    await new Promise(r => setTimeout(r, 400));
+    showScoreBreakdown(0, 'missions');
+  });
+  await sleep(300);
+  await page.screenshot({ path: join(SHOTS, 'score-sheet-ledger.png') });
+  await page.evaluate(() => { closeScoreBreakdown(); });
+  await page.close();
+}
+
+console.log('── Melee taps: every frame is live, a tap hurries the beat, none of it skips');
+{
+  // Own page at a SLOWER speed than the flow above: production passes
+  // forgeHoldMs 3600 (js/ui.js), so at CINEMATIC_SPEED 0.15 the unattended
+  // fallback is ~540 ms and would race the taps we are trying to observe.
+  // 0.5 leaves ~1.8 s per beat. (The old comment here claimed 15000 × speed
+  // and "a 7.5 s window" — that is melee.js's DEFAULT, not what ui.js
+  // passes, so this block has been racing a 1.8 s window while asserting it
+  // had 7.5.)
+  //
+  // Phone viewport on purpose — .ms-cardrow is a wide band across the bottom
+  // of the stage, which is where the dead zone lived. LANDSCAPE 844×390, not
+  // portrait: FAVOR gates portrait behind a "Turn Your Device" screen, and
+  // the first cut of this block ran the whole melee behind that gate. It
+  // passed anyway, because #meleeSplash is a body-level z-10600 sibling and
+  // page.evaluate(el.click()) bypasses hit-testing — the exact way an
+  // occlusion bug sails through every assertion and only shows in the
+  // screenshot. Landscape is how the game is actually held.
+  const meleePage = async () => {
+    const p = await browser.newPage();
+    p.on('console', m => { if (m.type() === 'error') consoleErrors.push('melee-tap: ' + m.text()); });
+    p.on('pageerror', e => consoleErrors.push('melee-tap pageerror: ' + e.message));
+    await p.setViewport({ width: 844, height: 390, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    await startGame(p);
+    await p.evaluate(() => {
+      window.CINEMATIC_SPEED = 0.5;
+      const pick = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
+      const [p0, p1, p2] = game.players;
+      p0.skills.power = 6; p0.playedCards = [pick('Reckless Training')];
+      p1.skills.power = 4; p1.playedCards = [pick('Shot of Courage')];
+      p2.skills.power = 2;
+      // Stamp when the first Continue paints — that is the end of the
+      // opening stretch, the 6.5 s of inert screen Wyatt was tapping at.
+      window._tContinue = 0;
+      const t0 = performance.now();
+      new MutationObserver(() => {
+        if (!window._tContinue && document.querySelector('.ms-continue')) {
+          window._tContinue = performance.now() - t0;
+        }
+      }).observe(document.getElementById('meleeSplash'), { childList: true, subtree: true });
+      showMeleeSplash(game.resolveMelee(), 1);
+    });
+    return p;
+  };
+  const tContinue = (p) => p.waitForFunction(() => window._tContinue > 0, { timeout: 20000 })
+    .then(() => p.evaluate(() => window._tContinue));
+
+  // 1 · THE HEADLINE: taps during the opening — before any Continue exists —
+  // shorten it. This is the regression that matters: advanceTap is armed only
+  // inside waitContinue(), so before 7/19 every one of these taps was a
+  // silent no-op and this stretch was dead screen.
+  const ctrl = await meleePage();
+  const ctrlMs = await tContinue(ctrl);
+  await ctrl.close();
+
+  const fast = await meleePage();
+  for (let i = 0; i < 14; i++) {
+    await fast.evaluate(() => document.getElementById('meleeSplash').click());
+    await sleep(70);
+  }
+  const fastMs = await tContinue(fast);
+  ok(fastMs < ctrlMs,
+    `tapping the opening hurries it — no dead zone before Continue (${Math.round(fastMs)}ms tapped vs ${Math.round(ctrlMs)}ms idle)`);
+  ok(fastMs > ctrlMs * 0.3,
+    `and it EXPEDITES rather than skipping — the beats still play (${Math.round(fastMs)}ms is not instant)`);
+
+  // 2 · Mashing never jumps to the podium. "Expedite should be slight."
+  for (let i = 0; i < 20; i++) {
+    await fast.evaluate(() => document.getElementById('meleeSplash').click());
+    await sleep(35);
+  }
+  const jumped = await fast.evaluate(() => document.querySelectorAll('.ms-tier.show').length);
+  ok(jumped === 0, `20 rapid taps do not skip to the result (${jumped} tiers shown)`);
+  await fast.screenshot({ path: join(SHOTS, 'melee-tap-anywhere.png') });
+  await fast.close();
+
+  // 3 · The card row: a PRESS advances, a SWIPE still only scrolls.
+  // This inverts the old assertion on purpose. Blanket-ignoring .ms-cardrow
+  // made a 126px full-width band inert, and the band moves as the row fills
+  // — the same gesture worked or didn't 12px apart (Wyatt 7/19,
+  // "inconsistent and feels broken").
+  const rowPage = await meleePage();
+  // The stage must actually be on screen, not behind the rotation gate —
+  // this is the guard that would have caught the portrait mistake.
+  ok(await rowPage.evaluate(() => {
+    const s = document.getElementById('meleeSplash');
+    const r = s && s.getBoundingClientRect();
+    return !!r && r.width > 300 && r.height > 200
+      && document.elementFromPoint(r.width / 2, 40) !== null;
+  }), 'the melee stage is on screen and hit-testable at this viewport');
+  await rowPage.waitForFunction(() => !!document.querySelector('.ms-continue')
+    && !!document.querySelector('.ms-cardrow'), { timeout: 20000 });
+  const rowIsScroller = await rowPage.evaluate(() =>
     getComputedStyle(document.querySelector('.ms-cardrow')).overflowX === 'auto');
-  await page.evaluate(() => document.querySelector('.ms-cardrow').click());
-  await sleep(600);
-  const held = await page.evaluate(() => !!document.querySelector('.ms-continue'));
-  ok(rowIsScroller, '.ms-cardrow is still a horizontal scroller (the reason for the exclusion)');
-  ok(held, 'a tap on .ms-cardrow does NOT advance — swipe-scrolling stays safe');
+  ok(rowIsScroller, '.ms-cardrow is still a horizontal scroller');
 
-  // 3 · The Continue button still works, and double-tapping cannot skip a
-  // fighter: waitContinue nulls advanceTap before it resolves.
-  await page.evaluate(() => {
+  await rowPage.evaluate(() => document.querySelector('.ms-cardrow').click());
+  const rowAdvanced = await rowPage.waitForFunction(() => !document.querySelector('.ms-continue'), { timeout: 4000 })
+    .then(() => true).catch(() => false);
+  ok(rowAdvanced, 'a PRESS on .ms-cardrow advances like anywhere else');
+
+  // A real drag: pointer events fire, the handler sees >8px of travel and
+  // swallows the click that a swipe emits on release.
+  await rowPage.waitForFunction(() => !!document.querySelector('.ms-continue')
+    && !!document.querySelector('.ms-cardrow'), { timeout: 20000 });
+  const box = await rowPage.evaluate(() => {
+    const r = document.querySelector('.ms-cardrow').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await rowPage.touchscreen.touchStart(box.x, box.y);
+  await rowPage.touchscreen.touchMove(box.x - 60, box.y);
+  await rowPage.touchscreen.touchEnd();
+  await sleep(500);
+  const heldOnSwipe = await rowPage.evaluate(() => !!document.querySelector('.ms-continue'));
+  ok(heldOnSwipe, 'but a SWIPE across it does not — scroll-to-read stays safe');
+
+  // 4 · Continue still works, and a double-tap cannot skip a fighter:
+  // waitContinue nulls advanceTap before it resolves.
+  await rowPage.evaluate(() => {
     const b = document.querySelector('.ms-continue');
-    b.click(); b.click();
+    if (b) { b.click(); b.click(); }
   });
   await sleep(600);
-  const oneStep = await page.evaluate(() => ({
+  const oneStep = await rowPage.evaluate(() => ({
     fighters: document.querySelectorAll('.ms-tuck').length,
     combatants: document.querySelectorAll('.ms-combatant').length,
   }));
   ok(oneStep.fighters <= oneStep.combatants,
     `a double-tap advances one fighter, never two (${oneStep.fighters} tucked of ${oneStep.combatants})`);
-  await page.screenshot({ path: join(SHOTS, 'melee-tap-anywhere.png') });
-  await page.close();
+  await rowPage.close();
 }
 
 // ═══ ARCHEUS: the victim is ASKED, and the table is TOLD ═══
@@ -4689,7 +4884,7 @@ console.log('── Archeus: a human victim picks their weapon; every loss reach
   // A rival plays Archeus. You hold two weapons; an AI holds one.
   await page.evaluate(() => {
     const w = (n, id) => ({ ...FAVOR_DATA.cards.find(c => c.name === n), id });
-    game.players[0].playedCards = [w('Enchanted Flames', 'z1'), w('Royal Hilt', 'z2')];
+    game.players[0].playedCards = [w('Enchanted Flames', 'z1'), w('Shark Tooth', 'z2')];
     game.players[1].playedCards = [w('Tombstone', 'z3')];
     game.phase = 'gameplay';
     game.resolveSpecial(2, { ...FAVOR_DATA.cards.find(c => c.name === 'Archeus'), id: 'zarch' });
@@ -4730,7 +4925,7 @@ console.log('── Archeus: a human victim picks their weapon; every loss reach
   ok(out.closed && out.after.length === 1 && out.after[0] === 'Enchanted Flames',
     `the weapon YOU chose is the one taken (${out.before.join(', ')} -> ${out.after.join(', ')})`);
   ok(out.aiLeft === 0, 'an AI victim gives up its weapon too');
-  ok(/Archeus forces you to discard Royal Hilt/i.test(out.feed),
+  ok(/Archeus forces you to discard Shark Tooth/i.test(out.feed),
     'your loss is named in the VISIBLE feed (addLog only ever reached the save snapshot)');
   ok(/Archeus forces .*Tombstone/i.test(out.feed),
     `and so is the rival's (${(out.feed.match(/Archeus[^\n]*/g) || []).join(' | ')})`);
@@ -4746,7 +4941,7 @@ console.log('── Opponent view: inspect panel/chips sum their spread; spotlig
   const rigRival = () => {
     const byName = n => FAVOR_DATA.cards.find(c => c.name === n);
     const p = game.players[1];
-    p.playedCards = ['Hunting', 'Concoction', 'Mining Guild'].map(n => ({ ...byName(n) }));
+    p.playedCards = ['Hunting', 'Mind Eraser', 'Mining Guild'].map(n => ({ ...byName(n) }));
     p.gold = 14; p.prestige = 6; p.scorn = 3; p.favor = 22;
     p.skills = { survival: 4, charisma: 2, alchemy: 3, prospecting: 1, knowledge: 2, power: 5 };
     p.flexSkills = [['charisma', 'prospecting']];

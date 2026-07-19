@@ -1734,8 +1734,13 @@ console.log('── Achievements: the engine actually feeds them');
   g.applySlotSkills(p);
   ok(p.peakGold >= 40, 'and SURVIVES spending it (peaks, not end-state)', String(p.peakGold));
 
+  // Mind Eraser is the rulebook's own POTION exemplar (p.11), so this can't
+  // drift again — Concoction used to stand here and turned out to be a blue
+  // ENDEAVOR frame, one of the 20 cards retyped on 7/19.
   const g2 = newGame();
-  playCard(g2, 0, 'Concoction');            // a potion
+  g2.players[0].bonusSkills = { prospecting: 1, alchemy: 1 };  // survives recalc
+  g2.applySlotSkills(g2.players[0]);
+  playCard(g2, 0, 'Mind Eraser');           // a potion
   ok(g2.players[0].potionsPlayed === 1, 'potions counted', String(g2.players[0].potionsPlayed));
 
   // The secret's engine hook: The Labyrinth failing while Fortune Teller is down.
@@ -1787,9 +1792,15 @@ console.log('── Art v7: Generous Donations, Lost South Map, and the map-pair
   ok(after - mid === 20,
     `completing the pair pays a 20 Favor bonus, not 15 (+${after - mid})`);
   ok(p.mapBonusAwarded === true, 'and the bonus is marked so it can never pay twice');
-  // ...and both cards' printed 5 Favor still reaches the score sheet.
+  // ...and both cards' printed 5 Favor still reaches the score sheet — under
+  // ARTIFACTS. Both maps wear the dark-purple artifact frame, and Lost North
+  // Map is the rulebook's own artifact exemplar (p.11); they were typed
+  // 'adventure' until the 7/19 retype. The pair bonus is a card-sourced
+  // ledger entry and books to the same family, so the cell is 5 + 5 + 20.
   const sheet = g.calculateFinalScores().find(x => x.playerIndex === 0);
-  ok(sheet.advFavor >= 10, `both halves' printed 5 Favor still scores (advFavor ${sheet.advFavor})`);
+  ok(sheet.artFavor === 30,
+    `both halves' printed 5 Favor and the 20 pair bonus all score under Artifacts (${sheet.artFavor})`);
+  ok(sheet.advFavor === 0, `and nothing leaks into Adventures (${sheet.advFavor})`);
 }
 
 // ── Held missions: attempt now, or hold until due (Wyatt 7/14)
@@ -2163,8 +2174,8 @@ console.log('\n— The resolution ledger: WHICH cards, WHO else, and gates that 
   const p = g.players[0];
   p.playedCards = [
     { ...cardByName('Enchanted Flames'), id: 'w1' },   // weapon
-    { ...cardByName('Royal Hilt'), id: 'w2' },         // weapon
-    { ...cardByName('Negotiate'), id: 'k1' },          // wisdom — must survive
+    { ...cardByName('Tombstone'), id: 'w2' },          // weapon (Royal Hilt is an ARTIFACT since 7/19)
+    { ...cardByName('Negotiate'), id: 'k1' },          // endeavor — must survive
   ];
   const prestige0 = p.prestige;
   const d = g.measureResolution(0,
@@ -2308,7 +2319,7 @@ console.log('\n— Archeus: the VICTIM picks the weapon (Wyatt 7/18) —');
 
   // 1 · A HUMAN victim is asked, not robbed.
   const g = newGame();
-  g.players[0].playedCards = [weapon('Enchanted Flames', 'a1'), weapon('Royal Hilt', 'a2')];
+  g.players[0].playedCards = [weapon('Enchanted Flames', 'a1'), weapon('Tombstone', 'a2')];
   g.players[1].playedCards = [];
   g.resolveSpecial(2, { ...arch, id: 'arch1' });
   ok(g.players[0]._pendingWeaponDiscard === 1,
@@ -2329,7 +2340,7 @@ console.log('\n— Archeus: the VICTIM picks the weapon (Wyatt 7/18) —');
   // UI can name them in the VISIBLE feed (the engine's own addLog only ever
   // reached the save snapshot).
   const g3 = newGame();
-  g3.players[1].playedCards = [weapon('Enchanted Flames', 'c1'), weapon('Royal Hilt', 'c2')];
+  g3.players[1].playedCards = [weapon('Enchanted Flames', 'c1'), weapon('Tombstone', 'c2')];
   g3.players[2].playedCards = [{ ...cardByName('Negotiate'), id: 'c3' }];
   g3.resolveSpecial(0, { ...arch, id: 'arch3' });
   ok(g3.players[1].playedCards.length === 1, 'an AI victim gives up exactly one weapon');
@@ -2343,7 +2354,7 @@ console.log('\n— Archeus: the VICTIM picks the weapon (Wyatt 7/18) —');
   const g4 = newGame();
   g4.players[0].playedCards = [{ ...cardByName('Negotiate'), id: 'd1' }];
   g4.players[1].playedCards = [weapon('Enchanted Flames', 'd2')];
-  g4.players[2].playedCards = [weapon('Royal Hilt', 'd3')];
+  g4.players[2].playedCards = [weapon('Tombstone', 'd3')];
   g4.resolveSpecial(2, { ...arch, id: 'arch4' });
   ok(g4.players[0].playedCards.length === 1 && !g4.players[0]._pendingWeaponDiscard,
     'a seat holding no weapon is not asked for one');
@@ -2353,7 +2364,7 @@ console.log('\n— Archeus: the VICTIM picks the weapon (Wyatt 7/18) —');
   // 5 · The filtered penalty discard cannot reach a non-weapon.
   const g5 = newGame();
   g5.players[1].playedCards = [
-    { ...cardByName('Negotiate'), id: 'e1' }, weapon('Royal Hilt', 'e2'),
+    { ...cardByName('Negotiate'), id: 'e1' }, weapon('Tombstone', 'e2'),
   ];
   g5.penaltyDiscard(1, 1, { filter: c => c.type === 'weapon' });
   ok(g5.players[1].playedCards.length === 1 && g5.players[1].playedCards[0].name === 'Negotiate',
@@ -2511,6 +2522,248 @@ if (LAD) {
   const stranger = personaDelta(3500, 3500, 0, field(5, 1100));
   ok(stranger > 0 && stranger < LADDER.MAX_SWING,
     `a 3.50 persona beating a 1.10 table gains a small, sane amount (${stranger})`);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// THE FAVOR LEDGER (Wyatt 7/19) — every payment names its source, and the
+// breakdown panels reconcile to the scoreboard.
+// ══════════════════════════════════════════════════════════════════════
+
+console.log('\n── Scaled missions pay under MISSIONS, not Character ──');
+{
+  // Trust of the Elders prints favorValue 0 and pays entirely through
+  // "1 Favor for each Knowledge you have". That payout used to land in the
+  // opaque player.favor bucket, which calculateFinalScores folded into the
+  // CHARACTER row — so the sheet showed +6 on a board slot holding no Favor
+  // while the Missions panel, reading favorValue alone, said "No missions
+  // completed for Favor". One number, two panels, neither one true.
+  const g = newGame();
+  const p = g.players[0];
+  p.bonusSkills = { knowledge: 6 };
+  g.applySlotSkills(p);
+  const m = { ...missionByName('Trust of the Elders') };
+  ok((m.favorValue || 0) === 0, 'Trust of the Elders prints no flat Favor');
+  g.applyMissionRewards(0, m);
+  p.completedMissions.push(m);
+  // ⚠ OPEN QUESTION for Wyatt, not asserted either way here: the card reads
+  // "1 Favor for Each Knowledge you have, 1 Knowledge" — payout first, grant
+  // second — but applyMissionRewards grants skills BEFORE resolving the
+  // special, so the mission pays for the Knowledge it just handed you (7,
+  // not 6). Left as-is: it predates this change and reward ordering feeds
+  // the 7/18 fixed-point convergence. This test reads the payout the engine
+  // actually made, so it asserts ATTRIBUTION without freezing that choice.
+  const kn = p.skills.knowledge;
+
+  const s = g.calculateFinalScores().find(x => x.playerIndex === 0);
+  ok(s.missionFavor === kn, `its ${kn} Favor scores under MISSIONS (${s.missionFavor})`);
+  ok(s.characterFavor === 0, `and the character board stays empty (${s.characterFavor})`);
+  const line = (p.favorLog || []).find(e => e.label === 'Trust of the Elders');
+  ok(line && line.src === 'mission' && line.amount === kn,
+    'the ledger books it to the mission that paid it');
+  ok(line && line.formula === '1 per Knowledge',
+    `and records the formula, so the number is checkable against the card (${line && line.formula})`);
+
+  // Golden Fiddle — Wyatt's other example, same shape, different stat.
+  const g2 = newGame();
+  g2.players[0].bonusSkills = { charisma: 4 };
+  g2.applySlotSkills(g2.players[0]);
+  const gf = { ...missionByName('Golden Fiddle') };
+  g2.applyMissionRewards(0, gf);
+  g2.players[0].completedMissions.push(gf);
+  const s2 = g2.calculateFinalScores().find(x => x.playerIndex === 0);
+  ok(s2.missionFavor === 8, `Golden Fiddle pays 2 per Charisma = 8 under Missions (${s2.missionFavor})`);
+  ok(s2.characterFavor === 0, 'and nothing on the board');
+}
+
+console.log('\n── The panels reconcile: every row sums to the scoreboard ──');
+{
+  // Wyatt's acceptance test: "sum of all breakdown panels === final Favor".
+  // currentFavor() is what the HUD shows all game; totalFavor is what the
+  // sheet totals at the end. They are two different expressions over the
+  // same state and they must agree exactly, or a player watches a number
+  // change meaning at the moment the game ends.
+  const g = newGame();
+  const p = g.players[0];
+  p.bonusSkills = { knowledge: 3, charisma: 2 };
+  g.applySlotSkills(p);
+  p.playedCards = [
+    { ...cardByName('Generous Donations') },   // adventure, 25 printed
+    { ...cardByName('Family Ring') },          // artifact, 2 per Knowledge
+  ];
+  const m = { ...missionByName('Golden Fiddle') };
+  g.applyMissionRewards(0, m);
+  p.completedMissions.push(m);
+  const mf = { ...missionByName('Tavern Legend') };  // a flat favorValue mission
+  p.completedMissions.push(mf);
+
+  const s = g.calculateFinalScores().find(x => x.playerIndex === 0);
+  ok(s.missionFavor + s.cardFavor + s.characterFavor === s.totalFavor,
+    `rows sum to the total (${s.missionFavor}+${s.cardFavor}+${s.characterFavor}=${s.totalFavor})`);
+  ok(s.advFavor + s.artFavor + s.otherCardFavor === s.cardFavor,
+    `and the card families sum to cardFavor (${s.advFavor}+${s.artFavor}+${s.otherCardFavor})`);
+  ok(g.currentFavor(0) === s.totalFavor,
+    `the HUD's live Favor equals the final total (${g.currentFavor(0)} vs ${s.totalFavor})`);
+  ok(s.advFavor === 25, `Generous Donations scores under Adventures (${s.advFavor})`);
+  ok(s.artFavor === 6, `Family Ring's 2-per-Knowledge scores under Artifacts (${s.artFavor})`);
+}
+
+console.log('\n── Favor is DERIVED: it rises on play and falls on loss ──');
+{
+  // "Play a card that grants Favor → total goes up immediately. Lose that
+  // card → it goes down by exactly that amount" (Wyatt 7/19). Nothing is
+  // incrementally patched, so this holds for free — but it is the whole
+  // point of the model, so it gets a test.
+  const g = newGame();
+  const p = g.players[0];
+  const before = g.currentFavor(0);
+  p.playedCards.push({ ...cardByName('Generous Donations'), id: 'gd1' });
+  ok(g.currentFavor(0) === before + 25, `playing it adds 25 (${g.currentFavor(0)})`);
+  // Straight to discardPlayedCards: penaltyDiscard defers seat 0 to a picker
+  // (it's the human), and what's under test is the derivation, not the prompt.
+  g.discardPlayedCards(0, c => c.id === 'gd1', 1);
+  ok(g.currentFavor(0) === before, `losing it takes exactly 25 back (${g.currentFavor(0)})`);
+}
+
+console.log('\n── Invented Favor: the two sources no card prints ──');
+{
+  // Same class as the gold→Favor conversion killed on 7/18. Wyatt on the
+  // Character panel: "the +6 is not traceable to anything."
+  const g = newGame();
+  const p = g.players[0];
+  p.playedCards = [
+    { ...cardByName('Forgotten Temple'), id: 'ft' },
+    { ...cardByName('Sacred Chest'), id: 'sc' },
+  ];
+  g.resolveSpecial(0, p.playedCards[0]);
+  ok((p.favor || 0) === 0,
+    `Forgotten Temple + Sacred Chest pays no combo bonus — the map waiver IS the synergy (${p.favor})`);
+
+  const g2 = newGame();
+  const p2 = g2.players[0];
+  p2.playedCards = [
+    { ...cardByName('Finding the Lost Corridor'), id: 'fl' },
+    { ...cardByName('Reunited'), id: 'ru' },
+  ];
+  g2.resolveCombo(0, p2.playedCards[1]);
+  ok((p2.favor || 0) === 0,
+    `a named combo pays no blanket +5 — the string is a MAP, not a pairing (${p2.favor})`);
+}
+
+console.log('\n── The ledger survives a save, and an old save survives the ledger ──');
+{
+  const g = newGame();
+  g.awardFavor(0, 12, 'mission', 'Building the Bridge', { file: 'x.jpg' });
+  const revived = JSON.parse(JSON.stringify(g.players[0]));
+  ok(Array.isArray(revived.favorLog) && revived.favorLog.length === 1
+     && revived.favorLog[0].amount === 12 && revived.favorLog[0].src === 'mission',
+    'the log JSON round-trips intact (plain arrays, plain objects)');
+
+  // A solo save written before the ledger existed carries a total with no
+  // line items. The first new payment must ADD to it, never re-derive over
+  // it — that would silently eat everything earned before the update.
+  const g2 = newGame();
+  const p2 = g2.players[0];
+  delete p2.favorLog;
+  p2.favor = 17;
+  g2.awardFavor(0, 5, 'mission', 'Ice Caverns');
+  ok(p2.favor === 22, `a pre-ledger save keeps its 17 and adds the 5 (${p2.favor})`);
+  ok(p2.favorLog.length === 1, 'the log itemizes the new payment; the old 17 is unexplained');
+  const s2 = g2.calculateFinalScores().find(x => x.playerIndex === 0);
+  ok(s2.missionFavor === 5 && s2.characterFavor === 17,
+    `the explained 5 books to Missions, the unexplained 17 surfaces on the board (${s2.missionFavor}/${s2.characterFavor})`);
+
+  // And a raw write that never touched the ledger at all still reaches the
+  // sheet. Nothing in the engine does this any more — but a Favor you can't
+  // explain is a bug you can see, while a Favor that vanishes is one you
+  // can't, so the remainder surfaces instead of being dropped.
+  const g3 = newGame();
+  g3.players[0].favor = 40;
+  const s3 = g3.calculateFinalScores().find(x => x.playerIndex === 0);
+  ok(s3.characterFavor === 40, `an unattributed write still scores (${s3.characterFavor})`);
+  ok(g3.currentFavor(0) === s3.totalFavor,
+    `and the reconciliation invariant holds regardless (${g3.currentFavor(0)} vs ${s3.totalFavor})`);
+}
+
+console.log('\n── Card types: the seven families of the rulebook ──');
+{
+  const FAMILIES = ['adventure', 'artifact', 'weapon', 'wisdom', 'endeavor', 'potion', 'mission_letter'];
+  const cards = window.FAVOR_DATA.cards;
+  const untyped = cards.filter(c => !FAMILIES.includes(c.type));
+  ok(untyped.length === 0,
+    `every card carries one of the seven printed frame colors (${untyped.map(c => `${c.name}:${c.type}`).join(', ') || 'all clean'})`);
+
+  // Wyatt 7/19: "the Artifacts panel contains exactly the dark-purple set
+  // and nothing else." Sampled from the art, corroborated by rulebook p.11
+  // (Lost North Map is its ARTIFACT exemplar; Fortune Teller its WISDOM one).
+  const arts = cards.filter(c => c.type === 'artifact').map(c => c.name).sort();
+  const EXPECTED = ['Family Ring', 'Great Vault Key', 'Lost North Map', 'Lost South Map',
+    'Lucky Pendant', 'Royal Hilt', 'Sacred Chest', 'Secret Lab'];
+  ok(JSON.stringify(arts) === JSON.stringify(EXPECTED),
+    `the artifact set is exactly the eight dark-purple cards (${arts.join(', ')})`);
+  ok(cardByName('Fortune Teller').type === 'wisdom' && cardByName("Mind's Eye").type === 'wisdom',
+    'Fortune Teller and Mind\'s Eye are WISDOM — magenta, not purple');
+
+  // Rulebook p.8 counts "Collected Adventure & Artifact Favor". Chemical Y's
+  // printed "If you own Chemical X: 15 Favor" is the one off-family payer,
+  // and the score sheet folds it into Adventures on purpose. If this list
+  // ever grows, the sheet needs a decision — not a silent catch-all.
+  const FAVOR_SPECIALS = ['favor_per_survival_x2', 'favor_per_quest_x5', 'favor_per_knowledge_x2',
+    'favor_per_sur_cha_pro', 'favor_per_wisdom_x8', 'favor_per_potion_x5',
+    'favor_per_neighbor_power', 'double_adventure_favor'];
+  const payers = cards.filter(c => c.favor || FAVOR_SPECIALS.includes(c.special));
+  const stray = payers.filter(c => c.type !== 'adventure' && c.type !== 'artifact');
+  ok(stray.length === 1 && stray[0].name === 'Chemical Y',
+    `only Chemical Y pays Favor off-family (${stray.map(c => `${c.name}:${c.type}`).join(', ') || 'none'})`);
+}
+
+console.log('\n── Guardian gets ONE face in the melee row ──');
+{
+  // Wyatt 7/19: "an opponent played two Guardian cards in the same melee."
+  // The engine held one. Guardian grants 2 Power via skills AND fires a
+  // power special, so powerBreakdown emitted its art twice — once as a
+  // baseCard, once as the negation step — and melee.js dealt both.
+  const g = newGame();
+  g.currentAct = 1;
+  const p1 = g.players[1];
+  p1.playedCards = [{ ...cardByName('Guardian'), id: 'gd' }];
+  p1.skills.power = 2;
+  p1.powerDebuffs = [{ act: 1, amount: -3, from: 0, source: 'Fuzzy Head' }];
+  p1._throneDefended = { act: 1, amount: 3 };   // as the melee records it
+
+  const bd = g.powerBreakdown(1);
+  const faces = [...bd.baseCards.map(c => c.filename), ...bd.steps.map(s => s.filename)]
+    .filter(Boolean);
+  const dupes = faces.filter((f, i) => faces.indexOf(f) !== i);
+  ok(dupes.length === 0, `no card art appears twice for one seat (${dupes.join(', ') || 'none'})`);
+  ok(p1.playedCards.filter(c => c.name === 'Guardian').length === 1,
+    'and the engine still holds exactly one Guardian');
+  ok(bd.steps.some(s => /Guardian/.test(s.label)),
+    'the negation is still narrated — it loses its art, not its voice');
+}
+
+console.log('\n── calculatePower is pure unless the melee says otherwise ──');
+{
+  // sampleSeatStats calls calculatePower from applySlotSkills on every card
+  // play — and documents itself as "pure bookkeeping ... must never gate a
+  // rule or change a score". It was spending Guardian's one-shot shield acts
+  // before the strike it was bought to survive.
+  const g = newGame();
+  const p = g.players[0];
+  p.playedCards = [{ ...cardByName('Guardian'), id: 'g1' }];
+  p.skills.power = 2;
+  p.defendTheThrone = true;
+  p.powerDebuffs = [{ act: 1, amount: -3, from: 1, source: 'Fuzzy Head' }];
+
+  g.currentAct = 1;
+  g.calculatePower(0);
+  g.applySlotSkills(p);              // the telemetry path that burned it
+  ok(p.defendTheThrone === true, 'a pure read leaves the shield unspent');
+  ok(g.calculatePower(0) === 2, `and still reports the absorption (${g.calculatePower(0)})`);
+
+  const spent = g.calculatePower(0, true);
+  ok(p.defendTheThrone === false, 'only the melee spends it');
+  ok(g.calculatePower(0) === spent,
+    `and a read AFTER the melee reports the same number (${g.calculatePower(0)} vs ${spent})`);
 }
 
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);

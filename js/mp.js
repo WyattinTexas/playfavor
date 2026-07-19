@@ -117,7 +117,10 @@
     // Potions Card" instead of granting +2 Mind's Eye, +2 Knowledge and +5
     // stones — a different card entirely. A v14 client scores every one of
     // these differently, so final standings would disagree outright.
-    const MPV = 15;   // 15: mission skill grants chain; gold does not buy Favor
+    // 16: the Favor ledger (favorLog streams in getState), two invented Favor
+    //     sources removed, and 20 cards retyped off the printed frame colors —
+    //     a v15 seat would score the same table differently.
+    const MPV = 16;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

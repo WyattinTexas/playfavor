@@ -93,7 +93,10 @@ class FavorGame {
                 gold: char ? char.startingGold : STARTING_GOLD,
                 prestige: 0,
                 scorn: 0,
+                // favor is DERIVED from favorLog — see awardFavor. Never
+                // write it directly.
                 favor: 0,
+                favorLog: [],
                 playedCards: [],
                 missions: [],
                 completedMissions: [],
@@ -339,14 +342,66 @@ class FavorGame {
      * - Mind's Eye / Philosopher's Stone / Gold / Favor (NOT borrowable) → missingSpecial
      * - reqMaps: holding any listed map waives the whole requirement clause ("... OR [X] Map")
      */
+    // ─── THE FAVOR LEDGER ──────────────────────────────────────
+    /**
+     * Every Favor payment, itemized at the moment it is paid.
+     *
+     * player.favor used to be an opaque scalar: card combos, map bonuses,
+     * mission rewards and mission success specials all added into the same
+     * bucket, and calculateFinalScores had nowhere to put that bucket but the
+     * Character row. So Trust of the Elders — favorValue 0, "1 Favor for each
+     * Knowledge you have" — paid +6 into a row captioned "Your standing on the
+     * character board", while the Missions panel, which only ever read
+     * m.favorValue, said "No missions completed for Favor" (Wyatt 7/19). The
+     * number was real. The attribution was fiction.
+     *
+     * Now NOTHING writes player.favor directly. Every payment goes through
+     * awardFavor, which records what paid it, what it was for and when. The
+     * score sheet reads the ledger, so every cell reconstructs down to the
+     * line item.
+     *
+     * player.favor stays the authoritative total and the log itemizes it —
+     * rather than the total being re-derived FROM the log, which would mean a
+     * stray `player.favor = n` silently evaporating on the next payment. Any
+     * part of the total the log can't explain surfaces on the character board
+     * instead of vanishing (see calculateFinalScores). That also makes the
+     * pre-ledger solo save a non-event: its total simply arrives unexplained.
+     *
+     * src: 'mission' → the Missions row · 'card' → the row for that card's
+     * family · 'character' → the character board. Plain arrays of plain
+     * objects, so the log survives the solo-save JSON round-trip and the
+     * multiplayer stream untouched.
+     */
+    awardFavor(playerIndex, amount, src, label, extra = {}) {
+        const player = this.players[playerIndex];
+        // A zero payment is not a line item — "Golden Fiddle: +0" on a table
+        // with no Charisma is noise, and the mission still shows as completed.
+        if (!amount) return 0;
+        if (!player.favorLog) player.favorLog = [];
+        player.favorLog.push({ amount, src, label, act: this.currentAct, ...extra });
+        player.favor = (player.favor || 0) + amount;
+        return amount;
+    }
+
+    /** Ledger favor for one source ('mission' | 'card' | 'character'). */
+    favorFromLog(playerIndex, src, filter) {
+        return (this.players[playerIndex].favorLog || [])
+            .filter(e => e.src === src && (!filter || filter(e)))
+            .reduce((n, e) => n + e.amount, 0);
+    }
+
     /**
      * The Favor a player HOLDS right now — the threshold "Req: N Favor" cards
-     * and missions read against. player.favor is only the running-rewards
-     * bucket; card favor and mission favor are summed SEPARATELY at scoring, so
-     * a check against player.favor alone never saw the 7 Favor from a played
-     * "Forming a Bond" and made Favor-cost cards impossible (Wyatt 7/17). Held
-     * favor = rewards + played-card favor + completed-mission favor + the slot
-     * bonus; the end-game Philosopher's-Stone gold conversion is NOT held.
+     * and missions read against. player.favor is only the ledger total; card
+     * favor and mission favor are summed SEPARATELY at scoring, so a check
+     * against player.favor alone never saw the 7 Favor from a played "Forming
+     * a Bond" and made Favor-cost cards impossible (Wyatt 7/17). Held favor =
+     * ledger + played-card favor + completed-mission favor + the slot bonus.
+     *
+     * Derived from current board state on every call, never incrementally
+     * patched: play a Favor-bearing card and it rises the same frame; lose
+     * that card to a discard, a steal or Archeus and it falls by exactly the
+     * same amount, because the card is simply no longer in playedCards.
      */
     currentFavor(playerIndex) {
         const p = this.players[playerIndex];
@@ -1207,7 +1262,10 @@ class FavorGame {
             if (card.rewards.gold) player.gold += card.rewards.gold;
             if (card.rewards.prestige) player.prestige += card.rewards.prestige;
             if (card.rewards.scorn) player.scorn += card.rewards.scorn;
-            if (card.rewards.favor) player.favor += card.rewards.favor;
+            if (card.rewards.favor) {
+                this.awardFavor(playerIndex, card.rewards.favor, 'card', card.name,
+                    { type: card.type, file: card.filename });
+            }
         }
 
         // Resolve special ability if present
@@ -1598,16 +1656,19 @@ class FavorGame {
                 break;
 
             case 'sacred_chest':
-                // Forgotten Temple + Sacred Chest synergy: +10 Favor if both are played
-                {
-                    const hasForgottenTemple = player.playedCards.some(c => c.name === 'Forgotten Temple');
-                    const hasSacredChest = player.playedCards.some(c => c.name === 'Sacred Chest');
-                    if (hasForgottenTemple && hasSacredChest && !player._sacredChestComboAwarded) {
-                        player._sacredChestComboAwarded = true;
-                        player.favor += 10;
-                        this.addLog(`${player.name}'s Forgotten Temple + Sacred Chest combo: +10 Favor!`);
-                    }
-                }
+                // ⚠ REMOVED 7/19 — the +10 "Forgotten Temple + Sacred Chest
+                // combo" was INVENTED, the same class of bug as the gold→Favor
+                // conversion (7/18), Family Ring's phantom skill grant and
+                // Secret Lab. Neither card prints it. Forgotten Temple reads
+                // "Map of Sacred Chest & 1 Knowledge & 2 Scorn" — it hands you
+                // the map, which is exactly what its grantsMap field already
+                // does. Sacred Chest reads "8 Favor for each Wisdom Card you
+                // have, Req: 12 Gold OR Forgotten Temple Map" — holding the map
+                // WAIVES the 12 Gold. That waiver is the entire relationship
+                // between the two cards; there is no bonus on top of it.
+                // The special stays declared so the play still logs, and so it
+                // can't fall through to the "unknown special" branch.
+                this.addLog(`${player.name}'s ${card.name} grants the Sacred Chest map`);
                 break;
 
             // --- Map cards (need both halves for bonus) ---
@@ -1646,7 +1707,8 @@ class FavorGame {
                 // a blue 20 beside its "2/2" plaque, and its own audit text says
                 // "If you have the Lost North Map 20 additional Favor". The engine
                 // was the only voice saying 15 — and no checker looked at combos.
-                player.favor += 20;
+                this.awardFavor(playerIndex, 20, 'card', 'Both Map halves found',
+                    { type: card.type, file: card.filename });
                 this.addLog(`${player.name} completes the Map! Both halves found: +20 Favor!`);
             }
         }
@@ -1690,19 +1752,22 @@ class FavorGame {
             return;
         }
 
-        // Named combo: card.combo references another card's name
-        if (typeof card.combo === 'string') {
-            const partner = player.playedCards.find(c => c.name === card.combo && c.id !== card.id);
-            if (partner) {
-                // Avoid double-awarding: use sorted id pair as key
-                const comboKey = `combo_${Math.min(card.id, partner.id)}_${Math.max(card.id, partner.id)}`;
-                if (!player[comboKey]) {
-                    player[comboKey] = true;
-                    player.favor += 5;
-                    this.addLog(`${player.name} combo! ${card.name} + ${partner.name}: +5 Favor`);
-                }
-            }
-        }
+        // ⚠ REMOVED 7/19 — a blanket "+5 Favor for a named combo" that no card
+        // prints. Exactly three cards carry a string combo, and on all three
+        // the string is a MAP that leaked into the combo field:
+        //   Facing the River Fiend  → "The Minister's Plan"      (its reqMaps)
+        //   Finding the Lost Corridor → "Reunited"               (its grantsMap)
+        //   Reunited                → "Finding the Lost Corridor"(its reqMaps)
+        // Their printed text is "15 Favor", "10 Favor & Reunited Map" and
+        // "22 Favor & 1 Philosopher's Stone" — no combo bonus on any of them.
+        // The comment above already established there is no generic combo
+        // reward for the 1/2 + 2/2 pairs; this was the same false assumption
+        // wearing a different hat, and it is the kind of untraceable Favor
+        // Wyatt flagged on 7/19 ("the +6 is not traceable to anything").
+        // Real pair bonuses are printed on the card and live where they
+        // belong: Heaven's Blade / Archeus +6 Power in calculatePower,
+        // Chemical Y's +15 Favor in dynamicCardFavor, the Lost North + Lost
+        // South +20 in resolveMapBonus.
     }
 
     /**
@@ -2227,7 +2292,10 @@ class FavorGame {
     applyMissionRewards(playerIndex, mission) {
         const player = this.players[playerIndex];
         const s = mission.successRewards || {};
-        if (s.favor) player.favor += s.favor;
+        if (s.favor) {
+            this.awardFavor(playerIndex, s.favor, 'mission', mission.name,
+                { file: mission.filename });
+        }
         if (s.prestige) player.prestige += s.prestige;
         if (s.gold) player.gold += s.gold;
         // Some successes sting: Usurper and Alchemic Seige print Scorn in the
@@ -2254,25 +2322,25 @@ class FavorGame {
 
     resolveMissionSuccessSpecial(playerIndex, mission) {
         const player = this.players[playerIndex];
+        // Scaled mission payouts are MISSION favor. They used to land in the
+        // opaque player.favor and surface under Character; the ledger books
+        // them to the mission that paid them, so the Missions row shows the
+        // real total and the drill-down names the formula (Wyatt 7/19).
+        const payMission = (f, formula) => {
+            this.awardFavor(playerIndex, f, 'mission', mission.name,
+                { file: mission.filename, formula });
+            this.addLog(`${player.name}: +${f} Favor (${formula})`);
+        };
         switch (mission.successSpecial) {
-            case 'favor_per_charisma_x2': {
-                const f = 2 * (player.skills.charisma || 0);
-                player.favor += f;
-                this.addLog(`${player.name}: +${f} Favor (2 per Charisma)`);
+            case 'favor_per_charisma_x2':
+                payMission(2 * (player.skills.charisma || 0), '2 per Charisma');
                 break;
-            }
-            case 'favor_per_knowledge_x1': {
-                const f = player.skills.knowledge || 0;
-                player.favor += f;
-                this.addLog(`${player.name}: +${f} Favor (1 per Knowledge)`);
+            case 'favor_per_knowledge_x1':
+                payMission(player.skills.knowledge || 0, '1 per Knowledge');
                 break;
-            }
-            case 'favor_per_minds_eye_x5': {
-                const f = 5 * this.getMindsEyeCount(playerIndex);
-                player.favor += f;
-                this.addLog(`${player.name}: +${f} Favor (5 per Mind's Eye)`);
+            case 'favor_per_minds_eye_x5':
+                payMission(5 * this.getMindsEyeCount(playerIndex), "5 per Mind's Eye");
                 break;
-            }
             case 'philosopher_stone_x2_grant':
                 player.philosopherStone = (player.philosopherStone || 0) + 2;
                 this.addLog(`${player.name} gains 2 Philosopher's Stones`);
@@ -2288,12 +2356,12 @@ class FavorGame {
                 player.scorn = Math.max(0, player.scorn - 20);
                 this.addLog(`${player.name} removes up to 20 Scorn`);
                 break;
-            case 'favor_per_philstone_x10': {
-                const f = 10 * (player.philosopherStone || 0);
-                player.favor += f;
-                this.addLog(`${player.name}: +${f} Favor (10 per Philosopher's Stone)`);
+            case 'favor_per_philstone_x10':
+                // King of the Sky — the one printed mechanic that pays FOR
+                // stones. Stones themselves are a requirement resource, never
+                // a scoring multiplier (see calculateFinalScores).
+                payMission(10 * (player.philosopherStone || 0), "10 per Philosopher's Stone");
                 break;
-            }
             case 'duplicate_artifact': {
                 const arts = player.playedCards.filter(c => c.type === 'artifact');
                 const pick = arts[arts.length - 1];
@@ -2517,9 +2585,10 @@ class FavorGame {
         const rewards = MELEE_REWARDS[act];
 
         // Calculate each player's total Power
+        // consume:true — the ONE call that may spend a Guardian's shield.
         const powerTotals = this.players.map((p, i) => ({
             playerIndex: i,
-            power: this.calculatePower(i),
+            power: this.calculatePower(i, true),
             name: p.name
         }));
 
@@ -2590,7 +2659,26 @@ class FavorGame {
         return skill === 'power' ? base + this.pairingPower(playerIndex) : base;
     }
 
-    calculatePower(playerIndex) {
+    /**
+     * A seat's Melee Power.
+     *
+     * ⚠ PURE BY DEFAULT — only resolveMelee passes consume:true.
+     * Guardian's "negate the first power reduction" is a one-shot, and
+     * spending it is a RULES event that may happen exactly once, at the
+     * melee. This used to spend it on EVERY call — and sampleSeatStats,
+     * which documents itself as "pure bookkeeping … must never gate a rule
+     * or change a score", calls it from applySlotSkills on every card play,
+     * slot move and mission reward. So the shield was burned by a telemetry
+     * sample the moment any debuff sat on the board, acts before the strike
+     * it was bought to survive.
+     *
+     * A pure read still REPORTS the absorption, including after the melee
+     * has spent it (via _throneDefended) — otherwise a Guardian holder read
+     * 3 Power at the melee and 0 at scoring, understating their own power on
+     * the leaderboard, and powerBreakdown's computedTotal === calculatePower
+     * contract quietly broke.
+     */
+    calculatePower(playerIndex, consume = false) {
         const player = this.players[playerIndex];
 
         // player.skills.power already includes all power from cards + slider
@@ -2634,14 +2722,18 @@ class FavorGame {
                 }
             });
 
-            // Defend the Throne: negate the first power reduction
-            if (totalDebuff < 0 && player.defendTheThrone) {
-                // Negate the first -3 debuff (absorb one instance)
-                const absorbed = Math.min(3, -totalDebuff);
-                totalDebuff = Math.min(0, totalDebuff + 3);
-                player.defendTheThrone = false; // Used up
-                // Recorded so powerBreakdown can SHOW the negation truthfully.
-                player._throneDefended = { act: this.currentAct, amount: absorbed };
+            // Defend the Throne: negate the first power reduction. Already
+            // spent THIS act means the absorption is history — re-apply it so
+            // every later read matches what the melee actually showed.
+            const spent = player._throneDefended && player._throneDefended.act === this.currentAct;
+            if (totalDebuff < 0 && (player.defendTheThrone || spent)) {
+                const absorbed = spent ? player._throneDefended.amount : Math.min(3, -totalDebuff);
+                totalDebuff = Math.min(0, totalDebuff + absorbed);
+                if (consume && !spent) {
+                    player.defendTheThrone = false; // Used up — one strike only
+                    // Recorded so powerBreakdown can SHOW the negation truthfully.
+                    player._throneDefended = { act: this.currentAct, amount: absorbed };
+                }
             }
 
             power += totalDebuff;
@@ -2674,9 +2766,21 @@ class FavorGame {
         const act = this.currentAct;
         const steps = [];
         const base = player.skills.power || 0;
+        // ⚠ A card gets ONE face in the melee row. Guardian is the card that
+        // exposed this (Wyatt 7/19: "an opponent played two Guardian cards in
+        // the same melee"): it grants 2 Power through `skills` AND fires a
+        // power `special`, so powerBreakdown emitted its art once as a
+        // baseCard and again as the negation step — and melee.js dealt both
+        // into the same fighter's row, badged +2 and +3. The engine held
+        // exactly one Guardian the whole time; only the display doubled.
+        // Heaven's Blade and Dawnharbinger have the identical shape.
+        // melee.js already skips art-less steps while still announcing their
+        // label and amount, so dropping the second face costs nothing.
+        const baseFaces = new Set();
         const artOf = (name) => {
             const c = player.playedCards.find(x => x.name === name);
-            return c ? (c.filename || null) : null;
+            if (!c || !c.filename) return null;
+            return baseFaces.has(c.filename) ? null : c.filename;
         };
 
         // Attribute the base: every power-granting played card, every
@@ -2685,7 +2789,10 @@ class FavorGame {
         const baseCards = [];
         player.playedCards.forEach(c => {
             const n = (c.skills || []).filter(s => s === 'power').length;
-            if (n > 0) baseCards.push({ name: c.name, filename: c.filename || null, amount: n, mission: false });
+            if (n > 0) {
+                baseCards.push({ name: c.name, filename: c.filename || null, amount: n, mission: false });
+                if (c.filename) baseFaces.add(c.filename);
+            }
         });
         (player.completedMissions || []).forEach(m => {
             const n = (m.successRewards && m.successRewards.skills && m.successRewards.skills.power) || 0;
@@ -2700,7 +2807,10 @@ class FavorGame {
             player.playedCards.forEach(c => {
                 if (c.special === 'power_6_if_blind_faith' || c.name === 'Archeus') {
                     own += 6;
-                    steps.push({ kind: 'bonus', label: c.name + ' + Blind Faith', amount: 6, filename: c.filename || null });
+                    // Same one-face rule — Heaven's Blade also grants 2 Power
+                    // through skills, so it already has a baseCard face.
+                    steps.push({ kind: 'bonus', label: c.name + ' + Blind Faith', amount: 6,
+                        filename: (c.filename && !baseFaces.has(c.filename)) ? c.filename : null });
                 }
             });
         }
@@ -2846,8 +2956,16 @@ class FavorGame {
 
     calculateFinalScores() {
         return this.players.map((p, i) => {
-            // Favor from completed missions
-            let missionFavor = 0;
+            // Favor from missions — the printed favorValue on every completed
+            // mission PLUS every mission-sourced ledger entry: successRewards
+            // favor and the scaled success specials (Golden Fiddle's "2 Favor
+            // for Each Charisma", Trust of the Elders' per-Knowledge, King of
+            // the Sky's per-stone). Those four missions print favorValue 0 and
+            // pay entirely through their special, so a row that read only
+            // favorValue scored them at zero and reported "No missions
+            // completed for Favor" while the Favor sat in the Character row
+            // (Wyatt 7/19).
+            let missionFavor = this.favorFromLog(i, 'mission');
             p.completedMissions.forEach(m => {
                 if (m.favorValue) missionFavor += m.favorValue;
             });
@@ -2855,18 +2973,35 @@ class FavorGame {
             // Favor from played cards (static + dynamic), split by family
             // for the score sheet: Adventures / Artifacts / everything else.
             // Chemical Y's chosen adventure counts double (_favorDoubled).
+            // Card-sourced ledger entries (the Lost North + Lost South map
+            // bonus) book to the family of the card that paid them.
             let advFavor = 0, artFavor = 0, otherCardFavor = 0;
-            p.playedCards.forEach(card => {
-                const f = (card.favor ? card.favor * (card._favorDoubled ? 2 : 1) : 0)
-                        + this.dynamicCardFavor(i, card);
-                if (card.type === 'adventure') advFavor += f;
-                else if (card.type === 'artifact') artFavor += f;
+            const addByFamily = (type, f) => {
+                if (type === 'adventure') advFavor += f;
+                else if (type === 'artifact') artFavor += f;
                 else otherCardFavor += f;
+            };
+            p.playedCards.forEach(card => {
+                addByFamily(card.type, (card.favor ? card.favor * (card._favorDoubled ? 2 : 1) : 0)
+                    + this.dynamicCardFavor(i, card));
             });
+            (p.favorLog || []).forEach(e => { if (e.src === 'card') addByFamily(e.type, e.amount); });
             const cardFavor = advFavor + artFavor + otherCardFavor;
 
-            // Character favor from current slider position
-            let characterFavor = p.favor;
+            // The character board — the slot the slider ended on, and nothing
+            // else. This row is captioned "your standing on the character
+            // board" and now means exactly that; it used to absorb the whole
+            // player.favor bucket, which is how a Knowledge mission's payout
+            // ended up labelled as a board standing.
+            // Anything sitting in player.favor that the ledger can't account
+            // for. Nothing in the engine writes player.favor directly any
+            // more, but a stray write must never silently vanish from the
+            // sheet — an unexplained number is a bug you can SEE, a missing
+            // one is a bug you can't. This also keeps the reconciliation
+            // invariant total (currentFavor === totalFavor) unconditional.
+            const ledgerTotal = (p.favorLog || []).reduce((n, e) => n + e.amount, 0);
+            const unattributed = (p.favor || 0) - ledgerTotal;
+            let characterFavor = this.favorFromLog(i, 'character') + unattributed;
             const char = p.character;
             if (char && char.slots && char.slots[p.sliderPosition]) {
                 const endSlot = char.slots[p.sliderPosition];
@@ -2954,9 +3089,12 @@ class FavorGame {
                 prestige: p.prestige,
                 scorn: p.scorn,
                 favor: p.favor,
-                // Favor the player HOLDS (rewards + card + mission + slot) —
+                // Favor the player HOLDS (ledger + card + mission + slot) —
                 // what the HUD shows and Req: N Favor reads (Wyatt 7/17).
                 favorHeld: this.currentFavor(i),
+                // The itemized ledger behind player.favor, so a remote seat's
+                // score sheet drills down exactly like a local one.
+                favorLog: p.favorLog || [],
                 playedCards: p.playedCards,
                 missions: p.missions,
                 completedMissions: p.completedMissions,

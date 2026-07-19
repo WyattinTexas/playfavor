@@ -2443,14 +2443,25 @@ window.addEventListener('resize', () => {
 
 // Card families — the color language of the physical game ("wisdom cards,
 // weapon cards, endeavor cards..."). Played cards stack by family, and the
-// label chip wears the family color.
+// label chip wears the family color. The order is the rulebook's own IDEAL
+// CARD PLACEMENT strip (p.11): Adventures → Artifacts → Weapons → Wisdom →
+// Endeavors → Potions.
+//
+// ⚠ Two of these colors were WRONG until 7/19 and it hid a data bug for
+// months: wisdom was painted blue and endeavor gold, when wisdom is magenta,
+// endeavor is blue, and gold belongs to mission letters. So Wyatt reporting
+// "Forbidden Lab — not an artifact (blue)" described a card the UI had no
+// blue family for, and "pink/magenta" named a color with no entry at all.
+// Hexes are lightened from the print spot-colors for legibility on the dark
+// table; the authoritative frame values live in data/cards.js's header.
 const TYPE_GROUPS = {
-    adventure: { label: 'Adventures', order: 0, color: '#3f8657' },
-    artifact:  { label: 'Artifacts',  order: 1, color: '#8a5fa8' },
-    weapon:    { label: 'Weapons',    order: 2, color: '#8d979f' },
-    wisdom:    { label: 'Wisdom',     order: 3, color: '#3f6fa8' },
-    endeavor:  { label: 'Endeavors',  order: 4, color: '#b58a3f' },
-    potion:    { label: 'Potions',    order: 5, color: '#8fae3c' },
+    adventure:      { label: 'Adventures', order: 0, color: '#3f8657' },
+    artifact:       { label: 'Artifacts',  order: 1, color: '#8a5fa8' },
+    weapon:         { label: 'Weapons',    order: 2, color: '#8d979f' },
+    wisdom:         { label: 'Wisdom',     order: 3, color: '#b0568f' },
+    endeavor:       { label: 'Endeavors',  order: 4, color: '#3f6fa8' },
+    potion:         { label: 'Potions',    order: 5, color: '#8fae3c' },
+    mission_letter: { label: 'Letters',    order: 6, color: '#b58a3f' },
 };
 function getCardTypeGroup(card) {
     return TYPE_GROUPS[card.type] ? card.type : 'misc';
@@ -6477,11 +6488,20 @@ function showScoring() {
     // counter, not playedCards. Splitting it into its own row made it
     // visible; looking at it made it obvious it should not exist at all.
     // Stones remain purely a REQUIREMENT resource.
-    const artAll = (s) => (s.artFavor || 0) + (s.otherCardFavor || 0);
+    // ⚠ 7/19: the Artifacts cell was a CATCH-ALL — artFavor + every other
+    // non-adventure card — so Forbidden Lab, Mind's Eye, Fortune Teller and
+    // Marketplace Sales all turned up under "Artifacts" (Wyatt). It reads the
+    // real artifact set now: rulebook p.8 counts "Collected Adventure &
+    // Artifact Favor" and those are the only two families that bear Favor.
+    // The one printed exception is Chemical Y's "+15 if you own Chemical X"
+    // on a potion; otherCardFavor rides with Adventures, where the rest of
+    // that card's text lives ("multiply an Adventure card's Favor by 2"), and
+    // the drill-down names it outright so the number stays traceable.
+    const advAll = (s) => (s.advFavor || 0) + (s.otherCardFavor || 0);
     const SHEET_ROWS = [
         { label: 'Missions',   key: 'missions',  drill: true, icon: 'assets/icons/mission.png',  c: '#c2a14d', v: s => s.missionFavor || 0 },
-        { label: 'Adventures', key: 'adventure', drill: true, icon: 'assets/icons/maps.png',     c: '#4c8a63', v: s => s.advFavor || 0 },
-        { label: 'Artifacts',  key: 'artifact',  drill: true, icon: 'assets/icons/philosopher.png', c: '#8a63a8', v: s => artAll(s) },
+        { label: 'Adventures', key: 'adventure', drill: true, icon: 'assets/icons/maps.png',     c: '#4c8a63', v: s => advAll(s) },
+        { label: 'Artifacts',  key: 'artifact',  drill: true, icon: 'assets/icons/philosopher.png', c: '#8a63a8', v: s => s.artFavor || 0 },
         { label: 'Character',  key: 'character', drill: true, icon: 'assets/icons/favor.png',    c: '#75695a', v: s => s.characterFavor || 0 },
         { label: 'Prestige',   key: 'prestige',  icon: 'assets/icons/prestige.png', c: '#3f9fd0', v: s => s.prestige || 0 },
         { label: 'Scorn',      key: 'scorn',     icon: 'assets/icons/scorn.png',    c: '#c0463e', v: s => s.scorn || 0, neg: true },
@@ -6575,38 +6595,81 @@ function showScoreBreakdown(pi, cat) {
 
     if (cat === 'missions') {
         title = 'Missions';
+        // A mission pays its printed favorValue PLUS whatever its success
+        // special worked out to. Four missions print 0 and pay entirely
+        // through the special — Golden Fiddle ("2 Favor for Each Charisma"),
+        // Trust of the Elders, The Shadow Guide, King of the Sky. Reading
+        // favorValue alone scored those at zero and printed "No missions
+        // completed for Favor" over a game that had just paid out (Wyatt
+        // 7/19). The ledger says what each one actually paid, and names the
+        // formula so the number is checkable against the card.
+        const led = (gp.favorLog || []).filter(e => e.src === 'mission');
+        const claimed = new Set();
         (gp.completedMissions || []).forEach(m => {
-            const v = m.favorValue || 0;
-            if (v) { items.push({ img: `assets/cards/missions/${m.filename}`, label: m.name, val: v }); total += v; }
+            const lines = led.filter((e, ei) => e.label === m.name && !claimed.has(ei));
+            led.forEach((e, ei) => { if (e.label === m.name) claimed.add(ei); });
+            const v = (m.favorValue || 0) + lines.reduce((n, e) => n + e.amount, 0);
+            if (!v) return;
+            const how = lines.map(e => e.formula).filter(Boolean).join(', ');
+            items.push({ img: `assets/cards/missions/${m.filename}`,
+                label: m.name + (how ? ` — ${how}` : ''), val: v });
+            total += v;
+        });
+        // Nothing should land here, but a mission-sourced payment must never
+        // go missing from the panel that owns it: the rows have to sum to the
+        // sheet cell no matter what paid them.
+        led.forEach((e, ei) => {
+            if (claimed.has(ei)) return;
+            items.push({ img: PURSE_ICONS.favor, label: e.label, val: e.amount });
+            total += e.amount;
         });
         if (!items.length) notes.push('No missions completed for Favor.');
-    } else if (cat === 'adventure') {
-        title = 'Adventures';
-        (gp.playedCards || []).filter(c => c.type === 'adventure').forEach(c => {
-            const v = cardFav(c);
-            items.push({ img: `assets/cards/regular/${c.filename}`, label: c.name + (c._favorDoubled ? ' (×2)' : ''), val: v });
-            total += v;
-        });
-        if (!items.length) notes.push('No Adventure cards played.');
-    } else if (cat === 'artifact') {
-        title = 'Artifacts';
-        // The sheet's Artifacts cell = artifact cards + every OTHER card's
-        // Favor. The stone conversion has its own row now (cat 'stone').
+    } else if (cat === 'adventure' || cat === 'artifact') {
+        title = cat === 'adventure' ? 'Adventures' : 'Artifacts';
+        // Rulebook p.8 counts "Collected Adventure & Artifact Favor" — those
+        // are the only two families that bear Favor, so those are the only two
+        // card rows on the sheet.
+        //
+        // Every card OF the family is listed even at +0: a held Favor card
+        // that vanishes is the worse bug (Wyatt 7/18, the Family Ring). Cards
+        // of the other four families are listed only if they actually paid,
+        // which after the 7/19 retype means Chemical Y's printed Chemical-X
+        // bonus and nothing else. That asymmetry is the whole fix — listing
+        // them unconditionally is what put Forbidden Lab, Mind's Eye, Fortune
+        // Teller and Marketplace Sales under "Artifacts" (Wyatt 7/19), and
+        // simply flipping the filter would have moved the same pile under
+        // Adventures. Between them the two panels still account for every
+        // Favor a card paid, so the rows sum to the sheet.
+        const belongs = (type, v) => type === cat
+            || (cat === 'adventure' && type !== 'artifact' && v !== 0);
         (gp.playedCards || []).forEach(c => {
-            if (c.type === 'adventure') return;
-            // NO truthiness guard: a card the player actually HELD renders its
-            // +0 rather than disappearing. Wyatt 7/18 on the Family Ring --
-            // "I had the family ring, but it didn't come up as artifacts at the
-            // end". "Where did my card go" is a worse bug than a zero.
             const v = cardFav(c);
-            items.push({ img: `assets/cards/regular/${c.filename}`, label: c.name, val: v });
+            if (!belongs(c.type, v)) return;
+            items.push({ img: `assets/cards/regular/${c.filename}`,
+                label: c.name + (c._favorDoubled ? ' (×2)' : ''), val: v });
             total += v;
         });
-        if (!items.length) notes.push('No Artifacts or Favor-bearing cards played.');
+        // Card-sourced ledger payments — the Lost North + Lost South map
+        // bonus — book to the family of the card that paid them, so the panel
+        // still sums to the cell.
+        (gp.favorLog || []).filter(e => e.src === 'card' && belongs(e.type, e.amount)).forEach(e => {
+            items.push({ img: e.file ? `assets/cards/regular/${e.file}` : PURSE_ICONS.favor,
+                label: e.label, val: e.amount });
+            total += e.amount;
+        });
+        if (!items.length) {
+            notes.push(cat === 'adventure' ? 'No Adventure cards played.'
+                : 'No Artifacts played.');
+        }
     } else if (cat === 'character') {
         title = 'Character';
-        const running = gp.favor || 0;
-        if (running) items.push({ img: PURSE_ICONS.favor, label: 'Favor earned in play (rewards & missions)', val: running });
+        // The character board, and nothing else. This row used to render the
+        // whole player.favor bucket as "Favor earned in play (rewards &
+        // missions)" — a caption that contradicted the panel's own subtitle
+        // and swallowed every mission payout, so it showed +6 on a board slot
+        // holding no Favor at all (Wyatt 7/19). Mission Favor is now in the
+        // Missions row where it belongs; what's left here is the slot you
+        // ended on.
         const char = gp.character;
         const slot = char && char.slots ? char.slots[gp.sliderPosition] : null;
         if (slot && slot.favor) {
@@ -6614,10 +6677,28 @@ function showScoreBreakdown(pi, cat) {
             items.push({ img: char ? `assets/characters/${char.filename}` : PURSE_ICONS.favor,
                 label: `${char ? char.name : 'Board'} slot bonus (${posNames[gp.sliderPosition] || 'slot'})`, val: slot.favor });
         }
+        (gp.favorLog || []).filter(e => e.src === 'character').forEach(e => {
+            items.push({ img: PURSE_ICONS.favor, label: e.label, val: e.amount });
+        });
+        // Favor the ledger can't account for — see calculateFinalScores. It
+        // should always be 0; if it isn't, it shows up here rather than
+        // quietly going missing from the total.
+        const unattributed = (gp.favor || 0)
+            - (gp.favorLog || []).reduce((n, e) => n + e.amount, 0);
+        if (unattributed) items.push({ img: PURSE_ICONS.favor, label: 'Favor earned in play', val: unattributed });
         total = items.reduce((n, x) => n + x.val, 0);
         notes.push('Your standing on the character board when the game ended.');
         if (!items.length) notes.push('No Favor from the character board.');
     } else { return; }
+
+    // Favor-bearing rows first — a panel that opens on a wall of +0 reads as
+    // "nothing counted" even when the total above it is right (Wyatt 7/19).
+    // The zeros still render: "where did my card go" is the worse bug, and
+    // that is why they were unguarded in the first place (Wyatt 7/18).
+    items.sort((a, b) => b.val - a.val);
+    if (items.some(i => i.val === 0) && items.some(i => i.val !== 0)) {
+        notes.push('Cards showing +0 paid you in skills, Power or gold — not Favor.');
+    }
 
     let ov = document.getElementById('scoreBreakdown');
     if (!ov) { ov = document.createElement('div'); ov.id = 'scoreBreakdown'; document.body.appendChild(ov); }
@@ -6654,10 +6735,14 @@ function renderStats(state) {
 // blows up to full readable size with keyword plaques beside it explaining
 // exactly what it does. Release or tap to put it down. Works with mouse too.
 
+// Wording follows the rulebook's own Card Types page (p.11). Wisdom was
+// MISSING here entirely — with 12 wisdom cards in the deck after the 7/19
+// retype, a whole family was peeking with no plaque at all.
 const PEEK_TYPE_INFO = {
-    endeavor:       ['Endeavor', 'Builds your skills.'],
+    endeavor:       ['Endeavor', 'Upgrades your character skills.'],
     weapon:         ['Weapon', 'Power for the Melee.'],
-    artifact:       ['Artifact', 'Grants lasting Favor.'],
+    artifact:       ['Artifact', 'An item desired by the Queen. Artifacts award bountiful Favor.'],
+    wisdom:         ['Wisdom', 'Insight that grants rare skills and expands your Knowledge.'],
     adventure:      ['Adventure', 'A quest that grants rich Favor.'],
     potion:         ['Potion', 'Fires off instantly when played.'],
     mission_letter: ['Mission Letter', 'Spend 1 Gold to take a mission from the pool.'],

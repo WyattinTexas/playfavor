@@ -253,7 +253,52 @@
         resolve();
       };
 
-      const delay = (ms) => new Promise(res => timers.push(setTimeout(res, ms * speed)));
+      // ── Pacing: taps hurry the show, they never skip it ──────────────
+      // Wyatt 7/19: "tapping anywhere on screen during melee advances /
+      // expedites the phase", and "expedite should be SLIGHT — it speeds the
+      // reveal along, it does not skip the whole phase. Keep the beats
+      // readable."
+      //
+      // A speed multiplier alone can't deliver that: it only touches timers
+      // that haven't started, so a tap two frames into a 2s coin-read would
+      // do nothing visible for two seconds — responsive-feeling input is the
+      // whole request. So expedite() cuts the IN-FLIGHT timeout short and
+      // nudges `rate` for the beats after it.
+      //
+      // Every cut is FLOORED. melee.css keyframes are hardcoded (it reads no
+      // --cinematic-speed), so a beat allowed to finish before its own
+      // animation lands the verdict over a still-spinning coin. The floor is
+      // the second argument to delay(), matched to the CSS duration.
+      let rate = 1;
+      let pending = null;
+      const delay = (ms, floorMs = 0) => new Promise(res => {
+        const total = ms * speed * rate;
+        const startedAt = Date.now();
+        const fire = () => { if (pending && pending.fire === fire) pending = null; res(); };
+        const id = setTimeout(fire, total);
+        timers.push(id);
+        // floorMs is NOT scaled by speed: the CSS keyframe it protects is a
+        // fixed duration (melee.css reads no --cinematic-speed). At a reduced
+        // speed a beat can already be shorter than its own animation, and the
+        // endsAt guard below then makes expedite a no-op on that beat rather
+        // than stretching it past where it would have ended anyway.
+        pending = { fire, id, startedAt, endsAt: startedAt + total, floorMs };
+      });
+      const expedite = () => {
+        rate = Math.max(0.55, rate * 0.8);      // later beats, a little quicker
+        if (!pending) return;
+        const p = pending, now = Date.now();
+        const remain = p.endsAt - now;
+        if (remain <= 130) return;               // already landing
+        // Never below the beat's own animation, and never an instant jump —
+        // a beat that vanishes reads as a glitch, not a fast-forward.
+        const target = Math.max(p.startedAt + p.floorMs, now + Math.max(120, remain * 0.35));
+        if (target >= p.endsAt) return;
+        clearTimeout(p.id);
+        p.endsAt = target;
+        p.id = setTimeout(p.fire, target - now);
+        timers.push(p.id);
+      };
       const waitContinue = (fallbackMs) => new Promise(res => {
         const done = () => { if (advanceTap === done) advanceTap = null; res(); };
         advanceTap = done;
@@ -450,7 +495,7 @@
       };
       const featureHide = async (f) => {
         f.classList.remove('go'); f.classList.add('bye');
-        await delay(380);
+        await delay(380, 380);
         f.remove();
       };
 
@@ -502,7 +547,7 @@
           dispBase[pi] = baseStart;
           refreshCount(pi, 340);
           bump(el);
-          await delay(950); if (run.killed) return;
+          await delay(950, 550); if (run.killed) return;
         } else {
           dispBase[pi] = baseStart;
           refreshCount(pi, 500);
@@ -514,7 +559,7 @@
           dispBase[pi] += vc.amount;
           refreshCount(pi, 340);
           bump(el);
-          await delay(950); if (run.killed) return;
+          await delay(950, 550); if (run.killed) return;
         }
 
         // Modifiers land as combat hits — and their SOURCE CARD joins the
@@ -529,7 +574,7 @@
             let feat = null;
             if (cu) {
               feat = featureShow(cu, `${c.name} ${/^you$/i.test(c.name) ? 'play' : 'plays'} ${step.label}!`);
-              await delay(2000); if (run.killed) { feat.remove(); return; }
+              await delay(2000, 500); if (run.killed) { feat.remove(); return; }
               flipCoin(feat.querySelector('.ms-feature-coinslot'), step.won);
             } else {
               flipCoin(calloutHost, step.won);
@@ -538,9 +583,9 @@
             // face HOLDS 2s so the result is actually readable before the card
             // leaves the stage. The float replaces the old +4/Tails callouts.
             const coinHost = feat ? feat.querySelector('.ms-feature-coinslot') : calloutHost;
-            await delay(1650); if (run.killed) { if (feat) feat.remove(); return; }
+            await delay(1650, 1600); if (run.killed) { if (feat) feat.remove(); return; }
             coinResultFloat(coinHost, step.won, step.amount);
-            await delay(2000); if (run.killed) { if (feat) feat.remove(); return; }
+            await delay(2000, 700); if (run.killed) { if (feat) feat.remove(); return; }
             if (feat) { await featureHide(feat); if (run.killed) return; }
             if (step.won) {
               dispBase[pi] += step.amount;
@@ -561,7 +606,7 @@
             // final tally floors at 0. The card then joins the queue.
             const au = stepArt(step);
             const feat = au ? featureShow(au, `${step.label} — strikes all rivals!`) : null;
-            if (feat) { await delay(2000); if (run.killed) { feat.remove(); return; } }
+            if (feat) { await delay(2000, 500); if (run.killed) { feat.remove(); return; } }
             // ALL beams fire at once — same slow, readable sweep, each with
             // its −3 (power token + amount) riding the beam — then every
             // victim's score wounds together.
@@ -675,7 +720,7 @@
           }
           tucked.forEach(t => t.classList.add('go'));
           rowEl.classList.add('out');
-          await delay(300); if (run.killed) return;
+          await delay(300, 300); if (run.killed) return;
           rowEl.innerHTML = '';
           rowEl.classList.remove('out');
         } else {
@@ -795,25 +840,51 @@
         state = 'closed'; run.killed = true;
         timers.forEach(clearTimeout);
         if (host._meleeCancel) host._meleeCancel = null;
-        host.classList.remove('active'); host.onclick = null;
+        host.classList.remove('active');
+        // All three, or the next act's melee inherits this run's swipe state.
+        host.onclick = null; host.onpointerdown = null; host.onpointerup = null;
         setTimeout(() => { host.innerHTML = ''; resolve(); }, 320 * speed);
       };
 
-      // Taps: anywhere on the stage advances the forge, not just the Continue
-      // button (Wyatt 7/18). The ONE exclusion is .ms-cardrow — it is
-      // overflow-x:auto and swipe-scrolled on phones, and a swipe that ends
-      // without enough movement still emits a click, which is the original
-      // reason taps were button-only. .ms-continue and .ms-skip need no
-      // exclusion; both already stopPropagation.
+      // Taps: anywhere on the stage, at ANY moment, does something.
+      //
+      // It used to only look like that. advanceTap is non-null solely inside
+      // waitContinue() — i.e. exactly while the Continue button is on screen
+      // — so every tap outside that window was a silent no-op: ~58% of a
+      // three-player melee, including 6.5 inert seconds at the top. And the
+      // blanket .ms-cardrow exclusion below was a FULL-WIDTH 126px band
+      // across the bottom of a phone that moved as the row filled and
+      // emptied, so the same gesture worked or didn't 12px apart. Together
+      // that is exactly what Wyatt reported on 7/19: "the Continue button is
+      // clickable but the rest of the screen is not... inconsistent and feels
+      // broken."
+      //
+      // Now: Continue live → advance. Otherwise → expedite the beat in
+      // flight. The card row still swallows SWIPES (it is overflow-x:auto and
+      // a drag emits a click on release) but no longer swallows presses.
+      // .ms-continue and .ms-skip need no exclusion; both stopPropagation.
       // No debounce is needed: waitContinue's done() nulls advanceTap before
-      // resolving, so a double-tap no-ops for free. The coronation is likewise
-      // safe without a guard — state is 'playing' from the clash through
-      // markRevealed(), but advanceTap is null across that whole span.
-      // A tap on the final result closes; Skip ▸▸ jumps to it.
-      host.onclick = (e) => {
-        if (e.target.closest && e.target.closest('.ms-cardrow')) return;
-        if (state === 'playing') { if (advanceTap) advanceTap(); return; }
-        if (state === 'revealed' && Date.now() - revealedAt >= revealHoldMs) close();
+      // resolving, so a double-tap no-ops for free.
+      let rowSwiped = false, downInRow = false, downX = 0, downY = 0;
+      host.onpointerdown = (e) => {
+        downInRow = !!(e.target.closest && e.target.closest('.ms-cardrow'));
+        downX = e.clientX; downY = e.clientY; rowSwiped = false;
+      };
+      host.onpointerup = (e) => {
+        rowSwiped = downInRow
+          && (Math.abs(e.clientX - downX) > 8 || Math.abs(e.clientY - downY) > 8);
+      };
+      host.onclick = () => {
+        if (state === 'closed') return;
+        if (rowSwiped) { rowSwiped = false; return; }   // that was a scroll
+        // The coronation hold is deliberate (Wyatt 7/18) — expedite must
+        // never shorten it, so 'revealed' returns either way.
+        if (state === 'revealed') {
+          if (Date.now() - revealedAt >= revealHoldMs) close();
+          return;
+        }
+        if (advanceTap) { advanceTap(); return; }
+        expedite();
       };
       skipEl.onclick = (e) => { e.stopPropagation(); if (state === 'playing') finalize(); };
 
@@ -848,11 +919,11 @@
         showResults();
         await delay(350); if (run.killed) return;
         revealTier(2, false);
-        await delay(1000); if (run.killed) return;
+        await delay(1000, 600); if (run.killed) return;
         revealTier(1, false);
-        await delay(1050); if (run.killed) return;
+        await delay(1050, 600); if (run.killed) return;
         revealTier(0, true);
-        await delay(1000); if (run.killed) return;
+        await delay(1000, 600); if (run.killed) return;
         markRevealed();
         if (autoCloseMs) {
           await delay(autoCloseMs);
