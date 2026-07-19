@@ -45,8 +45,7 @@ const SPECIAL_DESCRIPTIONS = {
     "sacred_chest":                  "Unlocks the Sacred Chest for treasure.",
     "knowledge_x5":                  "Gain 5 Knowledge!",
     "favor_per_knowledge_x2":        "Favor equal to your Knowledge x2!",
-    "philosopher_stone_x10":         "10x Philosopher's Stone conversion!",
-    "minds_eye_x2_philosopher_stone_x5": "2x Mind's Eye + 5x Philosopher's Stone!",
+    "favor_per_potion_x5":            "5 Favor for each Potion you have!",
     "map":                           "A fragment of the ancient map.",
     "king_of_the_sky":               "King of the Sky -- dominates Melee!",
     "defend_the_throne":             "Defends the throne from all challengers!",
@@ -6470,21 +6469,19 @@ function showScoring() {
     // The score sheet from the box — one color-coded grid, heirs across,
     // categories down, tallied the way the table does it after a real game
     // (Missions / Adventures / Artifacts / Character / Prestige / Scorn).
-    // Artifacts carries every non-adventure card's favor. The Philosopher's
-    // Stone gold conversion used to be folded in here too, which is why Wyatt
-    // kept seeing the Stone "sticking itself in there" on the Artifacts row of
-    // players who never held the card: the conversion keys off the fungible
-    // stone COUNTER (character-board slots, adventure cards, Sacred Chest x10,
-    // Secret Lab x5, mission rewards), never off playedCards -- and since
-    // stones started stacking on 7/18 that counter is non-zero for most
-    // players at end of game. It is a gold exchange, not an artifact, so it
-    // gets its own row and says what it is. The columns still sum to Total.
+    // Artifacts carries every non-adventure card's favor.
+    // ⚠ The Philosopher's Stone gold conversion is GONE (Wyatt 7/18: "that's
+    // not a mechanic in the game"). It used to be folded into this cell,
+    // which is what he first saw as the Stone "sticking itself in there" on
+    // players who never held the card -- it keyed off the fungible token
+    // counter, not playedCards. Splitting it into its own row made it
+    // visible; looking at it made it obvious it should not exist at all.
+    // Stones remain purely a REQUIREMENT resource.
     const artAll = (s) => (s.artFavor || 0) + (s.otherCardFavor || 0);
     const SHEET_ROWS = [
         { label: 'Missions',   key: 'missions',  drill: true, icon: 'assets/icons/mission.png',  c: '#c2a14d', v: s => s.missionFavor || 0 },
         { label: 'Adventures', key: 'adventure', drill: true, icon: 'assets/icons/maps.png',     c: '#4c8a63', v: s => s.advFavor || 0 },
         { label: 'Artifacts',  key: 'artifact',  drill: true, icon: 'assets/icons/philosopher.png', c: '#8a63a8', v: s => artAll(s) },
-        { label: 'Gold Exchange', key: 'stone',  drill: true, icon: 'assets/icons/philosopher.png', c: '#b08a3e', v: s => s.stoneFavor || 0 },
         { label: 'Character',  key: 'character', drill: true, icon: 'assets/icons/favor.png',    c: '#75695a', v: s => s.characterFavor || 0 },
         { label: 'Prestige',   key: 'prestige',  icon: 'assets/icons/prestige.png', c: '#3f9fd0', v: s => s.prestige || 0 },
         { label: 'Scorn',      key: 'scorn',     icon: 'assets/icons/scorn.png',    c: '#c0463e', v: s => s.scorn || 0, neg: true },
@@ -6606,28 +6603,6 @@ function showScoreBreakdown(pi, cat) {
             total += v;
         });
         if (!items.length) notes.push('No Artifacts or Favor-bearing cards played.');
-    } else if (cat === 'stone') {
-        title = 'Gold Exchange';
-        // Not an artifact and never was: the Philosopher's Stone tally turns
-        // your leftover Gold into Favor at the end of the game. It comes from
-        // board slots, adventure cards and mission rewards as well as the
-        // artifact itself, which is exactly why it does not belong in the
-        // Artifacts cell.
-        const stones = gp.philosopherStone || 0;
-        if (stones > 0 && (gp.gold || 0) > 0) {
-            items.push({
-                img: 'assets/icons/philosopher.png',
-                label: `${gp.gold} Gold × ${stones} Philosopher's Stone`,
-                val: gp.gold * stones,
-            });
-            total += gp.gold * stones;
-        } else if (stones > 0) {
-            notes.push(`${stones} Philosopher's Stone, but no Gold left to convert.`);
-        } else if ((gp.gold || 0) > 0) {
-            notes.push(`${gp.gold} Gold, but no Philosopher's Stone to convert it.`);
-        } else {
-            notes.push('No Gold and no Philosopher\'s Stone.');
-        }
     } else if (cat === 'character') {
         title = 'Character';
         const running = gp.favor || 0;

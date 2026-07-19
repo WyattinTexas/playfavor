@@ -91,7 +91,7 @@ for (const c of CARDS) {
   if (grants.prestige !== (r.prestige || 0)) flag(label, `prestige: audit ${grants.prestige} vs data ${r.prestige || 0}`);
   const dataFavor = (c.favor || 0) + (r.favor || 0);
   if (grants.favor !== dataFavor) flag(label, `favor: audit ${grants.favor} vs data ${dataFavor}`);
-  if (grants.mindsEye && !['minds_eye', 'minds_eye_x2', 'minds_eye_x3', 'minds_eye_x5', 'The Shadow Guide', 'minds_eye_x2_philosopher_stone_x5'].includes(c.special))
+  if (grants.mindsEye && !['minds_eye', 'minds_eye_x2', 'minds_eye_x3', 'minds_eye_x5', 'The Shadow Guide'].includes(c.special))
     flag(label, `grants ${grants.mindsEye} Mind's Eye but special is '${c.special}'`);
   if (!grants.mindsEye && c.special === 'minds_eye')
     flag(label, `special 'minds_eye' GRANTS a Mind's Eye the audit doesn't give`);

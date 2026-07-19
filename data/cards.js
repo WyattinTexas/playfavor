@@ -307,7 +307,7 @@ window.FAVOR_DATA.cards = [
 
   { id: cid(), name: "Secret Lab", audit: "5 Favor for each Potions Card you have, Req: 2 Mind's Eye,Act 3", filename: "Secret Lab Card.jpg", act: 3, type: "artifact",
     cost: null, skills: [], requirements: ["minds_eye", "minds_eye"], rewards: {},
-    special: "minds_eye_x2_philosopher_stone_x5" },
+    special: "favor_per_potion_x5" },
 
   { id: cid(), name: "Royal Hilt", audit: "1 Favor for each Power your left & right neighbor have, Req: 2 Power & 1 Mind's Eye, Act 3", filename: "Golden Snitch Card.jpg", act: 3, type: "weapon",
     cost: null, skills: [], requirements: ["power", "power", "minds_eye"], rewards: {}, special: "favor_per_neighbor_power" },

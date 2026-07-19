@@ -654,9 +654,18 @@
     // while payouts stay a human race. It also defuses the 22:00 ET audit
     // hazard instead of escalating it: a run straddling the boundary can no
     // longer crown a persona.
+    // ⚠⚠ `forPodium` also drops TEST RESIDUE, and that is not theoretical:
+    // on 2026-07-18 six 'Audit Herald' rows sat above every real player but
+    // the top two, and settleDue paid one of them BRONZE — 10 Stars and a
+    // crown that belonged to a human (TheFavorite, best 45). The boards
+    // themselves had always filtered these by name via cleanBoardRows, so the
+    // rows were invisible while still being eligible for payouts. Settlement
+    // has to apply the same filter the display does, because a crown is
+    // worth more than a board row.
     function podiumSort(scores, forPodium) {
         return Object.entries(scores || {})
-            .filter(([, s]) => !(forPodium && s && s.persona))
+            .filter(([u, s]) => !(forPodium && s
+                && (s.persona || TEST_NAMES.test((s.name || '').trim()) || /^uaudit/.test(u))))
             .map(([u, s]) => ({ uid: u, name: s.name, best: s.best, at: s.at || 0, persona: !!(s && s.persona) }))
             .sort((a, b) => (b.best - a.best) || (a.at - b.at));   // ties → earliest
     }

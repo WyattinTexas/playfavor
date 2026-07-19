@@ -99,7 +99,25 @@
     // (which also inflated requirement checks), and grantSlotStones' once-per
     // -game gate is a plain object rather than a Set that no JSON round-trip
     // could survive.
-    const MPV = 14;   // 14: Archeus victims choose their weapon (+ 7/18 rules)
+    // 15 (7/18 late): mission success rewards that grant SKILLS now resolve to
+    // a FIXED POINT. A mission completed this phase puts its skills on the
+    // table for every sibling still resolving, but the old single pass only
+    // chained them in whatever order player.missions happened to sit in —
+    // acquisition order, which the player does not control. Mounted Champion
+    // (+3 Power) before Champion of Legend (needs 8) completed BOTH; the same
+    // two the other way round failed Champion of Legend outright. A v14 client
+    // resolves one sweep and a v15 client resolves to convergence, so the two
+    // disagree about which missions completed — completedMissions, favor,
+    // skills and every downstream score fork from that moment.
+    // 15 also removes an INVENTED scoring rule: leftover Gold used to convert
+    // to Favor at game end (gold x philosopherStone). No card prints it —
+    // every Philosopher's Stone reference on every card is a REQUIREMENT or a
+    // grant of the token. It dominated once stones stacked (98 of one AI's
+    // 121 points). And Secret Lab now scores its printed "5 Favor for each
+    // Potions Card" instead of granting +2 Mind's Eye, +2 Knowledge and +5
+    // stones — a different card entirely. A v14 client scores every one of
+    // these differently, so final standings would disagree outright.
+    const MPV = 15;   // 15: mission skill grants chain; gold does not buy Favor
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

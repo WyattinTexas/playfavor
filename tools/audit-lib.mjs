@@ -35,7 +35,8 @@ export const CARD_TEXT_SPECIALS = {
   // opposite sign — plus skills:["power"] and 1+1 requirements against 4+4+
   // minds_eye); that divergence is fixed in the same commit.
   'Archeus': 'discard_opponent_weapon',           // all others discard 1 weapon
-  'Family Ring': 'favor_per_knowledge_x2',        // Favor = your Knowledge ×2
+  'Family Ring': 'favor_per_knowledge_x2',        // Favor = your Knowledge x2
+  'Secret Lab': 'favor_per_potion_x5',            // 5 Favor per Potion card
 };
 
 export const MISSION_SUCCESS_SPECIALS = {

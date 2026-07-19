@@ -444,7 +444,7 @@ class FavorGame {
         for (const c of player.playedCards) {
             if (c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_and_philosopher') count += 1;
             if (c.special === 'minds_eye_x5') count += 5;
-            if (c.special === 'minds_eye_x2' || c.special === 'minds_eye_x2_philosopher_stone_x5') count += 2;
+            if (c.special === 'minds_eye_x2') count += 2;
             if (c.special === 'minds_eye_x3') count += 3;
         }
         count += player.bonusMindsEye || 0; // mission success rewards
@@ -930,11 +930,9 @@ class FavorGame {
             if (c.special === 'knowledge_x5') {
                 player.skills.knowledge = (player.skills.knowledge || 0) + 4;
             }
-            // Family Ring grants NO skill -- it is a scoring card. See the
-            // favor_per_knowledge_x2 case in dynamicCardFavor.
-            if (c.special === 'minds_eye_x2_philosopher_stone_x5') {
-                player.skills.knowledge = (player.skills.knowledge || 0) + 2;
-            }
+            // Family Ring and Secret Lab grant NO skills -- both are scoring
+            // cards. See favor_per_knowledge_x2 / favor_per_potion_x5 in
+            // dynamicCardFavor.
             if (c.special === 'charisma_or_prospecting') {
                 player.flexSkills.push(['charisma', 'prospecting']);
             }
@@ -1266,34 +1264,22 @@ class FavorGame {
             // --- Philosopher's Stone variants (end-of-game gold→favor) ---
 
             case 'philosopher_stone':
-                // 1:1 gold→favor at end of game. Card grants STACK — each
-                // played stone card adds its stones (3 cards = 3 stones); a
-                // card only ever resolves once, so += is safe here.
+                // The token itself. It is a REQUIREMENT resource — Chemical Y,
+                // Mind Warper, Gold Luster, Family Ring, Duplicating Goo and
+                // Reunited each want one, and Quest for the Stones wants
+                // THREE, which is why the tally has to stack (Wyatt 7/18: "we
+                // had 3 and it registered as 1"). It is not worth Favor by
+                // itself; the gold-conversion scoring was never a real rule.
                 player.philosopherStone = (player.philosopherStone || 0) + 1;
-                this.addLog(`${player.name} gains Philosopher's Stone (1:1 gold→favor at game end)`);
+                this.addLog(`${player.name} gains a Philosopher's Stone`);
                 break;
 
-            case 'philosopher_stone_x10':
-                // Sacred Chest: 10 more stones (10:1 gold→favor at game end)
-                player.philosopherStone = (player.philosopherStone || 0) + 10;
-                this.addLog(`${player.name} gains Sacred Chest (10:1 gold→favor at game end)`);
-                // Also check Forgotten Temple combo (works both directions)
-                {
-                    const hasForgottenTemple = player.playedCards.some(c => c.name === 'Forgotten Temple');
-                    if (hasForgottenTemple && !player._sacredChestComboAwarded) {
-                        player._sacredChestComboAwarded = true;
-                        player.favor += 10;
-                        this.addLog(`${player.name}'s Sacred Chest + Forgotten Temple combo: +10 Favor!`);
-                    }
-                }
-                break;
-
-            case 'minds_eye_x2_philosopher_stone_x5':
-                // Secret Lab: +2 Knowledge AND philosopher_stone at 5:1
-                player.skills.knowledge = (player.skills.knowledge || 0) + 2;
-                player.philosopherStone = (player.philosopherStone || 0) + 5;
-                this.addLog(`${player.name}'s Secret Lab: +2 Knowledge, Philosopher's Stone (5:1)`);
-                break;
+            // ⚠ 'philosopher_stone_x10' removed 7/18: DEAD CODE that no card
+            // ever used. Its comment claimed Sacred Chest, but Sacred Chest is
+            // favor_per_wisdom_x8, exactly as printed ("8 Favor for each
+            // Wisdom Card you have"). The ten stones it purported to grant
+            // were the source of the "Sacred Chest x10" claim — there is no
+            // such grant, and there never was.
 
             // --- Mind's Eye (knowledge bonus) ---
 
@@ -2039,58 +2025,71 @@ class FavorGame {
             // out) before any failure penalty lands. A failure that discards
             // played cards must never strip the skills a sibling mission in
             // this same phase was counting on.
+            //
+            // ⚠ AND the success pass runs to a FIXED POINT. A mission's
+            // success rewards can grant SKILLS, and those skills are on the
+            // table for every sibling still resolving in this same phase.
+            // Wyatt 7/18: "the first mission you choose gives you power if
+            // you're successful... the attributes I gained from the first
+            // mission didn't come into account for the later missions, which
+            // it is supposed to."
+            //
+            // Grants DID chain — but only in whatever order player.missions
+            // happened to sit in, which is acquisition order and not anything
+            // the player controls. Mounted Champion (+3 Power) before Champion
+            // of Legend (needs 8 Power) passed BOTH; the same two missions the
+            // other way round failed Champion of Legend outright. Sweeping
+            // until a sweep completes nothing new is order-independent, so the
+            // player always gets every completion they earned and every client
+            // agrees. Success rewards never take a skill away, and `resolved`
+            // only grows, so this always converges.
             const failed = [];
             const resolved = new Set();
-            player.missions.forEach((mission, mi) => {
-                if (!mission.activationRound || mission.activationRound > this.currentAct) return;
-                // A mission is FORCED at the end of its due act. Before that it
-                // is still the holder's call: attempt it now, or hold it. The
-                // act-boundary chooser sets _attemptNow, and an attempted
-                // mission then walks exactly the same road as a due one — the
-                // same two-pass ordering, the same borrow rescue, the same
-                // ceremony line. (Set it and forget it: the mission leaves
-                // player.missions either way, so the flag cannot linger.)
-                const forced = this.missionDueAct(mission) <= this.currentAct;
-                const due = forced || mission._attemptNow === true;
+            // ⚠ `_remoteHuman`, never `pi === 0`: pi is the LOCAL seat index,
+            // so a remote human is 0 on their own client and non-zero on
+            // everyone else's. Keying rules on pi is a lockstep fork.
+            const humanSeat = pi === 0 || player._remoteHuman;
+            const inWindow = (m) => !!m.activationRound && m.activationRound <= this.currentAct;
+            // FORCED at the end of its due act; before that it is still the
+            // holder's call (the act-boundary chooser sets _attemptNow, and an
+            // attempted mission then walks exactly the same road as a due one).
+            const isDue = (m) => this.missionDueAct(m) <= this.currentAct || m._attemptNow === true;
 
-                if (!due) {
-                    // In its window but not due, and not attempted. A HUMAN seat
-                    // decides this at the act boundary — never auto-resolved for
-                    // them. Only a true AI seat banks a met mission for itself;
-                    // an unmet one is HELD, never auto-failed.
-                    //
-                    // ⚠ The old test here was a bare `pi !== 0`, which was a
-                    // LOCKSTEP FORK: a remote human is seat 0 on their OWN client
-                    // (held) but pi !== 0 on everyone else's (auto-banked). The
-                    // same act-boundary state resolved two different ways and the
-                    // clients diverged. `_remoteHuman` is what tells them apart.
-                    const humanSeat = pi === 0 || player._remoteHuman;
-                    if (!humanSeat) {
-                        const { success, details } = this.checkMissionRequirements(pi, mission);
-                        if (success) {
-                            const deltas = measure(pi, () => this.applyMissionRewards(pi, mission));
-                            player.completedMissions.push(mission);
-                            resolved.add(mission);
-                            playerResults.push({ mission, success: true, details, deltas });
-                        }
-                    }
-                    return;
-                }
-
-                const { success, details } = this.checkMissionRequirements(pi, mission);
-                if (success) {
+            let progressed = true;
+            while (progressed) {
+                progressed = false;
+                player.missions.forEach((mission) => {
+                    if (resolved.has(mission) || !inWindow(mission)) return;
+                    // Not due and not attempted: a HUMAN seat decides this at
+                    // the act boundary, never automatically. Only a true AI
+                    // seat banks a met mission for itself; an unmet one is
+                    // HELD, never auto-failed.
+                    if (!isDue(mission) && humanSeat) return;
+                    const { success, details } = this.checkMissionRequirements(pi, mission);
+                    if (!success) return;
                     resolved.add(mission);
                     const deltas = measure(pi, () => this.applyMissionRewards(pi, mission));
                     player.completedMissions.push(mission);
                     playerResults.push({ mission, success: true, details, deltas });
-                } else {
+                    progressed = true;   // its rewards may unlock a sibling
+                });
+            }
+
+            // Fixed point reached — nothing else can be met on skills alone.
+            // ONLY NOW may a due mission borrow or fail.
+            player.missions.forEach((mission, mi) => {
+                if (resolved.has(mission) || !inWindow(mission) || !isDue(mission)) return;
+                // Re-read the shortfall against the FINAL state, so a beat
+                // reports what they were actually short of at the end.
+                const { details } = this.checkMissionRequirements(pi, mission);
+                {
                     // Unmet at its due date — can borrowed skills save it?
                     // Borrowing is a CHOICE, never automatic: the human gets
                     // a chooser (endActPhases pauses the phase, same pattern
                     // as _pendingPenaltyDiscard); the AI borrows only when
                     // the mission's favor clearly beats the gold fee.
                     const plan = this.missionBorrowPlan(pi, mission);
-                    if (plan && (pi === 0 || player._remoteHuman)) {
+                    if (plan && humanSeat) {
                         player._pendingMissionBorrows = player._pendingMissionBorrows || [];
                         player._pendingMissionBorrows.push(mission);
                         return; // stays in player.missions; the chooser/stream resolves it
@@ -2099,7 +2098,7 @@ class FavorGame {
                     // worth at least the fee is taken; generic bots still
                     // demand a clear 2× win. Judgment only — no stat cheats.
                     const borrowBar = plan ? plan.cost * (player._personaAI ? 1 : 2) : Infinity;
-                    if (plan && pi !== 0 && this.missionFavorEstimate(pi, mission) >= borrowBar) {
+                    if (plan && !humanSeat && this.missionFavorEstimate(pi, mission) >= borrowBar) {
                         const deltas = measure(pi, () => {
                             player.gold -= plan.cost;
                             plan.borrowFrom.forEach(b => {
@@ -2825,6 +2824,12 @@ class FavorGame {
                 return (p.skills.survival || 0) + (p.skills.charisma || 0) + (p.skills.prospecting || 0);
             case 'favor_per_wisdom_x8':
                 return 8 * p.playedCards.filter(c => c.type === 'wisdom').length;
+            case 'favor_per_potion_x5':
+                // Secret Lab, exactly as printed: "5 Favor for each Potions
+                // Card you have". It was implemented as +2 Mind's Eye, +2
+                // Knowledge and +5 Philosopher's Stones -- a different card
+                // entirely, on a card that already REQUIRES 2 Mind's Eye.
+                return 5 * p.playedCards.filter(c => c.type === 'potion').length;
             case 'favor_per_neighbor_power': {
                 // Effective power — the pairing counts here too.
                 return this.effectiveSkill((playerIndex + n - 1) % n, 'power')
@@ -2868,16 +2873,21 @@ class FavorGame {
                 if (endSlot.favor) characterFavor += endSlot.favor;
             }
 
-            // Philosopher's Stone: convert remaining Gold into Favor
-            // Uses the best conversion rate the player has acquired
-            let stoneFavor = 0;
-            if (p.philosopherStone && p.philosopherStone > 0 && p.gold > 0) {
-                stoneFavor = p.gold * p.philosopherStone;
-                this.addLog(`${p.name}'s Philosopher's Stone: ${p.gold} Gold × ${p.philosopherStone} = ${stoneFavor} Favor`);
-            }
+            // ⚠ REMOVED 7/18 (Wyatt: "that's not a mechanic in the game").
+            // Scoring used to convert leftover Gold into Favor at the end of
+            // the game: stoneFavor = gold x philosopherStone. NO CARD PRINTS
+            // THAT. Every Philosopher's Stone reference on every card is
+            // either a REQUIREMENT ("Req: 1 Philosopher's Stone") or a grant
+            // of the token itself — the tally is a resource that gates cards
+            // and missions, never a scoring multiplier. It was house-ruled in,
+            // and once stones started stacking it dominated: in Wyatt's game
+            // an AI scored 98 of its 121 points from that one line.
+            // The nearest REAL mechanics are printed on specific cards and are
+            // untouched: Gold Luster turns your gold into Prestige, and
+            // Duplicating Goo doubles your gold.
 
             // Total score
-            const totalFavor = missionFavor + cardFavor + characterFavor + stoneFavor;
+            const totalFavor = missionFavor + cardFavor + characterFavor;
             const totalPrestige = p.prestige;
             const totalScorn = p.scorn;
             const finalScore = totalFavor + totalPrestige - totalScorn;
@@ -2891,7 +2901,6 @@ class FavorGame {
                 artFavor,
                 otherCardFavor,
                 characterFavor,
-                stoneFavor,
                 totalFavor,
                 prestige: totalPrestige,
                 scorn: totalScorn,

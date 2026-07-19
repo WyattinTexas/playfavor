@@ -212,10 +212,36 @@ console.log('── Reunited: credits a Philosopher\'s Stone and scores its gold
   playCard(g, 0, 'Reunited');
   ok(p.playedCards.some(c => c.name === 'Reunited'), 'Reunited played via map');
   ok((p.philosopherStone || 0) >= 1, `Reunited credits a Philosopher's Stone (${p.philosopherStone})`);
+  // ⚠ Gold does NOT convert to Favor (Wyatt 7/18: "that's not a mechanic in
+  // the game"). Scoring used to add gold x philosopherStone; no card prints
+  // it. Holding gold and stones must be worth exactly nothing at scoring —
+  // the tally's only job is gating requirements.
   g.phase = 'scoring';
   p.gold = 6;
-  const mine = g.calculateFinalScores().find(s => s.name === 'You');
-  ok(mine.stoneFavor === 6, `stone converts 6 Gold → 6 Favor at game end (${mine.stoneFavor})`);
+  const withGold = g.calculateFinalScores().find(s => s.name === 'You');
+  p.gold = 0;
+  const noGold = g.calculateFinalScores().find(s => s.name === 'You');
+  ok(withGold.stoneFavor === undefined,
+    'the invented stoneFavor column is gone from the score sheet');
+  ok(withGold.finalScore === noGold.finalScore,
+    `6 Gold alongside a Philosopher's Stone scores NOTHING (${withGold.finalScore} vs ${noGold.finalScore})`);
+}
+
+console.log("── Philosopher's Stones gate REQUIREMENTS, and nothing else");
+{
+  // Their whole job: Chemical Y, Mind Warper, Gold Luster, Family Ring,
+  // Duplicating Goo and Reunited each want one; Quest for the Stones wants
+  // THREE — which is the real reason the tally has to stack.
+  const g = newGame();
+  const p = g.players[0];
+  const quest = { ...missionByName('Quest for the Stones') };
+  ok((quest.requirements || []).filter(r => r === 'philosopher_stone').length === 3,
+    'Quest for the Stones asks for three stones');
+  p.philosopherStone = 2;
+  ok(!g.probeMissionRequirements(0, quest).success, 'two stones is not enough');
+  p.philosopherStone = 3;
+  ok(g.probeMissionRequirements(0, quest).success,
+    'three stones meets it — this is what stacking is FOR');
 }
 
 console.log('── Marketplace Sales: 2 Gold per Alchemy around the table');
@@ -2229,6 +2255,46 @@ console.log('\n— grantSlotStones survives a JSON round-trip —');
     'and STILL pays nothing after a JSON round-trip (a Set would have reset here)');
   ok(revived.philosopherStone === 1,
     `no re-grant across serialization (${revived.philosopherStone})`);
+}
+
+console.log('\n— Mission skill grants chain, in ANY order (Wyatt 7/18) —');
+{
+  // "The first mission you choose gives you power if you're successful. That
+  // happened, and the attributes I gained from the first mission didn't come
+  // into account for the later missions, which it is supposed to."
+  //
+  // Grants DID chain — but only in whatever order player.missions happened to
+  // sit in, which is acquisition order and nothing the player controls.
+  // Mounted Champion: 7 Survival -> +3 Power.  Champion of Legend: 8 Power.
+  const rig = (order) => {
+    const g = newGame();
+    g.currentAct = 3;
+    const p = g.players[0];
+    p.skills = { survival: 7, charisma: 0, alchemy: 0, prospecting: 0, knowledge: 5, power: 5 };
+    p.missions = order.map(n => ({ ...missionByName(n) }));
+    p.missions.forEach(m => { m.activationRound = 1; m.act = 1; });   // due NOW
+    const mine = g.resolveMissions().find(r => r.playerIndex === 0).results;
+    return { g, p, mine, passed: mine.filter(r => r.success).map(r => r.mission.name).sort() };
+  };
+  const a = rig(['Mounted Champion', 'Champion of Legend']);
+  const b = rig(['Champion of Legend', 'Mounted Champion']);
+  ok(a.passed.length === 2,
+    `grant-first: both complete (${a.passed.join(', ')})`);
+  ok(b.passed.length === 2,
+    `grant-SECOND: both still complete — order must not decide it (${b.passed.join(', ')})`);
+  ok(a.passed.join() === b.passed.join(),
+    'the same missions resolve the same way whichever order they were acquired');
+  ok(a.p.skills.power === 12 && b.p.skills.power === 12,
+    `and the +3 Power lands either way (${a.p.skills.power} / ${b.p.skills.power})`);
+
+  // A mission that CANNOT be met even after every grant still fails, and the
+  // shortfall it reports is measured against the FINAL state.
+  const c = rig(['Mounted Champion', 'Champion of Legend', 'Great Scholar']);
+  const scholar = c.mine.find(r => r.mission.name === 'Great Scholar');
+  ok(scholar && !scholar.success,
+    'a genuinely unreachable mission still fails after the fixed point');
+  ok(scholar && (scholar.details.missing || []).length > 0,
+    `and reports what it was short of at the END (${(scholar.details.missing || []).join(', ')})`);
 }
 
 console.log('\n— Archeus: the VICTIM picks the weapon (Wyatt 7/18) —');

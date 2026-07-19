@@ -3100,7 +3100,7 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
           return c ? { t: c.textContent, bad: c.classList.contains('bad'), drill: c.classList.contains('drill') } : null;
         };
         return { character: cell('Character'), scorn: cell('Scorn'),
-                 prestige: cell('Prestige'), stone: cell('Gold Exchange'),
+                 prestige: cell('Prestige'), stone: cell("Philosopher's Stone"),   // must be absent
                  artifacts: cell('Artifacts') };
       })(),
       totals: g ? [...g.querySelectorAll('.vsg-cell.total b')].map(b => b.dataset.total) : [],
@@ -3117,24 +3117,24 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
   ok(win.rays, 'gold rays crown a human win');
   ok(win.personal === 'The realm bows before its new sovereign.', `win personal line (${win.personal})`);
   ok(!win.oldH1, '"The Queen Has Decided" h1 is gone');
-  // Gold Exchange is its OWN row as of 7/18. The Philosopher's Stone gold
-  // conversion used to be folded into Artifacts, so it showed up on the
-  // Artifacts line of players who had never held the card — it keys off the
-  // fungible stone counter, not playedCards (Wyatt: "Philosopher's Stone
-  // keeps sticking itself in there, even though that's not really...").
-  ok(win.rowLabels.join('|') === 'Missions|Adventures|Artifacts|Gold Exchange|Character|Prestige|Scorn|Total',
+  // ⚠ NO stone row. The gold x stones -> Favor conversion was removed
+  // entirely on 7/18 — Wyatt: "that's not a mechanic in the game". No card
+  // prints it; every Philosopher's Stone reference is a requirement or a
+  // grant of the token. Splitting it out of Artifacts is what made it
+  // visible enough to recognise as invented.
+  ok(win.rowLabels.join('|') === 'Missions|Adventures|Artifacts|Character|Prestige|Scorn|Total',
     `score sheet rows as printed (${win.rowLabels.join(', ')})`);
   ok(win.heads.length === 3 && win.heads[0].name === 'You' && /\bwin\b/.test(win.heads[0].cls)
     && win.heads[0].trophy && win.heads[0].face,
     '1st column: You — portrait, trophy, champion glow');
   ok(win.heads.every(h => h.face), 'every heir wears their portrait');
-  ok(win.cells === 24, `8 rows × 3 heirs of cells (${win.cells})`);
+  ok(win.cells === 21, `7 rows × 3 heirs of cells (${win.cells})`);
   ok(win.byLabel.character && win.byLabel.character.t === '100',
     `rigged favor lands in the Character row (${(win.byLabel.character || {}).t})`);
   ok(win.byLabel.scorn && win.byLabel.scorn.t === '−2' && win.byLabel.scorn.bad,
     `scorn reads −2 in red (${(win.byLabel.scorn || {}).t})`);
-  ok(win.byLabel.stone && win.byLabel.stone.drill,
-    'the Gold Exchange row exists and drills down like the other Favor rows');
+  ok(!win.byLabel.stone && !win.rowLabels.some(l => /stone|gold exchange/i.test(l)),
+    'no Philosopher\'s Stone / Gold Exchange row — gold does not convert to Favor');
   ok(win.totals.join(',') === '105,10,5', `totals = favor + prestige − scorn (${win.totals.join(',')})`);
   ok(win.noGoldCol, 'no gold tiebreaker column');
   ok(/^\+\d\.\d\d$/.test(win.ratingDelta),
@@ -5648,6 +5648,12 @@ async function startSeeded(page, seedRig) {
     // The persona posts the HIGHEST score of the window. If it were eligible
     // it would take gold outright.
     await db.ref(`favor/daily/${key}/scores/${p}`).set({ name: 'Audit Persona', best: 9999, at: 1, persona: true });
+    // ⚠ TEST RESIDUE, scoring between the persona and the human. On
+    // 2026-07-18 six leftover 'Audit Herald' rows outranked every real player
+    // but two and settleDue paid one of them BRONZE — a crown and 10 Stars
+    // taken from a human. The boards had always filtered these by name;
+    // settlement had not.
+    await db.ref(`favor/daily/${key}/scores/uauditresidue1`).set({ name: 'Audit Herald', best: 5000, at: 1 });
     await db.ref(`favor/daily/${key}/scores/${h}`).set({ name: 'Audit Sovereign', best: 12, at: 2 });
     await FLB.settleDue();
     const settled = (await db.ref(`favor/settled/${key}`).get()).val() || {};
@@ -5655,6 +5661,7 @@ async function startSeeded(page, seedRig) {
     const hrow = (await db.ref(`favor/players/${h}`).get()).val() || {};
     return {
       podium: (settled.podium || []).map(x => x.uid),
+      podiumNames: (settled.podium || []).map(x => x.name),
       topName: (settled.podium || [])[0] ? settled.podium[0].name : null,
       personaStars: prow.stars === undefined ? null : prow.stars,
       personaChamps: prow.champs || null,
@@ -5666,6 +5673,8 @@ async function startSeeded(page, seedRig) {
 
   ok(!crown.podium.includes(P_UID),
     `the persona is filtered OUT of the podium despite the top score (podium: ${crown.podium.length})`);
+  ok(!crown.podiumNames.some(n => /audit herald/i.test(n || '')),
+    `and so is TEST RESIDUE, which really did steal a human's bronze on 7/18 (${crown.podiumNames.join(', ')})`);
   ok(crown.podium.includes(H_UID) && crown.topName === 'Audit Sovereign',
     `and the crown goes to the human below it (${crown.topName})`);
   ok(crown.personaStars === null && !crown.personaChamps,
@@ -5678,6 +5687,7 @@ async function startSeeded(page, seedRig) {
   const swept = await page.evaluate(async ({ key, h, p }) => {
     const db = firebase.database();
     await db.ref(`favor/daily/${key}`).remove();
+    await db.ref('favor/players/uauditresidue1').remove();
     await db.ref(`favor/settled/${key}`).remove();
     await db.ref(`favor/players/${h}`).remove();
     await db.ref(`favor/players/${p}`).remove();
@@ -7313,18 +7323,33 @@ console.log('── Private room: host/join by code, size in-room, Start → pic
     // uauditcrest rows had been sitting in the live tree since the 7/18
     // flaked run; the boards filter them by name, so they were invisible
     // rather than harmless.)
+    // ⚠ AND the daily BOARDS, not just the player rows. This gate swept
+    // players only until 2026-07-18, when six leftover 'Audit Herald' daily
+    // rows outranked every real player but two and settleDue paid one of them
+    // bronze — a crown and 10 Stars taken from a human. podiumSort now
+    // filters them defensively, but the residue should not exist at all.
+    const dailyStray = [];
+    for (const [key, day] of Object.entries(days)) {
+      for (const u of Object.keys((day && day.scores) || {})) {
+        if (/^uaudit/.test(u)) {
+          dailyStray.push(`${key}/${u}`);
+          await db.ref(`favor/daily/${key}/scores/${u}`).remove();
+        }
+      }
+    }
     const before = Object.keys((await db.ref('favor/players').get()).val() || {})
       .filter(u => /^uaudit/.test(u));
     for (const u of before) await db.ref(`favor/players/${u}`).remove();
     await new Promise(r => setTimeout(r, 400));
     const stray = Object.keys((await db.ref('favor/players').get()).val() || {})
       .filter(u => /^uaudit/.test(u));
-    return { hits, swept: before, stray };
+    return { hits, swept: before, stray, dailyStray };
   }, RUN_START);
   ok(contam.hits.length === 0,
     `no REAL persona posted a daily score during this run (${contam.hits.join(', ') || 'clean'})`);
   ok(contam.stray.length === 0,
     `favor/players carries no uaudit* residue (swept ${contam.swept.length}: ${contam.swept.join(', ') || 'none'})`);
+  ok(true, `daily boards swept of ${contam.dailyStray.length} audit row(s)${contam.dailyStray.length ? ': ' + contam.dailyStray.slice(0, 6).join(', ') : ''}`);
   await page.close();
 }
 
