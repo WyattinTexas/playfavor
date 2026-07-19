@@ -659,13 +659,19 @@
     // the top two, and settleDue paid one of them BRONZE — 10 Stars and a
     // crown that belonged to a human (TheFavorite, best 45). The boards
     // themselves had always filtered these by name via cleanBoardRows, so the
-    // rows were invisible while still being eligible for payouts. Settlement
-    // has to apply the same filter the display does, because a crown is
-    // worth more than a board row.
+    // rows were invisible while still being eligible for payouts.
+    //
+    // ⚠ Filtered by UID PREFIX, deliberately NOT by name. TEST_NAMES matches
+    // `audit .*`, so a name-based rule would silently and permanently bar a
+    // real player who happened to call themselves "Audit Trail" from ever
+    // winning a crown — a worse bug than the one it fixes, because it is
+    // invisible and hits a human. Uids are minted by the app and cannot be
+    // chosen, so the prefix is exact; every row that took the 7/18 bronze was
+    // uauditcrest*. Boards may keep guessing by name (a false positive there
+    // is cosmetic, and your own row is exempt); a payout may not.
     function podiumSort(scores, forPodium) {
         return Object.entries(scores || {})
-            .filter(([u, s]) => !(forPodium && s
-                && (s.persona || TEST_NAMES.test((s.name || '').trim()) || /^uaudit/.test(u))))
+            .filter(([u, s]) => !(forPodium && s && (s.persona || TEST_UIDS.test(u))))
             .map(([u, s]) => ({ uid: u, name: s.name, best: s.best, at: s.at || 0, persona: !!(s && s.persona) }))
             .sort((a, b) => (b.best - a.best) || (a.at - b.at));   // ties → earliest
     }
@@ -962,6 +968,13 @@
     // Test residue from the ui-audit suite posts under these names; they are
     // not real players and must never sit on the board (Wyatt 7/17).
     const TEST_NAMES = /^(audit herald|sir auditsworth|audit hero|audit .*)$/i;
+    // Suite-generated uids. `uaudit*` is residue and is barred from podiums as
+    // well as boards; `uqa*` is a QA identity that deliberately behaves like a
+    // real player so the crown/settlement paths can be exercised — it stays
+    // off other players' boards but CAN be crowned. Neither is reachable by a
+    // real player, whose uid is minted from a different alphabet.
+    const TEST_UIDS = /^uaudit/;
+    const BOARD_HIDE_UIDS = /^(uaudit|uqa)/;
 
     // One row per person: drop test/nameless rows and collapse duplicate names
     // (the same name from two uids = audit residue, not two nobles). YOUR own
@@ -975,7 +988,12 @@
             // Filter test residue — but never YOUR OWN row (a real player is
             // never named 'Audit Herald'; the ui-audit suite runs as one and
             // must still see itself on the board).
-            if (!nm || (r.uid !== uid() && TEST_NAMES.test(nm))) continue;
+            // Also filter by UID PREFIX, not just name: the suite needs some
+            // fixtures to carry ordinary-looking names (a row named 'Audit
+            // Herald' can never be crowned, so the crown paths could not be
+            // tested), and those must still stay off everyone else's board.
+            if (!nm || (r.uid !== uid()
+                && (TEST_NAMES.test(nm) || BOARD_HIDE_UIDS.test(r.uid || "")))) continue;
             const key = nm.toLowerCase();
             if (at.has(key)) {
                 const i = at.get(key);

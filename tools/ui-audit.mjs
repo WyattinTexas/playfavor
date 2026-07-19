@@ -2086,14 +2086,21 @@ console.log('── Desktop: final card slides via the picker, chooser survives 
 // ═══ ROYAL MENU + LEADERBOARD + DAILY CHAMPIONS (Task 5) ═══
 console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champion loop');
 {
-  const AUDIT_UID = 'uaudit' + Math.random().toString(36).slice(2, 8);
+  // ⚠ 'uqa' + an ORDINARY name, not 'uaudit'/'Audit Herald': this block ends
+  // by asserting the daily-champion crown and its overlay, and settlement now
+  // (correctly) refuses to crown anything that looks like test residue — that
+  // filter exists because six leftover 'Audit Herald' rows took a real
+  // player's bronze on 2026-07-18. uqa rows still stay off other players'
+  // boards and are swept by the final integrity gate; they are simply
+  // CROWNABLE, which is the whole point of this flow.
+  const AUDIT_UID = 'uqa' + Math.random().toString(36).slice(2, 6);
   const PAST_KEY = '2020-01-02';   // synthetic long-dead window, never collides
   const page = await browser.newPage();
   page.on('console', m => { if (m.type() === 'error') consoleErrors.push('menu: ' + m.text()); });
   // Seed identity BEFORE meta.js boots (runs on every navigation).
   await page.evaluateOnNewDocument((u) => {
     localStorage.setItem('favorUid', u);
-    localStorage.setItem('favorName', 'Audit Herald');
+    localStorage.setItem('favorName', 'Herald Quinn');
   }, AUDIT_UID);
   await page.setViewport({ width: 1440, height: 900 });
   await page.goto(URL, { waitUntil: 'networkidle2' });
@@ -2124,7 +2131,7 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
   ok(menu.seg.join('|') === '3|4|5' && menu.segLit === 1,
     `segmented table picker offers 3/4/5 with one lit (${menu.seg.join(',')})`);
   ok(menu.howto && menu.promptTest, "How to Play + Prompt Test survive (Skylar's tutorial hooks)");
-  ok(/Audit Herald/.test(menu.chip), `profile chip carries the royal name (${menu.chip.split('\n')[0]})`);
+  ok(/Herald Quinn/.test(menu.chip), `profile chip carries the royal name (${menu.chip.split('\n')[0]})`);
   ok(menu.oldDropdownGone, 'player-count dropdown is gone from character select');
 
   // Wingspan-stage geometry: the PLAY tile dwarfs the mid tiles, the grid
@@ -2215,7 +2222,7 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
     const mine = [...document.querySelectorAll('.lb-row')].find(r => r.classList.contains('me'));
     return { all: document.getElementById('lbBody').textContent, me: mine ? mine.textContent : '' };
   });
-  ok(/Audit Herald/.test(at.me) && /✦ 1\.22/.test(at.me),
+  ok(/Herald Quinn/.test(at.me) && /✦ 1\.22/.test(at.me),
     `RATING board carries your own 1.22 on the 1.00–7.00 scale (${at.me.trim()})`);
   ok(!/\d+ W · \d+ G/.test(at.all), 'win/game counters left the board rows');
   ok(!/Aldric|Elara|Cassius/.test(at.all), 'bots stay OFF the leaderboard');
@@ -2232,7 +2239,7 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
   // A FRESH hero starts at 1.00 and takes the 2.0x band like anyone below
   // the line: 1st of 3 vs two 1200 bots = 100 x 1.00 x 1.1 x 2.0 = +220.
   // A veteran picking up a new character climbs that ledger fast. Intended.
-  ok(/Audit Herald/.test(charKn.text) && /✦ 1\.22/.test(charKn.text),
+  ok(/Herald Quinn/.test(charKn.text) && /✦ 1\.22/.test(charKn.text),
     `the Knight board carries your Knight rating, 1.22 after one win (${charKn.text.trim().slice(0, 60)})`);
   // Pick the unridden hero from LIVE data instead of hardcoding one. This
   // asserted 'magician' until 7/18, when a real player (Banana71) rode the
@@ -2265,21 +2272,25 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
   await page.evaluate(() => FLB.openLeaderboard('daily'));
   await sleep(900);
   const daily = await page.evaluate(() => document.getElementById('lbBody').textContent);
-  ok(/Audit Herald/.test(daily) && /55/.test(daily), 'DAILY shows your best single-game Favor (55)');
+  ok(/Herald Quinn/.test(daily) && /55/.test(daily), 'DAILY shows your best single-game Favor (55)');
   await page.screenshot({ path: join(SHOTS, 'leaderboard.png') });
   await page.evaluate(() => FLB.closeLeaderboard());
 
-  // Rename persists (profile panel).
+  // ⚠ Renames to 'Sir QUINNsworth', not 'Sir Auditsworth'. That old name is
+  // literally in TEST_NAMES, and this flow plants its daily-champion row
+  // under whatever the player is called — so settlement (which now refuses
+  // to crown anything that looks like residue) dropped its own fixture and
+  // no crown, stars or overlay ever arrived.
   await page.evaluate(() => FLB.openProfile());
   await sleep(400);
-  await page.evaluate(() => { document.getElementById('pfName').value = 'Sir Auditsworth'; });
+  await page.evaluate(() => { document.getElementById('pfName').value = 'Sir Quinnsworth'; });
   await page.evaluate(() => document.getElementById('pfSave').click());
   await sleep(700);
   const renamed = await page.evaluate(() => ({
     chip: document.getElementById('profileChip').textContent,
     stored: localStorage.getItem('favorName'),
   }));
-  ok(/Sir Auditsworth/.test(renamed.chip) && renamed.stored === 'Sir Auditsworth', 'rename persists to chip + storage');
+  ok(/Sir Quinnsworth/.test(renamed.chip) && renamed.stored === 'Sir Quinnsworth', 'rename persists to chip + storage');
 
   // Daily Champion: plant a long-past window, then a FRESH LOAD must
   // settle it, award stars, and greet the champion with the overlay.
@@ -2287,12 +2298,12 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
     const me = FLB.uid();
     if (FLB.mode === 'firebase') {
       await firebase.database().ref(`favor/daily/${KEY}/scores/${me}`)
-        .set({ name: 'Sir Auditsworth', best: 61, at: 1577934245000 });
+        .set({ name: 'Sir Quinnsworth', best: 61, at: 1577934245000 });
       await firebase.database().ref(`favor/settled/${KEY}`).remove();
     } else {
       const t = JSON.parse(localStorage.getItem('favorLB') || '{}');
       t.daily = t.daily || {};
-      t.daily[KEY] = { scores: { [me]: { name: 'Sir Auditsworth', best: 61, at: 1577934245000 } } };
+      t.daily[KEY] = { scores: { [me]: { name: 'Sir Quinnsworth', best: 61, at: 1577934245000 } } };
       if (t.settled) delete t.settled[KEY];
       localStorage.setItem('favorLB', JSON.stringify(t));
     }
@@ -2317,7 +2328,7 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
     await FLB.renderProfileChip(); await new Promise(r => setTimeout(r, 400));
     return document.getElementById('profileChip').textContent;
   });
-  ok(/1/.test(standing.replace('Sir Auditsworth', '')), 'crown count rides the chip next to the rating');
+  ok(/1/.test(standing.replace('Sir Quinnsworth', '')), 'crown count rides the chip next to the rating');
 
   // Second load: settled + drained → silence (idempotent).
   await page.reload({ waitUntil: 'networkidle2' });
@@ -5630,14 +5641,14 @@ async function startSeeded(page, seedRig) {
   const page = await browser.newPage();
   page.on('console', m => { if (m.type() === 'error') consoleErrors.push('crown-filter: ' + m.text()); });
   await page.setViewport({ width: 1280, height: 800 });
-  const H_UID = 'uauditcrown' + Math.random().toString(36).slice(2, 6);
+  const H_UID = 'uqacrown' + Math.random().toString(36).slice(2, 6);
   const P_UID = H_UID + 'persona';
   // A CLOSED window far in the past, so settleDue must settle it and no real
   // board can be touched. Cleaned up unconditionally below.
   const KEY = '2019-03-04';
   await page.evaluateOnNewDocument((u) => {
     localStorage.setItem('favorUid', u);
-    localStorage.setItem('favorName', 'Audit Sovereign');
+    localStorage.setItem('favorName', 'Crown Claimant');
   }, H_UID);
   await page.goto(URL, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
@@ -5654,7 +5665,12 @@ async function startSeeded(page, seedRig) {
     // taken from a human. The boards had always filtered these by name;
     // settlement had not.
     await db.ref(`favor/daily/${key}/scores/uauditresidue1`).set({ name: 'Audit Herald', best: 5000, at: 1 });
-    await db.ref(`favor/daily/${key}/scores/${h}`).set({ name: 'Audit Sovereign', best: 12, at: 2 });
+    await db.ref(`favor/daily/${key}/scores/${h}`).set({ name: 'Crown Claimant', best: 12, at: 2 });
+    // A REAL player whose NAME merely looks test-ish must still be crowned.
+    // The filter is uid-based on purpose: TEST_NAMES matches `audit .*`, so
+    // a name rule would permanently and invisibly bar someone called
+    // "Audit Trail" from ever winning. Ordinary uid => eligible.
+    await db.ref(`favor/daily/${key}/scores/uqarealname1`).set({ name: 'Audit Trail', best: 8, at: 3 });
     await FLB.settleDue();
     const settled = (await db.ref(`favor/settled/${key}`).get()).val() || {};
     const prow = (await db.ref(`favor/players/${p}`).get()).val() || {};
@@ -5674,9 +5690,11 @@ async function startSeeded(page, seedRig) {
   ok(!crown.podium.includes(P_UID),
     `the persona is filtered OUT of the podium despite the top score (podium: ${crown.podium.length})`);
   ok(!crown.podiumNames.some(n => /audit herald/i.test(n || '')),
-    `and so is TEST RESIDUE, which really did steal a human's bronze on 7/18 (${crown.podiumNames.join(', ')})`);
-  ok(crown.podium.includes(H_UID) && crown.topName === 'Audit Sovereign',
-    `and the crown goes to the human below it (${crown.topName})`);
+    `and so is TEST RESIDUE by UID, which really did steal a human's bronze on 7/18 (${crown.podiumNames.join(', ')})`);
+  ok(crown.podiumNames.includes('Audit Trail'),
+    'but a REAL player merely NAMED like a test row is still crowned — the filter is uid-based, never name-based');
+  ok(crown.podium.includes(H_UID) && crown.topName === 'Crown Claimant',
+    `and the crown goes to the human below them (${crown.topName})`);
   ok(crown.personaStars === null && !crown.personaChamps,
     'a persona takes no Stars and accrues no champs crowns');
   ok(crown.personaMsgs === 0,
@@ -5688,6 +5706,7 @@ async function startSeeded(page, seedRig) {
     const db = firebase.database();
     await db.ref(`favor/daily/${key}`).remove();
     await db.ref('favor/players/uauditresidue1').remove();
+    await db.ref('favor/players/uqarealname1').remove();
     await db.ref(`favor/settled/${key}`).remove();
     await db.ref(`favor/players/${h}`).remove();
     await db.ref(`favor/players/${p}`).remove();
@@ -7331,24 +7350,24 @@ console.log('── Private room: host/join by code, size in-room, Start → pic
     const dailyStray = [];
     for (const [key, day] of Object.entries(days)) {
       for (const u of Object.keys((day && day.scores) || {})) {
-        if (/^uaudit/.test(u)) {
+        if (/^(uaudit|uqa)/.test(u)) {
           dailyStray.push(`${key}/${u}`);
           await db.ref(`favor/daily/${key}/scores/${u}`).remove();
         }
       }
     }
     const before = Object.keys((await db.ref('favor/players').get()).val() || {})
-      .filter(u => /^uaudit/.test(u));
+      .filter(u => /^(uaudit|uqa)/.test(u));
     for (const u of before) await db.ref(`favor/players/${u}`).remove();
     await new Promise(r => setTimeout(r, 400));
     const stray = Object.keys((await db.ref('favor/players').get()).val() || {})
-      .filter(u => /^uaudit/.test(u));
+      .filter(u => /^(uaudit|uqa)/.test(u));
     return { hits, swept: before, stray, dailyStray };
   }, RUN_START);
   ok(contam.hits.length === 0,
     `no REAL persona posted a daily score during this run (${contam.hits.join(', ') || 'clean'})`);
   ok(contam.stray.length === 0,
-    `favor/players carries no uaudit* residue (swept ${contam.swept.length}: ${contam.swept.join(', ') || 'none'})`);
+    `favor/players carries no uaudit*/uqa* residue (swept ${contam.swept.length}: ${contam.swept.join(', ') || 'none'})`);
   ok(true, `daily boards swept of ${contam.dailyStray.length} audit row(s)${contam.dailyStray.length ? ': ' + contam.dailyStray.slice(0, 6).join(', ') : ''}`);
   await page.close();
 }
