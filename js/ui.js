@@ -5978,7 +5978,16 @@ function showWeaponDiscardPicker(mustPick) {
         const ov = document.getElementById('promisePicker');
         const player = game.players[0];
         const weapons = player.playedCards.filter(c => c.type === 'weapon');
-        if (!ov || !weapons.length || !mustPick) { resolve(); return; }
+        if (!ov || !weapons.length || !mustPick) {
+            // Publish an EMPTY pick even when there is nothing to give up.
+            // The engine only flags a seat that holds a weapon, so this
+            // should be unreachable — but a peer awaiting 'weapon' that
+            // never arrives sits until the AFK clock boots them, and a
+            // silent boot is a far worse failure than a wasted message.
+            mpPub('weapon', { cardIds: [] });
+            resolve();
+            return;
+        }
         const need = Math.min(mustPick, weapons.length);
 
         const chosen = new Set();

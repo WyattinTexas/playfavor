@@ -1740,7 +1740,11 @@ console.log('── Endgame legibility: shortfalls, discarded card art, who else
 
   // Drive showMissionCeremony with a REAL engine resolution each time, so the
   // beat is rendering engine truth rather than a hand-built fixture.
-  const playBeat = async (rig) => {
+  // `shot` is taken INSIDE this helper, at the same instant the DOM is read.
+  // Taken afterwards it raced a stale timer: closeBeat() only drops the
+  // active class, so the PREVIOUS ceremony's pending next()/close() was
+  // still armed and could tear down the beat we were trying to photograph.
+  const playBeat = async (rig, shot) => {
     await page.evaluate((body) => {
       window.CINEMATIC_SPEED = 1;          // beats must stay up long enough to read
       // eslint-disable-next-line no-new-func
@@ -1749,7 +1753,12 @@ console.log('── Endgame legibility: shortfalls, discarded card art, who else
     await page.waitForFunction(() =>
       document.querySelector('.mc-stage')
       && document.querySelector('.mc-stage').classList.contains('stamped'), { timeout: 10000 });
-    await sleep(350);                      // chips animate in
+    // Children stagger in at 0.12 + i*0.13s, so a short wait reads the right
+    // DOM but SCREENSHOTS a half-faded beat — and the shots are the only
+    // thing that catches layout and occlusion. Wait out the whole stagger
+    // (still well inside the beat's ~3.8s hold at CINEMATIC_SPEED 1).
+    await sleep(1100);
+    if (shot) await page.screenshot({ path: join(SHOTS, shot) });
     return page.evaluate(() => {
       const rw = document.querySelector('.mc-rewards');
       return {
@@ -1783,13 +1792,12 @@ console.log('── Endgame legibility: shortfalls, discarded card art, who else
     const det = game.checkMissionRequirements(0, m).details;
     const d = game.measureResolution(0, () => game.applyMissionFailure(0, m));
     showMissionCeremony([{ playerIndex: 0, results: [{ mission: m, success: false, deltas: d, details: det }] }], 3);
-  `);
+  `, 'beat-labyrinth-empty-fixed.png');
   ok(lab.children > 0, 'a zero-delta failure no longer renders an EMPTY beat');
   ok(/Fortune Teller/.test(lab.text) && /50/.test(lab.text),
     `the conditional reward that MISSED states what was lost (${lab.text})`);
   ok(/Short of/.test(lab.req) && /Survival|Knowledge|Mind/.test(lab.req),
     `and the beat says what they were short of (${lab.req.trim()})`);
-  await page.screenshot({ path: join(SHOTS, 'beat-labyrinth-empty-fixed.png') });
   await closeBeat();
 
   // 2 · SECRET GROTTO — the discard Wyatt watched happen invisibly. "We never
@@ -1804,14 +1812,13 @@ console.log('── Endgame legibility: shortfalls, discarded card art, who else
     const det = game.checkMissionRequirements(0, m).details;
     const d = game.measureResolution(0, () => game.applyMissionFailure(0, m));
     showMissionCeremony([{ playerIndex: 0, results: [{ mission: m, success: false, deltas: d, details: det }] }], 2);
-  `);
+  `, 'beat-discard-cards.png');
   ok(grotto.tookNames.length === 2,
     `a bulk discard names the cards it took (${grotto.tookNames.join(', ') || 'none'})`);
   ok(grotto.tookCards.length === 2 && grotto.tookCards.every(s => /assets\/cards\/regular\//.test(s)),
     'and shows their ART, not just a count');
   ok(/Prestige/.test(grotto.text),
     `the prestige it paid is still on screen beside them (${grotto.text.slice(0, 90)})`);
-  await page.screenshot({ path: join(SHOTS, 'beat-discard-cards.png') });
   await closeBeat();
 
   // 3 · WHO GOT GOLD. others_gain_5_gold pays every other seat — mutations
@@ -1823,12 +1830,11 @@ console.log('── Endgame legibility: shortfalls, discarded card art, who else
     const det = game.checkMissionRequirements(0, m).details;
     const d = game.measureResolution(0, () => game.applyMissionFailure(0, m));
     showMissionCeremony([{ playerIndex: 0, results: [{ mission: m, success: false, deltas: d, details: det }] }], 2);
-  `);
+  `, 'beat-who-got-gold.png');
   ok(paid.others.length >= 2,
     `the beat names every OTHER seat the failure moved (${paid.others.length})`);
   ok(paid.others.every(t => /\+5 Gold/.test(t)),
     `and says what each of them got (${paid.others.join(' | ')})`);
-  await page.screenshot({ path: join(SHOTS, 'beat-who-got-gold.png') });
   await closeBeat();
 
   // 4 · A SUCCESS states its requirements were met — the other half of
@@ -2202,11 +2208,17 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
   await sleep(600);
   await page.evaluate(() => FLB.openLeaderboard('alltime'));
   await sleep(900);
-  const at = await page.evaluate(() => document.getElementById('lbBody').textContent);
-  ok(/Audit Herald/.test(at) && /✦ 1\.0[0-9]/.test(at),
-    'ALL-TIME shows your rating on the 1.00–7.00 scale');
-  ok(!/\d+ W · \d+ G/.test(at), 'win/game counters left the board rows');
-  ok(!/Aldric|Elara|Cassius/.test(at), 'bots stay OFF the leaderboard');
+  // Scoped to YOUR OWN row, not the whole board: /1\.0[0-9]/ against the
+  // full text matched any of the nine real players sitting at 1.04-1.24, so
+  // it passed without ever looking at the audit player's rating.
+  const at = await page.evaluate(() => {
+    const mine = [...document.querySelectorAll('.lb-row')].find(r => r.classList.contains('me'));
+    return { all: document.getElementById('lbBody').textContent, me: mine ? mine.textContent : '' };
+  });
+  ok(/Audit Herald/.test(at.me) && /✦ 1\.22/.test(at.me),
+    `RATING board carries your own 1.22 on the 1.00–7.00 scale (${at.me.trim()})`);
+  ok(!/\d+ W · \d+ G/.test(at.all), 'win/game counters left the board rows');
+  ok(!/Aldric|Elara|Cassius/.test(at.all), 'bots stay OFF the leaderboard');
   // The ten character chips ride under the tabs; the ridden hero's board
   // carries your row, an unridden hero's board sits empty.
   await page.evaluate(() => FLB.openLeaderboard('char:knight'));
@@ -2217,8 +2229,11 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
     text: document.getElementById('lbBody').textContent,
   }));
   ok(charKn.chips === 11 && charKn.on, 'hero rail: 10 heroes + All-Heroes chip, the open board\'s chip lit');
-  ok(/Audit Herald/.test(charKn.text) && /✦ 1\.0[0-9]/.test(charKn.text),
-    'the Knight board carries your Knight rating');
+  // A FRESH hero starts at 1.00 and takes the 2.0x band like anyone below
+  // the line: 1st of 3 vs two 1200 bots = 100 x 1.00 x 1.1 x 2.0 = +220.
+  // A veteran picking up a new character climbs that ledger fast. Intended.
+  ok(/Audit Herald/.test(charKn.text) && /✦ 1\.22/.test(charKn.text),
+    `the Knight board carries your Knight rating, 1.22 after one win (${charKn.text.trim().slice(0, 60)})`);
   // Pick the unridden hero from LIVE data instead of hardcoding one. This
   // asserted 'magician' until 7/18, when a real player (Banana71) rode the
   // Magician into a rated game and the board correctly stopped being empty —
@@ -3123,9 +3138,14 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
   ok(win.totals.join(',') === '105,10,5', `totals = favor + prestige − scorn (${win.totals.join(',')})`);
   ok(win.noGoldCol, 'no gold tiebreaker column');
   ok(/^\+\d\.\d\d$/.test(win.ratingDelta),
-    `a win gains Elo, shown 1.00–7.00 style (${win.ratingDelta})`);
-  ok(+win.ratingNew > 1000 && +win.ratingNew <= 1096,
-    `fresh player's Elo target sits above 1000, inside the K-cap (${win.ratingNew})`);
+    `a win gains rating, shown 1.00–7.00 style (${win.ratingDelta})`);
+  // The old bound was the K-cap (1096). Under the ladder a fresh 1.00 win
+  // pays far more — that is the entire point of the 2.0x fast band — and
+  // the rail is MAX_SWING 300, not a K multiple.
+  ok(+win.ratingNew > 1000 && +win.ratingNew <= 1300,
+    `a fresh player's win lands well above 1000 and inside the 300 rail (${win.ratingNew})`);
+  ok(+win.ratingNew - 1000 >= 100,
+    `and it is SUBSTANTIAL, not the old three hundredths (+${+win.ratingNew - 1000})`);
   ok(win.starDelta === '+10', `win pays +10 Stars (${win.starDelta})`);
   ok(win.starNew === '10', `fresh player's star target = 10 (${win.starNew})`);
   ok(win.playAgain, 'Play Again survives');
@@ -3187,8 +3207,12 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
   ok(!loss.rays, 'no rays when a rival takes the throne');
   ok(loss.personal === 'You finished 3rd.', `personal line (${loss.personal})`);
   ok(loss.myColIdx === 2, `your column stands 3rd on the sheet (idx ${loss.myColIdx})`);
-  ok(/^−\d\.\d\d$/.test(loss.ratingDelta),
-    `last place loses Elo, shown 1.00–7.00 style (${loss.ratingDelta})`);
+  // ⚠ Sub-2.00 LAST PLACE GAINS its consolation token — "last place should
+  // push you up until 2.0, just slightly". This demanded a negative delta
+  // and would fail on a correct ladder. Above 2.00 it would be negative;
+  // this rig's player is nowhere near it.
+  ok(loss.ratingDelta === '+0.01',
+    `sub-2.00 last place still gains its token, not a fall (${loss.ratingDelta})`);
   await page.screenshot({ path: join(SHOTS, 'vs-desktop-loss.png') });
 
   // ── Firebase hygiene: remove every trace of the audit player.
@@ -3757,8 +3781,12 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
 
   // Per-hero ledgers — the biggest win, and every field was already in _me.
   await page.evaluate(async (u) => {
+    // ⚠ fiddler/doctor deliberately: NOTHING else in this suite asserts on
+    // them. Rigging duchess here silently rewrote the ledger the crest
+    // flow's own postGameResult assertions read a few hundred lines later,
+    // and they failed on a number this rig had put there.
     await firebase.database().ref(`favor/players/${u}/chars`).update({
-      knight: { r: 1240, g: 3, best: 88 }, duchess: { r: 1080, g: 1, best: 41 },
+      fiddler: { r: 1240, g: 3, best: 88 }, doctor: { r: 1080, g: 1, best: 41 },
     });
     // renderProfileChip is what reassigns _me — readRow only fetches.
     await FLB.renderProfileChip();
@@ -3819,16 +3847,21 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   await sleep(400);
   const row = await page.evaluate((u) =>
     firebase.database().ref(`favor/players/${u}`).get().then(s => s.val()), AUDIT_UID);
-  // Elo, worked by hand: fresh 1000 vs two 1200 bots, provisional K64
-  // split 32/pair. 2nd of 3 → +17 (1017); then the win → +47 → 1064.
-  ok(row && row.rating === 1064 && row.ratingV === 2 && row.stars === 16,
-    `Elo lands 1017 → 1064 with ratingV 2, stars 6+10=16 (${row && row.rating}/${row && row.stars})`);
-  ok(row && row.power === 74 && row.games === 2 && row.wins === 1 &&
-     row.streak === 1 && row.bestStreak === 1,
-    `power 74, 2 games, 1 win, streak 1 ride the same transaction`);
+  // The LADDER, worked by hand: fresh 1000 vs two 1200 bots (adj 1.1),
+  // band 2.0x below the 2.00 line.
+  //   2nd of 3: ps 0.30 -> 100 x 0.30 x 1.100 x 2.0 =  66 -> 1066
+  //   1st of 3: ps 1.00 -> 100 x 1.00 x 1.067 x 2.0 = 213 -> 1279
+  // ⚠ wins is 2, not 1: isWin is place < ceil(n * 0.4), so 2nd of 3 is a
+  // win now — "coming in 2nd in a 5 player game should be considered a
+  // win" (Wyatt 7/18). The streak follows it to 2. Stars are unchanged.
+  ok(row && row.rating === 1279 && row.ratingV === 2 && row.stars === 16,
+    `the ladder lands 1066 → 1279 with ratingV 2, stars 6+10=16 (${row && row.rating}/${row && row.stars})`);
+  ok(row && row.power === 74 && row.games === 2 && row.wins === 2 &&
+     row.streak === 2 && row.bestStreak === 2,
+    `power 74, 2 games, TWO wins (2nd of 3 counts), streak 2 ride the same transaction`);
   ok(row && row.chars && row.chars.duchess && row.chars.duchess.g === 2
-     && row.chars.duchess.r === 1064,
-    `the Duchess ledger rode both games to the same 1064 (${row && row.chars && JSON.stringify(row.chars.duchess)})`);
+     && row.chars.duchess.r === 1279,
+    `the Duchess ledger rode both games to the same 1279 (${row && row.chars && JSON.stringify(row.chars.duchess)})`);
   ok(row && row.avatar === 'knight', 'the crest rides the game post too');
 
   // 3 · All-Time: medals on the podium, crest discs, your row glows.
@@ -3868,8 +3901,10 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
     };
   });
   ok(cb.chips === 11 && cb.lit, `hero rail chips ride the panel (10 + All Heroes), the open one lit (${cb.chips})`);
-  ok(cb.me && /✦ 1\.06/.test(cb.myScore),
-    `the Duchess board carries your Duchess rating 1.06 (${cb.myScore.trim()})`);
+  // 1279 internal renders 1.28 — the same two games the row assertion above
+  // works out by hand under the ladder.
+  ok(cb.me && /✦ 1\.28/.test(cb.myScore),
+    `the Duchess board carries your Duchess rating 1.28 (${cb.myScore.trim()})`);
   await page.screenshot({ path: join(SHOTS, 'lb-characters.png') });
 
   // 5 · Daily keeps the best single game, now with crests.
@@ -6886,7 +6921,10 @@ console.log('── Wanted: deterministic pick, drifting bounty, intro plaque, c
     const tags = [...src.matchAll(/<script([^>]*)\ssrc=/g)].map(m => m[1]);
     return {
       pairs, live: [...live].sort(),
-      before: src.indexOf('var ROSTER') > 0 && src.indexOf('var ROSTER') < src.indexOf('js/modes.js'),
+      // Compare against the script TAG, not the string "js/modes.js" — the
+      // preboot's own comment names the file, and that mention comes first.
+      before: src.indexOf('var ROSTER') > 0
+        && src.indexOf('var ROSTER') < src.indexOf('src="js/modes.js'),
       deferred: tags.filter(t => /\bdefer\b/.test(t)).length,
       tags: tags.length,
       audio: (document.getElementById('themeMusic') || {}).getAttribute('preload'),
@@ -7270,14 +7308,23 @@ console.log('── Private room: host/join by code, size in-room, Start → pic
         }
       }
     }
+    // uaudit* rows are audit residue by construction — no real player can be
+    // named one. Sweep any straggler, then assert the sweep worked. (Two
+    // uauditcrest rows had been sitting in the live tree since the 7/18
+    // flaked run; the boards filter them by name, so they were invisible
+    // rather than harmless.)
+    const before = Object.keys((await db.ref('favor/players').get()).val() || {})
+      .filter(u => /^uaudit/.test(u));
+    for (const u of before) await db.ref(`favor/players/${u}`).remove();
+    await new Promise(r => setTimeout(r, 400));
     const stray = Object.keys((await db.ref('favor/players').get()).val() || {})
       .filter(u => /^uaudit/.test(u));
-    return { hits, stray };
+    return { hits, swept: before, stray };
   }, RUN_START);
   ok(contam.hits.length === 0,
     `no REAL persona posted a daily score during this run (${contam.hits.join(', ') || 'clean'})`);
   ok(contam.stray.length === 0,
-    `no uaudit* rows left in favor/players (${contam.stray.join(', ') || 'clean'})`);
+    `favor/players carries no uaudit* residue (swept ${contam.swept.length}: ${contam.swept.join(', ') || 'none'})`);
   await page.close();
 }
 
