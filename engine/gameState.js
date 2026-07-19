@@ -1333,11 +1333,13 @@ class FavorGame {
                 break;
 
             // ⚠ 'philosopher_stone_x10' removed 7/18: DEAD CODE that no card
-            // ever used. Its comment claimed Sacred Chest, but Sacred Chest is
-            // favor_per_wisdom_x8, exactly as printed ("8 Favor for each
-            // Wisdom Card you have"). The ten stones it purported to grant
-            // were the source of the "Sacred Chest x10" claim — there is no
-            // such grant, and there never was.
+            // ever used. Its comment claimed Sacred Chest, and the ten stones
+            // it purported to grant were the source of the "Sacred Chest x10"
+            // claim — there is no such grant and there never was. (That
+            // comment then asserted Sacred Chest was favor_per_wisdom_x8
+            // "exactly as printed", which was ALSO wrong — see
+            // favor_per_artifact_x8 in dynamicCardFavor. Three different
+            // readings of one card, none of them from looking at it.)
 
             // --- Mind's Eye (knowledge bonus) ---
 
@@ -1662,10 +1664,11 @@ class FavorGame {
                 // Secret Lab. Neither card prints it. Forgotten Temple reads
                 // "Map of Sacred Chest & 1 Knowledge & 2 Scorn" — it hands you
                 // the map, which is exactly what its grantsMap field already
-                // does. Sacred Chest reads "8 Favor for each Wisdom Card you
-                // have, Req: 12 Gold OR Forgotten Temple Map" — holding the map
-                // WAIVES the 12 Gold. That waiver is the entire relationship
-                // between the two cards; there is no bonus on top of it.
+                // does. Sacred Chest costs 12 Gold to play, and rulebook p.12
+                // defines a Map as "the ability to play the Card for no cost"
+                // — so the map waives the 12. That waiver is the entire
+                // relationship between the two cards; there is no bonus on
+                // top of it.
                 // The special stays declared so the play still logs, and so it
                 // can't fall through to the "unknown special" branch.
                 this.addLog(`${player.name}'s ${card.name} grants the Sacred Chest map`);
@@ -2932,8 +2935,14 @@ class FavorGame {
                 return 2 * (p.skills.knowledge || 0);
             case 'favor_per_sur_cha_pro':
                 return (p.skills.survival || 0) + (p.skills.charisma || 0) + (p.skills.prospecting || 0);
-            case 'favor_per_wisdom_x8':
-                return 8 * p.playedCards.filter(c => c.type === 'wisdom').length;
+            case 'favor_per_artifact_x8':
+                // Sacred Chest, exactly as printed: "8 Favor for each Artifact
+                // Card you have" — the purple oval in its Favor medallion is
+                // the artifact family, the same grammar as Secret Lab's green
+                // oval for potions. It was favor_per_wisdom_x8 until Wyatt
+                // caught it on 7/19; nothing in the game counts Wisdom cards.
+                // Counts itself — it is an artifact you have.
+                return 8 * p.playedCards.filter(c => c.type === 'artifact').length;
             case 'favor_per_potion_x5':
                 // Secret Lab, exactly as printed: "5 Favor for each Potions
                 // Card you have". It was implemented as +2 Mind's Eye, +2

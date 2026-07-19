@@ -24,7 +24,11 @@ export const CARD_TEXT_SPECIALS = {
   "Fang's Truce": 'favor_per_survival_x2',        // 2 Favor for each Survival you have
   'Lucky Pendant': 'favor_per_quest_x5',          // Favor = successful missions ×5
   'Great Vault Key': 'favor_per_sur_cha_pro',     // 1 Favor per Survival/Charisma/Prospecting
-  'Sacred Chest': 'favor_per_wisdom_x8',          // 8 Favor for each Wisdom card
+  // 7/19 (Wyatt): 8 Favor per ARTIFACT, not per Wisdom card. Its Favor
+  // medallion holds a PURPLE oval ×8 — a coloured oval means a card family
+  // (cf. Secret Lab's green one for potions), and purple is the artifact
+  // frame. Nothing in the game counts Wisdom cards.
+  'Sacred Chest': 'favor_per_artifact_x8',        // 8 Favor for each Artifact card
   "Heaven's Blade": 'power_6_if_blind_faith',     // +6 Power if you own Blind Faith
   'Marketplace Sales': 'gold_2_per_alchemy_triangle', // 2 Gold per Alchemy (you + both neighbors)
   'Royal Hilt': 'favor_per_neighbor_power',       // 1 Favor per Power your neighbors have

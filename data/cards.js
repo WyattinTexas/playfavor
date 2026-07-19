@@ -320,8 +320,19 @@ window.FAVOR_DATA.cards = [
   { id: cid(), name: "Great Vault Key", special: "favor_per_sur_cha_pro", audit: "1 Favor for each Survival you have & 1 Favor for each Charisma you have & 1 Favor for each Prospecting you have, Req: 4 Gold, Act 3", filename: "Great Vault Key Card.jpg", act: 3, type: "artifact",
     cost: 4, skills: [], reqGold: 4, requirements: [], rewards: {} },
 
-  { id: cid(), name: "Sacred Chest", reqMaps: ["Forgotten Temple"], audit: "8 Favor for each Wisdom Card you have, Req: 12 Gold OR Forgotten Temple Map,Act 3", filename: "Sacred Chest Card.jpg", act: 3, type: "artifact",
-    cost: 12, skills: [], reqGold: 12, requirements: [], rewards: {}, special: "favor_per_wisdom_x8" },
+  // AUDIT FIX 2026-07-19 (Wyatt): "Sacred Chest costs 12 gold, and it gives
+  // you 8 favor per ARTIFACT that you have." Both halves were wrong here.
+  //  · The reward medallion is a blue Favor oval holding a PURPLE oval, ×8.
+  //    A coloured oval inside a Favor medallion means a CARD FAMILY — Secret
+  //    Lab's is green for potions, and purple is the artifact frame. It was
+  //    implemented as favor_per_wisdom_x8; no card counts Wisdom cards at all.
+  //  · The 12 is the top-left gold coin, which rulebook p.11 defines as the
+  //    CARD COST. There is no "Req: 12 Gold" floor — that was invented by the
+  //    audit text, and the data then charged it twice (cost AND reqGold).
+  //    Rulebook p.12: a Map is "the ability to play the Card for no cost",
+  //    which is what Forgotten Temple's map does here.
+  { id: cid(), name: "Sacred Chest", reqMaps: ["Forgotten Temple"], audit: "8 Favor for each Artifact Card you have, Cost 12 Gold to play OR Forgotten Temple Map,Act 3", filename: "Sacred Chest Card.jpg", act: 3, type: "artifact",
+    cost: 12, skills: [], requirements: [], rewards: {}, special: "favor_per_artifact_x8" },
 
   { id: cid(), name: "Secret Lab", audit: "5 Favor for each Potions Card you have, Req: 2 Mind's Eye,Act 3", filename: "Secret Lab Card.jpg", act: 3, type: "artifact",
     cost: null, skills: [], requirements: ["minds_eye", "minds_eye"], rewards: {},

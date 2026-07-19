@@ -42,7 +42,7 @@ const SPECIAL_DESCRIPTIONS = {
     "remove_13_scorn":               "Removes up to 13 Scorn!",
     "trade_route":                   "Opens a trade route for lasting profit.",
     "discard_opponent_weapon":       "Destroys one weapon from each opponent!",
-    "sacred_chest":                  "Unlocks the Sacred Chest for treasure.",
+    "sacred_chest":                  "Hands you the map to the Sacred Chest — play it for free.",
     "knowledge_x5":                  "Gain 5 Knowledge!",
     "favor_per_knowledge_x2":        "Favor equal to your Knowledge x2!",
     "favor_per_potion_x5":            "5 Favor for each Potion you have!",
@@ -54,7 +54,7 @@ const SPECIAL_DESCRIPTIONS = {
     "favor_per_survival_x2":         "Scores 2 Favor for each Survival you have.",
     "favor_per_quest_x5":            "Scores 5 Favor per completed mission.",
     "favor_per_sur_cha_pro":         "Scores 1 Favor per Survival, Charisma & Prospecting.",
-    "favor_per_wisdom_x8":           "Scores 8 Favor for each Wisdom card you have.",
+    "favor_per_artifact_x8":         "Scores 8 Favor for each Artifact you have.",
     "favor_per_neighbor_power":      "Scores 1 Favor for each Power your neighbors have.",
     "power_6_if_blind_faith":        "+6 Power in Melee while you own Blind Faith.",
 };

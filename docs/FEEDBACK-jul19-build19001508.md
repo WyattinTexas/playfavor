@@ -187,12 +187,50 @@ makes every Favor-bearing card an Adventure or an Artifact, exactly as the
 rulebook says — with one printed exception (Chemical Y's Chemical-X bonus,
 which the sheet folds into Adventures and names in the drill-down).
 
-⚠ **This changes scoring**, because real logic keys off `type`. Sacred Chest
-pays "8 Favor for each Wisdom Card you have" and the wisdom pool goes **8 →
-12**, so it's worth up to 32 more. Artifact pool 10 → 8, potions 12 → 11,
-weapons 15 → 14. It's a correctness fix — the digital game had been
-mis-scoring against the printed cards — but **it wants a balance pass from
-you**, especially Sacred Chest.
+⚠ **This changes scoring**, because real logic keys off `type`: artifact pool
+10 → 8 (`duplicate_artifact`, `discard_1_artifact`), potions 12 → 11 (Secret
+Lab), weapons 15 → 14.
+
+### ⚠ CORRECTION — I had Sacred Chest wrong, and you caught it
+
+I first wrote that Sacred Chest "pays 8 Favor per Wisdom card, so the pool
+goes 8 → 12 and it's worth up to 32 more, and it wants a balance pass." That
+was wrong in both directions, and the balance warning was noise.
+
+**Sacred Chest costs 12 Gold and pays 8 Favor per ARTIFACT you have** — your
+words, and the card agrees. Its reward medallion is a blue Favor oval holding
+a **purple** oval, ×8. The grammar, confirmed against four cards whose
+implementations are already correct:
+
+| Card | Icon in the Favor medallion | Counts |
+|---|---|---|
+| **Sacred Chest** | **purple oval** | **Artifacts** |
+| Secret Lab | green oval | Potions ✓ |
+| Family Ring | book | Knowledge ✓ |
+| Lucky Pendant | scroll | Missions ✓ |
+| Fang's Truce | leaf | Survival ✓ |
+| Royal Hilt | sword + ◀▶ | Neighbours' Power ✓ |
+
+A **coloured oval = a card family**; a **skill icon = that skill**. Secret
+Lab's oval is green for potions, so the purple one is artifacts. Nothing in
+the game counts Wisdom cards at all — `favor_per_wisdom_x8` was fabricated.
+
+And the **12 is a COST**, not a "Req: 12 Gold" floor. Rulebook p.11 puts the
+card cost in the top-left gold coin; p.12 defines a Map as "the ability to
+play the Card for **no cost**", which is exactly what Forgotten Temple's map
+does. The data was charging it **twice** — `cost: 12` *and* `reqGold: 12`.
+The `reqGold` is gone.
+
+Real impact, correctly stated: the retype takes artifacts 10 → 8, so a
+correct Sacred Chest gets slightly **weaker**, not stronger. **No balance
+pass needed** — this is a straight correctness fix.
+
+**This card has now been committed wrong three separate times**
+(`philosopher_stone_x10`, "x8 stones", `favor_per_wisdom_x8`), every one from
+paraphrased audit text rather than the art. I checked the other five scaling
+cards against their medallions this time; they're all correct. The card art
+is the authority — the `audit:` strings in `data/cards.js` are transcriptions
+and demonstrably drift.
 
 ## Guardian: a display bug, not a duplicate card
 

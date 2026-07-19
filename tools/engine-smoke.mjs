@@ -2708,12 +2708,49 @@ console.log('\n── Card types: the seven families of the rulebook ──');
   // and the score sheet folds it into Adventures on purpose. If this list
   // ever grows, the sheet needs a decision — not a silent catch-all.
   const FAVOR_SPECIALS = ['favor_per_survival_x2', 'favor_per_quest_x5', 'favor_per_knowledge_x2',
-    'favor_per_sur_cha_pro', 'favor_per_wisdom_x8', 'favor_per_potion_x5',
+    'favor_per_sur_cha_pro', 'favor_per_artifact_x8', 'favor_per_potion_x5',
     'favor_per_neighbor_power', 'double_adventure_favor'];
   const payers = cards.filter(c => c.favor || FAVOR_SPECIALS.includes(c.special));
   const stray = payers.filter(c => c.type !== 'adventure' && c.type !== 'artifact');
   ok(stray.length === 1 && stray[0].name === 'Chemical Y',
     `only Chemical Y pays Favor off-family (${stray.map(c => `${c.name}:${c.type}`).join(', ') || 'none'})`);
+}
+
+console.log('\n── Sacred Chest: 8 Favor per ARTIFACT, and 12 Gold is a COST ──');
+{
+  // Wyatt 7/19: "Sacred Chest costs 12 gold, and it gives you 8 favor per
+  // artifact that you have." Both halves were wrong in the data.
+  //
+  // Its Favor medallion holds a PURPLE oval ×8. A coloured oval inside a
+  // Favor medallion means a CARD FAMILY — Secret Lab's is green for potions,
+  // Sacred Chest's is purple for artifacts — while a skill icon means that
+  // skill (Family Ring's book, Fang's Truce's leaf, Royal Hilt's sword). It
+  // was implemented as "8 Favor per Wisdom card"; nothing in the game counts
+  // Wisdom cards at all. Three different readings of this one card have been
+  // committed (philosopher_stone_x10, x8 stones, per-Wisdom) — every one of
+  // them from paraphrased text rather than the art.
+  const chest = cardByName('Sacred Chest');
+  ok(chest.special === 'favor_per_artifact_x8',
+    `Sacred Chest counts artifacts (${chest.special})`);
+  ok(chest.cost === 12 && !chest.reqGold,
+    `the 12 is a COST, not a hold-12-Gold floor (cost ${chest.cost}, reqGold ${chest.reqGold})`);
+
+  const g = newGame();
+  const p = g.players[0];
+  p.playedCards = [{ ...chest, id: 'sc' }];
+  ok(g.dynamicCardFavor(0, p.playedCards[0]) === 8,
+    `alone it scores 8 — it is itself an artifact you have (${g.dynamicCardFavor(0, p.playedCards[0])})`);
+
+  p.playedCards.push({ ...cardByName('Family Ring'), id: 'fr' },
+                     { ...cardByName('Royal Hilt'), id: 'rh' });
+  ok(g.dynamicCardFavor(0, p.playedCards[0]) === 24,
+    `three artifacts score 24 (${g.dynamicCardFavor(0, p.playedCards[0])})`);
+
+  // Wisdom cards must not move it — that was the whole bug.
+  p.playedCards.push({ ...cardByName('Fortune Teller'), id: 'ft' },
+                     { ...cardByName("Philosopher's Stone"), id: 'ps' });
+  ok(g.dynamicCardFavor(0, p.playedCards[0]) === 24,
+    `and two Wisdom cards change nothing (${g.dynamicCardFavor(0, p.playedCards[0])})`);
 }
 
 console.log('\n── Guardian gets ONE face in the melee row ──');
