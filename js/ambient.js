@@ -409,29 +409,45 @@
     // (subtle enough that this reads as terrain, not an error). Stateless.
     function stepCloudShadows(now, w, h) {
         const defs = [
-            { period: 74000, y: 0.78, rx: 0.34, ry: 0.15, a: 0.085, off: 0.0 },
-            { period: 103000, y: 0.66, rx: 0.26, ry: 0.11, a: 0.065, off: 0.47 },
+            { period: 56000, y: 0.78, rx: 0.38, ry: 0.17, a: 0.42, off: 0.0 },
+            { period: 83000, y: 0.66, rx: 0.30, ry: 0.13, a: 0.34, off: 0.47 },
         ];
-        defs.forEach(d => {
+        // multiply blend: darkens like real shade (flowers keep their hue)
+        // instead of a grey wash sitting on top
+        ctx.save();
+        ctx.globalCompositeOperation = 'multiply';
+        defs.forEach((d, di) => {
             const p = ((now / d.period) + d.off) % 1;      // 0..1 across
-            const x = (p * 1.5 - 0.25) * w;                // enter/exit offscreen
-            const y = d.y * h;
+            const cx = (p * 1.5 - 0.25) * w;               // enter/exit offscreen
+            const cy = d.y * h;
             const edge = Math.min(1, Math.min(p, 1 - p) * 5);   // soft in/out
-            const rx = d.rx * w, ry = d.ry * h;
-            const g = ctx.createRadialGradient(x, y, 0, x, y, rx);
-            g.addColorStop(0, `rgba(26, 34, 52, ${(d.a * edge).toFixed(3)})`);
-            g.addColorStop(0.7, `rgba(26, 34, 52, ${(d.a * 0.5 * edge).toFixed(3)})`);
-            g.addColorStop(1, 'rgba(26, 34, 52, 0)');
-            ctx.save();
-            ctx.translate(x, y);
-            ctx.scale(1, ry / rx);                          // squash: ground perspective
-            ctx.translate(-x, -y);
-            ctx.fillStyle = g;
-            ctx.beginPath();
-            ctx.arc(x, y, rx, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
+            if (edge <= 0.01) return;
+            // three offset lobes so the shade reads as a cloud's footprint,
+            // not a stamped circle
+            const lobes = [
+                { dx: 0, dy: 0, k: 1 },
+                { dx: -0.55, dy: 0.25, k: 0.72 },
+                { dx: 0.5, dy: -0.2, k: 0.66 },
+            ];
+            lobes.forEach(lb => {
+                const rx = d.rx * w * lb.k, ry = d.ry * h * lb.k;
+                const x = cx + lb.dx * d.rx * w, y = cy + lb.dy * d.ry * h;
+                const g = ctx.createRadialGradient(x, y, 0, x, y, rx);
+                g.addColorStop(0, `rgba(148, 152, 172, ${(d.a * edge).toFixed(3)})`);
+                g.addColorStop(0.65, `rgba(148, 152, 172, ${(d.a * 0.55 * edge).toFixed(3)})`);
+                g.addColorStop(1, 'rgba(148, 152, 172, 0)');
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.scale(1, ry / rx);                      // squash: ground perspective
+                ctx.translate(-x, -y);
+                ctx.fillStyle = g;
+                ctx.beginPath();
+                ctx.arc(x, y, rx, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
         });
+        ctx.restore();
     }
 
     // ══ PETALS — loose petals tumbling across the meadow breeze ═════════
