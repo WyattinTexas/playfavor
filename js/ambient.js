@@ -373,9 +373,9 @@
             // density: solid near the root, dissolving toward the tip, with
             // lumps travelling UP the ribbon (the rising-motion cue)
             const travel = 0.62 + 0.38 * Math.sin(u * 9 - t * 2.1);
-            const alpha = 0.30 * breath * Math.pow(1 - u, 1.25) * travel;
+            const alpha = 0.36 * breath * Math.pow(1 - u, 1.2) * travel;
             if (alpha < 0.004) continue;
-            const r = Math.max(1.4, (2.8 + u * 12) * s);
+            const r = Math.max(1.6, (3.8 + u * 17) * s);
             const x = ox + ix * s, y = oy + iy * s;
             const g = ctx.createRadialGradient(x, y, 0, x, y, r);
             g.addColorStop(0, `rgba(150, 146, 158, ${alpha.toFixed(3)})`);
