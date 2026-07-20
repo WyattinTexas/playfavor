@@ -334,54 +334,55 @@
         });
     }
 
-    // ══ CHIMNEY SMOKE — soft puffs curling from the cottage chimney ═════
+    // ══ CHIMNEY SMOKE — one thin lazy wisp from the cottage chimney ═════
     // Everything lives in IMAGE coordinates and rides coverTransform, so
     // the smoke stays glued to the chimney mouth at any window size (same
     // contract as COTTAGE_POLY — re-anchor SMOKE_EMIT if the bg changes).
-    // Drawn BEFORE the occluder: a fresh puff's base is clipped by the
+    // Drawn BEFORE the occluder: the wisp's root is clipped by the
     // chimney's own pixels, so it appears to emerge from inside the flue.
+    //
+    // Render: NOT stacked discs (v1 — read as grey circles on the art).
+    // The wisp is a metaball chain: ~30 tiny radial-gradient blobs sampled
+    // along a curling path, dense enough to fuse into one soft ribbon with
+    // no visible edges. Motion cues: the whole ribbon waves slowly, and a
+    // dissolve wave TRAVELS UPWARD along it (lumps of density rising), so
+    // it reads as climbing smoke rather than a static airbrush stroke.
+    // Fully stateless — every frame is a pure function of Date.now().
     const SMOKE_EMIT = { x: 607, y: 133 };        // chimney mouth (image px)
-    const SMOKE_SPACING = 1150;                   // ms between puff births
-
-    // STATELESS, like the birds: the set of live puffs is a pure function
-    // of the clock — each SMOKE_SPACING time slot births one puff whose
-    // character comes from hashing its slot index. No spawn state to
-    // starve on low-FPS devices, after tab-hidden pauses, or under
-    // virtual-time test renders; the column is always warm.
-    function hash01(j, k) {
-        const v = Math.sin(j * k) * 43758.5453;
-        return v - Math.floor(v);
-    }
+    const SMOKE_RISE = 62;                        // wisp height (image px)
 
     function stepSmoke(now, w, h) {
         if (!bgImg.complete || !bgImg.naturalWidth) return;
         const { s, ox, oy } = coverTransform(w, h);
-        if (ox + SMOKE_EMIT.x * s < -40 || ox + SMOKE_EMIT.x * s > w + 40) return;
-        const slot = Math.floor(now / SMOKE_SPACING);
-        for (let j = slot - 6; j <= slot; j++) {
-            const life = 4200 + hash01(j, 127.1) * 2400;
-            const age = now - j * SMOKE_SPACING;
-            if (age < 0 || age >= life) continue;
-            const jx = (hash01(j, 311.7) - 0.5) * 5;       // spawn jitter (image px)
-            const swayPhase = hash01(j, 74.7) * Math.PI * 2;
-            const r0 = 4.5 + hash01(j, 311.7) * 3;         // birth radius (image px)
-            const ageS = age / 1000;
-            const q = age / life;                  // 0..1 through its life
-            // rise decelerates as the puff thins; drift right on the same
-            // breeze the pollen rides, with a widening lazy sway
-            const ix = SMOKE_EMIT.x + jx + ageS * 5.5
-                     + Math.sin(ageS * 0.9 + swayPhase) * (4 + q * 10);
-            const iy = SMOKE_EMIT.y - ageS * 11 * (1 - q * 0.35);
-            const r = (r0 + q * 16) * s;
-            const fade = Math.min(1, q * 5) * Math.pow(1 - q, 0.9);
+        const exC = ox + SMOKE_EMIT.x * s;
+        if (exC < -40 || exC > w + 40) return;
+        const t = now / 1000;
+        const N = 30;
+        // slow breathing of the wisp's overall strength — sometimes the
+        // fire is drawing well, sometimes it's nearly out
+        const breath = 0.72 + 0.28 * Math.sin(t * 0.23 + Math.sin(t * 0.061) * 2);
+        for (let i = 0; i < N; i++) {
+            const u = i / (N - 1);                 // 0 root → 1 tip
+            // path: nearly vertical at the flue, bending right with height,
+            // waving as one connected ribbon (phase runs along u so the
+            // curl S-shapes rather than swinging like a stick)
+            const bend = u * u * 10;               // breeze carries the top
+            const wave = Math.sin(t * 0.8 - u * 3.2) * (1.5 + u * 7);
+            const ix = SMOKE_EMIT.x + bend + wave;
+            const iy = SMOKE_EMIT.y - u * SMOKE_RISE * (0.72 + 0.28 * breath);
+            // density: solid near the root, dissolving toward the tip, with
+            // lumps travelling UP the ribbon (the rising-motion cue)
+            const travel = 0.62 + 0.38 * Math.sin(u * 9 - t * 2.1);
+            const alpha = 0.20 * breath * Math.pow(1 - u, 1.35) * travel;
+            if (alpha < 0.004) continue;
+            const r = Math.max(1.2, (2.2 + u * 9) * s);
             const x = ox + ix * s, y = oy + iy * s;
+            const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+            g.addColorStop(0, `rgba(150, 146, 158, ${alpha.toFixed(3)})`);
+            g.addColorStop(1, 'rgba(150, 146, 158, 0)');
+            ctx.fillStyle = g;
             ctx.beginPath();
-            ctx.arc(x, y, Math.max(1, r), 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(138, 134, 148, ${(0.22 * fade).toFixed(3)})`;
-            ctx.fill();
-            ctx.beginPath();                        // soft halo
-            ctx.arc(x, y, Math.max(1, r * 1.7), 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(138, 134, 148, ${(0.10 * fade).toFixed(3)})`;
+            ctx.arc(x, y, r, 0, Math.PI * 2);
             ctx.fill();
         }
     }
