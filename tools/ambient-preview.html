@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>FAVOR — ambient menu preview</title>
+<style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #2a3a28; }
+    #title-screen { position: absolute; inset: 0; }
+    /* Mirror of the real .ts-bg + #tsAmbient — keep in sync with style.css */
+    .ts-bg {
+        position: absolute; inset: 0;
+        background: #2a3a28 url('../assets/ui/menu-meadow.jpg') no-repeat;
+        background-size: cover;
+        background-position: 68% 34%;
+    }
+    #tsAmbient { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .bar { position: fixed; bottom: 10px; left: 10px; z-index: 9; }
+    .bar button {
+        font: 700 13px/1.6 Georgia, serif; color: #f4e6c0; background: rgba(30, 22, 12, 0.82);
+        border: 1px solid #a8873f; border-radius: 8px; padding: 6px 14px; cursor: pointer;
+    }
+</style>
+</head>
+<body>
+    <!-- ambient.js gates on #title-screen visibility and draws on #tsAmbient -->
+    <div id="title-screen">
+        <div class="ts-bg"></div>
+        <canvas id="tsAmbient"></canvas>
+    </div>
+    <div class="bar">
+        <button onclick="window._ambientFlockNow()">Flock now ▸</button>
+    </div>
+    <script src="../js/ambient.js?v=20260720"></script>
+    <script>
+        // ?flock=1 spawns a flock immediately (headless captures use this).
+        // Optional deterministic overrides: &y=0.15 (baseY as h-fraction),
+        // &dir=-1, &dur=16000 — so a capture can aim the flock at the cottage.
+        (function () {
+            const q = new URLSearchParams(location.search);
+            if (!q.get('flock')) return;
+            const opts = {};
+            if (q.get('y')) opts.baseY = parseFloat(q.get('y')) * innerHeight;
+            if (q.get('dir')) opts.dir = parseInt(q.get('dir'), 10);
+            if (q.get('dur')) opts.dur = parseInt(q.get('dur'), 10);
+            if (q.get('y')) opts.drift = 0;
+            const arm = () => window._ambientFlockNow
+                ? window._ambientFlockNow(opts) : setTimeout(arm, 50);
+            setTimeout(arm, 300);
+        })();
+    </script>
+</body>
+</html>

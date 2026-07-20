@@ -41,13 +41,21 @@
     // CSS changes, change BG_POS here too.
     const BG_DIMS = { w: 2400, h: 1535 };
     const BG_POS = { x: 0.68, y: 0.34 };
+    // Auto-traced from the painting's pixels (tools/trace-occluder.py) —
+    // regenerate with that script if the menu bg or its crop ever changes.
+    // Covers the cottage AND the tree line to its right, out to where the
+    // treetops fall below the birds' flight band.
     const COTTAGE_POLY = [
-        [294, 414], [516, 252], [570, 180],            // left eave up the slope
-        [575, 127], [643, 125], [648, 158],            // chimney
-        [714, 106],                                    // ridge peak
-        [828, 314], [914, 360], [1034, 458],           // right gable down
-        [1130, 533], [1154, 624],                      // porch corner
-        [1154, 840], [216, 840], [216, 504],           // sloppy below the eaves
+        [216,505], [240,498], [242,491], [258,482], [282,481], [284,469],
+        [296,463], [312,440], [316,409], [348,395], [370,332], [386,331],
+        [426,269], [574,205], [578,146], [594,135], [636,142], [640,165],
+        [662,159], [702,136], [710,120], [726,120], [754,190], [866,403],
+        [888,404], [900,415], [908,415], [914,426], [916,455], [950,474],
+        [966,499], [976,501], [980,513], [1008,517], [1010,500], [1044,499],
+        [1046,488], [1082,485], [1084,475], [1118,477], [1136,489], [1138,502],
+        [1152,502], [1162,524], [1186,523], [1192,540], [1220,546], [1222,538],
+        [1242,539], [1268,570], [1290,560], [1292,550], [1310,550], [1320,561],
+        [1320,840], [216,840],
     ];
     const bgImg = new Image();
     bgImg.src = 'assets/ui/menu-meadow.jpg';
@@ -99,13 +107,22 @@
         const n = 4 + Math.floor(Math.random() * 4);
         const birds = [];
         for (let i = 0; i < n; i++) {
+            const size = 4 + Math.random() * 4.5;
             birds.push({
                 ox: (i - n / 2) * (26 + Math.random() * 14) + (Math.random() - 0.5) * 18,
                 oy: (Math.random() - 0.5) * 34 + Math.abs(i - n / 2) * 9,
-                size: 5 + Math.random() * 3.5,
-                flapSpeed: 5.5 + Math.random() * 2.5,
+                size,
+                // smaller birds read as farther: fainter, and they lag the
+                // flock a touch more so the formation breathes
+                alpha: 0.34 + (size - 4) * 0.05,
+                lag: (Math.random() - 0.5) * 0.06,
+                flapHz: 2.4 + Math.random() * 0.9,             // quick wingbeats
                 flapPhase: Math.random() * Math.PI * 2,
                 bobPhase: Math.random() * Math.PI * 2,
+                // flap-burst / glide cycle, each bird on its own clock
+                cycleT0: Date.now() - Math.random() * 3000,
+                flapFor: 900 + Math.random() * 1100,
+                glideFor: 700 + Math.random() * 1300,
             });
         }
         return {
@@ -114,6 +131,23 @@
             dur: 15000 + Math.random() * 6000,
             drift: (Math.random() - 0.5) * h * 0.12,
         };
+    }
+
+    // A bird's wing pose in [-0.55, 1]: quick sinusoidal beats during a
+    // flap burst, then a held shallow-V glide, blended at the seams so the
+    // wing never snaps. The burst/glide alternation is what sells "bird" —
+    // a constant sine reads as a metronome.
+    function wingPose(now, b) {
+        const cycle = b.flapFor + b.glideFor;
+        const tc = (now - b.cycleT0) % cycle;
+        const beat = Math.sin((now / 1000) * b.flapHz * Math.PI * 2 + b.flapPhase);
+        const GLIDE = 0.38;                                // wings up, shallow V
+        if (tc < b.flapFor) {
+            const blend = Math.min(1, Math.min(tc, b.flapFor - tc) / 180);
+            return GLIDE + (beat * 0.78 - GLIDE + 0.22) * blend;
+        }
+        const tremor = Math.sin(now / 240 + b.bobPhase) * 0.05;
+        return GLIDE + tremor;
     }
 
     function scheduleFlock(first) {
@@ -125,15 +159,28 @@
         }, delay);
     }
 
-    function drawBird(x, y, size, flap) {
-        const lift = flap * size * 0.55;
+    // Filled tapered-wing silhouette — the soft dark dab a painter would
+    // put in this sky, not a stroked glyph. `pose` raises/lowers the wings;
+    // the tips trail slightly below the leading edge, which is what makes
+    // the shape read as feathers instead of a check mark.
+    function drawBird(x, y, size, pose, alpha) {
+        const s = size, lift = pose * s * 0.72;
+        ctx.fillStyle = `rgba(42, 36, 46, ${alpha.toFixed(3)})`;
         ctx.beginPath();
-        ctx.moveTo(x - size, y - lift);
-        ctx.quadraticCurveTo(x - size * 0.32, y + size * 0.14, x, y);
-        ctx.quadraticCurveTo(x + size * 0.32, y + size * 0.14, x + size, y - lift);
-        ctx.lineWidth = Math.max(1.1, size * 0.17);
-        ctx.lineCap = 'round';
-        ctx.stroke();
+        for (const side of [-1, 1]) {
+            const tipX = x + side * s, tipY = y - lift;
+            ctx.moveTo(x, y - s * 0.10);
+            // leading edge out to the wingtip
+            ctx.quadraticCurveTo(x + side * s * 0.45, y - lift * 0.62 - s * 0.10, tipX, tipY);
+            // trailing edge back to the body, sagging behind the beat
+            ctx.quadraticCurveTo(x + side * s * 0.42, y - lift * 0.38 + s * 0.16, x, y + s * 0.12);
+            ctx.closePath();
+        }
+        ctx.fill();
+        // body: a small teardrop with a hint of tail
+        ctx.beginPath();
+        ctx.ellipse(x, y, s * 0.30, s * 0.13, 0, 0, Math.PI * 2);
+        ctx.fill();
     }
 
     function stepBirds(now, w, h) {
@@ -141,20 +188,20 @@
         const p = (now - flock.t0) / flock.dur;
         if (p >= 1) { flock = null; scheduleFlock(false); return; }
         const margin = 120;
-        const lx = flock.dir > 0 ? (-margin + p * (w + margin * 2))
-                                 : (w + margin - p * (w + margin * 2));
-        const ly = flock.baseY + flock.drift * p + Math.sin(p * Math.PI * 3) * 9;
-        ctx.strokeStyle = 'rgba(44, 38, 52, 0.55)';       // soft against the blue
         const t = now / 1000;
         flock.birds.forEach(b => {
-            const bob = Math.sin(t * 1.7 + b.bobPhase) * 3;
+            const bp = Math.max(0, Math.min(1, p + b.lag));   // stragglers trail
+            const lx = flock.dir > 0 ? (-margin + bp * (w + margin * 2))
+                                     : (w + margin - bp * (w + margin * 2));
+            const ly = flock.baseY + flock.drift * bp + Math.sin(bp * Math.PI * 3) * 9;
+            const bob = Math.sin(t * 1.7 + b.bobPhase) * 3.5;
             drawBird(lx + b.ox * flock.dir, ly + b.oy + bob,
-                     b.size, Math.sin(t * b.flapSpeed + b.flapPhase));
+                     b.size, wingPose(now, b), b.alpha);
         });
     }
 
     // ══ POLLEN — sparse sunlit motes climbing the light ═════════════════
-    const MOTES = 11;
+    const MOTES = 22;
     let motes = [];
 
     function makeMote(w, h, anywhere) {
@@ -285,4 +332,11 @@
 
     scheduleFlock(true);
     requestAnimationFrame(frame);
+
+    // Dev hook (harmless in prod): tools/ambient-preview.html uses this to
+    // spawn a flock on demand instead of waiting out the schedule.
+    window._ambientFlockNow = function (opts) {
+        const { w, h } = fit();
+        flock = Object.assign(makeFlock(w, h), opts || {});
+    };
 })();
