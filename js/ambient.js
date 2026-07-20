@@ -133,21 +133,33 @@
         };
     }
 
-    // A bird's wing pose in [-0.55, 1]: quick sinusoidal beats during a
-    // flap burst, then a held shallow-V glide, blended at the seams so the
-    // wing never snaps. The burst/glide alternation is what sells "bird" —
-    // a constant sine reads as a metronome.
-    function wingPose(now, b) {
+    // A bird's full flight state for this frame. The burst/glide alternation
+    // is what sells "bird" — a constant sine reads as a metronome — and the
+    // BOUNDING coupling is what sells "flight": climb through the flap burst,
+    // sink through the glide, so the path undulates with the wing rhythm.
+    //   pose  — wing raise in [-0.55, 1]; quick beats, then a held shallow V
+    //   alt   — bounding offset in [-1 (top of climb), +1 (bottom of sink)]
+    //   tilt  — body pitch (rad), nose up while climbing, down while sinking
+    function flightState(now, b) {
         const cycle = b.flapFor + b.glideFor;
         const tc = (now - b.cycleT0) % cycle;
         const beat = Math.sin((now / 1000) * b.flapHz * Math.PI * 2 + b.flapPhase);
         const GLIDE = 0.38;                                // wings up, shallow V
         if (tc < b.flapFor) {
             const blend = Math.min(1, Math.min(tc, b.flapFor - tc) / 180);
-            return GLIDE + (beat * 0.78 - GLIDE + 0.22) * blend;
+            const q = tc / b.flapFor;                      // climbing leg
+            return {
+                pose: GLIDE + (beat * 0.78 - GLIDE + 0.22) * blend,
+                alt: Math.cos(q * Math.PI),
+                tilt: -Math.sin(q * Math.PI) * 0.14,
+            };
         }
-        const tremor = Math.sin(now / 240 + b.bobPhase) * 0.05;
-        return GLIDE + tremor;
+        const q = (tc - b.flapFor) / b.glideFor;           // sinking leg
+        return {
+            pose: GLIDE + Math.sin(now / 240 + b.bobPhase) * 0.05,
+            alt: -Math.cos(q * Math.PI),
+            tilt: Math.sin(q * Math.PI) * 0.10,
+        };
     }
 
     function scheduleFlock(first) {
@@ -163,24 +175,28 @@
     // put in this sky, not a stroked glyph. `pose` raises/lowers the wings;
     // the tips trail slightly below the leading edge, which is what makes
     // the shape read as feathers instead of a check mark.
-    function drawBird(x, y, size, pose, alpha) {
+    function drawBird(x, y, size, pose, alpha, tilt) {
         const s = size, lift = pose * s * 0.72;
+        ctx.save();
+        ctx.translate(x, y);
+        if (tilt) ctx.rotate(tilt);
         ctx.fillStyle = `rgba(42, 36, 46, ${alpha.toFixed(3)})`;
         ctx.beginPath();
         for (const side of [-1, 1]) {
-            const tipX = x + side * s, tipY = y - lift;
-            ctx.moveTo(x, y - s * 0.10);
+            const tipX = side * s, tipY = -lift;
+            ctx.moveTo(0, -s * 0.10);
             // leading edge out to the wingtip
-            ctx.quadraticCurveTo(x + side * s * 0.45, y - lift * 0.62 - s * 0.10, tipX, tipY);
+            ctx.quadraticCurveTo(side * s * 0.45, -lift * 0.62 - s * 0.10, tipX, tipY);
             // trailing edge back to the body, sagging behind the beat
-            ctx.quadraticCurveTo(x + side * s * 0.42, y - lift * 0.38 + s * 0.16, x, y + s * 0.12);
+            ctx.quadraticCurveTo(side * s * 0.42, -lift * 0.38 + s * 0.16, 0, s * 0.12);
             ctx.closePath();
         }
         ctx.fill();
         // body: a small teardrop with a hint of tail
         ctx.beginPath();
-        ctx.ellipse(x, y, s * 0.30, s * 0.13, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, 0, s * 0.30, s * 0.13, 0, 0, Math.PI * 2);
         ctx.fill();
+        ctx.restore();
     }
 
     function stepBirds(now, w, h) {
@@ -194,14 +210,17 @@
             const lx = flock.dir > 0 ? (-margin + bp * (w + margin * 2))
                                      : (w + margin - bp * (w + margin * 2));
             const ly = flock.baseY + flock.drift * bp + Math.sin(bp * Math.PI * 3) * 9;
-            const bob = Math.sin(t * 1.7 + b.bobPhase) * 3.5;
-            drawBird(lx + b.ox * flock.dir, ly + b.oy + bob,
-                     b.size, wingPose(now, b), b.alpha);
+            const f = flightState(now, b);
+            // slow formation wander so the flock breathes instead of riding rails
+            const wx = Math.sin(t * 0.25 + b.bobPhase * 1.7) * 7;
+            const bound = f.alt * (2.5 + b.size * 0.9);       // bounding flight
+            drawBird(lx + (b.ox + wx) * flock.dir, ly + b.oy + bound,
+                     b.size, f.pose, b.alpha, f.tilt * flock.dir);
         });
     }
 
     // ══ POLLEN — sparse sunlit motes climbing the light ═════════════════
-    const MOTES = 22;
+    const MOTES = 36;
     let motes = [];
 
     function makeMote(w, h, anywhere) {

@@ -4,13 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>FAVOR — ambient menu preview</title>
+<!-- ambient.js loads the bg image by a page-relative path for its occlusion
+     patch; base ../ makes this page resolve assets exactly like index.html
+     does. Without it the patch 404s and birds fly IN FRONT of the cottage. -->
+<base href="../">
 <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #2a3a28; }
     #title-screen { position: absolute; inset: 0; }
     /* Mirror of the real .ts-bg + #tsAmbient — keep in sync with style.css */
     .ts-bg {
         position: absolute; inset: 0;
-        background: #2a3a28 url('../assets/ui/menu-meadow.jpg') no-repeat;
+        background: #2a3a28 url('assets/ui/menu-meadow.jpg') no-repeat;
         background-size: cover;
         background-position: 68% 34%;
     }
@@ -31,7 +35,7 @@
     <div class="bar">
         <button onclick="window._ambientFlockNow()">Flock now ▸</button>
     </div>
-    <script src="../js/ambient.js?v=20260720"></script>
+    <script src="js/ambient.js?v=20260720b"></script>
     <script>
         // ?flock=1 spawns a flock immediately (headless captures use this).
         // Optional deterministic overrides: &y=0.15 (baseY as h-fraction),
