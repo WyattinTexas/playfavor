@@ -57,6 +57,13 @@ const SPECIAL_DESCRIPTIONS = {
     "favor_per_artifact_x8":         "Scores 8 Favor for each Artifact you have.",
     "favor_per_neighbor_power":      "Scores 1 Favor for each Power your neighbors have.",
     "power_6_if_blind_faith":        "+6 Power in Melee while you own Blind Faith.",
+    // ── Side B board slots (docs/FAVOR-XP-SIDEB-SPEC.md) ──
+    "minds_eye_x5":                  "+5 Knowledge (5 Mind's Eyes).",
+    "minds_eye_x8":                  "+8 Knowledge (8 Mind's Eyes).",
+    "adventure_card_5_prestige":     "Playing an Adventure card earns +5 Prestige.",
+    "weapon_card_3_gold":            "Playing a Weapon card earns +3 Gold.",
+    "free_potion_per_round":         "Play 1 Potion card per round ignoring its cost.",
+    "alchemy_adds_to_power":         "Your Alchemy amount adds to your Power.",
 };
 
 // ─── ANIMATION QUEUE ─────────────────────────────────────
@@ -799,7 +806,12 @@ function commitHeroPick(auto) {
     const hero = selectedCharacter || (fallback && fallback.id);
     if (pick.mp) {
         selectedCharacter = hero;
-        FMP.publishPick(hero);
+        // Side rides the pick (spec §8): explicit chooser tap, else last
+        // played, else A — resolved NOW so the 0:00 auto-pick never stalls.
+        const side = chosenSideFor(hero);
+        const heroDef = window.FAVOR_DATA.characters.find(x => x.id === hero);
+        if (heroDef && heroDef.altSlots) setSidePref(hero, side || 'a');
+        FMP.publishPick(hero, side || 'a');
         if (auto) showNotification('The clock decides — your hero answers.', 'act');
         const ribbon = document.getElementById('queuePledge');
         if (ribbon) ribbon.innerHTML =
@@ -867,6 +879,66 @@ function rollStickyOffer() {
     localStorage.setItem('favorOffer',
         JSON.stringify({ ids: offer.map(c => c.id), at: Date.now() }));
     return offer;
+}
+
+// ═══ Side B — which side rides when a hero is confirmed ══════════════
+// (docs/FAVOR-XP-SIDEB-SPEC.md §5.) The chooser's explicit tap wins;
+// otherwise the last side PLAYED on that hero (persisted at confirm),
+// else A. That is also exactly what the 0:00 auto-pick commits, so the
+// pick clock can never stall waiting for a side nobody chose. Validated
+// against the CURRENT unlock every time — a stale 'b' preference can
+// never sneak a locked board into a table.
+function sidePref(heroId) {
+    try { return (JSON.parse(localStorage.getItem('favorSidePref')) || {})[heroId] || 'a'; }
+    catch (e) { return 'a'; }
+}
+function setSidePref(heroId, side) {
+    let m = {};
+    try { m = JSON.parse(localStorage.getItem('favorSidePref')) || {}; } catch (e) { /* fresh */ }
+    m[heroId] = side === 'b' ? 'b' : 'a';
+    try { localStorage.setItem('favorSidePref', JSON.stringify(m)); } catch (e) { /* private mode */ }
+}
+function chosenSideFor(heroId) {
+    const c = window.FAVOR_DATA.characters.find(x => x.id === heroId);
+    if (!c || !c.altSlots) return null;
+    if (!(window.FLB && typeof FLB.sideBUnlocked === 'function' && FLB.sideBUnlocked(heroId))) return null;
+    const side = (window._sideChoice && window._sideChoice.hero === heroId)
+        ? window._sideChoice.side : sidePref(heroId);
+    return side === 'b' ? 'b' : null;
+}
+
+// The two-step's second step: a hero at Level 5+ expands a side chooser
+// under the grid — two board thumbnails, each wearing its own epithet.
+// Below Level 5 the card's greyed badge IS the advertisement; no chooser.
+function renderSideChooser(heroId) {
+    const box = document.getElementById('sideChooser');
+    if (!box) return;
+    const c = heroId && window.FAVOR_DATA.characters.find(x => x.id === heroId);
+    const unlocked = c && c.altSlots && window.FLB
+        && typeof FLB.sideBUnlocked === 'function' && FLB.sideBUnlocked(heroId);
+    if (!unlocked) { box.classList.remove('on'); box.innerHTML = ''; return; }
+    const side = (window._sideChoice && window._sideChoice.hero === heroId)
+        ? window._sideChoice.side : sidePref(heroId);
+    box.innerHTML = `
+        <div class="sc-title">Choose your board — ${c.name}</div>
+        <div class="sc-sides">
+            <div class="sc-side${side !== 'b' ? ' on' : ''}" data-side="a" role="button" aria-pressed="${side !== 'b'}">
+                <img src="assets/characters/${c.filename}" alt="${c.name} Side A">
+                <div class="sc-lab"><b>Side A</b><i>${c.epithet || ''}</i></div>
+            </div>
+            <div class="sc-side${side === 'b' ? ' on' : ''}" data-side="b" role="button" aria-pressed="${side === 'b'}">
+                <img src="assets/characters/${c.altFilename || c.filename}" alt="${c.name} Side B">
+                <div class="sc-lab"><b>Side B</b><i>${c.altEpithet || ''}</i></div>
+            </div>
+        </div>`;
+    box.querySelectorAll('.sc-side').forEach(el => {
+        el.onclick = (e) => {
+            e.stopPropagation();
+            window._sideChoice = { hero: heroId, side: el.dataset.side };
+            renderSideChooser(heroId);
+        };
+    });
+    box.classList.add('on');
 }
 
 // The way home from the hero screen (skip-queue/offline paths) — and the
@@ -1333,8 +1405,21 @@ function showCharacterSelect(offer) {
 
         const stars = '\u2605'.repeat(Math.floor(char.difficulty || 1));
 
+        // The Gilt Ribbon + the Side B badge. Below Level 5 the greyed
+        // lock badge is the advertisement (spec \u00a75); at 5+ it lights.
+        const fv = (window.FLB && typeof FLB.heroFv === 'function') ? FLB.heroFv(char.id) : 0;
+        const ribbon = (window.FLB && typeof FLB.xpRibbonHtml === 'function')
+            ? `<div class="hs-xp">${FLB.xpRibbonHtml(fv, 11, 13)}</div>` : '';
+        const unlockedB = char.altSlots && window.FLB
+            && typeof FLB.sideBUnlocked === 'function' && FLB.sideBUnlocked(char.id);
+        const badge = char.altSlots
+            ? `<span class="side-badge${unlockedB ? ' lit' : ''}">${unlockedB ? 'Side A \u21c4 B' : 'Side B \u00b7 Lv 5'}</span>`
+            : '';
+
         card.innerHTML = `
+            ${badge}
             <img src="assets/characters/${char.filename}" alt="${char.name}">
+            ${ribbon}
             <div class="character-info">
                 <h3>${char.name}</h3>
                 ${char.epithet ? `<div class="epithet">${char.epithet}</div>` : ''}
@@ -1345,6 +1430,19 @@ function showCharacterSelect(offer) {
 
         grid.appendChild(card);
     });
+
+    // The side chooser (two-step, step 2) lives between the grid and the
+    // Begin button; a fresh visit starts collapsed with no explicit choice.
+    let chooser = document.getElementById('sideChooser');
+    if (!chooser) {
+        chooser = document.createElement('div');
+        chooser.id = 'sideChooser';
+        chooser.className = 'side-chooser';
+        grid.parentNode.insertBefore(chooser, grid.nextSibling);
+    }
+    window._sideChoice = null;
+    chooser.classList.remove('on');
+    chooser.innerHTML = '';
 }
 
 function selectCharacter(id, cardEl) {
@@ -1378,6 +1476,9 @@ function selectCharacter(id, cardEl) {
     document.querySelectorAll('.character-card').forEach(c => c.classList.remove('selected'));
     cardEl.classList.add('selected');   // cardEl now holds the center slot
     selectedCharacter = id;
+    // Step 2 of the two-step: a Level-5+ hero expands the side chooser
+    // (collapses again when a locked hero takes the ring).
+    renderSideChooser(id);
     const btn = document.getElementById('confirmBtn');
     btn.style.display = 'inline-block';
     // Begin Your Journey sits below the fold on phones — picking a hero
@@ -1505,8 +1606,11 @@ function resumeSoloSave() {
             hands: [],
             players: s.g.players.map(p => ({
                 ...p,
+                // The save round-trips character BY ID and side separately —
+                // the resolver returns the Side B view when p.side === 'b',
+                // so a resumed table never silently reverts to Side A.
                 character: p.character
-                    ? window.FAVOR_DATA.characters.find(c => c.id === p.character) || null
+                    ? g.resolveCharacterView(p.character, p.side) || null
                     : null,
                 _actSlotEvents: new Set(p._actSlotEvents || []),
             })),
@@ -1662,16 +1766,26 @@ async function buildSoloTable() {
 
     // Bots draw from the heroes that were NOT offered to you — the other
     // "players" in your queue already took theirs, so the three on your
-    // screen (minus your pick) stay off the table.
+    // screen (minus your pick) stay off the table. Earned-only heroes
+    // (spec §6b) are excluded at the SOURCE list, so both this filter AND
+    // the under-pressure safety fallback below inherit the exclusion.
     const offered = _offeredHeroes.map(c => c.id);
-    const allChars = window.FAVOR_DATA.characters.map(c => c.id);
+    const allChars = window.FAVOR_DATA.characters
+        .filter(c => !c.earnedOnly).map(c => c.id);
     let available = allChars.filter(id => id !== selectedCharacter && !offered.includes(id));
     // Safety: never run short of rivals (10 - 3 offered = 7 ≥ 4 bots today).
     if (available.length < playerCount - 1) {
         available = allChars.filter(id => id !== selectedCharacter);
     }
 
-    const choices = [{ characterId: selectedCharacter, playerName: 'You' }];
+    // Your side resolves at the door (chooser tap → last played → A) and
+    // the confirmed side becomes the hero's new default. Bots never carry
+    // a side — Side A always (spec §6b).
+    const mySide = chosenSideFor(selectedCharacter);
+    const myDef = window.FAVOR_DATA.characters.find(x => x.id === selectedCharacter);
+    if (myDef && myDef.altSlots) setSidePref(selectedCharacter, mySide || 'a');
+    const choices = [{ characterId: selectedCharacter, playerName: 'You',
+                       side: mySide || undefined }];
 
     const shuffled = shuffleArray(available);
     // Skirmish and rival tables wear the thematic court names (Wyatt 7/16:
@@ -1916,7 +2030,11 @@ async function startMpGame({ game: rec, mySeat }) {
     const choices = [];
     for (let i = 0; i < n; i++) {
         const r = rec.roster[(mySeat + i) % n];
-        choices.push({ characterId: r.hero, playerName: i === 0 ? 'You' : r.name });
+        // side survives the seal on HUMAN rows only — bots and personas
+        // ride Side A, always (spec §6b), so the guard is explicit here
+        // rather than trusting the record's shape.
+        choices.push({ characterId: r.hero, playerName: i === 0 ? 'You' : r.name,
+                       side: (r.human && r.side === 'b') ? 'b' : undefined });
     }
     game.initPlayers(choices);
     for (let i = 1; i < n; i++) {
@@ -2564,9 +2682,19 @@ function renderPhaseBar(state) {
 
 // ── Board Thumbnail ──
 
+// YOUR hero as the table resolved it — the seat's per-player view (which
+// carries Side B's art and slots), falling back to the base roster object
+// before a table exists. A raw by-id find() here silently renders Side A
+// on every Side B game (the exact straggler the spec told us to audit).
+function myCharView() {
+    if (typeof game !== 'undefined' && game && game.players && game.players[0]
+        && game.players[0].character) return game.players[0].character;
+    return window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
+}
+
 function renderBoardThumb(state) {
     const el = document.getElementById('boardThumb');
-    const char = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
+    const char = myCharView();
     if (!char) return;
 
     // The ring rides the thumb at the same %-based track the big overlay
@@ -3192,7 +3320,7 @@ function renderTvMissionRail(state) {
 function renderTvBoardThumb(state) {
     const el = document.getElementById('tvBoardThumb');
     if (!el) return;
-    const char = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
+    const char = myCharView();   // the SEAT's view — Side B art included
     if (!char) return;
     const cur = (game && game.players[0]) ? game.players[0].sliderPosition : 2;
     el.innerHTML = `
@@ -3596,7 +3724,7 @@ function renderTableView(state) {
 // ── Board Overlay ──
 
 function openBoardOverlay() {
-    const char = window.FAVOR_DATA.characters.find(c => c.id === selectedCharacter);
+    const char = myCharView();   // the SEAT's view — Side B art included
     if (!char) return;
     if (typeof coachMarkSeen === 'function') coachMarkSeen('welcome');
 
@@ -6266,13 +6394,25 @@ function showSlotSkillPicker() {
         const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
         let chosen = opts[0];
 
+        // Magician Side B's pick set includes SPECIALS — a Mind's Eye or a
+        // Philosopher's Stone. They read from their own counters and wear
+        // their own icons; plain skills render exactly as before.
+        const PICK_SPECIALS = {
+            minds_eye: { name: "Mind's Eye", icon: 'assets/icons/minds_eye.png',
+                have: () => game.getMindsEyeCount(0) },
+            philosopher_stone: { name: "Philosopher's Stone", icon: 'assets/icons/philosopher.png',
+                have: () => (game.players[0].philosopherStone || 0) },
+        };
+        const pickName = s => PICK_SPECIALS[s] ? PICK_SPECIALS[s].name : cap(s);
+
         const render = () => {
             const tiles = opts.map(s => {
-                const have = game.effectiveSkill(0, s);
+                const sp = PICK_SPECIALS[s];
+                const have = sp ? sp.have() : game.effectiveSkill(0, s);
                 return `
                 <div class="pp-skill${chosen === s ? ' chosen' : ''}" data-s="${s}">
-                    <img src="assets/icons/${s}.png" alt="${cap(s)}">
-                    <span class="pp-skill-name">${cap(s)}</span>
+                    <img src="${sp ? sp.icon : `assets/icons/${s}.png`}" alt="${pickName(s)}">
+                    <span class="pp-skill-name">${pickName(s)}</span>
                     <span class="pp-skill-have">${have} <b>➜ ${have + 1}</b></span>
                 </div>`;
             }).join('');
@@ -6283,7 +6423,7 @@ function showSlotSkillPicker() {
                     <div class="pp-cards skills">${tiles}</div>
                     <div class="pp-actions">
                         <button class="btn-royal primary" id="slotPickConfirm">
-                            <span>Take +1 ${cap(chosen)}</span>
+                            <span>Take +1 ${pickName(chosen)}</span>
                         </button>
                     </div>
                 </div>`;
@@ -6295,8 +6435,8 @@ function showSlotSkillPicker() {
                 // through the same engine call, in stream order.
                 mpPub('slot_pick', { skill: chosen });
                 game.applySlotPick(0, chosen);
-                addLogEntry(`You pick +1 ${cap(chosen)} from your board`);
-                showNotification(`+1 ${cap(chosen)} from your board`, 'play');
+                addLogEntry(`You pick +1 ${pickName(chosen)} from your board`);
+                showNotification(`+1 ${pickName(chosen)} from your board`, 'play');
                 ov.classList.remove('active');
                 renderGameState();
                 resolve();
@@ -6415,8 +6555,15 @@ function showScoring() {
     const myHeroId = game.players[0] && game.players[0].character
         ? game.players[0].character.id : null;
     clearSoloSave();   // the table finished — nothing left to resume
-    if (window.FLB) FLB.postGameResult(scores, personaPlaces,
-        { ratings: tableRatings, myChar: myHeroId });
+    if (window.FLB) {
+        // The resolved XP (computed INSIDE the posting transaction) paints
+        // the victory chip late and raises the Level 5 ceremony — never a
+        // re-read of the row, so it can neither miss nor double-fire.
+        FLB.postGameResult(scores, personaPlaces,
+            { ratings: tableRatings, myChar: myHeroId })
+            .then(xp => { if (xp) paintVictoryXp(xp); })
+            .catch(() => { /* offline — no track moved, no chip */ });
+    }
     // WANTED: finishing ahead of today's named rival pays Stars once
     // per window (modes.js owns the claim and the once-a-day gate).
     if (window.FMODES) FMODES.rivalGameOver(scores);
@@ -6561,7 +6708,15 @@ function showScoring() {
 
     // Roll every total up from 0 (the Melee splash count-up, ease-out).
     // data-fmt="rating" totals hold internal Elo and read as 1.00–7.00.
-    content.querySelectorAll('[data-total]').forEach(b => {
+    animateVsTotals(content);
+}
+
+// The count-up, callable for late-arriving chips too (the XP delta lands
+// when its transaction commits, after the sheet has already rolled).
+function animateVsTotals(root) {
+    root.querySelectorAll('[data-total]').forEach(b => {
+        if (b._vsRolled) return;   // once per element
+        b._vsRolled = true;
         const target = parseInt(b.dataset.total, 10) || 0;
         const show = b.dataset.fmt === 'rating'
             ? (v) => (Math.max(0, Math.min(7000, v)) / 1000).toFixed(2)
@@ -6576,6 +6731,46 @@ function showScoring() {
         };
         setTimeout(() => requestAnimationFrame(tick), parseInt(b.dataset.cd, 10) || 350);
     });
+}
+
+// ═══ The hero's Gilt Ribbon on the victory screen (spec §10) ═════════
+// A delta chip beside the rating chip: level numeral + ribbon + the Favor
+// banked. The level arrow appears ONLY when this game actually crossed a
+// level — "3 → 3" reads like a bug. Ordinary level-ups stay this quiet;
+// Level 5 alone raises the champ overlay, dressed as the board turning.
+function paintVictoryXp(xp) {
+    const content = document.getElementById('scoringContent');
+    const hero = window.FAVOR_DATA.characters.find(c => c.id === xp.charId);
+    if (!content || !hero || !window.FLB) return;
+    let row = content.querySelector('.vs-deltas');
+    if (!row) {
+        // Offline sheets render no deltas row — the chip builds its own
+        // home in the same slot so the layout stays the design's.
+        const head = content.querySelector('.vs-head');
+        if (!head) return;
+        row = document.createElement('div');
+        row.className = 'vs-deltas';
+        head.insertAdjacentElement('afterend', row);
+    }
+    const gained = Math.max(0, xp.fvAfter - xp.fvBefore);
+    const rose = xp.levelAfter > xp.levelBefore;
+    const chip = document.createElement('div');
+    chip.className = 'vs-delta xp';
+    chip.innerHTML = `
+        <span class="vs-d-what">${hero.name} · Level</span>
+        ${rose ? `<b>${xp.levelBefore}</b><span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${xp.levelAfter}">0</b>`
+               : `<b>${xp.levelAfter}</b>`}
+        <span class="vs-d-fv">+${gained} Favor</span>
+        <div class="vs-d-rb">${FLB.xpRibbonHtml(xp.fvAfter, 9, 11)}</div>`;
+    row.appendChild(chip);
+    animateVsTotals(chip);
+
+    // Level 5 — the one that gets a ceremony (fourth champ dress).
+    const sideBLv = (typeof FLB.sideBLevel === 'function') ? FLB.sideBLevel() : 5;
+    if (hero.altSlots && xp.levelBefore < sideBLv && xp.levelAfter >= sideBLv
+        && typeof FLB.showSideBCelebration === 'function') {
+        setTimeout(() => { FLB.showSideBCelebration(hero); }, 1400);
+    }
 }
 
 // ═══ SCORE BREAKDOWN — tap a sheet cell, see the cards behind the number ══

@@ -120,7 +120,12 @@
     // 16: the Favor ledger (favorLog streams in getState), two invented Favor
     //     sources removed, and 20 cards retyped off the printed frame colors —
     //     a v15 seat would score the same table differently.
-    const MPV = 16;
+    // 17: Side B boards — picks publish { hero, side } and the sealed roster
+    //     carries side per human seat. Lockstep clients must resolve the SAME
+    //     board per player (slots, purse, specials) or gold, skills, Mind's
+    //     Eye count and the final tally fork on every other screen. A v16
+    //     seat can't parse the pick shape and knows nothing of altSlots.
+    const MPV = 17;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.
@@ -645,24 +650,43 @@
     // personas take their signature when it survived; everyone left draws
     // from the unclaimed shuffle.
     async function sealRoster(gid, rec, picks) {
+        // ⚠ allHeroes does TWO jobs — it VALIDATES a human's published pick
+        // and (via botPool below) FILLS empty seats. It must stay WHOLE for
+        // validation: strip the earned hero from it and a human who owns it
+        // gets their pick silently rejected and reassigned. Only the fill
+        // pool excludes earned-only heroes (and personas' sigHero is a
+        // hardcoded original, so it needs no filter).
         const allHeroes = window.FAVOR_DATA.characters.map(c => c.id);
+        const botPool = window.FAVOR_DATA.characters
+            .filter(c => !c.earnedOnly).map(c => c.id);
         const taken = new Set();
         const roster = rec.roster.map(r => ({ ...r }));
         for (const r of roster) {
             if (!r.human) continue;
-            let hero = picks[r.uid];
+            // v17 pick shape: { hero, side } — side rides the roster so every
+            // lockstep client resolves the same board for this seat. The
+            // MPV gate keeps pre-17 shapes out of the pool entirely.
+            const pk = picks[r.uid];
+            let hero = pk && typeof pk === 'object' ? pk.hero : pk;
+            const side = pk && typeof pk === 'object' && pk.side === 'b' ? 'b' : null;
             if (!hero || !allHeroes.includes(hero) || taken.has(hero)) hero = null;
             if (!hero && Array.isArray(r.offer)) {
                 const fromOffer = r.offer.filter(h => allHeroes.includes(h) && !taken.has(h));
                 if (fromOffer.length) hero = fromOffer[0];
             }
-            if (hero) { r.hero = hero; taken.add(hero); }
+            if (hero) {
+                r.hero = hero;
+                taken.add(hero);
+                // The side only survives on the hero it was chosen FOR — a
+                // collision fallback rides Side A, never a stale side.
+                if (side && pk.hero === hero) r.side = 'b';
+            }
         }
         for (const r of roster) {
             if (r.human || !r.persona) continue;
             if (r.sigHero && !taken.has(r.sigHero)) { r.hero = r.sigHero; taken.add(r.sigHero); }
         }
-        const free = allHeroes.filter(h => !taken.has(h));
+        const free = botPool.filter(h => !taken.has(h));
         for (let i = free.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [free[i], free[j]] = [free[j], free[i]];
@@ -670,7 +694,7 @@
         roster.forEach(r => {
             if (!r.hero) { r.hero = free.pop() || allHeroes[0]; taken.add(r.hero); }
             delete r.offer;      // the sealed roster carries no scaffolding
-            delete r.sigHero;
+            delete r.sigHero;    // (r.side survives — the table needs it)
         });
         await gameRef(gid).update({ status: 'live', roster });
     }
@@ -679,10 +703,13 @@
     // carries it; the host seals from these. Queue matches and room games
     // both answer here: whichever pick phase is live owns the target.
     let _roomPickGid = null;
-    function publishPick(heroId) {
+    function publishPick(heroId, side) {
         const gid = (q && q.prop && q.state === 'picking') ? q.prop.gid : _roomPickGid;
         if (!gid) return;
-        try { gameRef(gid).child(`picks/${uid()}`).set(heroId || null); } catch (e) {}
+        // v17 shape: { hero, side } — side 'b' only ever arrives from a
+        // client whose own level unlocked it (chosenSideFor validates).
+        const pick = heroId ? { hero: heroId, side: side === 'b' ? 'b' : 'a' } : null;
+        try { gameRef(gid).child(`picks/${uid()}`).set(pick); } catch (e) {}
     }
 
     // ── Private rooms — a lobby that hands off to the pick pipeline ──

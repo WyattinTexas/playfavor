@@ -82,13 +82,19 @@ class FavorGame {
     // ─── SETUP ─────────────────────────────────────────────────
 
     initPlayers(characterChoices) {
-        // characterChoices: array of { characterId, playerName }
+        // characterChoices: array of { characterId, playerName, side? }
+        // side 'b' resolves the hero's ALTERNATE board (Side B). Only human
+        // seats ever carry a side — both call sites (buildSoloTable,
+        // startMpGame) leave it off bot/persona rows, and anything but the
+        // literal 'b' resolves to Side A, so a bot can never drift onto an
+        // alt board.
         this.players = characterChoices.map((choice, i) => {
-            const char = this.getCharacter(choice.characterId);
+            const char = this.resolveCharacterView(choice.characterId, choice.side);
             return {
                 index: i,
                 name: choice.playerName,
                 character: char,
+                side: (char && char._side) === 'b' ? 'b' : 'a',
                 sliderPosition: SLIDER_CENTER,  // 0-4, center = 2
                 gold: char ? char.startingGold : STARTING_GOLD,
                 prestige: 0,
@@ -122,6 +128,29 @@ class FavorGame {
 
     getCharacter(id) {
         return window.FAVOR_DATA.characters.find(c => c.id === id);
+    }
+
+    /**
+     * The character object a PLAYER actually holds. Side A returns the
+     * shared singleton untouched; Side B returns a per-player VIEW — the
+     * base objects in FAVOR_DATA are referenced by every player at every
+     * table and must never be mutated (spec §9). Resolving `filename` on
+     * the same view is what makes the art correct at every render site
+     * that reads player.character. Side B's purse derives from ITS center
+     * coin, pre-claimed exactly like Side A's (Duchess A = 3+5, B = 3+3).
+     */
+    resolveCharacterView(characterId, side) {
+        const base = this.getCharacter(characterId);
+        if (!base || side !== 'b' || !base.altSlots) return base;
+        return {
+            ...base,
+            _side: 'b',
+            slots: base.altSlots,
+            filename: base.altFilename || base.filename,
+            epithet: base.altEpithet || base.epithet,
+            subtitle: base.altEpithet || base.subtitle,
+            startingGold: STARTING_GOLD + ((base.altSlots[SLIDER_CENTER] && base.altSlots[SLIDER_CENTER].gold) || 0),
+        };
     }
 
     loadDecks() {
@@ -216,6 +245,7 @@ class FavorGame {
         this.players.forEach((p, i) => {
             p.hand = this.hands[(i + (this._dealOffset || 0)) % this.playerCount];
             p._paidSlideDir = null;
+            p._freePotionRound = false;   // Doctor B's per-round waiver recharges
             // New act — the farmable slot events (steal-prestige / choose-mission
             // / pick-one) recharge. Coins never needed tracking; they always pay.
             p._actSlotEvents = new Set();
@@ -300,8 +330,9 @@ class FavorGame {
         }
         this.players[this.playerCount - 1].hand = temp;
 
-        // New turn — the paid-slide direction lock releases.
-        this.players.forEach(p => { p._paidSlideDir = null; });
+        // New turn — the paid-slide direction lock releases, and Doctor B's
+        // one-free-Potion-per-round waiver recharges.
+        this.players.forEach(p => { p._paidSlideDir = null; p._freePotionRound = false; });
 
         this.phase = PHASES.ACTIVATE;
         this.activePlayerIndex = this.emblemHolder;
@@ -473,7 +504,8 @@ class FavorGame {
         // no refund. 45 of 105 cards carry a cost; Wyatt met it as "Mind Warper
         // didn't turn my Scorn into Prestige". A map that plays the card free
         // short-circuits at the top, so this never fires on a map-waived play.
-        if (card.cost && card.cost > 0 && player.gold < card.cost) {
+        if (card.cost && card.cost > 0 && player.gold < card.cost
+            && !this.freePotionAvailable(playerIndex, card)) {
             missingSpecial.push(`${card.cost} Gold`);
         }
 
@@ -482,6 +514,22 @@ class FavorGame {
             missingSkills: missing,
             missingSpecial
         };
+    }
+
+    /**
+     * Doctor Side B: "You may play 1 Potion card per round ignoring its
+     * cost." True while the ring sits on the slot, the card is a costed
+     * Potion, and this round's waiver is unspent. checkRequirements AND
+     * activateCard both consult this, so the Play button and the engine
+     * can never disagree about affordability.
+     */
+    freePotionAvailable(playerIndex, card) {
+        const player = this.players[playerIndex];
+        if (!player || player._freePotionRound) return false;
+        if (!card || card.type !== 'potion' || !card.cost || card.cost <= 0) return false;
+        const slot = player.character && player.character.slots
+            ? player.character.slots[player.sliderPosition] : null;
+        return !!(slot && slot.special === 'free_potion_per_round');
     }
 
     /**
@@ -495,6 +543,7 @@ class FavorGame {
         if (slot && slot.special) {
             if (slot.special === 'minds_eye' || slot.special === 'minds_eye_and_philosopher') count += 1;
             if (slot.special === 'minds_eye_x5') count += 5;
+            if (slot.special === 'minds_eye_x8') count += 8;   // Fisherman Side B
         }
         for (const c of player.playedCards) {
             if (c.special === 'minds_eye' || c.special === 'The Shadow Guide' || c.special === 'minds_eye_and_philosopher') count += 1;
@@ -650,22 +699,44 @@ class FavorGame {
             }
 
             // Pay card cost if any — unless a held Map plays it for free
-            // (tutorial/rulebook: "A Map lets you play its linked card for free").
+            // (tutorial/rulebook: "A Map lets you play its linked card for free"),
+            // or the Doctor's Side B slot waives one Potion per round.
             const mapFree = card.reqMaps && card.reqMaps.length > 0 &&
                 this.getPlayerMaps(playerIndex).some(m => card.reqMaps.includes(m));
-            if (card.cost && card.cost > 0 && !mapFree) {
+            const potionFree = !mapFree && this.freePotionAvailable(playerIndex, card);
+            if (card.cost && card.cost > 0 && !mapFree && !potionFree) {
                 if (player.gold < card.cost) {
                     return { success: false, error: 'Not enough gold' };
                 }
                 player.gold -= card.cost;
             } else if (card.cost && card.cost > 0 && mapFree) {
                 this.addLog(`${player.name}'s Map plays ${card.name} for free`);
+            } else if (card.cost && card.cost > 0 && potionFree) {
+                // Consumed only when it actually waives a cost — a 0-cost
+                // potion never burns the round's charge. State-derived, so
+                // every lockstep client reaches the same answer.
+                player._freePotionRound = true;
+                this.addLog(`${player.name}'s board plays ${card.name} free (1 Potion per round)`);
             }
 
             // Play the card
             player.playedCards.push(card);
             this.applyCardEffects(playerIndex, card);
             this.removePendingCard(playerIndex, cardId);
+
+            // Side B ongoing slot boons — the ring's CURRENT slot pays on the
+            // play. Seat-agnostic: a remote human on Side B pays out on every
+            // client identically; bots never ride these boards.
+            const boonSlot = player.character && player.character.slots
+                ? player.character.slots[player.sliderPosition] : null;
+            if (boonSlot && boonSlot.special === 'adventure_card_5_prestige' && card.type === 'adventure') {
+                player.prestige += 5;
+                this.addLog(`${player.name}'s board pays 5 Prestige for ${card.name}`);
+            }
+            if (boonSlot && boonSlot.special === 'weapon_card_3_gold' && card.type === 'weapon') {
+                player.gold += 3;
+                this.addLog(`${player.name}'s board pays 3 Gold for ${card.name}`);
+            }
 
             // A plain card (no special) never triggers a slot recalc, so the
             // achievement sampler has to fire here too — otherwise Potions are
@@ -926,6 +997,23 @@ class FavorGame {
         if (!opts.length) return { success: false, error: 'No pick available here' };
 
         const chosen = opts.includes(skill) ? skill : this.aiSlotPick(playerIndex, opts);
+        // Magician Side B offers SPECIALS in its pick set — a Mind's Eye or a
+        // Philosopher's Stone ride their own counters (both consulted by the
+        // requirement/scoring probes), never bonusSkills. The pick recharges
+        // once per act (SLOT_EVENTS_ONCE_PER_ACT), so a Stone per act is the
+        // printed board's actual power — no idempotency gate wanted here.
+        if (chosen === 'minds_eye') {
+            player.bonusMindsEye = (player.bonusMindsEye || 0) + 1;
+            this.applySlotSkills(player);
+            this.addLog(`${player.name} picks a Mind's Eye from the board`);
+            return { success: true, skill: chosen };
+        }
+        if (chosen === 'philosopher_stone') {
+            player.philosopherStone = (player.philosopherStone || 0) + 1;
+            this.applySlotSkills(player);
+            this.addLog(`${player.name} picks a Philosopher's Stone from the board`);
+            return { success: true, skill: chosen };
+        }
         // bonusSkills, NOT player.skills — applySlotSkills rebuilds skills from
         // slot + played cards + bonusSkills, and would erase a raw write.
         if (!player.bonusSkills) player.bonusSkills = {};
@@ -958,6 +1046,8 @@ class FavorGame {
                 player.skills.knowledge = (player.skills.knowledge || 0) + 1;
             } else if (slot.special === 'minds_eye_x5') {
                 player.skills.knowledge = (player.skills.knowledge || 0) + 5;
+            } else if (slot.special === 'minds_eye_x8') {
+                player.skills.knowledge = (player.skills.knowledge || 0) + 8;
             } else if (slot.special === 'minds_eye_and_philosopher') {
                 player.skills.knowledge = (player.skills.knowledge || 0) + 1;
             }
@@ -1007,6 +1097,15 @@ class FavorGame {
                     player.skills[skill] = (player.skills[skill] || 0) + n;
                 }
             });
+        }
+
+        // Scientist Side B: "Your Alchemy Amount Adds to Your Power" — baked
+        // into skills.power LAST so calculatePower, powerBreakdown (it lands
+        // in baseOther, the board's bucket), mission probes and peak stats
+        // all agree by construction. Must follow the bonusSkills merge so
+        // picked/awarded Alchemy counts too.
+        if (slot && slot.special === 'alchemy_adds_to_power') {
+            player.skills.power = (player.skills.power || 0) + (player.skills.alchemy || 0);
         }
 
         this.sampleSeatStats(player);
@@ -1177,6 +1276,34 @@ class FavorGame {
             case 'minds_eye_x5':
                 // 5 Mind's Eyes: ongoing +5 knowledge (handled in applySlotSkills)
                 this.addLog(`${player.name} gains 5\u00D7 Mind's Eye from character board`);
+                break;
+
+            case 'minds_eye_x8':
+                // 8 Mind's Eyes: ongoing +8 knowledge (handled in applySlotSkills)
+                this.addLog(`${player.name} gains 8\u00D7 Mind's Eye from character board`);
+                break;
+
+            case 'adventure_card_5_prestige':
+                // Ongoing: while on this slot, playing an Adventure card pays
+                // +5 Prestige (handled in activateCard)
+                this.addLog(`${player.name}'s slot: Adventure cards pay 5 Prestige`);
+                break;
+
+            case 'weapon_card_3_gold':
+                // Ongoing: while on this slot, playing a Weapon card pays
+                // +3 Gold (handled in activateCard)
+                this.addLog(`${player.name}'s slot: Weapon cards pay 3 Gold`);
+                break;
+
+            case 'free_potion_per_round':
+                // Ongoing: while on this slot, one Potion per round plays
+                // with its Gold cost waived (handled in activateCard)
+                this.addLog(`${player.name}'s slot: 1 Potion per round plays free`);
+                break;
+
+            case 'alchemy_adds_to_power':
+                // Ongoing: Alchemy total adds to Power (handled in applySlotSkills)
+                this.addLog(`${player.name}'s slot: Alchemy adds to Power`);
                 break;
 
             case 'minds_eye_and_philosopher':

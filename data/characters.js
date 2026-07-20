@@ -26,6 +26,27 @@
  *   - "The free skill activates immediately each movement"
  *
  * startingGold includes any center-slot gold (e.g. Duchess = 3 base + 5 center = 8)
+ *
+ * ── Side B (7/19) ────────────────────────────────────────────────────
+ * altFilename / altEpithet / altSlots describe the hero's SECOND board,
+ * unlocked at hero Level 5 (see docs/FAVOR-XP-SIDEB-SPEC.md). A character
+ * without altSlots has no Side B and never shows the badge — the feature
+ * ships hero by hero as art lands. Values are read off Wyatt's painted
+ * alt boards VERBATIM (masters: ~/Downloads/alt/alt_Character_Boards/) —
+ * the print board IS the Side B spec; do not "reconcile" them against
+ * Side A's digital retunes. The engine resolves a per-player view at
+ * initPlayers ({...base, slots: altSlots, ...}) — the base objects here
+ * are shared singletons and are never mutated. Side B startingGold is
+ * derived: 3 base + (altSlots[2].gold || 0), center gold pre-claimed.
+ *
+ * Side B slot specials new with these boards:
+ *   - adventure_card_5_prestige: playing an Adventure card pays +5 Prestige
+ *   - weapon_card_3_gold:        playing a Weapon card pays +3 Gold
+ *   - free_potion_per_round:     1 Potion per round plays free (cost waived)
+ *   - alchemy_adds_to_power:     Alchemy total adds to Power while here
+ *   - minds_eye_x8:              8 Mind's Eyes (ongoing +8 Knowledge)
+ *   - pick_one may now offer specials (minds_eye / philosopher_stone)
+ *     alongside skills — Magician B slot 3.
  */
 
 window.FAVOR_DATA = window.FAVOR_DATA || {};
@@ -46,6 +67,15 @@ window.FAVOR_DATA.characters = [
             { skills: { survival: 2 } },                        // center — start
             { special: "minds_eye" },
             { favor: 15, special: "philosopher_stone" }
+        ],
+        altFilename: "Explorer_B.jpg",
+        altEpithet: "Trailblazer",
+        altSlots: [
+            { favor: 15, special: "philosopher_stone" },
+            { gold: 2, skills: { prospecting: 2 } },
+            { skills: { survival: 1 } },                        // center — start
+            { skills: { survival: 4 } },
+            { skills: { survival: 3, power: 3 } }
         ]
     },
     {
@@ -63,6 +93,15 @@ window.FAVOR_DATA.characters = [
             { skills: { power: 1 } },                           // center — start
             { skills: { knowledge: 3 } },
             { skills: { power: 5 } }
+        ],
+        altFilename: "Knight_B.jpg",
+        altEpithet: "Oathbreaker",                              // locked in the spec
+        altSlots: [
+            { skills: { knowledge: 3, power: 3 } },
+            { skills: { survival: 2 } },
+            { skills: { power: 2 } },                           // center — start
+            { favor: 8 },
+            { scorn: 15, skills: { power: 7 } }                 // the gambit slot
         ]
     },
     {
@@ -80,6 +119,15 @@ window.FAVOR_DATA.characters = [
             { skills: { power: 2 } },                           // center — start
             { gold: 8 },
             { special: "philosopher_stone_x2" }
+        ],
+        altFilename: "Bandit_B.jpg",
+        altEpithet: "Highwayman",
+        altSlots: [
+            { skills: { power: 3 }, special: "steal_2_gold_each" },
+            { skills: { charisma: 2 } },
+            { skills: { survival: 1 } },                        // center — start
+            { special: "adventure_card_5_prestige" },
+            { gold: 7 }
         ]
     },
     {
@@ -97,6 +145,17 @@ window.FAVOR_DATA.characters = [
             { special: "borrow_any_player" },                    // center — start
             { special: "convert_gold_to_prestige", skills: { charisma: 4 } },
             { gold: 7, favor: 10 }
+        ],
+        altFilename: "Merchant_B.jpg",
+        altEpithet: "Guildmaster",
+        altSlots: [
+            // Board shows coin 5 + an up-arrow ringed by the four secondary
+            // skills — +1 to each of the pictured four (no "Pick One" label).
+            { gold: 5, skills: { survival: 1, alchemy: 1, charisma: 1, prospecting: 1 } },
+            { gold: 7, skills: { prospecting: 3 } },
+            { special: "weapon_card_3_gold" },                   // center — start
+            { favor: 10 },
+            { skills: { charisma: 5 }, special: "convert_gold_to_prestige" }
         ]
     },
     {
@@ -114,6 +173,15 @@ window.FAVOR_DATA.characters = [
             { skills: { survival: 1 } },                        // center — start
             { skills: { knowledge: 3 } },
             { skills: { survival: 8 } }
+        ],
+        altFilename: "Fisherman_B.jpg",
+        altEpithet: "The Far-Seeing",
+        altSlots: [
+            { special: "minds_eye_x8" },
+            { skills: { knowledge: 4 } },
+            { skills: { survival: 2 } },                        // center — start
+            { skills: { charisma: 5 } },
+            { skills: { survival: 6 } }
         ]
     },
     {
@@ -131,6 +199,15 @@ window.FAVOR_DATA.characters = [
             { gold: 5 },                                         // center — start (gold pre-claimed)
             { skills: { prospecting: 4 } },
             { favor: 16, special: "all_others_1_scorn" }
+        ],
+        altFilename: "Duchess_B.jpg",
+        altEpithet: "Velvet Glove",
+        altSlots: [
+            { skills: { knowledge: 10 }, special: "give_1_gold_each" },
+            { special: "all_others_1_scorn" },
+            { gold: 3 },                                         // center — start (gold pre-claimed)
+            { skills: { prospecting: 6 } },
+            { favor: 16 }
         ]
     },
     {
@@ -148,6 +225,15 @@ window.FAVOR_DATA.characters = [
             { skills: { knowledge: 2 } },                       // center — start
             { skills: { alchemy: 6 } },
             { favor: 14 }
+        ],
+        altFilename: "Scientist_B.jpg",
+        altEpithet: "Transmuter",
+        altSlots: [
+            { skills: { prospecting: 3 }, special: "philosopher_stone" },
+            { special: "alchemy_adds_to_power" },
+            { skills: { knowledge: 1 } },                       // center — start
+            { skills: { alchemy: 4 } },
+            { scorn: 10, skills: { knowledge: 12 } }
         ]
     },
     {
@@ -165,6 +251,15 @@ window.FAVOR_DATA.characters = [
             { skills: { alchemy: 1 } },                         // center — start
             { gold: 4, skills: { knowledge: 3 } },
             { skills: { alchemy: 5, knowledge: 5 } }
+        ],
+        altFilename: "Doctor_B.jpg",
+        altEpithet: "Apothecary",
+        altSlots: [
+            { favor: 15 },
+            { skills: { knowledge: 4 } },
+            { skills: { alchemy: 2 } },                         // center — start
+            { skills: { knowledge: 4 }, special: "minds_eye" },
+            { special: "free_potion_per_round" }
         ]
     },
     {
@@ -182,6 +277,15 @@ window.FAVOR_DATA.characters = [
             { skills: { charisma: 2 } },                        // center — start
             { gold: 2, special: "mission_fail_10_gold" },
             { favor: 12, skills: { knowledge: 2 } }
+        ],
+        altFilename: "Fiddler_B.jpg",
+        altEpithet: "Firebrand",
+        altSlots: [
+            { scorn: 20, skills: { alchemy: 4 } },              // the high-roller slot
+            { skills: { charisma: 10 } },
+            { skills: { charisma: 1 } },                        // center — start
+            { gold: 6 },
+            { favor: 20 }
         ]
     },
     {
@@ -200,6 +304,16 @@ window.FAVOR_DATA.characters = [
             { special: "pick_one",
               pickOptions: ["survival", "charisma", "prospecting", "alchemy"] },
             { special: "minds_eye_and_philosopher" }
+        ],
+        altFilename: "Magician_B.jpg",
+        altEpithet: "Illusionist",
+        altSlots: [
+            { skills: { charisma: 6, knowledge: 5 } },
+            { skills: { alchemy: 3 } },
+            { skills: { charisma: 2 } },                        // center — start
+            { special: "pick_one",
+              pickOptions: ["minds_eye", "philosopher_stone", "knowledge", "power"] },
+            { special: "choose_mission" }
         ]
     }
 ];

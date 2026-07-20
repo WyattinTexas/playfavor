@@ -503,6 +503,147 @@
         return _tableSeedP;
     }
 
+    // ═══ Hero XP — the Gilt Ribbon (docs/FAVOR-XP-SIDEB-SPEC.md) ═════
+    // STORE lifetime Favor (chars[id].fv); DERIVE the level on every
+    // read, never write it — the curve retunes with zero migration.
+    // fv is monotonic and absent-means-zero (Level 1), so there is no
+    // backfill and nothing to migrate.
+    const XP_PER_LEVEL = 200;
+    const XP_MAX_LEVEL = 100;
+    const SIDEB_LEVEL = 5;
+
+    function heroLevel(fv) {
+        return Math.min(XP_MAX_LEVEL, 1 + Math.floor((fv || 0) / XP_PER_LEVEL));
+    }
+    function heroLevelPct(fv) {
+        if (heroLevel(fv) >= XP_MAX_LEVEL) return 100;
+        return ((fv || 0) % XP_PER_LEVEL) / XP_PER_LEVEL * 100;
+    }
+    function heroFv(charId) {
+        return (((_me || {}).chars || {})[charId] || {}).fv || 0;
+    }
+    function sideBUnlocked(charId) {
+        const c = ((window.FAVOR_DATA || {}).characters || []).find(x => x.id === charId);
+        return !!(c && c.altSlots) && heroLevel(heroFv(charId)) >= SIDEB_LEVEL;
+    }
+    // The ribbon — ONE renderer for every surface (profile tile 7px,
+    // hero select 11px, victory chip 9px). Arabic numeral at the head,
+    // per-level fill, no stations; at Level 100 the track re-gilds
+    // (.max) and stops resetting — a mastery mark, not a meter.
+    function xpRibbonHtml(fv, h, nsz) {
+        const lvl = heroLevel(fv);
+        const max = lvl >= XP_MAX_LEVEL;
+        const pct = max ? 100 : heroLevelPct(fv);
+        return `<div class="rb${max ? ' max' : ''}" style="--h:${h || 11}px;--nsz:${nsz || 12}px">
+            <span class="rb-num">${lvl}</span>
+            <div class="rb-track"><div class="rb-fill" style="--pct:${pct.toFixed(1)}%"></div></div>
+        </div>`;
+    }
+
+    // ═══ The earned hero — two heroes at Level 5 (spec §6) ═══════════
+    // The predicate is DERIVED on every read: nothing is written when the
+    // threshold is crossed, so there is no counter to drift and the unlock
+    // reaches anyone who qualified offline or in an older build the moment
+    // a menu loads (idempotent latch + retroactive backfill in one).
+    // The hero itself is DATA: any characters row with earnedOnly:true is
+    // granted by this predicate, refused by buyCharacter at any price and
+    // kept out of every bot pool. Wyatt appends the row + art when ready —
+    // until then the roster has none, so nothing renders and nothing fires.
+    function earnedHeroQualified() {
+        const chars = (_me || {}).chars || {};
+        return Object.values(chars)
+            .filter(c => heroLevel((c || {}).fv || 0) >= SIDEB_LEVEL).length >= 2;
+    }
+    function earnedOnlyIds() {
+        return ((window.FAVOR_DATA || {}).characters || [])
+            .filter(c => c.earnedOnly).map(c => c.id);
+    }
+    function earnedMirror() {
+        try { return JSON.parse(localStorage.getItem('favorEarned')) || []; }
+        catch (e) { return []; }
+    }
+    // ⚠ ADD-ONLY — deliberately unlike favorOwned, which REPLACES from the
+    // remote row. ownedIds() is synchronous and runs before the row lands;
+    // a cold offline boot reads empty chars, and a replacing mirror would
+    // silently revoke a character the player earned. Only ever add.
+    function addEarnedMirror(id) {
+        const cur = earnedMirror();
+        if (!cur.includes(id)) {
+            cur.push(id);
+            try { localStorage.setItem('favorEarned', JSON.stringify(cur)); } catch (e) { /* private mode */ }
+        }
+    }
+    // Menu-load latch: re-derive, mirror, announce exactly once. Announces
+    // on the MENU you return to, never mid-game (spec §6) — the visibility
+    // gate keeps a post-game chip repaint from firing it over the table.
+    async function checkEarnedHero() {
+        const ids = earnedOnlyIds();
+        if (!ids.length || !earnedHeroQualified()) return;
+        const gameUp = ['game-screen', 'scoring-screen'].some(id => {
+            const el = document.getElementById(id);
+            return el && el.classList.contains('active');
+        });
+        for (const id of ids) {
+            addEarnedMirror(id);
+            const flagKey = 'favorShownUnlock_' + id;
+            if (!gameUp && !localStorage.getItem(flagKey)) {
+                try { localStorage.setItem(flagKey, String(Date.now())); } catch (e) { /* shown again next boot — harmless */ }
+                // The celebration promises a hero in the select pool — the
+                // sticky offer re-rolls so it can actually be offered now.
+                try { localStorage.removeItem('favorOffer'); } catch (e) { /* fine */ }
+                const char = window.FAVOR_DATA.characters.find(c => c.id === id);
+                if (char) await showEarnedHeroCelebration(char);
+            }
+        }
+    }
+    // The champ overlay's FIFTH dress — the earned hero steps out.
+    function showEarnedHeroCelebration(char) {
+        return new Promise(resolve => {
+            const ov = document.getElementById('champOverlay');
+            if (!ov || !char) { resolve(); return; }
+            document.getElementById('champTitle').textContent = `${char.name} Answers Your Renown!`;
+            document.getElementById('champSub').innerHTML =
+                `${CROWN_SVG} Two heroes at Level 5 — a new hero joins your court, earned, never sold`;
+            ov.classList.add('active');
+            const done = () => { ov.classList.remove('active'); resolve(); };
+            ov.onclick = done;
+            document.getElementById('champBtn').onclick = (e) => { e.stopPropagation(); done(); };
+        });
+    }
+
+    // The champ overlay's FOURTH dress — Level 5, the board turns over.
+    // Art rides #champArt (kept empty by every other dress); the flip
+    // runs the same 1s turn the design page locked.
+    function showSideBCelebration(char) {
+        return new Promise(resolve => {
+            const ov = document.getElementById('champOverlay');
+            const art = document.getElementById('champArt');
+            if (!ov || !char) { resolve(); return; }
+            document.getElementById('champTitle').textContent =
+                `The ${char.name} Turns the Board`;
+            document.getElementById('champSub').innerHTML =
+                `Side B unlocked — <em>${char.altEpithet || 'the other side'}</em>`;
+            if (art) {
+                art.innerHTML = `<div class="champ-flip"><div class="cf-inner">
+                    <div class="cf-face"><img src="assets/characters/${char.filename}" alt=""></div>
+                    <div class="cf-face cf-back"><img src="assets/characters/${char.altFilename || char.filename}" alt=""></div>
+                </div></div>`;
+                requestAnimationFrame(() => setTimeout(() => {
+                    const f = art.querySelector('.cf-inner');
+                    if (f) f.classList.add('turned');
+                }, 650));
+            }
+            ov.classList.add('active');
+            const done = () => {
+                ov.classList.remove('active');
+                if (art) art.innerHTML = '';
+                resolve();
+            };
+            ov.onclick = done;
+            document.getElementById('champBtn').onclick = (e) => { e.stopPropagation(); done(); };
+        });
+    }
+
     // ═══ Posting a finished game ═════════════════════════════════════
     // Called from showScoring() with the sorted score rows. YOUR result
     // posts in full; seated persona rivals post rating-only deltas to
@@ -514,9 +655,14 @@
         // and the per-character ledger simply doesn't move.
         const ratings = (ctx && ctx.ratings) || [];
         const myChar = (ctx && ctx.myChar) || null;
+        // The XP result rides back to the caller: the victory screen's delta
+        // chip and the Level 5 ceremony paint from THESE numbers — computed
+        // inside the transaction off the row the commit writes, never from a
+        // post-hoc read (the FACH-shape trap in spec §7).
+        let xpOut = null;
         try {
             const place = scores.findIndex(s => s.name === 'You');
-            if (place < 0) return;
+            if (place < 0) return null;
             const mine = scores[place];
             const starsWon = gameStars(place, scores.length);
             // ⚠ `won` has THREE consumers below — the wins count, the
@@ -534,7 +680,8 @@
             // First result still materializes the record (lazy join).
             // Elo runs INSIDE the txn against the server's row, so two
             // tabs can't double-apply a delta computed off a stale read.
-            await dbTxn(`players/${uid()}`, p => {
+            let pendingXp = null;
+            const txnRes = await dbTxn(`players/${uid()}`, p => {
                 const cur = p || {};
                 const streak = won ? (cur.streak || 0) + 1 : 0;
                 // SERVER TRUTH into the same function the victory sheet ran,
@@ -557,6 +704,17 @@
                 };
                 if (myChar && rr && rr.charId) {
                     const cc = ((cur.chars || {})[myChar]) || {};
+                    // Hero XP: the game's final score banks onto this hero's
+                    // lifetime track. fv is monotonic; the LEVEL is derived
+                    // here, inside the txn, from the exact values this commit
+                    // writes — a retry recomputes both together.
+                    const fvBefore = cc.fv || 0;
+                    const fvAfter = fvBefore + Math.max(0, Math.round(mine.finalScore || 0));
+                    pendingXp = {
+                        charId: myChar, fvBefore, fvAfter,
+                        levelBefore: heroLevel(fvBefore),
+                        levelAfter: heroLevel(fvAfter),
+                    };
                     out.chars = {
                         ...(cur.chars || {}),
                         // `best` = your highest single-game score with this hero
@@ -566,11 +724,18 @@
                             r: rr.charAfter,
                             g: (cc.g || 0) + 1,
                             best: Math.max(cc.best || 0, Math.round(mine.finalScore || 0)),
+                            fv: fvAfter,
                         },
                     };
                 }
                 return out;
             });
+            // Only a COMMITTED transaction's numbers are real — and the fresh
+            // row keeps the select screen's levels honest without a re-read.
+            if (txnRes && txnRes.committed) {
+                xpOut = pendingXp;
+                if (txnRes.value) _me = txnRes.value;
+            }
 
             // Daily board: best single-game Favor score in this window. ROUNDED
             // to match the chars ledger above -- the two disagreed, and these
@@ -639,6 +804,7 @@
             // Ratings moved — the NEXT game reads a fresh seed.
             _tableSeedP = null;
         }
+        return xpOut;
     }
 
     // ═══ Daily Champions — lazy idempotent settlement ════════════════
@@ -836,6 +1002,9 @@
             ${ratingSpan(eloOf(_me), 'pc-rating')}
             ${gold > 0 ? `<span class="pc-crowns" title="Daily Championships">${CROWN_SVG}${gold}</span>` : ''}
         `;
+        // _me just landed — the earned-hero latch re-derives (idempotent,
+        // menu-gated inside; un-awaited so a celebration never holds the chip).
+        checkEarnedHero().catch(() => {});
         // _me just landed -- repaint the WANTED plaque so its CLAIMED stamp is
         // driven by the row arriving rather than by a guessed timer. modes.js
         // loads after this file, so on the very first boot FMODES may not exist
@@ -903,12 +1072,13 @@
             ${ledger.length ? `
             <div class="pf-sec">Your Heroes</div>
             <div class="pf-heroes">${ledger.map(({ c, s }) => `
-                <div class="pf-hero" title="${c.name}">
+                <div class="pf-hero" title="${c.name}${c.altSlots ? ` — Side B at Level ${SIDEB_LEVEL}` : ''}">
                     <img src="assets/characters/${c.filename}" alt="${c.name}">
                     <span class="pf-hero-name">${c.name}</span>
                     <span class="pf-hero-r">${ratingSpan(clampElo(s.r))}</span>
                     <span class="pf-hero-g">${s.g} game${s.g === 1 ? '' : 's'}</span>
                     ${(s.best || 0) > 0 ? `<span class="lb-best"><img class="lb-ico" src="assets/icons/favor.png" alt="">${s.best}</span>` : ''}
+                    <div class="pf-xp">${xpRibbonHtml(s.fv || 0, 7, 9)}</div>
                 </div>`).join('')}</div>` : `
             <div class="pf-sec">Your Heroes</div>
             <div class="pf-note">No hero has ridden into a rated game yet — every one you play keeps its own rating and high score.</div>`}
@@ -1167,7 +1337,14 @@
         let bought = [];
         try { bought = JSON.parse(localStorage.getItem('favorOwned')) || []; }
         catch (e) { /* fresh mirror */ }
-        return [...new Set([...freeIds(), ...bought])];
+        // Third source: the EARNED hero (spec §6). Derived live from the row
+        // when it's here, backed by the add-only mirror when it isn't (cold
+        // boot, offline) — and every id must still be an earnedOnly roster
+        // row, so a data retreat can never leave a ghost in the pool.
+        const eIds = earnedOnlyIds();
+        const earnedLive = earnedHeroQualified() ? eIds : [];
+        const earnedCached = earnedMirror().filter(id => eIds.includes(id));
+        return [...new Set([...freeIds(), ...bought, ...earnedLive, ...earnedCached])];
     }
 
     function mirrorOwned(ownedMap) {
@@ -1182,6 +1359,9 @@
     async function buyCharacter(charId) {
         const char = ((window.FAVOR_DATA || {}).characters || []).find(c => c.id === charId);
         if (!char) return { ok: false, why: 'unknown' };
+        // The earned hero is not purchasable AT ANY PRICE (spec §6) —
+        // refused explicitly, before the Stars check, never a fall-through.
+        if (char.earnedOnly) return { ok: false, why: 'earned_only' };
         if (ownedIds().includes(charId)) return { ok: false, why: 'owned' };
         // Offline the store is browse-only: a local-ledger purchase would
         // evaporate when the next online session re-mirrors remote owned
@@ -1260,6 +1440,13 @@
     // One source of truth for a hero's action button — the shelf card and
     // the board inspect must always agree (owned / offline / confirm / price).
     function storeActionHtml(c, owned, stars) {
+        // The earned hero sits on the shelf LOCKED, the requirement as the
+        // button — the lock is the advertisement (spec §6). Never a price.
+        if (c.earnedOnly) {
+            return owned.includes(c.id)
+                ? '<span class="st-owned">Earned</span>'
+                : '<span class="st-earn">Reach Level 5 with two heroes</span>';
+        }
         if (owned.includes(c.id)) return '<span class="st-owned">Owned</span>';
         if (mode !== 'firebase') {
             // Browse-only offline — see buyCharacter's offline guard.
@@ -1676,6 +1863,8 @@
         tableDelta, fmtRating, fmtRatingDelta, eloOf, ratingColor, ratingTier, ratingSpan,
         gameStars, ownedIds, buyCharacter, openStore, closeStore, askBuy, confirmBuy,
         inspectChar, closeInspect,
+        heroLevel, heroLevelPct, heroFv, sideBUnlocked, xpRibbonHtml,
+        checkEarnedHero, showSideBCelebration, sideBLevel: () => SIDEB_LEVEL,
         askBuyStars, buyStars, starCheckoutUrl, watchForStars,
         starPacks: () => STAR_PACKS,
         setAvatar, myAvatar, avatarDisc,

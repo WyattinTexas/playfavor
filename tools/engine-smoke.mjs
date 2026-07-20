@@ -2803,5 +2803,233 @@ console.log('\n── calculatePower is pure unless the melee says otherwise ─
     `and a read AFTER the melee reports the same number (${g.calculatePower(0)} vs ${spent})`);
 }
 
+// ═══════════════ SIDE B — the alternate boards (spec 7/19) ═══════════════
+
+console.log('\n── Side B resolve: a per-player VIEW, never a mutated singleton ──');
+{
+  const g = new FavorGame(3);
+  g.loadDecks();
+  const base = window.FAVOR_DATA.characters.find(c => c.id === 'knight');
+  const baseSlotsRef = base.slots;
+  g.initPlayers([
+    { characterId: 'knight', playerName: 'You', side: 'b' },
+    { characterId: 'explorer', playerName: 'A' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
+  g.phase = 'gameplay';
+  const you = g.players[0];
+  ok(you.side === 'b', 'human seat records side b');
+  ok(you.character !== base, 'Side B holds a VIEW, not the shared singleton');
+  ok(you.character.slots === base.altSlots, 'view slots are the altSlots');
+  ok(base.slots === baseSlotsRef && base.slots[0].favor === 18,
+    'the singleton is untouched (Side A slot 0 still favor 18)');
+  ok(you.character.filename === 'Knight_B.jpg', `view art is the B board (${you.character.filename})`);
+  ok(you.character.epithet === 'Oathbreaker', 'view wears the B epithet');
+  ok((you.skills.power || 0) === 2, `Knight B center grants Power 2 (${you.skills.power})`);
+  ok(g.players[1].side === 'a' && g.players[2].side === 'a', 'sideless seats ride Side A');
+  ok(g.players[1].character === window.FAVOR_DATA.characters.find(c => c.id === 'explorer'),
+    'a Side A seat still holds the singleton itself');
+
+  // An explicit side on a hero with no altSlots resolves to Side A (11th-char shape).
+  const v = g.resolveCharacterView('knight', 'a');
+  ok(v === base, "side 'a' resolves to the singleton");
+}
+
+console.log('── Side B purse: startingGold derives from the B center coin ──');
+{
+  const g = new FavorGame(3);
+  g.loadDecks();
+  g.initPlayers([
+    { characterId: 'duchess', playerName: 'You', side: 'b' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
+  ok(g.players[0].gold === 6, `Duchess B starts 3 + center 3 = 6 (${g.players[0].gold})`);
+  const g2 = new FavorGame(3);
+  g2.loadDecks();
+  g2.initPlayers([
+    { characterId: 'duchess', playerName: 'You' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
+  ok(g2.players[0].gold === 8, `Duchess A still starts with 8 (${g2.players[0].gold})`);
+}
+
+console.log('── minds_eye_x8: +8 Knowledge ongoing AND 8 eyes for requirements ──');
+{
+  const g = new FavorGame(3);
+  g.loadDecks();
+  g.initPlayers([
+    { characterId: 'fisherman', playerName: 'You', side: 'b' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
+  g.phase = 'gameplay';
+  const you = g.players[0];
+  you.sliderPosition = 0;                    // Fisherman B slot 0 = minds_eye_x8
+  g.applySlotSkills(you);
+  ok((you.skills.knowledge || 0) === 8, `+8 Knowledge on the eye slot (${you.skills.knowledge})`);
+  ok(g.getMindsEyeCount(0) === 8, `8 Mind's Eyes for requirements (${g.getMindsEyeCount(0)})`);
+  you.sliderPosition = 2;
+  g.applySlotSkills(you);
+  ok((you.skills.survival || 0) === 2, 'B center grants Survival 2 after moving off');
+  ok(g.getMindsEyeCount(0) === 0, 'the eyes stay with the slot');
+}
+
+console.log('── alchemy_adds_to_power: Scientist B couples Alchemy into Power ──');
+{
+  const g = new FavorGame(3);
+  g.loadDecks();
+  g.initPlayers([
+    { characterId: 'scientist', playerName: 'You', side: 'b' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
+  g.phase = 'gameplay';
+  g.currentAct = 1;
+  const you = g.players[0];
+  you.sliderPosition = 1;                    // B slot 1 = alchemy_adds_to_power
+  you.bonusSkills = { alchemy: 5 };
+  g.applySlotSkills(you);
+  ok((you.skills.power || 0) === 5, `5 Alchemy rides as 5 Power (${you.skills.power})`);
+  ok(g.calculatePower(0) === 5, `calculatePower agrees (${g.calculatePower(0)})`);
+  const bd = g.powerBreakdown(0);
+  ok(bd.computedTotal === g.calculatePower(0),
+    `powerBreakdown stays locked to calculatePower (${bd.computedTotal})`);
+  you.sliderPosition = 3;                    // B slot 3 = alchemy 4 (no coupling)
+  g.applySlotSkills(you);
+  ok((you.skills.power || 0) === 0, 'off the slot, Alchemy stops riding as Power');
+}
+
+console.log('── weapon_card_3_gold / adventure_card_5_prestige pay on the play ──');
+{
+  const g = new FavorGame(3);
+  g.loadDecks();
+  g.initPlayers([
+    { characterId: 'merchant', playerName: 'You', side: 'b' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
+  g.phase = 'gameplay';
+  const you = g.players[0];                  // Merchant B center = weapon_card_3_gold
+  you.gold = 10;
+  const before = you.gold;
+  playCard(g, 0, "Ol' Bessy");               // weapon, no req, no cost
+  ok(you.gold === before + 3, `a Weapon pays +3 Gold on the slot (${before} → ${you.gold})`);
+
+  const g2 = new FavorGame(3);
+  g2.loadDecks();
+  g2.initPlayers([
+    { characterId: 'bandit', playerName: 'You', side: 'b' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'merchant', playerName: 'B' },
+  ]);
+  g2.phase = 'gameplay';
+  const you2 = g2.players[0];
+  you2.sliderPosition = 3;                   // Bandit B slot 3 = adventure_card_5_prestige
+  g2.applySlotSkills(you2);
+  you2.gold = 20;
+  const pBefore = you2.prestige;
+  ok(cardByName('Her Lost Father').type === 'adventure', 'rig card is an Adventure');
+  const res = playCard(g2, 0, 'Her Lost Father');
+  ok(res && res.success === true, 'adventure played');
+  ok(you2.prestige === pBefore + 5, `an Adventure pays +5 Prestige on the slot (${pBefore} → ${you2.prestige})`);
+  ok(g2.players[1].prestige === 0, 'nobody else got paid');
+}
+
+console.log('── free_potion_per_round: one costed Potion per round plays free ──');
+{
+  const g = new FavorGame(3);
+  g.loadDecks();
+  g.initPlayers([
+    { characterId: 'doctor', playerName: 'You', side: 'b' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
+  g.phase = 'gameplay';
+  const you = g.players[0];
+  you.sliderPosition = 4;                    // Doctor B slot 4 = free_potion_per_round
+  g.applySlotSkills(you);
+  // No potion in TODAY'S deck carries a gold cost (all 28 costed cards are
+  // endeavors/adventures/artifacts/weapons/letters) — the waiver is exact
+  // to the printed text and simply has nothing to bite yet. A synthetic
+  // costed potion proves the engine path a future card will ride.
+  const pot = { id: 'test_tonic_b', name: 'Test Tonic', type: 'potion', cost: 3, act: 1 };
+  you.gold = 0;
+  const chk = g.checkRequirements(0, pot);
+  ok(!chk.missingSpecial.some(m => /Gold/.test(m)),
+    `an unaffordable Potion is PLAYABLE on the slot (${pot.name}, cost ${pot.cost})`);
+  you.hand = [pot];
+  g.pendingActivations[0] = null;
+  g.pickCard(0, 0);
+  const r1 = g.activateCard(0, pot.id, 'play');
+  ok(r1 && r1.success === true, 'the potion plays with 0 gold');
+  ok(you.gold === 0, `no gold was charged (${you.gold})`);
+  ok(you._freePotionRound === true, 'the round’s waiver is spent');
+
+  // A second costed potion this round pays full price.
+  const pot2 = { ...pot, id: pot.id + '_second' };
+  you.gold = pot.cost;
+  you.hand = [pot2];
+  g.pendingActivations[0] = null;
+  g.pickCard(0, 0);
+  const r2 = g.activateCard(0, pot2.id, 'play');
+  ok(r2 && r2.success === true, 'a second potion still plays when affordable');
+  ok(you.gold === 0, `— but pays its cost (${you.gold})`);
+
+  // passHands recharges the waiver.
+  g.players.forEach(p => { p.hand = [{ ...cardByName('First Aid') }]; });
+  g.passHands();
+  ok(you._freePotionRound === false, 'the waiver recharges on the next round');
+}
+
+console.log('── pick_one with SPECIAL options (Magician B slot 3) ──');
+{
+  const g = new FavorGame(3);
+  g.loadDecks();
+  g.initPlayers([
+    { characterId: 'magician', playerName: 'You', side: 'b' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
+  g.phase = 'gameplay';
+  const you = g.players[0];
+  you.sliderPosition = 3;
+  const opts = g.slotPickOptions(0);
+  ok(opts.includes('minds_eye') && opts.includes('philosopher_stone')
+    && opts.includes('knowledge') && opts.includes('power'),
+    `B pick set offers eye/stone/knowledge/power (${opts.join(', ')})`);
+  const r1 = g.applySlotPick(0, 'philosopher_stone');
+  ok(r1.success === true && (you.philosopherStone || 0) === 1,
+    `picking the Stone banks a stone (${you.philosopherStone})`);
+  you.sliderPosition = 3;
+  const r2 = g.applySlotPick(0, 'minds_eye');
+  ok(r2.success === true && g.getMindsEyeCount(0) === 1,
+    `picking the Eye banks an eye (${g.getMindsEyeCount(0)})`);
+  ok((you.skills.knowledge || 0) === 0,
+    'a banked eye is requirement fuel, not Knowledge (matches mission-reward eyes)');
+  const r3 = g.applySlotPick(0, 'knowledge');
+  ok(r3.success === true && (you.skills.knowledge || 0) === 1, 'a skill pick still rides bonusSkills');
+}
+
+console.log('── Side B save shape: side survives a JSON round-trip ──');
+{
+  const g = new FavorGame(3);
+  g.loadDecks();
+  g.initPlayers([
+    { characterId: 'fiddler', playerName: 'You', side: 'b' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
+  const saved = JSON.parse(JSON.stringify({
+    players: g.players.map(p => ({ ...p, character: p.character ? p.character.id : null })),
+  }));
+  ok(saved.players[0].side === 'b', 'the save carries side b');
+  const g2 = new FavorGame(3);
+  const re = g2.resolveCharacterView(saved.players[0].character, saved.players[0].side);
+  ok(re && re.slots === window.FAVOR_DATA.characters.find(c => c.id === 'fiddler').altSlots,
+    'rehydrate resolves the B board again');
+}
+
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);
 process.exit(fail ? 1 : 0);

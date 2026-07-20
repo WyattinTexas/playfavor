@@ -7195,3 +7195,112 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     width: 100%; height: 100%;
     pointer-events: none;
 }
+
+/* ═══════════ HERO XP — the Gilt Ribbon + Side B (spec 7/19) ═══════════
+   One ribbon renderer (FLB.xpRibbonHtml) sized per surface via --h/--nsz.
+   Fill is lit VERTICALLY with a 2px lit leading edge — deliberately NOT
+   .btn-royal.primary's gradient, which darkens at both ends and makes a
+   fill's leading edge match the empty track. At Level 100 (.max) the
+   track re-gilds with the store's picture-frame gradient and the numeral
+   glows — a mastery mark, no longer a meter. */
+.rb { display: flex; align-items: center; gap: 7px; }
+.rb-num {
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: var(--nsz, 12px);
+    color: var(--gold-light); min-width: 2em; text-align: right; flex: none;
+    text-shadow: 0 1px 0 #000; font-variant-numeric: tabular-nums;
+}
+.rb-track {
+    position: relative; flex: 1; height: var(--h, 11px); border-radius: 99px;
+    overflow: hidden; background: linear-gradient(180deg, #150c05, #2a1908);
+    box-shadow: inset 0 2px 5px rgba(0,0,0,0.9), 0 0 0 1px rgba(201,168,76,0.28);
+}
+.rb-fill {
+    position: absolute; left: 0; top: 0; bottom: 0; width: var(--pct, 0%);
+    background: linear-gradient(180deg, #f2dc9c 0%, var(--gold-light) 18%, var(--gold) 52%, #96701a 100%);
+    box-shadow: 0 0 10px rgba(233,212,139,0.45);
+    transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.rb-fill::after {
+    content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 2px;
+    background: #fff6d8; box-shadow: 0 0 6px 1px rgba(255,246,216,0.9);
+}
+.rb.max .rb-fill { background: linear-gradient(160deg, #e8c34b, #8a6a1f 38%, #f0d278 66%, #6d4f16); }
+.rb.max .rb-fill::after { display: none; }
+.rb.max .rb-num { color: #fff3cf; text-shadow: 0 0 10px rgba(233,212,139,0.85); }
+.rb.max .rb-track { box-shadow: inset 0 2px 5px rgba(0,0,0,0.9), 0 0 0 1px var(--gold-light), 0 0 12px rgba(201,168,76,0.4); }
+
+/* hero select: ribbon under the board art, badge on the art */
+.character-card { position: relative; }
+.character-card .hs-xp { padding: 7px 12px 2px; }
+.side-badge {
+    position: absolute; top: 7px; right: 7px; z-index: 4;
+    font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 0.12em;
+    padding: 3px 8px 4px; border-radius: 99px; font-weight: 700;
+    background: rgba(20,10,4,0.82); border: 1px solid rgba(201,168,76,0.35);
+    color: #7d6a4f; pointer-events: none;
+}
+.side-badge.lit {
+    background: linear-gradient(180deg, var(--gold-light), var(--gold));
+    color: var(--text-dark); border-color: #6b5210;
+}
+
+/* the two-step's second step — the side chooser */
+.side-chooser {
+    max-width: 640px; margin: 0 auto; opacity: 0; max-height: 0; overflow: hidden;
+    transition: opacity 0.35s ease, max-height 0.45s ease, margin 0.35s, padding 0.35s;
+    border: 1px solid rgba(201,168,76,0.3); border-radius: 10px;
+    background: rgba(0,0,0,0.3); padding: 0 16px;
+}
+.side-chooser.on { opacity: 1; max-height: 460px; margin-top: 18px; padding: 16px; }
+.sc-title {
+    font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.24em;
+    text-transform: uppercase; color: var(--gold-dark); text-align: center; margin-bottom: 13px;
+}
+.sc-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; max-width: 520px; margin: 0 auto; }
+.sc-side {
+    border-radius: 8px; overflow: hidden; cursor: pointer;
+    border: 2px solid rgba(201,168,76,0.25); background: rgba(0,0,0,0.35); transition: all 0.2s;
+}
+.sc-side:hover { border-color: var(--gold-dark); }
+.sc-side.on { border-color: var(--gold-light); box-shadow: 0 0 24px rgba(201,168,76,0.4); }
+.sc-side img { width: 100%; display: block; aspect-ratio: 1600/1009; object-fit: cover; }
+.sc-lab { padding: 8px 6px 10px; text-align: center; }
+.sc-lab b {
+    display: block; font-family: 'Cinzel', serif; font-size: 10px;
+    letter-spacing: 0.18em; color: var(--gold-dark); font-weight: 700;
+}
+.sc-side.on .sc-lab b { color: var(--gold-light); }
+.sc-lab i { font-family: 'EB Garamond', serif; font-size: 14.5px; color: var(--parchment); }
+
+/* profile tile ribbon */
+.pf-hero .pf-xp { width: 100%; margin-top: 4px; }
+
+/* victory delta chip */
+.vs-delta.xp .vs-d-fv {
+    font-family: 'EB Garamond', serif; font-style: italic;
+    font-size: 15px; color: #8f7a5c; margin-left: 6px;
+}
+.vs-delta.xp .vs-d-rb { margin-top: 8px; min-width: 170px; }
+
+/* the Level-5 ceremony — the board turns over inside the champ card */
+.champ-art { margin: 4px auto 14px; max-width: 250px; perspective: 1000px; }
+.champ-art:empty { display: none; }
+.champ-flip { width: 100%; aspect-ratio: 1600/1009; }
+.cf-inner {
+    position: relative; width: 100%; height: 100%;
+    transform-style: preserve-3d; transition: transform 1s cubic-bezier(0.5, 0, 0.25, 1);
+}
+.cf-inner.turned { transform: rotateY(180deg); }
+.cf-face {
+    position: absolute; inset: 0; backface-visibility: hidden; border-radius: 5px;
+    overflow: hidden; box-shadow: 0 6px 22px rgba(0,0,0,0.7), 0 0 0 1px var(--gold-dark);
+}
+.cf-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cf-face.cf-back { transform: rotateY(180deg); }
+
+/* store shelf — the earned hero's lock is the advertisement */
+.st-earn {
+    display: block; text-align: center; font-family: 'Cinzel', serif;
+    font-size: 10.5px; letter-spacing: 0.06em; color: #7d6a4f;
+    padding: 8px 6px; border-top: 1px solid rgba(201,168,76,0.18);
+}

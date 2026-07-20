@@ -7505,6 +7505,220 @@ console.log('── Private room: host/join by code, size in-room, Start → pic
   }
 }
 
+// ═══ SIDE B: level math, ribbon, the two-step chooser, resolved table ═══
+console.log('── Side B: ribbon + badges + chooser + the table rides the B board');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('sideb: ' + m.text()); });
+  await page.setViewport({ width: 1280, height: 900 });
+  await page.evaluateOnNewDocument(() => {
+    localStorage.setItem('favor_coach_seen', JSON.stringify(
+      ['welcome', 'missions', 'hand', 'skills', 'pass', 'rivals',
+       'scorn', 'favor', 'ring', 'melee', 'emblem']));
+  });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await page.evaluate(() => {
+    window.shuffleArray = (a) => [...a];
+    localStorage.setItem('favorQueue', '3');
+    window._pinEmblemSeed = 0;
+    window._noSoloSave = true;
+    localStorage.removeItem('favorSoloSave');
+    localStorage.removeItem('favorSidePref');
+    localStorage.removeItem('favorOffer');
+  });
+
+  // The level curve is pure arithmetic — assert it cold.
+  const lv = await page.evaluate(() => [
+    FLB.heroLevel(0), FLB.heroLevel(799), FLB.heroLevel(800),
+    FLB.heroLevel(19800), FLB.heroLevel(10 ** 9), FLB.heroLevelPct(100),
+  ]);
+  ok(lv[0] === 1 && lv[1] === 4 && lv[2] === 5, `curve: 0→1, 799→4, 800→5 (${lv.slice(0, 3)})`);
+  ok(lv[3] === 100 && lv[4] === 100, 'level caps at 100');
+  ok(lv[5] === 50, `mid-level fill reads 50% (${lv[5]})`);
+
+  // Rig the Knight to Level 6 — the chooser must appear for him alone.
+  await page.evaluate(() => {
+    FLB.heroFv = (id) => id === 'knight' ? 1000 : 0;
+    FLB.sideBUnlocked = (id) => id === 'knight';
+  });
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('#title-screen .btn-royal, #title-screen .ts-card')]
+      .find(x => /play/i.test(x.textContent) && !/how/i.test(x.textContent));
+    b.click();
+  });
+  await page.waitForFunction(() =>
+    document.querySelectorAll('#characterGrid .character-card').length >= 3, { timeout: 15000 });
+
+  const sel = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('#characterGrid .character-card')];
+    const byId = {};
+    cards.forEach(c => {
+      const badge = c.querySelector('.side-badge');
+      byId[c.dataset.id] = {
+        badge: badge ? badge.textContent.trim() : null,
+        lit: !!(badge && badge.classList.contains('lit')),
+        ribbon: !!c.querySelector('.hs-xp .rb'),
+        lvl: c.querySelector('.hs-xp .rb-num') ? c.querySelector('.hs-xp .rb-num').textContent.trim() : null,
+      };
+    });
+    return byId;
+  });
+  ok(sel.knight && sel.knight.lit && /Side A ⇄ B/.test(sel.knight.badge),
+    `Knight's badge is LIT (${sel.knight && sel.knight.badge})`);
+  ok(sel.explorer && !sel.explorer.lit && /Side B · Lv 5/.test(sel.explorer.badge),
+    `Explorer's badge is the greyed lock (${sel.explorer && sel.explorer.badge})`);
+  ok(Object.values(sel).every(c => c.ribbon), 'every offered hero wears the ribbon');
+  ok(sel.knight.lvl === '6', `Knight's ribbon reads Level 6 at 1,000 Favor (${sel.knight.lvl})`);
+
+  // Tap the Knight — step two expands; tap Side B; Begin.
+  await page.evaluate(() => {
+    const c = [...document.querySelectorAll('#characterGrid .character-card')]
+      .find(x => x.dataset.id === 'knight');
+    c.click();
+  });
+  await sleep(450);
+  const chooser = await page.evaluate(() => {
+    const box = document.getElementById('sideChooser');
+    const sides = [...box.querySelectorAll('.sc-side')];
+    return {
+      on: box.classList.contains('on'),
+      sides: sides.length,
+      aName: (box.querySelector('.sc-side[data-side="a"] .sc-lab i') || {}).textContent,
+      bName: (box.querySelector('.sc-side[data-side="b"] .sc-lab i') || {}).textContent,
+      bArt: (box.querySelector('.sc-side[data-side="b"] img') || {}).src || '',
+    };
+  });
+  ok(chooser.on && chooser.sides === 2, 'the side chooser expands with two boards');
+  ok(chooser.aName === 'Deadly Duelist' && chooser.bName === 'Oathbreaker',
+    `each side wears its own epithet (${chooser.aName} / ${chooser.bName})`);
+  ok(/Knight_B\.jpg/.test(chooser.bArt), 'Side B shows the real B painting');
+  await page.screenshot({ path: join(SHOTS, 'sideb-chooser.png') });
+
+  await page.evaluate(() => document.querySelector('#sideChooser .sc-side[data-side="b"]').click());
+  await sleep(150);
+  const bOn = await page.evaluate(() =>
+    document.querySelector('#sideChooser .sc-side[data-side="b"]').classList.contains('on'));
+  ok(bOn, 'tapping Side B selects it');
+  await page.evaluate(() => document.getElementById('confirmBtn').click());
+  await page.waitForFunction(() =>
+    document.getElementById('game-screen').classList.contains('active'), { timeout: 20000 });
+  await sleep(400);
+
+  const table = await page.evaluate(() => ({
+    side: game.players[0].side,
+    art: game.players[0].character.filename,
+    epithet: game.players[0].character.epithet,
+    power: game.players[0].skills.power || 0,
+    botSides: game.players.slice(1).map(p => p.side),
+    botArts: game.players.slice(1).map(p => p.character.filename),
+    pref: (JSON.parse(localStorage.getItem('favorSidePref') || '{}')).knight || null,
+    thumb: (document.querySelector('#tvBoardThumb img') || {}).src || '',
+  }));
+  ok(table.side === 'b', 'the table seats you on Side B');
+  ok(table.art === 'Knight_B.jpg' && table.epithet === 'Oathbreaker',
+    `your seat rides the B board (${table.art}, ${table.epithet})`);
+  ok(table.power === 2, `Knight B's center grants Power 2 (${table.power})`);
+  ok(table.botSides.every(s => s === 'a') && table.botArts.every(a => !/_B\.jpg/.test(a)),
+    'every bot rides Side A');
+  ok(table.pref === 'b', "the confirmed side becomes the hero's default");
+  ok(/Knight_B\.jpg/.test(table.thumb) || table.thumb === '',
+    'the board thumb shows the B painting');
+  await page.screenshot({ path: join(SHOTS, 'sideb-table.png') });
+
+  // Victory chip: crossing paints the arrow; not crossing stays quiet.
+  const chip = await page.evaluate(() => {
+    const content = document.getElementById('scoringContent');
+    content.innerHTML = '<div class="vs-head"></div>';
+    // 5→6, NOT 4→5: a Side-B-level crossing correctly ARMS the delayed
+    // ceremony (t+1400ms), which would then re-raise the overlay mid-way
+    // through the dismissal assertions below — this chip test is about the
+    // arrow, so it crosses a level the ceremony doesn't care about.
+    paintVictoryXp({ charId: 'knight', fvBefore: 980, fvAfter: 1100, levelBefore: 5, levelAfter: 6 });
+    const c1 = content.querySelector('.vs-delta.xp');
+    const crossed = {
+      exists: !!c1, arrow: !!(c1 && c1.querySelector('.vs-d-arrow')),
+      fv: c1 ? (c1.querySelector('.vs-d-fv') || {}).textContent : null,
+      rb: !!(c1 && c1.querySelector('.rb')),
+    };
+    content.innerHTML = '<div class="vs-head"></div>';
+    paintVictoryXp({ charId: 'knight', fvBefore: 820, fvAfter: 900, levelBefore: 5, levelAfter: 5 });
+    const c2 = content.querySelector('.vs-delta.xp');
+    return { crossed, flat: { arrow: !!(c2 && c2.querySelector('.vs-d-arrow')) } };
+  });
+  ok(chip.crossed.exists && chip.crossed.arrow && chip.crossed.rb,
+    'a level crossing paints the arrowed chip + ribbon');
+  ok(chip.crossed.fv === '+120 Favor', `the chip names the Favor banked (${chip.crossed.fv})`);
+  ok(!chip.flat.arrow, 'no crossing → no arrow (3 → 3 reads like a bug)');
+
+  // The Level-5 ceremony: fourth champ dress, the board turns over.
+  await page.evaluate(() => {
+    const knight = window.FAVOR_DATA.characters.find(c => c.id === 'knight');
+    FLB.showSideBCelebration(knight);
+  });
+  await sleep(1300);
+  const champ = await page.evaluate(() => ({
+    active: document.getElementById('champOverlay').classList.contains('active'),
+    title: document.getElementById('champTitle').textContent,
+    flip: !!document.querySelector('#champArt .cf-inner'),
+    turned: !!document.querySelector('#champArt .cf-inner.turned'),
+    backArt: (document.querySelector('#champArt .cf-back img') || {}).src || '',
+  }));
+  ok(champ.active && /Turns the Board/.test(champ.title), `the ceremony raises (${champ.title})`);
+  ok(champ.flip && champ.turned, 'the board flip runs and lands turned');
+  ok(/Knight_B\.jpg/.test(champ.backArt), 'the flip lands on the B painting');
+  await page.screenshot({ path: join(SHOTS, 'sideb-ceremony.png') });
+  await page.evaluate(() => document.getElementById('champBtn').click());
+  await sleep(200);
+  // The overlay is a SHARED singleton — a boot-queued dress (daily crown,
+  // star delivery) may legitimately raise it again at any moment. MY
+  // dismissal is proven by the art stage emptying (done() owns that);
+  // asserting on .active would blame this dress for someone else's.
+  const after = await page.evaluate(() => ({
+    active: document.getElementById('champOverlay').classList.contains('active'),
+    title: document.getElementById('champTitle').textContent,
+    art: document.getElementById('champArt').innerHTML,
+  }));
+  ok(after.art === '', 'dismissed — the art stage is left empty for other dresses',
+    after.active ? `(overlay re-raised by: "${after.title}")` : '');
+
+  // The earned hero: data-driven lock. A rigged earnedOnly row renders
+  // locked on the shelf, refuses purchase, and the latch does NOT fire
+  // for an unqualified row. (No real earnedOnly hero exists yet.)
+  const store = await page.evaluate(async () => {
+    const fake = { id: 'testearn', name: 'The Unnamed', filename: 'Explorer.jpg',
+      difficulty: 3, epithet: 'Earned Only', tip: '', earnedOnly: true, slots: [] };
+    window.FAVOR_DATA.characters.push(fake);
+    const owned = FLB.ownedIds();
+    const buy = await FLB.buyCharacter('testearn');
+    FLB.openStore();
+    await new Promise(r => setTimeout(r, 600));
+    const card = document.querySelector('.st-card[data-char="testearn"]');
+    const earnTxt = card && card.querySelector('.st-earn');
+    FLB.closeStore();
+    // Clean stage first — a queued boot dress (daily crown, stars) may hold
+    // the singleton; the latch is judged by ITS OWN dress, not by .active.
+    document.getElementById('champOverlay').classList.remove('active');
+    localStorage.removeItem('favorShownUnlock_testearn');
+    await FLB.checkEarnedHero();
+    const latchFired = document.getElementById('champOverlay').classList.contains('active')
+      && /Answers Your Renown/.test(document.getElementById('champTitle').textContent);
+    window.FAVOR_DATA.characters.pop();
+    localStorage.removeItem('favorEarned');
+    localStorage.removeItem('favorShownUnlock_testearn');
+    return { owned: owned.includes('testearn'), why: buy.why,
+      shelf: !!card, earnTxt: earnTxt ? earnTxt.textContent : null, latchFired };
+  });
+  ok(!store.owned, 'an unqualified player does not own the earned hero');
+  ok(store.why === 'earned_only', `buyCharacter refuses it outright (${store.why})`);
+  ok(store.shelf && /Reach Level 5 with two heroes/.test(store.earnTxt || ''),
+    `the shelf lock advertises the goal (${store.earnTxt})`);
+  ok(!store.latchFired, 'the unlock latch stays quiet for an unqualified row');
+
+  await page.evaluate(() => localStorage.removeItem('favorSidePref'));
+  await page.close();
+}
+
 // ═══ FINAL INTEGRITY GATE: no audit run may leave a mark on a REAL row ═══
 // Personas post daily scores as of 7/18, which opens a contamination path
 // that did not exist before: an audit game that seated a real persona would
