@@ -398,8 +398,10 @@ class FavorGame {
         const held = [];
         const collect = (c) => {
             if (c && c.grantsMap) {
-                held.push(c.grantsMap);  // destination name
-                held.push(c.name);       // source name (reqMaps convention)
+                // Source name ONLY (reqMaps convention) — pushing the grantsMap
+                // destination name too let chain step 1's map satisfy step 3
+                // (Her Lost Father's map answered Reunited's reqMap). 2026-07-20.
+                held.push(c.name);
             }
         };
         player.playedCards.forEach(collect);

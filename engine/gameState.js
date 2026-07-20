@@ -567,18 +567,20 @@ class FavorGame {
 
     /**
      * Maps a player holds — granted by playing source cards with grantsMap.
-     * A map answers to BOTH its names: the destination it leads to (the
-     * source card's grantsMap, e.g. "Finding the Lost Corridor") AND the
-     * source card it came from (destination audits say "OR Her Lost Father
-     * Map"). reqMaps lists source-card names, so both must resolve.
+     * A held map is identified ONLY by its source (the card/mission that
+     * granted it): every reqMaps entry in the data is a source name, i.e.
+     * "OR [X] Map" always means "the map X grants". Do NOT also push the
+     * grantsMap destination name — in map CHAINS the middle card's name IS
+     * step 1's grantsMap value, so the destination alias let step 1's map
+     * satisfy step 3 (Her Lost Father's map answered Reunited's
+     * "Finding the Lost Corridor" reqMap, skipping the Act 2 card).
      */
     getPlayerMaps(playerIndex) {
         const player = this.players[playerIndex];
         const held = [];
         const collect = (c) => {
             if (c && c.grantsMap) {
-                held.push(c.grantsMap);  // destination name
-                held.push(c.name);       // source name (reqMaps convention)
+                held.push(c.name);  // source name (reqMaps convention)
             }
         };
         player.playedCards.forEach(collect);
