@@ -2937,7 +2937,7 @@ console.log('── weapon_card_3_gold / adventure_card_5_prestige pay on the pl
   ok(g2.players[1].prestige === 0, 'nobody else got paid');
 }
 
-console.log('── free_potion_per_round: one costed Potion per round plays free ──');
+console.log('── free_potion_per_round: one Potion per round plays FREE (reqs + gold) ──');
 {
   const g = new FavorGame(3);
   g.loadDecks();
@@ -2950,37 +2950,76 @@ console.log('── free_potion_per_round: one costed Potion per round plays fre
   const you = g.players[0];
   you.sliderPosition = 4;                    // Doctor B slot 4 = free_potion_per_round
   g.applySlotSkills(you);
-  // No potion in TODAY'S deck carries a gold cost (all 28 costed cards are
-  // endeavors/adventures/artifacts/weapons/letters) — the waiver is exact
-  // to the printed text and simply has nothing to bite yet. A synthetic
-  // costed potion proves the engine path a future card will ride.
-  const pot = { id: 'test_tonic_b', name: 'Test Tonic', type: 'potion', cost: 3, act: 1 };
-  you.gold = 0;
-  const chk = g.checkRequirements(0, pot);
-  ok(!chk.missingSpecial.some(m => /Gold/.test(m)),
-    `an unaffordable Potion is PLAYABLE on the slot (${pot.name}, cost ${pot.cost})`);
-  you.hand = [pot];
-  g.pendingActivations[0] = null;
-  g.pickCard(0, 0);
-  const r1 = g.activateCard(0, pot.id, 'play');
-  ok(r1 && r1.success === true, 'the potion plays with 0 gold');
-  ok(you.gold === 0, `no gold was charged (${you.gold})`);
+
+  // REQUIREMENT waiver (Wyatt 7/20: the Map grammar — "for no cost"):
+  // Chemical Z is a real potion printing Req: 5 Alchemy & 5 Prospecting.
+  const chemZ = cardByName('Chemical Z');
+  ok(chemZ && chemZ.type === 'potion', 'rig card is a real requirement-bearing Potion');
+  const cold = g.checkRequirements(0, { ...chemZ }, { noPotionWaiver: true });
+  ok(cold.canPlay === false, 'raw check still fails its printed requirements');
+  const chk = g.checkRequirements(0, { ...chemZ });
+  ok(chk.canPlay === true && chk.potionWaived === true,
+    'the slot waives them — the Play button lights');
+  const r1 = playCard(g, 0, 'Chemical Z');
+  ok(r1 && r1.success === true, 'Chemical Z plays with 0 Alchemy/Prospecting');
   ok(you._freePotionRound === true, 'the round’s waiver is spent');
 
-  // A second costed potion this round pays full price.
-  const pot2 = { ...pot, id: pot.id + '_second' };
-  you.gold = pot.cost;
-  you.hand = [pot2];
+  // A second req-failing potion the SAME round is refused.
+  const doom2 = { ...chemZ, id: (chemZ.id || 'chemz') + '_second' };
+  you.hand = [doom2];
   g.pendingActivations[0] = null;
   g.pickCard(0, 0);
-  const r2 = g.activateCard(0, pot2.id, 'play');
-  ok(r2 && r2.success === true, 'a second potion still plays when affordable');
-  ok(you.gold === 0, `— but pays its cost (${you.gold})`);
+  const r2 = g.activateCard(0, doom2.id, 'play');
+  ok(r2 && r2.success === false, 'a second waived play the same round is refused');
 
-  // passHands recharges the waiver.
+  // passHands recharges the waiver; a potion that PASSES cold (skills in
+  // hand, no gold owed) never burns it.
   g.players.forEach(p => { p.hand = [{ ...cardByName('First Aid') }]; });
   g.passHands();
   ok(you._freePotionRound === false, 'the waiver recharges on the next round');
+  you.bonusSkills = { ...(you.bonusSkills || {}), alchemy: 2 };
+  g.applySlotSkills(you);
+  const gold0 = you.gold;
+  playCard(g, 0, 'Chemical X');              // potion, Req 2 Alchemy — now met cold
+  ok(you._freePotionRound === false,
+    'a potion that passes cold never burns the waiver');
+  ok(you.gold === gold0, 'and pays nothing');
+
+  // GOLD waiver still rides for a future costed potion.
+  const pot = { id: 'test_tonic_b', name: 'Test Tonic', type: 'potion', cost: 3, act: 1 };
+  you.gold = 0;
+  you.hand = [pot];
+  g.pendingActivations[0] = null;
+  g.pickCard(0, 0);
+  const r3 = g.activateCard(0, pot.id, 'play');
+  ok(r3 && r3.success === true && you.gold === 0,
+    'a costed Potion still plays free on the slot (gold waiver intact)');
+}
+
+console.log('── Merchant B slot 1: 5 Gold + trade with anyone (Wyatt audit 7/20) ──');
+{
+  const g = new FavorGame(4);
+  g.loadDecks();
+  g.initPlayers([
+    { characterId: 'merchant', playerName: 'You', side: 'b' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'explorer', playerName: 'B' },
+    { characterId: 'fisherman', playerName: 'C' },
+  ]);
+  g.phase = 'gameplay';
+  const you = g.players[0];
+  // The ACROSS player (seat 2, not a neighbor) plays a Knowledge card.
+  g.players[2].gold = 5;
+  playCard(g, 2, "Father's Teachings");
+  you.sliderPosition = 0;                    // Merchant B slot 1 = borrow_any_player
+  g.applySlotSkills(you);
+  const b = g.getBorrowableSkills(0);
+  ok((b.knowledge || []).includes(2),
+    'on the slot, a NON-neighbor lends their skill (trade with anyone)');
+  you.sliderPosition = 2;
+  g.applySlotSkills(you);
+  const b2 = g.getBorrowableSkills(0);
+  ok(!(b2.knowledge || []).includes(2), 'off the slot, borrowing is neighbors-only again');
 }
 
 console.log('── pick_one with SPECIAL options (Magician B slot 3) ──');

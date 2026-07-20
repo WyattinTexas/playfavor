@@ -125,7 +125,12 @@
     //     board per player (slots, purse, specials) or gold, skills, Mind's
     //     Eye count and the final tally fork on every other screen. A v16
     //     seat can't parse the pick shape and knows nothing of altSlots.
-    const MPV = 17;
+    // 18: Wyatt's alt-board audit (7/20, an hour after 17): Merchant B slot 1
+    //     is borrow_any_player ("trade with anyone"), not +1 to four skills,
+    //     and Doctor B's free Potion waives REQUIREMENTS as well as gold (the
+    //     Map grammar). Unreachable rules until someone hits Level 5, but a
+    //     v17 seat that got there would fork the table — bump on principle.
+    const MPV = 18;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

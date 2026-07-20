@@ -62,7 +62,7 @@ const SPECIAL_DESCRIPTIONS = {
     "minds_eye_x8":                  "+8 Knowledge (8 Mind's Eyes).",
     "adventure_card_5_prestige":     "Playing an Adventure card earns +5 Prestige.",
     "weapon_card_3_gold":            "Playing a Weapon card earns +3 Gold.",
-    "free_potion_per_round":         "Play 1 Potion card per round ignoring its cost.",
+    "free_potion_per_round":         "Play 1 Potion card per round ignoring its requirements and cost.",
     "alchemy_adds_to_power":         "Your Alchemy amount adds to your Power.",
 };
 

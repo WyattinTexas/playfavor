@@ -448,7 +448,7 @@ class FavorGame {
         return f;
     }
 
-    checkRequirements(playerIndex, card) {
+    checkRequirements(playerIndex, card, opts = {}) {
         const player = this.players[playerIndex];
         const missing = [];
         const missingSpecial = [];
@@ -504,29 +504,39 @@ class FavorGame {
         // no refund. 45 of 105 cards carry a cost; Wyatt met it as "Mind Warper
         // didn't turn my Scorn into Prestige". A map that plays the card free
         // short-circuits at the top, so this never fires on a map-waived play.
-        if (card.cost && card.cost > 0 && player.gold < card.cost
-            && !this.freePotionAvailable(playerIndex, card)) {
+        if (card.cost && card.cost > 0 && player.gold < card.cost) {
             missingSpecial.push(`${card.cost} Gold`);
         }
 
-        return {
+        const result = {
             canPlay: missing.length === 0 && missingSpecial.length === 0,
             missingSkills: missing,
             missingSpecial
         };
+
+        // Doctor Side B: one Potion per round plays FREE — requirements AND
+        // gold cost waived, the Map grammar ("play the card for no cost",
+        // Wyatt 7/20). The waiver only ANSWERS here; it is spent in
+        // activateCard, and only by a play it actually changed.
+        // opts.noPotionWaiver = the raw probe activateCard uses to decide
+        // whether this play needed it.
+        if (!opts.noPotionWaiver && !result.canPlay
+            && this.freePotionAvailable(playerIndex, card)) {
+            return { canPlay: true, missingSkills: [], missingSpecial: [], potionWaived: true };
+        }
+        return result;
     }
 
     /**
-     * Doctor Side B: "You may play 1 Potion card per round ignoring its
-     * cost." True while the ring sits on the slot, the card is a costed
-     * Potion, and this round's waiver is unspent. checkRequirements AND
-     * activateCard both consult this, so the Play button and the engine
-     * can never disagree about affordability.
+     * Doctor Side B: is the once-per-round free-Potion waiver live for this
+     * card? True while the ring sits on the slot, the card is a Potion, and
+     * this round's waiver is unspent. checkRequirements AND activateCard
+     * both consult this, so the Play button and the engine always agree.
      */
     freePotionAvailable(playerIndex, card) {
         const player = this.players[playerIndex];
         if (!player || player._freePotionRound) return false;
-        if (!card || card.type !== 'potion' || !card.cost || card.cost <= 0) return false;
+        if (!card || card.type !== 'potion') return false;
         const slot = player.character && player.character.slots
             ? player.character.slots[player.sliderPosition] : null;
         return !!(slot && slot.special === 'free_potion_per_round');
@@ -668,9 +678,18 @@ class FavorGame {
         if (action === 'play') {
             const card = this.findPendingCard(playerIndex, cardId);
 
+            // Doctor B's free-Potion waiver: probe the RAW requirements first
+            // — the waiver is spent only by a play it actually changed (a
+            // Potion that passes cold, with no gold owed, never burns it).
+            const rawReq = this.checkRequirements(playerIndex, card, { noPotionWaiver: true });
+            const potionWaiver = this.freePotionAvailable(playerIndex, card)
+                && (!rawReq.canPlay || (card.cost && card.cost > 0));
+
             // Enforce requirements at the engine level — borrowed skills cover skill gaps only;
             // Mind's Eye / Philosopher's Stone / Gold / Favor requirements can never be borrowed.
-            const req = this.checkRequirements(playerIndex, card);
+            const req = potionWaiver
+                ? { canPlay: true, missingSkills: [], missingSpecial: [] }
+                : rawReq;
             if (!req.canPlay) {
                 const uncovered = req.missingSkills.slice();
                 borrowFrom.forEach(b => {
@@ -703,20 +722,19 @@ class FavorGame {
             // or the Doctor's Side B slot waives one Potion per round.
             const mapFree = card.reqMaps && card.reqMaps.length > 0 &&
                 this.getPlayerMaps(playerIndex).some(m => card.reqMaps.includes(m));
-            const potionFree = !mapFree && this.freePotionAvailable(playerIndex, card);
-            if (card.cost && card.cost > 0 && !mapFree && !potionFree) {
+            if (potionWaiver && !mapFree) {
+                // The round's waiver is SPENT by this play (requirements
+                // and/or gold ignored). State-derived, so every lockstep
+                // client reaches the same answer at the same point.
+                player._freePotionRound = true;
+                this.addLog(`${player.name}'s board plays ${card.name} free (1 Potion per round)`);
+            } else if (card.cost && card.cost > 0 && !mapFree) {
                 if (player.gold < card.cost) {
                     return { success: false, error: 'Not enough gold' };
                 }
                 player.gold -= card.cost;
             } else if (card.cost && card.cost > 0 && mapFree) {
                 this.addLog(`${player.name}'s Map plays ${card.name} for free`);
-            } else if (card.cost && card.cost > 0 && potionFree) {
-                // Consumed only when it actually waives a cost — a 0-cost
-                // potion never burns the round's charge. State-derived, so
-                // every lockstep client reaches the same answer.
-                player._freePotionRound = true;
-                this.addLog(`${player.name}'s board plays ${card.name} free (1 Potion per round)`);
             }
 
             // Play the card

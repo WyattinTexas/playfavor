@@ -42,7 +42,9 @@
  * Side B slot specials new with these boards:
  *   - adventure_card_5_prestige: playing an Adventure card pays +5 Prestige
  *   - weapon_card_3_gold:        playing a Weapon card pays +3 Gold
- *   - free_potion_per_round:     1 Potion per round plays free (cost waived)
+ *   - free_potion_per_round:     1 Potion per round plays FREE — its
+ *     requirements AND any gold cost are waived (Wyatt 7/20: "cost" on
+ *     this slot reads like the Map grammar, "play the card for no cost")
  *   - alchemy_adds_to_power:     Alchemy total adds to Power while here
  *   - minds_eye_x8:              8 Mind's Eyes (ongoing +8 Knowledge)
  *   - pick_one may now offer specials (minds_eye / philosopher_stone)
@@ -149,9 +151,10 @@ window.FAVOR_DATA.characters = [
         altFilename: "Merchant_B.jpg",
         altEpithet: "Guildmaster",
         altSlots: [
-            // Board shows coin 5 + an up-arrow ringed by the four secondary
-            // skills — +1 to each of the pictured four (no "Pick One" label).
-            { gold: 5, skills: { survival: 1, alchemy: 1, charisma: 1, prospecting: 1 } },
+            // The up-arrow ringed by the four skill minis = TRADE WITH
+            // ANYONE (Wyatt's audit 7/20) — the same borrow_any_player his
+            // Side A center carries, not a skill grant.
+            { gold: 5, special: "borrow_any_player" },
             { gold: 7, skills: { prospecting: 3 } },
             { special: "weapon_card_3_gold" },                   // center — start
             { favor: 10 },

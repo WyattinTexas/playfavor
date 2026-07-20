@@ -12,10 +12,14 @@ archived to `~/Downloads/Favor_Assets/Characters_B/<Name>_B.png`). MPV 16 → 17
 >   (Bandit B), `weapon_card_3_gold` (Merchant B), `free_potion_per_round` (Doctor B),
 >   `alchemy_adds_to_power` (Scientist B) — plus `minds_eye_x8` (Fisherman B) and
 >   `pick_one` with special options (Magician B: Eye / Stone / Knowledge / Power).
-> - ⚠ `free_potion_per_round` is implemented exactly as printed (Cost = the top-left
->   gold coin, rulebook p.11) — **no potion in today's deck carries a gold cost**, so
->   the slot is future-proof but inert until one does. If Wyatt meant requirement-free,
->   it's a two-line change in `freePotionAvailable`.
+> - `free_potion_per_round` (UPDATED per Wyatt's 7/20 audit): "ignoring its cost"
+>   reads as the Map grammar — once per round a Potion plays FREE, its printed
+>   REQUIREMENTS and any gold cost both waived. The waiver is spent only by a play
+>   it actually changed; a potion that passes cold never burns it. (MPV 17 → 18.)
+> - **Wyatt's slot-by-slot audit (7/20): 49/50 shipped correct.** The one fix:
+>   Merchant B slot 1 is `borrow_any_player` ("5 Gold and trade with anyone") — the
+>   up-arrow ringed by four skill minis is the TRADE icon, the same power his Side A
+>   center carries, not a +1-each skill grant.
 > - **The eleventh character: machinery complete, the character itself still owed.**
 >   The derived predicate, ownedIds source + add-only mirror, store lock, buyCharacter
 >   refusal, menu latch + fifth champ dress, and every bot filter are live and tested —

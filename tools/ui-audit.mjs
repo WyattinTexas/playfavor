@@ -3709,10 +3709,12 @@ console.log('── Royal Mint: bundle plaques, honest checkout URL, IPN deliver
     JSON.stringify({ packId: 'favor.stars50', stars: 50, at: Date.now() })));
   await page.goto(URL + '?paypal=cancel', { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
-  await sleep(600);
-  ok(await page.evaluate(() => !localStorage.getItem('favorPendingStars') &&
-      location.search === ''),
-    'cancel return clears the pending mark and cleans the URL');
+  // WAIT for the cleanup, don't race it — a fixed beat after a cold boot
+  // flaked one run in four on nothing but network weather.
+  const cancelClean = await page.waitForFunction(() =>
+    !localStorage.getItem('favorPendingStars') && location.search === '',
+    { timeout: 8000 }).then(() => true, () => false);
+  ok(cancelClean, 'cancel return clears the pending mark and cleans the URL');
 
   // Leave no trace.
   const scrub = await page.evaluate(async (u) => {
