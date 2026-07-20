@@ -14,7 +14,6 @@
  *   smoke       — one thin lazy wisp curling up from the cottage chimney
  *   petals      — loose petals tumbling across the meadow on the breeze
  *   sparkle     — rare dew-glints blooming in the flower beds
- *   cloudShadows— vast soft shade patches sliding slowly over the meadow
  *
  * Guards: prefers-reduced-motion → layer stays inert; ?ambient=off kills it
  * for a session; drawing pauses while the tab is hidden or the title screen
@@ -29,7 +28,6 @@
         smoke: true,
         petals: true,
         sparkle: true,
-        cloudShadows: true,
     };
 
     const canvas = document.getElementById('tsAmbient');
@@ -407,79 +405,6 @@
     // left edge and out at the right. Kept low over the meadow band; the
     // occluder repaints the cottage after us, so buildings stay sunlit
     // (subtle enough that this reads as terrain, not an error). Stateless.
-    // NOTE the technique: canvas 'multiply' only blends within the CANVAS,
-    // and ours is a transparent overlay — multiplying over transparency
-    // just paints the blend color, which LIGHTENED dark grass (the "white
-    // box" bug). True shade = the occluder trick: clip a soft-edged patch
-    // of the painting's own pixels, darken THAT, and lay it exactly over
-    // itself. Cannot lighten anything, keeps every painted detail.
-    let shadowOC = null;
-
-    function stepCloudShadows(now, w, h) {
-        if (!bgImg.complete || !bgImg.naturalWidth) return;
-        const defs = [
-            { period: 34000, y: 0.78, rx: 0.34, ry: 0.16, a: 1.0, off: 0.0 },
-            { period: 47000, y: 0.66, rx: 0.26, ry: 0.12, a: 0.85, off: 0.47 },
-        ];
-        const dpr = Math.min(2, window.devicePixelRatio || 1);
-        if (!shadowOC) shadowOC = document.createElement('canvas');
-        if (shadowOC.width !== w * dpr || shadowOC.height !== h * dpr) {
-            shadowOC.width = w * dpr;
-            shadowOC.height = h * dpr;
-        }
-        const oc = shadowOC.getContext('2d');
-        oc.setTransform(dpr, 0, 0, dpr, 0, 0);
-        oc.clearRect(0, 0, w, h);
-        // 1. footprint: soft black lobes = the shadow's alpha mask
-        let drew = false;
-        defs.forEach(d => {
-            const p = ((now / d.period) + d.off) % 1;      // 0..1 across
-            const cx = (p * 1.5 - 0.25) * w;               // enter/exit offscreen
-            const cy = d.y * h;
-            const edge = Math.min(1, Math.min(p, 1 - p) * 5);   // soft in/out
-            if (edge <= 0.01) return;
-            // three offset lobes so the shade reads as a cloud's footprint,
-            // not a stamped circle
-            const lobes = [
-                { dx: 0, dy: 0, k: 1 },
-                { dx: -0.55, dy: 0.25, k: 0.72 },
-                { dx: 0.5, dy: -0.2, k: 0.66 },
-            ];
-            lobes.forEach(lb => {
-                const rx = d.rx * w * lb.k, ry = d.ry * h * lb.k;
-                const x = cx + lb.dx * d.rx * w, y = cy + lb.dy * d.ry * h;
-                const g = oc.createRadialGradient(x, y, 0, x, y, rx);
-                g.addColorStop(0, `rgba(0, 0, 0, ${(d.a * edge).toFixed(3)})`);
-                g.addColorStop(0.6, `rgba(0, 0, 0, ${(d.a * 0.85 * edge).toFixed(3)})`);
-                g.addColorStop(0.85, `rgba(0, 0, 0, ${(d.a * 0.3 * edge).toFixed(3)})`);
-                g.addColorStop(1, 'rgba(0, 0, 0, 0)');
-                oc.save();
-                oc.translate(x, y);
-                oc.scale(1, ry / rx);                       // squash: ground perspective
-                oc.translate(-x, -y);
-                oc.fillStyle = g;
-                oc.beginPath();
-                oc.arc(x, y, rx, 0, Math.PI * 2);
-                oc.fill();
-                oc.restore();
-                drew = true;
-            });
-        });
-        if (!drew) return;
-        // 2. replace the mask with the painting's own pixels (same cover
-        // transform as everything else — pixel-aligned with the bg)
-        const { s, ox, oy } = coverTransform(w, h);
-        oc.globalCompositeOperation = 'source-in';
-        oc.drawImage(bgImg, ox, oy, BG_DIMS.w * s, BG_DIMS.h * s);
-        // 3. darken the clipped patch — cool shade, detail preserved
-        oc.globalCompositeOperation = 'source-atop';
-        oc.fillStyle = 'rgba(24, 32, 54, 0.46)';
-        oc.fillRect(0, 0, w, h);
-        oc.globalCompositeOperation = 'source-over';
-        // 4. lay the darkened painting exactly over itself
-        ctx.drawImage(shadowOC, 0, 0, w, h);
-    }
-
     // ══ PETALS — loose petals tumbling across the meadow breeze ═════════
     // Bigger, bolder cousins of the pollen: each petal crosses the lower
     // meadow left-to-right with a fluttery sink-and-lift, tumbling as it
@@ -576,8 +501,7 @@
         lastNow = now;
         ctx.clearRect(0, 0, w, h);
         if (titleVisible() && !document.hidden) {
-            // ground first (shade, glints), then the air above it
-            if (AMBIENT.cloudShadows) stepCloudShadows(now, w, h);
+            // ground glints first, then the air above them
             if (AMBIENT.sparkle) stepSparkle(now, w, h);
             if (AMBIENT.pollen) stepPollen(now, w, h);
             if (AMBIENT.petals) stepPetals(now, w, h);
