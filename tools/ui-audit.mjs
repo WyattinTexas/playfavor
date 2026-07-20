@@ -936,11 +936,11 @@ console.log('── Hero select: 3 random heroes, bots draw from the leftovers, 
   const detail = await page.evaluate(() => ({
     open: document.getElementById('charDetail').classList.contains('active'),
     hero: (document.querySelector('#charDetail .cd-title h2') || {}).textContent || '',
-    cells: document.querySelectorAll('#charDetail .cd-slot').length,
+    ring: !!document.querySelector('#charDetail .cd-ring'),
     epithets: [...document.querySelectorAll('.character-card')].every(c => c.querySelector('.epithet')),
   }));
-  ok(detail.open && detail.cells === 5,
-    `tap opens the fullscreen board read — five slots spelled out (${detail.hero})`);
+  ok(detail.open && detail.ring,
+    `tap opens the compact board read, ring on the center slot (${detail.hero})`);
   ok(detail.epithets, 'every offering wears its printed epithet');
   await page.screenshot({ path: join(SHOTS, 'hero-select-3.png') });
 
@@ -7576,18 +7576,24 @@ console.log('── Side B: ribbon + badges + chooser + the table rides the B bo
   await sleep(350);
   const detailA = await page.evaluate(() => {
     const el = document.getElementById('charDetail');
-    const cells = [...el.querySelectorAll('.cd-slot')];
+    const frame = el.querySelector('.cd-frame');
+    const ring = el.querySelector('.cd-ring');
     return {
       active: el.classList.contains('active'),
-      cells: cells.length,
-      farLeft: cells[0] ? cells[0].textContent : '',
+      strip: !!el.querySelector('.cd-slot'),
+      frameW: frame ? Math.round(frame.getBoundingClientRect().width) : 0,
+      ring: !!ring,
+      ringLeft: ring ? ring.style.left : '',
       tabs: [...el.querySelectorAll('.cd-tab')].map(t => t.textContent.trim()),
       aOn: !!el.querySelector('.cd-tab[data-side="a"].on'),
-      art: (el.querySelector('.cd-art img') || {}).src || '',
     };
   });
-  ok(detailA.active && detailA.cells === 5, `the detail view opens with five slot cells (${detailA.cells})`);
-  ok(/18 Favor/.test(detailA.farLeft), `Side A far-left reads its DATA (18 Favor at game end)`);
+  ok(detailA.active && !detailA.strip,
+    'the detail opens as a compact card — no slot summaries (7/20 pm)');
+  ok(detailA.frameW > 0 && detailA.frameW <= 500,
+    `the card is COMPACT (${detailA.frameW}px wide ≤ 500)`);
+  ok(detailA.ring && detailA.ringLeft === '50%',
+    `the ring rides the CENTER slot of the viewed board (${detailA.ringLeft})`);
   ok(detailA.aOn && detailA.tabs.length === 2 && /Oathbreaker/.test(detailA.tabs[1]),
     `the A/B tabs are here, each wearing its epithet (${detailA.tabs.join(' | ')})`);
   await page.screenshot({ path: join(SHOTS, 'sideb-detail-a.png') });
@@ -7596,16 +7602,14 @@ console.log('── Side B: ribbon + badges + chooser + the table rides the B bo
   await sleep(250);
   const detailB = await page.evaluate(() => {
     const el = document.getElementById('charDetail');
-    const cells = [...el.querySelectorAll('.cd-slot')];
     return {
       bOn: !!el.querySelector('.cd-tab[data-side="b"].on'),
       art: (el.querySelector('.cd-art img') || {}).src || '',
-      farRight: cells[4] ? cells[4].textContent : '',
+      ring: !!el.querySelector('.cd-ring'),
     };
   });
   ok(detailB.bOn && /Knight_B\.jpg/.test(detailB.art), 'Side B tab swaps in the real B painting');
-  ok(/\+15 Scorn/.test(detailB.farRight) && /\+7 Power/.test(detailB.farRight),
-    'Side B far-right spells out the gambit slot (+7 Power, +15 Scorn)');
+  ok(detailB.ring, 'the ring stays on the B board too');
   await page.screenshot({ path: join(SHOTS, 'sideb-detail-b.png') });
 
   // Back leaves the grid unchanged; re-open and Confirm locks it in.
@@ -7816,7 +7820,109 @@ console.log('── Side B: ribbon + badges + chooser + the table rides the B bo
     `the shelf lock advertises the goal (${store.earnTxt})`);
   ok(!store.latchFired, 'the unlock latch stays quiet for an unqualified row');
 
+  // 7/20 pm: the throw hint yields to EVERY overlay (:has() gating) — it
+  // must vanish while the mission browser is up and return when it folds.
+  const hint = await page.evaluate(() => {
+    const h = document.getElementById('throwHint');
+    h.classList.add('active');
+    const shownBefore = getComputedStyle(h).display !== 'none';
+    openMissionBrowser('realm');
+    const hiddenDuring = getComputedStyle(h).display === 'none';
+    closeMissionLB();
+    const shownAfter = getComputedStyle(h).display !== 'none';
+    h.classList.remove('active');
+    return { shownBefore, hiddenDuring, shownAfter };
+  });
+  ok(hint.shownBefore && hint.hiddenDuring && hint.shownAfter,
+    `the drag hint yields to an open overlay and returns after (${JSON.stringify(hint)})`);
+
   await page.evaluate(() => localStorage.removeItem('favorSidePref'));
+  await page.close();
+}
+
+// ═══ 7/20 pm: achievements gallery never overlaps — any metrics ═══
+console.log('── Achievements gallery: rows size to content at any text metric');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('achfit: ' + m.text()); });
+  await page.setViewport({ width: 1024, height: 700 });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FACH && window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await page.evaluate(() => FACH.openGallery());
+  await page.waitForFunction(() => document.querySelectorAll('.ach-cell').length > 0, { timeout: 8000 })
+    .catch(() => {});
+  await sleep(300);   // fonts settle — the original bug WAS a font-swap race
+  const fit = await page.evaluate(() => {
+    const overlaps = () => {
+      const cells = [...document.querySelectorAll('.ach-cell')].map(c => c.getBoundingClientRect());
+      let n = 0;
+      for (let i = 0; i < cells.length; i++) for (let j = i + 1; j < cells.length; j++) {
+        const a = cells[i], b = cells[j];
+        if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 8
+          && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) n++;
+      }
+      return n;
+    };
+    const base = overlaps();
+    // Simulate a device inflating text (the Overlap.jpg failure mode).
+    const st = document.createElement('style');
+    st.textContent = '.ach-cell-body b{font-size:23px!important}.ach-cell-body span{font-size:20px!important}.ach-cell-stars{font-size:22px!important}';
+    document.head.appendChild(st);
+    const inflated = overlaps();
+    st.remove();
+    FACH.closeGallery();
+    return { base, inflated, cells: document.querySelectorAll('.ach-cell').length };
+  });
+  ok(fit.cells >= 20, `gallery rendered (${fit.cells} cells)`);
+  ok(fit.base === 0, `no overlapping cells at base metrics (${fit.base})`);
+  ok(fit.inflated === 0, `no overlapping cells with text inflated ~60% (${fit.inflated})`);
+  await page.close();
+}
+
+// ═══ 7/20 pm: the Court Seal — preview validates, claim swaps the device ═══
+console.log('── Court Seal: preview names the row; claim takes the seat');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('seal: ' + m.text()); });
+  await page.setViewport({ width: 1280, height: 800 });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode === 'firebase', { timeout: 15000 });
+  const seal = await page.evaluate(async () => {
+    const originalUid = FLB.uid();
+    const bad = await FLB.previewSeal('not a seal!!');
+    const self = await FLB.previewSeal(originalUid);
+    const ghost = await FLB.previewSeal('unosuchsealzzzz');
+    // A real row to restore into — swept by the integrity gate's uaudit* rule.
+    const code = 'uauditseal' + Math.random().toString(36).slice(2, 6);
+    await firebase.database().ref(`favor/players/${code}`).set({
+      name: 'Seal Bearer', rating: 2310, ratingV: 2, games: 14, stars: 3,
+      owned: { doctor: true }, avatar: 'doctor',
+    });
+    const prev = await FLB.previewSeal(code);
+    const claim = prev.ok ? FLB.claimSeal(code, prev.row, { noReload: true }) : { ok: false };
+    const after = {
+      uid: localStorage.getItem('favorUid'),
+      name: localStorage.getItem('favorName'),
+      avatar: localStorage.getItem('favorAvatar'),
+      owned: JSON.parse(localStorage.getItem('favorOwned') || '[]'),
+    };
+    // Put the page back on its own identity and sweep the fixture row.
+    localStorage.setItem('favorUid', originalUid);
+    localStorage.removeItem('favorName');
+    localStorage.removeItem('favorAvatar');
+    localStorage.setItem('favorOwned', '[]');
+    await firebase.database().ref(`favor/players/${code}`).remove();
+    return { bad: bad.why, self: self.why, ghost: ghost.why,
+      prevOk: prev.ok, prevName: prev.name, claimOk: claim.ok, after, code };
+  });
+  ok(seal.bad === 'shape', `garbage is refused by shape (${seal.bad})`);
+  ok(seal.self === 'self', `your own seal is refused (${seal.self})`);
+  ok(seal.ghost === 'unknown', `an unclaimed seal finds no court (${seal.ghost})`);
+  ok(seal.prevOk && seal.prevName === 'Seal Bearer', `preview names the account (${seal.prevName})`);
+  ok(seal.claimOk && seal.after.uid === seal.code, 'claim swaps this device onto the seal');
+  ok(seal.after.name === 'Seal Bearer' && seal.after.avatar === 'doctor'
+    && seal.after.owned.includes('doctor'),
+    'name, crest and owned heroes ride along');
   await page.close();
 }
 

@@ -28,6 +28,12 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* iOS Safari auto-inflates "small" text in landscape webviews — TEXT ONLY,
+   not the boxes around it, which is how one device's achievement titles
+   painted over their neighbours (Wyatt 7/20). The layout is designed at
+   these sizes; keep the browser's hands off them. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
 /* Long-pressing card/board art on iOS summoned the native "Copy / Save
    Image" sheet ("copy PNGs?" — reported 7/17). Kill the callout and drag
    on every image app-wide; text still selects via the .selectable opt-in. */
@@ -6749,14 +6755,16 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
 }
 .ach-grid {
     padding: 16px 16px 24px; overflow-y: auto;
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 10px;
-    /* start (not stretch): each cell sizes to its OWN content so the name +
-       description are never clipped to a collapsed row (Wyatt 7/17: couldn't
-       read any of them — cells were squished to one line). */
-    align-items: start;
+    /* FLEX-WRAP, deliberately NOT css grid (Wyatt 7/20, Overlap.jpg):
+       grid sized its row tracks off pre-fontload metrics and pinned them
+       at the 62px minimum; when Cinzel/Garamond swapped in, cells grew to
+       82-100px inside 62px rows and every row painted over the next on
+       some devices. Flex rows always size to their content. */
+    display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px;
 }
 .ach-cell {
     position: relative; min-height: 62px;
+    flex: 1 1 270px; min-width: 270px; max-width: 100%;
     display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px;
     padding: 12px 14px; border-radius: 9px;
     background: #1c150c; border: 1px solid #3a2d17;
@@ -7305,14 +7313,24 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     padding: 8px 6px; border-top: 1px solid rgba(201,168,76,0.18);
 }
 
-/* ═══ §2 Character detail — the near-fullscreen board read (7/20) ═══ */
+/* ═══ §2 Character detail — the compact board read (7/20, resized same
+   day: Wyatt "too big, about 80% smaller" — a centered MODAL CARD now,
+   the board itself the read, no slot summaries). Width also bows to the
+   viewport height so the whole card always fits a phone in landscape. */
 .char-detail {
     position: fixed; inset: 0; z-index: 8000; display: none;
-    background: radial-gradient(120% 80% at 50% -10%, #3a2415 0%, #1d1109 45%, #120a05 100%);
-    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    align-items: center; justify-content: center;
+    background: rgba(10, 5, 2, 0.82); backdrop-filter: blur(4px);
 }
-.char-detail.active { display: block; }
-.cd-frame { max-width: 980px; margin: 0 auto; padding: 18px clamp(14px, 3vw, 40px) 30px; }
+.char-detail.active { display: flex; }
+.cd-frame {
+    width: min(480px, 92vw, calc((100vh - 175px) * 1.586));
+    max-height: 94vh; overflow-y: auto;
+    padding: 12px 14px 14px; border-radius: 12px;
+    border: 2px solid var(--gold-dark);
+    background: linear-gradient(175deg, #2e1c0e, #1a0d05);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.75);
+}
 .cd-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
 .cd-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .cd-title h2 { font-family: 'Cinzel', serif; font-size: clamp(20px, 3.4vw, 30px); color: var(--gold-light); text-shadow: 0 2px 0 #000; }
@@ -7331,35 +7349,20 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     background: linear-gradient(180deg, var(--gold-light), var(--gold) 48%, var(--gold-dark));
     border-color: #6b5210; box-shadow: 0 0 18px rgba(201, 168, 76, 0.35);
 }
-.cd-art { border-radius: 10px; overflow: hidden; border: 2px solid var(--gold-dark); box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
+.cd-art {
+    position: relative; border-radius: 8px; overflow: hidden;
+    border: 1px solid var(--gold-dark); box-shadow: 0 8px 28px rgba(0,0,0,0.6);
+}
 .cd-art img { width: 100%; display: block; aspect-ratio: 1600/1009; object-fit: cover; }
-.cd-slots {
-    display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 10px;
+/* The ring on the CENTER slot — same slider-ring art and BOARD_OV_TRACK
+   geometry as the in-game thumbs, so the start position reads at a glance. */
+.cd-art .cd-ring {
+    position: absolute; width: 9%; height: auto; aspect-ratio: 1;
+    transform: translate(-50%, -50%); pointer-events: none;
+    filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
 }
-.cd-slot {
-    background: linear-gradient(165deg, rgba(61,40,23,0.72), rgba(26,16,9,0.72));
-    border: 1px solid rgba(201, 168, 76, 0.24); border-radius: 8px;
-    padding: 8px 9px 10px; display: flex; flex-direction: column; gap: 5px; align-items: flex-start;
-}
-.cd-slot.start { border-color: var(--gold); box-shadow: inset 0 0 14px rgba(201,168,76,0.12); }
-.cd-slot-name {
-    font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 0.16em;
-    text-transform: uppercase; color: var(--gold-dark); margin-bottom: 2px;
-}
-.cd-bit {
-    display: inline-flex; align-items: center; gap: 5px;
-    font-family: 'EB Garamond', serif; font-size: 14.5px; color: var(--parchment);
-}
-.cd-bit img { width: 16px; height: 16px; object-fit: contain; }
-.cd-bit.bad { color: #e0a0a0; }
-.cd-bit.special { color: #cbb894; font-style: italic; font-size: 13.5px; line-height: 1.35; }
-.cd-bit.none { color: #6d5a42; }
-.cd-tip { margin-top: 10px; font-family: 'EB Garamond', serif; font-size: 15px; color: #8f7a5c; text-align: center; }
-.cd-actions { display: flex; gap: 14px; justify-content: center; margin-top: 16px; }
-@media (max-width: 700px) {
-    .cd-slots { grid-template-columns: 1fr 1fr; }
-    .cd-slot.start { grid-column: 1 / -1; }
-}
+.cd-tip { margin-top: 8px; font-family: 'EB Garamond', serif; font-size: 13.5px; color: #8f7a5c; text-align: center; }
+.cd-actions { display: flex; gap: 12px; justify-content: center; margin-top: 12px; }
 
 /* §5 (7/20) — the slide's skill delta in the confirm bubble */
 .sc-delta { display: flex; gap: 7px; justify-content: center; flex-wrap: wrap; margin: 2px 0 4px; }
@@ -7372,3 +7375,38 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
 .sc-d img { width: 14px; height: 14px; object-fit: contain; }
 .sc-d.good { color: #9fd79f; }
 .sc-d.bad { color: #e0a0a0; border-color: rgba(139, 26, 26, 0.45); }
+
+/* Compact detail-card chrome (7/20 pm resize) */
+.cd-head { margin-bottom: 8px; }
+.cd-title h2 { font-size: 19px; }
+.cd-rb { min-width: 150px; flex: 0 1 170px; }
+.cd-sidetabs { margin: 2px 0 8px; }
+.cd-tab { padding: 7px 10px; font-size: 10.5px; }
+
+/* ── The throw hint yields the stage (Wyatt 7/20): while ANY game overlay
+   is up — mission browser/journal, a board, a rival, the hero detail, a
+   ceremony — the "drag a card up" fixture must not float over it. :has()
+   needs iOS 16.4+; older devices keep the cosmetic bug. ── */
+body:has(.mission-lb.active) .throw-hint,
+body:has(.mission-journal.active) .throw-hint,
+body:has(.board-overlay.active) .throw-hint,
+body:has(.opp-overlay.active) .throw-hint,
+body:has(.char-detail.active) .throw-hint,
+body:has(#missionCeremony.active) .throw-hint,
+body:has(#meleeSplash.active) .throw-hint,
+body:has(#promisePicker.active) .throw-hint,
+body:has(.champ-overlay.active) .throw-hint,
+body:has(#howto-overlay.open) .throw-hint {
+    display: none !important;
+}
+
+/* Court Seal (7/20) — the recovery code row in the profile */
+.pf-sealrow { display: flex; gap: 10px; align-items: center; }
+.pf-sealrow code {
+    flex: 1; min-width: 0; overflow-wrap: anywhere;
+    font-family: ui-monospace, Menlo, monospace; font-size: 13px;
+    color: var(--gold-light); background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(201, 168, 76, 0.3); border-radius: 6px;
+    padding: 8px 10px; user-select: all; -webkit-user-select: all;
+}
+.pf-restore-note b { color: var(--gold-light); }

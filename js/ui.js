@@ -976,6 +976,10 @@ function renderCharDetail() {
     const fv = (window.FLB && typeof FLB.heroFv === 'function') ? FLB.heroFv(base.id) : 0;
     const ribbon = (window.FLB && typeof FLB.xpRibbonHtml === 'function')
         ? `<div class="cd-rb">${FLB.xpRibbonHtml(fv, 11, 13)}</div>` : '';
+    // Compact modal (Wyatt 7/20 pm: "too big — about 80% smaller", and no
+    // slot summaries: the BOARD is the read). The ring rides the center
+    // slot at the shared BOARD_OV_TRACK geometry, exactly like the in-game
+    // thumbs, so the player sees where they'll start.
     el.innerHTML = `
         <div class="cd-frame">
             <div class="cd-head">
@@ -991,14 +995,18 @@ function renderCharDetail() {
                 <button class="cd-tab${!onB ? ' on' : ''}" data-side="a">Side A · ${base.epithet || ''}</button>
                 <button class="cd-tab${onB ? ' on' : ''}" data-side="b">Side B · ${base.altEpithet || ''}</button>
             </div>` : ''}
-            <div class="cd-art"><img src="assets/characters/hd/${view.filename}" alt="${base.name}"></div>
-            <div class="cd-slots">${view.slots.map(cdSlotHtml).join('')}</div>
+            <div class="cd-art">
+                <img src="assets/characters/hd/${view.filename}" alt="${base.name}">
+                <img class="cd-ring" src="assets/ui/slider-ring.png" alt=""
+                     style="left:${BOARD_OV_TRACK.lefts[2]}%; top:${BOARD_OV_TRACK.top}%">
+            </div>
             ${base.tip ? `<div class="cd-tip">Tip: <i>${base.tip}</i></div>` : ''}
             <div class="cd-actions">
                 <button class="btn-royal" id="cdBack"><span>← Back</span></button>
                 <button class="btn-royal primary" id="cdConfirm"><span>Confirm</span></button>
             </div>
         </div>`;
+    el.onclick = (e) => { if (e.target === el) closeCharDetail(); };
     el.querySelectorAll('.cd-tab').forEach(t => {
         t.onclick = () => {
             window._sideChoice = { hero: base.id, side: t.dataset.side };
@@ -4368,7 +4376,7 @@ function requestLend(oppIndex, cardName) {
 // completed set. The clicked card opens centered; swipe / arrows / click
 // browse the rest, every card readable-big.
 let _mbList = [], _mbKind = null, _mbIndex = 0, _mbScrollT = null;
-let _mbSnapping = false, _mbSnapT = null;
+let _mbSnapping = false, _mbSnapT = null, _mbTouching = false;
 
 function openMissionBrowser(kind, focusName) {
     if (!game) return;
@@ -4401,10 +4409,22 @@ function openMissionBrowser(kind, focusName) {
     // scroll mid-flight, which is how a tapped mission snapped back to
     // the first one, Wyatt 7/17). While a programmatic snap is in
     // flight, the scroll it causes must not re-target anything.
+    // ⚠ A finger still on the glass must never be fought (Wyatt 7/20,
+    // Drag_Bug.mov): some devices pause scroll events while a slow drag
+    // holds still, the 130ms idle timer fired MID-TOUCH, and mbFocus
+    // yanked the strip back to the stale nearest card. The idle snap now
+    // arms only once the touch has ended.
+    track.ontouchstart = () => { _mbTouching = true; clearTimeout(_mbScrollT); };
+    track.ontouchend = track.ontouchcancel = () => {
+        _mbTouching = false;
+        clearTimeout(_mbScrollT);
+        _mbScrollT = setTimeout(() => { _mbTrackFocus(); mbFocus(_mbIndex, true); }, 160);
+    };
     track.onscroll = () => {
         if (_mbSnapping) return;
         requestAnimationFrame(_mbTrackFocus);
         clearTimeout(_mbScrollT);
+        if (_mbTouching) return;   // no snap while a finger owns the strip
         _mbScrollT = setTimeout(() => { _mbTrackFocus(); mbFocus(_mbIndex, true); }, 130);
     };
 

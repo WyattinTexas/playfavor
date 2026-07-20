@@ -958,6 +958,46 @@
         });
     }
 
+    // ═══ Court Seal — account recovery (Wyatt 7/20) ══════════════════
+    // Reinstalling the app wipes webview storage, mints a fresh uid, and
+    // strands the old account forever. The uid IS the account key (no
+    // auth exists), so it becomes a player-visible "Court Seal": copy it
+    // before you lose it, paste it to take the seat back on any device.
+    // PREVIEW looks the row up and names it; CLAIM swaps this device onto
+    // it and reloads. Mirrors REPLACE wholesale on a claim — this is an
+    // identity switch, not a remote refresh (the add-only earned rule
+    // protects a boot race, not a deliberate change of account).
+    async function previewSeal(code) {
+        const c = String(code || '').trim();
+        if (!/^u[a-z0-9]{6,40}$/.test(c)) return { ok: false, why: 'shape' };
+        if (c === uid()) return { ok: false, why: 'self' };
+        if (mode !== 'firebase') return { ok: false, why: 'offline' };
+        let row = null;
+        try { row = await dbGet(`players/${c}`); } catch (e) { return { ok: false, why: 'offline' }; }
+        if (!row || !row.name) return { ok: false, why: 'unknown' };
+        return { ok: true, name: row.name, rating: eloOf(row), games: row.games || 0, row };
+    }
+    function claimSeal(code, row, opts = {}) {
+        const c = String(code).trim();
+        try {
+            localStorage.setItem('favorUid', c);
+            localStorage.setItem('favorName', (row && row.name) || myName());
+            if (row && row.avatar) localStorage.setItem('favorAvatar', row.avatar);
+            else localStorage.removeItem('favorAvatar');
+            mirrorOwned((row && row.owned) || {});
+            localStorage.setItem('favorEarned', JSON.stringify([]));
+            ['favorSoloSave', 'favorOffer', 'favorPendingStars', 'favorSidePref']
+                .forEach(k => localStorage.removeItem(k));
+            // Celebration latches belong to the account, not the glass —
+            // cleared so the restored account's unlocks announce fresh.
+            Object.keys(localStorage)
+                .filter(k => /^favorShown(SideB|Unlock)_/.test(k))
+                .forEach(k => localStorage.removeItem(k));
+        } catch (e) { /* storage sick — the reload still lands most of it */ }
+        if (!opts.noReload) location.reload();
+        return { ok: true };
+    }
+
     // ═══ Menu UI — profile chip, profile panel, leaderboard ══════════
 
     let _me = null;
@@ -1154,8 +1194,60 @@
                     <img src="assets/characters/${c.filename}" alt="${c.name}">
                 </button>`).join('')}
             </div>
+            <div class="pf-sec">Court Seal</div>
+            <div class="pf-note">Your seal restores this account on any device — copy it somewhere safe <b>before</b> deleting the app.</div>
+            <div class="pf-row pf-sealrow">
+                <code id="pfSeal">${uid()}</code>
+                <button class="btn-royal" id="pfSealCopy"><span>Copy</span></button>
+            </div>
+            <div class="pf-row pf-namerow">
+                <input id="pfRestoreIn" maxlength="48" autocapitalize="off" autocorrect="off"
+                       spellcheck="false" placeholder="Paste a seal to restore that account">
+                <button class="btn-royal" id="pfRestoreBtn"><span>Restore</span></button>
+            </div>
+            <div class="pf-note pf-restore-note" id="pfRestoreNote" style="display:none"></div>
+
             <div class="pf-note">Champions are crowned nightly at 10 PM Eastern.${mode === 'local' ? '<br><b class="pf-local">LOCAL PROFILE — leaderboard offline</b>' : ''}</div>
         `;
+        document.getElementById('pfSealCopy').onclick = async () => {
+            const btn = document.getElementById('pfSealCopy').querySelector('span');
+            try { await navigator.clipboard.writeText(uid()); btn.textContent = 'Copied ✓'; }
+            catch (e) {
+                // Clipboard needs a secure context — select the code instead.
+                const sel = window.getSelection(), r = document.createRange();
+                r.selectNodeContents(document.getElementById('pfSeal'));
+                sel.removeAllRanges(); sel.addRange(r);
+                btn.textContent = 'Select & copy';
+            }
+            setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
+        };
+        // Two-tap restore: first tap PREVIEWS the row and names it, the
+        // second tap (button re-labelled) claims the seat and reloads.
+        let _sealArmed = null;
+        document.getElementById('pfRestoreBtn').onclick = async () => {
+            const inp = document.getElementById('pfRestoreIn');
+            const note = document.getElementById('pfRestoreNote');
+            const btn = document.getElementById('pfRestoreBtn').querySelector('span');
+            const code = inp.value.trim();
+            if (_sealArmed && _sealArmed.code === code) {
+                claimSeal(code, _sealArmed.row);
+                return;
+            }
+            _sealArmed = null;
+            btn.textContent = 'Restore';
+            const res = await previewSeal(code);
+            note.style.display = '';
+            if (!res.ok) {
+                note.innerHTML = res.why === 'shape' ? 'That doesn’t read like a Court Seal.'
+                    : res.why === 'self' ? 'That seal is already this account.'
+                    : res.why === 'offline' ? 'The realm is unreachable — try again online.'
+                    : 'No court answers this seal.';
+                return;
+            }
+            _sealArmed = { code, row: res.row };
+            note.innerHTML = `This seal belongs to <b>${res.name}</b> · rating ${fmtRating(res.rating)} · ${res.games} game${res.games === 1 ? '' : 's'}. Restoring replaces the account on THIS device.`;
+            btn.textContent = `Become ${res.name}`;
+        };
         document.getElementById('pfSave').onclick = async () => {
             const okd = await rename(document.getElementById('pfName').value);
             if (okd) { renderProfileChip(); closeProfile(); }
@@ -1908,6 +2000,7 @@
         inspectChar, closeInspect,
         heroLevel, heroLevelPct, heroFv, sideBUnlocked, xpRibbonHtml,
         checkEarnedHero, showSideBCelebration, sideBLevel: () => SIDEB_LEVEL,
+        previewSeal, claimSeal,
         askBuyStars, buyStars, starCheckoutUrl, watchForStars,
         starPacks: () => STAR_PACKS,
         setAvatar, myAvatar, avatarDisc,
