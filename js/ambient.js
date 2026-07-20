@@ -11,6 +11,7 @@
  *   birds       — a small flock crosses the upper sky every 25-55s
  *   pollen      — sparse sunlit motes drifting up through the meadow light
  *   butterflies — two or three fluttering low in the wildflower zones
+ *   smoke       — soft puffs curling up from the cottage chimney
  *
  * Guards: prefers-reduced-motion → layer stays inert; ?ambient=off kills it
  * for a session; drawing pauses while the tab is hidden or the title screen
@@ -22,6 +23,7 @@
         birds: true,
         pollen: true,
         butterflies: true,
+        smoke: true,
     };
 
     const canvas = document.getElementById('tsAmbient');
@@ -332,6 +334,58 @@
         });
     }
 
+    // ══ CHIMNEY SMOKE — soft puffs curling from the cottage chimney ═════
+    // Everything lives in IMAGE coordinates and rides coverTransform, so
+    // the smoke stays glued to the chimney mouth at any window size (same
+    // contract as COTTAGE_POLY — re-anchor SMOKE_EMIT if the bg changes).
+    // Drawn BEFORE the occluder: a fresh puff's base is clipped by the
+    // chimney's own pixels, so it appears to emerge from inside the flue.
+    const SMOKE_EMIT = { x: 607, y: 133 };        // chimney mouth (image px)
+    const SMOKE_SPACING = 1150;                   // ms between puff births
+
+    // STATELESS, like the birds: the set of live puffs is a pure function
+    // of the clock — each SMOKE_SPACING time slot births one puff whose
+    // character comes from hashing its slot index. No spawn state to
+    // starve on low-FPS devices, after tab-hidden pauses, or under
+    // virtual-time test renders; the column is always warm.
+    function hash01(j, k) {
+        const v = Math.sin(j * k) * 43758.5453;
+        return v - Math.floor(v);
+    }
+
+    function stepSmoke(now, w, h) {
+        if (!bgImg.complete || !bgImg.naturalWidth) return;
+        const { s, ox, oy } = coverTransform(w, h);
+        if (ox + SMOKE_EMIT.x * s < -40 || ox + SMOKE_EMIT.x * s > w + 40) return;
+        const slot = Math.floor(now / SMOKE_SPACING);
+        for (let j = slot - 6; j <= slot; j++) {
+            const life = 4200 + hash01(j, 127.1) * 2400;
+            const age = now - j * SMOKE_SPACING;
+            if (age < 0 || age >= life) continue;
+            const jx = (hash01(j, 311.7) - 0.5) * 5;       // spawn jitter (image px)
+            const swayPhase = hash01(j, 74.7) * Math.PI * 2;
+            const r0 = 4.5 + hash01(j, 311.7) * 3;         // birth radius (image px)
+            const ageS = age / 1000;
+            const q = age / life;                  // 0..1 through its life
+            // rise decelerates as the puff thins; drift right on the same
+            // breeze the pollen rides, with a widening lazy sway
+            const ix = SMOKE_EMIT.x + jx + ageS * 5.5
+                     + Math.sin(ageS * 0.9 + swayPhase) * (4 + q * 10);
+            const iy = SMOKE_EMIT.y - ageS * 11 * (1 - q * 0.35);
+            const r = (r0 + q * 16) * s;
+            const fade = Math.min(1, q * 5) * Math.pow(1 - q, 0.9);
+            const x = ox + ix * s, y = oy + iy * s;
+            ctx.beginPath();
+            ctx.arc(x, y, Math.max(1, r), 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(138, 134, 148, ${(0.22 * fade).toFixed(3)})`;
+            ctx.fill();
+            ctx.beginPath();                        // soft halo
+            ctx.arc(x, y, Math.max(1, r * 1.7), 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(138, 134, 148, ${(0.10 * fade).toFixed(3)})`;
+            ctx.fill();
+        }
+    }
+
     // ══ The loop ════════════════════════════════════════════════════════
     let lastNow = Date.now();
     function frame() {
@@ -344,6 +398,7 @@
             if (AMBIENT.pollen) stepPollen(now, w, h);
             if (AMBIENT.butterflies) stepButterflies(now, w, h, dt);
             if (AMBIENT.birds) stepBirds(now, w, h);
+            if (AMBIENT.smoke) stepSmoke(now, w, h);
             drawCottageOccluder(w, h);   // foreground wins — depth is real
         }
         requestAnimationFrame(frame);
