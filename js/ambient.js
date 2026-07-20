@@ -349,7 +349,7 @@
     // it reads as climbing smoke rather than a static airbrush stroke.
     // Fully stateless — every frame is a pure function of Date.now().
     const SMOKE_EMIT = { x: 607, y: 133 };        // chimney mouth (image px)
-    const SMOKE_RISE = 62;                        // wisp height (image px)
+    const SMOKE_RISE = 80;                        // wisp height (image px)
 
     function stepSmoke(now, w, h) {
         if (!bgImg.complete || !bgImg.naturalWidth) return;
@@ -360,22 +360,22 @@
         const N = 30;
         // slow breathing of the wisp's overall strength — sometimes the
         // fire is drawing well, sometimes it's nearly out
-        const breath = 0.72 + 0.28 * Math.sin(t * 0.23 + Math.sin(t * 0.061) * 2);
+        const breath = 0.82 + 0.18 * Math.sin(t * 0.23 + Math.sin(t * 0.061) * 2);
         for (let i = 0; i < N; i++) {
             const u = i / (N - 1);                 // 0 root → 1 tip
             // path: nearly vertical at the flue, bending right with height,
             // waving as one connected ribbon (phase runs along u so the
             // curl S-shapes rather than swinging like a stick)
             const bend = u * u * 10;               // breeze carries the top
-            const wave = Math.sin(t * 0.8 - u * 3.2) * (1.5 + u * 7);
+            const wave = Math.sin(t * 0.6 - u * 3.2) * (1 + u * 3.5);
             const ix = SMOKE_EMIT.x + bend + wave;
             const iy = SMOKE_EMIT.y - u * SMOKE_RISE * (0.72 + 0.28 * breath);
             // density: solid near the root, dissolving toward the tip, with
             // lumps travelling UP the ribbon (the rising-motion cue)
             const travel = 0.62 + 0.38 * Math.sin(u * 9 - t * 2.1);
-            const alpha = 0.20 * breath * Math.pow(1 - u, 1.35) * travel;
+            const alpha = 0.30 * breath * Math.pow(1 - u, 1.25) * travel;
             if (alpha < 0.004) continue;
-            const r = Math.max(1.2, (2.2 + u * 9) * s);
+            const r = Math.max(1.4, (2.8 + u * 12) * s);
             const x = ox + ix * s, y = oy + iy * s;
             const g = ctx.createRadialGradient(x, y, 0, x, y, r);
             g.addColorStop(0, `rgba(150, 146, 158, ${alpha.toFixed(3)})`);
