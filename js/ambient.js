@@ -418,8 +418,8 @@
     function stepCloudShadows(now, w, h) {
         if (!bgImg.complete || !bgImg.naturalWidth) return;
         const defs = [
-            { period: 56000, y: 0.78, rx: 0.38, ry: 0.17, a: 0.9, off: 0.0 },
-            { period: 83000, y: 0.66, rx: 0.30, ry: 0.13, a: 0.75, off: 0.47 },
+            { period: 34000, y: 0.78, rx: 0.34, ry: 0.16, a: 1.0, off: 0.0 },
+            { period: 47000, y: 0.66, rx: 0.26, ry: 0.12, a: 0.85, off: 0.47 },
         ];
         const dpr = Math.min(2, window.devicePixelRatio || 1);
         if (!shadowOC) shadowOC = document.createElement('canvas');
@@ -450,7 +450,8 @@
                 const x = cx + lb.dx * d.rx * w, y = cy + lb.dy * d.ry * h;
                 const g = oc.createRadialGradient(x, y, 0, x, y, rx);
                 g.addColorStop(0, `rgba(0, 0, 0, ${(d.a * edge).toFixed(3)})`);
-                g.addColorStop(0.65, `rgba(0, 0, 0, ${(d.a * 0.55 * edge).toFixed(3)})`);
+                g.addColorStop(0.6, `rgba(0, 0, 0, ${(d.a * 0.85 * edge).toFixed(3)})`);
+                g.addColorStop(0.85, `rgba(0, 0, 0, ${(d.a * 0.3 * edge).toFixed(3)})`);
                 g.addColorStop(1, 'rgba(0, 0, 0, 0)');
                 oc.save();
                 oc.translate(x, y);
@@ -472,7 +473,7 @@
         oc.drawImage(bgImg, ox, oy, BG_DIMS.w * s, BG_DIMS.h * s);
         // 3. darken the clipped patch — cool shade, detail preserved
         oc.globalCompositeOperation = 'source-atop';
-        oc.fillStyle = 'rgba(24, 32, 54, 0.40)';
+        oc.fillStyle = 'rgba(24, 32, 54, 0.46)';
         oc.fillRect(0, 0, w, h);
         oc.globalCompositeOperation = 'source-over';
         // 4. lay the darkened painting exactly over itself
