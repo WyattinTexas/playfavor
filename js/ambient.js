@@ -39,8 +39,7 @@
 
     const ctx = canvas.getContext('2d');
 
-    // ── The cottage is FOREGROUND: birds (and anything else) pass BEHIND
-    // it. We redraw the cottage's own pixels over the animation each frame,
+    // ── The near landscape is FOREGROUND: birds pass BEHIND all of it. We redraw the cottage's own pixels over the animation each frame,
     // clipped to its silhouette — identical pixels mean the patch is
     // invisible, and slack over sky costs nothing. Geometry mirrors the
     // .ts-bg CSS exactly (cover, background-position 68% 34%) — if that
@@ -49,19 +48,38 @@
     const BG_POS = { x: 0.68, y: 0.34 };
     // Auto-traced from the painting's pixels (tools/trace-occluder.py) —
     // regenerate with that script if the menu bg or its crop ever changes.
-    // Covers the cottage AND the tree line to its right, out to where the
-    // treetops fall below the birds' flight band.
-    const COTTAGE_POLY = [
-        [216,505], [240,498], [242,491], [258,482], [282,481], [284,469],
-        [296,463], [312,440], [316,409], [348,395], [370,332], [386,331],
-        [426,269], [574,205], [578,146], [594,135], [636,142], [640,165],
-        [662,159], [702,136], [710,120], [726,120], [754,190], [866,403],
-        [888,404], [900,415], [908,415], [914,426], [916,455], [950,474],
-        [966,499], [976,501], [980,513], [1008,517], [1010,500], [1044,499],
-        [1046,488], [1082,485], [1084,475], [1118,477], [1136,489], [1138,502],
-        [1152,502], [1162,524], [1186,523], [1192,540], [1220,546], [1222,538],
-        [1242,539], [1268,570], [1290,560], [1292,550], [1310,550], [1320,561],
-        [1320,840], [216,840],
+    // FULL-WIDTH horizon: every near thing (bushes, cottage, all tree
+    // banks) occludes; the DISTANT castle is deliberately excluded — its
+    // span is scan-floored in the tracer so birds cross in front of the
+    // towers, matching real depth. Per Wyatt's red-line spec 2026-07-20.
+    const HORIZON_POLY = [
+        [0,410], [28,411], [50,373], [78,376], [84,402], [98,404],
+        [100,409], [102,439], [126,438], [138,452], [148,452], [164,472],
+        [176,472], [184,492], [194,493], [212,507], [226,504], [258,482],
+        [282,481], [284,469], [296,463], [312,440], [316,409], [348,395],
+        [370,332], [386,331], [426,269], [574,205], [578,146], [594,135],
+        [636,142], [640,165], [662,159], [702,136], [710,120], [726,120],
+        [754,190], [866,403], [888,404], [900,415], [908,415], [914,426],
+        [916,455], [950,474], [966,499], [976,501], [980,513], [1008,517],
+        [1010,500], [1044,499], [1046,488], [1082,485], [1084,475], [1118,477],
+        [1136,489], [1138,502], [1152,502], [1162,524], [1184,522], [1192,540],
+        [1212,545], [1220,546], [1222,538], [1242,539], [1268,570], [1290,560],
+        [1292,550], [1310,550], [1316,561], [1330,569], [1336,587], [1350,596],
+        [1354,629], [1362,640], [1378,627], [1382,611], [1390,609], [1394,576],
+        [1406,567], [1466,575], [1474,612], [1506,607], [1510,616], [1534,625],
+        [1538,662], [1550,663], [1552,670], [1554,739], [1578,717], [1596,717],
+        [1598,626], [1602,626], [1606,611], [1622,611], [1624,719], [1626,609],
+        [1636,606], [1672,606], [1686,611], [1712,606], [1714,622], [1722,622],
+        [1726,606], [1758,606], [1760,614], [1820,631], [1832,644], [1842,638],
+        [1858,638], [1860,648], [1872,641], [1874,607], [1890,607], [1892,644],
+        [1902,643], [1934,599], [1942,545], [1956,509], [1968,450], [1984,450],
+        [1986,468], [2000,500], [2010,506], [2014,534], [2024,534], [2026,559],
+        [2030,568], [2036,569], [2040,590], [2062,624], [2072,624], [2080,635],
+        [2082,698], [2092,698], [2096,706], [2100,645], [2116,640], [2126,579],
+        [2138,573], [2144,556], [2172,554], [2176,535], [2198,517], [2200,493],
+        [2212,489], [2214,479], [2234,475], [2242,465], [2250,464], [2260,436],
+        [2298,428], [2326,437], [2330,448], [2344,449], [2348,461], [2358,465],
+        [2398,463], [2398,940], [0,940],
     ];
     const bgImg = new Image();
     bgImg.src = 'assets/ui/menu-meadow.jpg';
@@ -80,7 +98,7 @@
         const { s, ox, oy } = coverTransform(w, h);
         ctx.save();
         ctx.beginPath();
-        COTTAGE_POLY.forEach(([px, py], i) => {
+        HORIZON_POLY.forEach(([px, py], i) => {
             const x = ox + px * s, y = oy + py * s;
             if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         });
@@ -341,7 +359,7 @@
     // ══ CHIMNEY SMOKE — one thin lazy wisp from the cottage chimney ═════
     // Everything lives in IMAGE coordinates and rides coverTransform, so
     // the smoke stays glued to the chimney mouth at any window size (same
-    // contract as COTTAGE_POLY — re-anchor SMOKE_EMIT if the bg changes).
+    // contract as HORIZON_POLY — re-anchor SMOKE_EMIT if the bg changes).
     // Drawn BEFORE the occluder: the wisp's root is clipped by the
     // chimney's own pixels, so it appears to emerge from inside the flue.
     //
@@ -520,6 +538,7 @@
     // spawn a flock on demand, and flip elements live for look-testing.
     window._ambientFlockNow = function (opts) {
         const { w, h } = fit();
+        clearTimeout(flockTimer);   // don't let a scheduled flock stomp this one
         flock = Object.assign(makeFlock(w, h), opts || {});
     };
     window._ambientToggle = function (key) {

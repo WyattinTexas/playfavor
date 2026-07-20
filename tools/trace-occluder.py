@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
-FAVOR — cottage occluder tracer.
+FAVOR — horizon occluder tracer.
 
-Regenerates COTTAGE_POLY for js/ambient.js by tracing the menu painting's
+Regenerates HORIZON_POLY for js/ambient.js by tracing the menu painting's
 own pixels: for each column, the topmost run of non-sky pixels is the
 silhouette (dark roof / trees against bright sky), smoothed with an upper
 envelope so it rides the treetops, then Douglas-Peucker simplified.
+
+FULL-WIDTH horizon (Wyatt's red-line spec 2026-07-20): all near
+vegetation + the cottage occlude birds. The DISTANT castle must NOT —
+within CASTLE's x-span the scan starts below the spires so the trace
+dips to the village roofs and birds cross in front of the towers.
 
 Run whenever assets/ui/menu-meadow.jpg or the .ts-bg crop changes:
 
@@ -20,8 +25,9 @@ from PIL import Image, ImageDraw
 import math
 
 IMG = 'assets/ui/menu-meadow.jpg'
-X0, X1 = 216, 1320        # occluder span: cottage + tree line to its right
-Y_TOP, Y_BOT, Y_CLOSE = 60, 700, 840
+X0, X1 = 0, 2398          # full painting width
+CASTLE = (1548, 1900, 606)  # x0, x1, scan floor — keeps the distant castle out
+Y_TOP, Y_BOT, Y_CLOSE = 0, 900, 940
 
 
 def is_sky(r, g, b):
@@ -50,7 +56,8 @@ px = im.load()
 xs = list(range(X0, X1 + 1, 2))
 ys = []
 for x in xs:
-    for y in range(Y_TOP, Y_BOT):
+    y_start = CASTLE[2] if CASTLE[0] <= x <= CASTLE[1] else Y_TOP
+    for y in range(y_start, Y_BOT):
         if not is_sky(*px[x, y]) and all(not is_sky(*px[x, yy]) for yy in (y + 1, y + 2, y + 3)):
             ys.append(y)
             break
@@ -61,7 +68,7 @@ env = [min(ys[max(0, i - 4):i + 5]) for i in range(len(ys))]   # hug the treetop
 simp = dp(list(zip(xs, env)), 3.5)
 poly = simp + [(X1, Y_CLOSE), (X0, Y_CLOSE)]
 
-print(f'// {len(poly)} points — paste into COTTAGE_POLY in js/ambient.js:')
+print(f'// {len(poly)} points — paste into HORIZON_POLY in js/ambient.js:')
 for i in range(0, len(poly), 6):
     print('        ' + ' '.join(f'[{p[0]},{p[1]}],' for p in poly[i:i + 6]))
 
