@@ -11,7 +11,10 @@
  *   birds       — a small flock crosses the upper sky every 25-55s
  *   pollen      — sparse sunlit motes drifting up through the meadow light
  *   butterflies — two or three fluttering low in the wildflower zones
- *   smoke       — soft puffs curling up from the cottage chimney
+ *   smoke       — one thin lazy wisp curling up from the cottage chimney
+ *   petals      — loose petals tumbling across the meadow on the breeze
+ *   sparkle     — rare dew-glints blooming in the flower beds
+ *   cloudShadows— vast soft shade patches sliding slowly over the meadow
  *
  * Guards: prefers-reduced-motion → layer stays inert; ?ambient=off kills it
  * for a session; drawing pauses while the tab is hidden or the title screen
@@ -24,6 +27,9 @@
         pollen: true,
         butterflies: true,
         smoke: true,
+        petals: true,
+        sparkle: true,
+        cloudShadows: true,
     };
 
     const canvas = document.getElementById('tsAmbient');
@@ -387,6 +393,134 @@
         }
     }
 
+    // Deterministic per-slot randomness for the stateless systems below —
+    // hash a slot/seed index into [0,1) so every frame agrees on it.
+    function hash01(j, k) {
+        const v = Math.sin(j * k) * 43758.5453;
+        return v - Math.floor(v);
+    }
+
+    // ══ CLOUD SHADOWS — vast shade patches sliding over the meadow ══════
+    // The clouds themselves stay painted; what moves is their SHADE on the
+    // ground — how film fakes a living landscape. Two huge soft ellipses
+    // drift left-to-right on long staggered periods, fading in from the
+    // left edge and out at the right. Kept low over the meadow band; the
+    // occluder repaints the cottage after us, so buildings stay sunlit
+    // (subtle enough that this reads as terrain, not an error). Stateless.
+    function stepCloudShadows(now, w, h) {
+        const defs = [
+            { period: 74000, y: 0.78, rx: 0.34, ry: 0.15, a: 0.085, off: 0.0 },
+            { period: 103000, y: 0.66, rx: 0.26, ry: 0.11, a: 0.065, off: 0.47 },
+        ];
+        defs.forEach(d => {
+            const p = ((now / d.period) + d.off) % 1;      // 0..1 across
+            const x = (p * 1.5 - 0.25) * w;                // enter/exit offscreen
+            const y = d.y * h;
+            const edge = Math.min(1, Math.min(p, 1 - p) * 5);   // soft in/out
+            const rx = d.rx * w, ry = d.ry * h;
+            const g = ctx.createRadialGradient(x, y, 0, x, y, rx);
+            g.addColorStop(0, `rgba(26, 34, 52, ${(d.a * edge).toFixed(3)})`);
+            g.addColorStop(0.7, `rgba(26, 34, 52, ${(d.a * 0.5 * edge).toFixed(3)})`);
+            g.addColorStop(1, 'rgba(26, 34, 52, 0)');
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(1, ry / rx);                          // squash: ground perspective
+            ctx.translate(-x, -y);
+            ctx.fillStyle = g;
+            ctx.beginPath();
+            ctx.arc(x, y, rx, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        });
+    }
+
+    // ══ PETALS — loose petals tumbling across the meadow breeze ═════════
+    // Bigger, bolder cousins of the pollen: each petal crosses the lower
+    // meadow left-to-right with a fluttery sink-and-lift, tumbling as it
+    // goes (the ellipse squashes through the roll). Stateless slots.
+    const PETAL_TINTS = [
+        [246, 196, 208],   // wild rose
+        [250, 240, 228],   // cream
+        [238, 130, 142],   // deep pink
+        [244, 214, 170],   // marigold
+    ];
+
+    function stepPetals(now, w, h) {
+        const N = 7;
+        for (let i = 0; i < N; i++) {
+            const cyc = 9500 + hash01(i + 1, 91.3) * 7000;   // crossing time
+            const raw = now / cyc + hash01(i + 1, 17.9);
+            const k = Math.floor(raw);                       // journey index
+            const p = raw - k;                               // 0..1 across
+            const seed = (i + 1) * 131 + (k % 97);           // fresh path each journey
+            const y0 = (0.52 + hash01(seed, 53.7) * 0.4) * h;
+            const x = (p * 1.16 - 0.08) * w;
+            const flut = 2 + hash01(seed, 29.1) * 2;
+            const y = y0 + Math.sin(p * Math.PI * flut) * h * 0.05
+                    + p * h * 0.07;                          // gentle net sink
+            const fade = Math.min(1, Math.min(p, 1 - p) * 9);
+            if (fade <= 0) continue;
+            const tint = PETAL_TINTS[seed % PETAL_TINTS.length];
+            const r = 2.6 + hash01(seed, 71.7) * 2.2;
+            const t = now / 1000;
+            const spin = t * (1.1 + hash01(seed, 13.3)) + hash01(seed, 41.9) * 6.3;
+            const tumble = 0.3 + 0.7 * Math.abs(Math.sin(t * 1.7 + seed));
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(spin);
+            ctx.fillStyle = `rgba(${tint[0]}, ${tint[1]}, ${tint[2]}, ${(0.78 * fade).toFixed(3)})`;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, r, r * tumble * 0.62, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    // ══ SPARKLE — rare dew-glints blooming in the flower beds ═══════════
+    // A tiny 4-point star blooms and dies in about a second, somewhere in
+    // a flower zone; one or two alive at any moment. Stateless slots.
+    const SPARK_ZONES = [
+        { x0: 0.02, x1: 0.30, y0: 0.62, y1: 0.94 },   // left flower bank
+        { x0: 0.55, x1: 0.97, y0: 0.66, y1: 0.94 },   // right meadow
+        { x0: 0.30, x1: 0.55, y0: 0.82, y1: 0.97 },   // path-side blooms
+    ];
+
+    function stepSparkle(now, w, h) {
+        const SLOTS = 3;
+        for (let i = 0; i < SLOTS; i++) {
+            const cyc = 2400 + hash01(i + 1, 67.3) * 2200;
+            const raw = now / cyc + hash01(i + 1, 23.7);
+            const k = Math.floor(raw);
+            const p = raw - k;
+            const DUTY = 0.38;                         // glint lives, then quiet
+            if (p >= DUTY) continue;
+            const q = p / DUTY;                        // 0..1 through the glint
+            const seed = (i + 1) * 173 + (k % 89);
+            const z = SPARK_ZONES[seed % SPARK_ZONES.length];
+            const x = (z.x0 + hash01(seed, 37.1) * (z.x1 - z.x0)) * w;
+            const y = (z.y0 + hash01(seed, 59.9) * (z.y1 - z.y0)) * h;
+            const bloom = Math.sin(q * Math.PI);       // in and out
+            const L = (3 + hash01(seed, 11.7) * 3.5) * bloom;
+            const a = 0.85 * bloom;
+            const rot = hash01(seed, 83.3) * Math.PI;
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(rot);
+            ctx.strokeStyle = `rgba(255, 250, 218, ${a.toFixed(3)})`;
+            ctx.lineWidth = 1.1;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-L, 0); ctx.lineTo(L, 0);
+            ctx.moveTo(0, -L); ctx.lineTo(0, L);
+            ctx.stroke();
+            ctx.fillStyle = `rgba(255, 253, 235, ${a.toFixed(3)})`;
+            ctx.beginPath();
+            ctx.arc(0, 0, 1.2 * bloom, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
     // ══ The loop ════════════════════════════════════════════════════════
     let lastNow = Date.now();
     function frame() {
@@ -396,7 +530,11 @@
         lastNow = now;
         ctx.clearRect(0, 0, w, h);
         if (titleVisible() && !document.hidden) {
+            // ground first (shade, glints), then the air above it
+            if (AMBIENT.cloudShadows) stepCloudShadows(now, w, h);
+            if (AMBIENT.sparkle) stepSparkle(now, w, h);
             if (AMBIENT.pollen) stepPollen(now, w, h);
+            if (AMBIENT.petals) stepPetals(now, w, h);
             if (AMBIENT.butterflies) stepButterflies(now, w, h, dt);
             if (AMBIENT.birds) stepBirds(now, w, h);
             if (AMBIENT.smoke) stepSmoke(now, w, h);
@@ -408,10 +546,17 @@
     scheduleFlock(true);
     requestAnimationFrame(frame);
 
-    // Dev hook (harmless in prod): tools/ambient-preview.html uses this to
-    // spawn a flock on demand instead of waiting out the schedule.
+    // Dev hooks (harmless in prod): tools/ambient-preview.html uses these —
+    // spawn a flock on demand, and flip elements live for look-testing.
     window._ambientFlockNow = function (opts) {
         const { w, h } = fit();
         flock = Object.assign(makeFlock(w, h), opts || {});
+    };
+    window._ambientToggle = function (key) {
+        if (key in AMBIENT) AMBIENT[key] = !AMBIENT[key];
+        return AMBIENT[key];
+    };
+    window._ambientGet = function () {
+        return Object.assign({}, AMBIENT);
     };
 })();

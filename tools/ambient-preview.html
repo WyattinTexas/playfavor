@@ -19,11 +19,12 @@
         background-position: 68% 34%;
     }
     #tsAmbient { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-    .bar { position: fixed; bottom: 10px; left: 10px; z-index: 9; }
+    .bar { position: fixed; bottom: 10px; left: 10px; z-index: 9; display: flex; flex-wrap: wrap; gap: 6px; max-width: 96vw; }
     .bar button {
-        font: 700 13px/1.6 Georgia, serif; color: #f4e6c0; background: rgba(30, 22, 12, 0.82);
-        border: 1px solid #a8873f; border-radius: 8px; padding: 6px 14px; cursor: pointer;
+        font: 700 12px/1.5 Georgia, serif; color: #f4e6c0; background: rgba(30, 22, 12, 0.82);
+        border: 1px solid #a8873f; border-radius: 8px; padding: 5px 11px; cursor: pointer;
     }
+    .bar button.off { opacity: 0.45; border-color: #6b5a33; text-decoration: line-through; }
 </style>
 </head>
 <body>
@@ -32,10 +33,34 @@
         <div class="ts-bg"></div>
         <canvas id="tsAmbient"></canvas>
     </div>
-    <div class="bar">
+    <div class="bar" id="toggleBar">
         <button onclick="window._ambientFlockNow()">Flock now ▸</button>
     </div>
-    <script src="js/ambient.js?v=20260720c"></script>
+    <script src="js/ambient.js?v=20260720d"></script>
+    <script>
+        // One on/off chip per ambient element, live-flipping the flags in
+        // ambient.js via the _ambientToggle dev hook. URL presets:
+        //   ?only=petals,sparkle   start with just those elements on
+        //   ?off=birds,smoke       start with those elements off
+        (function buildToggles() {
+            if (!window._ambientGet) { setTimeout(buildToggles, 50); return; }
+            const q = new URLSearchParams(location.search);
+            const only = (q.get('only') || '').split(',').filter(Boolean);
+            const off = (q.get('off') || '').split(',').filter(Boolean);
+            Object.entries(window._ambientGet()).forEach(([key, on]) => {
+                const want = only.length ? only.includes(key) : !off.includes(key);
+                if (on !== want) window._ambientToggle(key);
+            });
+            const bar = document.getElementById('toggleBar');
+            Object.entries(window._ambientGet()).forEach(([key, on]) => {
+                const b = document.createElement('button');
+                b.textContent = key;
+                if (!on) b.classList.add('off');
+                b.onclick = () => b.classList.toggle('off', !window._ambientToggle(key));
+                bar.appendChild(b);
+            });
+        })();
+    </script>
     <script>
         // ?flock=1 spawns a flock immediately (headless captures use this).
         // Optional deterministic overrides: &y=0.15 (baseY as h-fraction),
