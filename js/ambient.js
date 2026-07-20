@@ -407,16 +407,32 @@
     // left edge and out at the right. Kept low over the meadow band; the
     // occluder repaints the cottage after us, so buildings stay sunlit
     // (subtle enough that this reads as terrain, not an error). Stateless.
+    // NOTE the technique: canvas 'multiply' only blends within the CANVAS,
+    // and ours is a transparent overlay — multiplying over transparency
+    // just paints the blend color, which LIGHTENED dark grass (the "white
+    // box" bug). True shade = the occluder trick: clip a soft-edged patch
+    // of the painting's own pixels, darken THAT, and lay it exactly over
+    // itself. Cannot lighten anything, keeps every painted detail.
+    let shadowOC = null;
+
     function stepCloudShadows(now, w, h) {
+        if (!bgImg.complete || !bgImg.naturalWidth) return;
         const defs = [
-            { period: 56000, y: 0.78, rx: 0.38, ry: 0.17, a: 0.42, off: 0.0 },
-            { period: 83000, y: 0.66, rx: 0.30, ry: 0.13, a: 0.34, off: 0.47 },
+            { period: 56000, y: 0.78, rx: 0.38, ry: 0.17, a: 0.9, off: 0.0 },
+            { period: 83000, y: 0.66, rx: 0.30, ry: 0.13, a: 0.75, off: 0.47 },
         ];
-        // multiply blend: darkens like real shade (flowers keep their hue)
-        // instead of a grey wash sitting on top
-        ctx.save();
-        ctx.globalCompositeOperation = 'multiply';
-        defs.forEach((d, di) => {
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        if (!shadowOC) shadowOC = document.createElement('canvas');
+        if (shadowOC.width !== w * dpr || shadowOC.height !== h * dpr) {
+            shadowOC.width = w * dpr;
+            shadowOC.height = h * dpr;
+        }
+        const oc = shadowOC.getContext('2d');
+        oc.setTransform(dpr, 0, 0, dpr, 0, 0);
+        oc.clearRect(0, 0, w, h);
+        // 1. footprint: soft black lobes = the shadow's alpha mask
+        let drew = false;
+        defs.forEach(d => {
             const p = ((now / d.period) + d.off) % 1;      // 0..1 across
             const cx = (p * 1.5 - 0.25) * w;               // enter/exit offscreen
             const cy = d.y * h;
@@ -432,22 +448,35 @@
             lobes.forEach(lb => {
                 const rx = d.rx * w * lb.k, ry = d.ry * h * lb.k;
                 const x = cx + lb.dx * d.rx * w, y = cy + lb.dy * d.ry * h;
-                const g = ctx.createRadialGradient(x, y, 0, x, y, rx);
-                g.addColorStop(0, `rgba(148, 152, 172, ${(d.a * edge).toFixed(3)})`);
-                g.addColorStop(0.65, `rgba(148, 152, 172, ${(d.a * 0.55 * edge).toFixed(3)})`);
-                g.addColorStop(1, 'rgba(148, 152, 172, 0)');
-                ctx.save();
-                ctx.translate(x, y);
-                ctx.scale(1, ry / rx);                      // squash: ground perspective
-                ctx.translate(-x, -y);
-                ctx.fillStyle = g;
-                ctx.beginPath();
-                ctx.arc(x, y, rx, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
+                const g = oc.createRadialGradient(x, y, 0, x, y, rx);
+                g.addColorStop(0, `rgba(0, 0, 0, ${(d.a * edge).toFixed(3)})`);
+                g.addColorStop(0.65, `rgba(0, 0, 0, ${(d.a * 0.55 * edge).toFixed(3)})`);
+                g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                oc.save();
+                oc.translate(x, y);
+                oc.scale(1, ry / rx);                       // squash: ground perspective
+                oc.translate(-x, -y);
+                oc.fillStyle = g;
+                oc.beginPath();
+                oc.arc(x, y, rx, 0, Math.PI * 2);
+                oc.fill();
+                oc.restore();
+                drew = true;
             });
         });
-        ctx.restore();
+        if (!drew) return;
+        // 2. replace the mask with the painting's own pixels (same cover
+        // transform as everything else — pixel-aligned with the bg)
+        const { s, ox, oy } = coverTransform(w, h);
+        oc.globalCompositeOperation = 'source-in';
+        oc.drawImage(bgImg, ox, oy, BG_DIMS.w * s, BG_DIMS.h * s);
+        // 3. darken the clipped patch — cool shade, detail preserved
+        oc.globalCompositeOperation = 'source-atop';
+        oc.fillStyle = 'rgba(24, 32, 54, 0.40)';
+        oc.fillRect(0, 0, w, h);
+        oc.globalCompositeOperation = 'source-over';
+        // 4. lay the darkened painting exactly over itself
+        ctx.drawImage(shadowOC, 0, 0, w, h);
     }
 
     // ══ PETALS — loose petals tumbling across the meadow breeze ═════════
