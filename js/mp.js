@@ -130,7 +130,11 @@
     //     and Doctor B's free Potion waives REQUIREMENTS as well as gold (the
     //     Map grammar). Unreachable rules until someone hits Level 5, but a
     //     v17 seat that got there would fork the table — bump on principle.
-    const MPV = 18;
+    // 19: the 7/20 XP curve (75-anchor ramp) moves the Side B unlock gate
+    //     from 800 to 390 banked Favor. The level math never enters the
+    //     lockstep sim, but the gate decides who may publish side:'b' —
+    //     bump on principle, per the Side-B precedent.
+    const MPV = 19;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

@@ -610,8 +610,9 @@ for (const [w, h] of [[844, 390], [932, 430], [667, 375]]) {
     localStorage.setItem('favorQueue', '5');   // the menu queue picker owns table size now
     document.querySelector('.character-card').click();
   });
-  await page.waitForFunction(() => document.getElementById('confirmBtn') && document.getElementById('confirmBtn').offsetParent, { timeout: 20000 });
-  await page.evaluate(() => document.getElementById('confirmBtn').click());
+  // 7/20 §2: a tap opens the fullscreen board read — Confirm lives there.
+  await page.waitForFunction(() => document.getElementById('charDetail').classList.contains('active'), { timeout: 20000 });
+  await page.evaluate(() => document.getElementById('cdConfirm').click());
   await page.waitForFunction(() => typeof game !== 'undefined' && game && game.players.length === 5, { timeout: 20000 });
   await sleep(1000);
   await page.evaluate(() => {
@@ -923,46 +924,33 @@ console.log('── Hero select: 3 random heroes, bots draw from the leftovers, 
   ok(sel.cards === 3, `exactly three heroes offered (${sel.cards} of ${sel.roster})`);
   ok(sel.btnHidden, 'Begin stays hidden until a hero is picked');
 
-  // Pick the LAST card and let the auto-scroll carry Begin into view.
-  await page.evaluate(() => {
-    const cards = document.querySelectorAll('.character-card');
-    cards[cards.length - 1].click();
-  });
-  await sleep(900);   // smooth scroll settles
-  const after = await page.evaluate(() => {
-    const b = document.getElementById('confirmBtn');
-    const r = b.getBoundingClientRect();
-    return { shown: b.style.display !== 'none',
-             inView: r.top >= 0 && r.bottom <= window.innerHeight + 1,
-             top: Math.round(r.top), bottom: Math.round(r.bottom), vh: window.innerHeight };
-  });
-  ok(after.shown, 'Begin Your Journey appears on pick');
-  ok(after.inView, `auto-scroll carries Begin into the viewport (${after.top}..${after.bottom} in ${after.vh})`);
-  // The ring is a fixture of the CENTER slot — the tapped hero glided in.
-  await sleep(400);   // FLIP swap settles
-  const ring = await page.evaluate(() => {
+  // 7/20 §2: tapping a hero opens the near-fullscreen board read — the
+  // Begin-on-grid step and the FLIP-to-center ring are retired; Confirm
+  // lives inside the detail view.
+  const offered = await page.evaluate(() => {
     const cards = [...document.querySelectorAll('.character-card')];
-    return {
-      selIdx: cards.findIndex(c => c.classList.contains('selected')),
-      epithets: cards.every(c => c.querySelector('.epithet')),
-    };
+    cards[cards.length - 1].click();
+    return cards.map(c => c.dataset.id);
   });
-  ok(ring.selIdx === 1, `the ring holds the center slot — tapped hero glided into it (idx ${ring.selIdx})`);
-  ok(ring.epithets, 'every offering wears its printed epithet');
+  await sleep(400);
+  const detail = await page.evaluate(() => ({
+    open: document.getElementById('charDetail').classList.contains('active'),
+    hero: (document.querySelector('#charDetail .cd-title h2') || {}).textContent || '',
+    cells: document.querySelectorAll('#charDetail .cd-slot').length,
+    epithets: [...document.querySelectorAll('.character-card')].every(c => c.querySelector('.epithet')),
+  }));
+  ok(detail.open && detail.cells === 5,
+    `tap opens the fullscreen board read — five slots spelled out (${detail.hero})`);
+  ok(detail.epithets, 'every offering wears its printed epithet');
   await page.screenshot({ path: join(SHOTS, 'hero-select-3.png') });
 
-  // Begin works, and every bot drew from the seven NON-offered heroes.
-  const drew = await page.evaluate(() => {
-    const offered = [...document.querySelectorAll('.character-card')].map(c => c.dataset.id);
-    document.getElementById('confirmBtn').click();
-    return offered;
-  });
+  // Confirm from the detail — and every bot drew from the NON-offered seven.
+  await page.evaluate(() => document.getElementById('cdConfirm').click());
   await page.waitForFunction(() => typeof game !== 'undefined' && game && game.players[0].character, { timeout: 20000 });
-  const bots = await page.evaluate(() =>
-    game.players.slice(1).map(p => p.character.id));
-  const youTook = drew[drew.length - 1];
-  ok(bots.every(id => !drew.includes(id)),
-    `bots drew from the leftovers (${bots.join(', ')} ∉ offered ${drew.join(', ')})`);
+  const bots = await page.evaluate(() => game.players.slice(1).map(p => p.character.id));
+  const youTook = await page.evaluate(() => game.players[0].character.id);
+  ok(bots.every(id => !offered.includes(id)),
+    `bots drew from the leftovers (${bots.join(', ')} ∉ offered ${offered.join(', ')})`);
   ok(!bots.includes(youTook), 'nobody doubles your hero');
   await page.close();
 }
@@ -4044,7 +4032,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
     endActPhases();
   });
   await page.waitForFunction(() => document.getElementById('missionCeremony').classList.contains('active'), { timeout: 8000 });
-  await sleep(350);   // beat 1 on stage, verdict still sealed
+  await sleep(450);   // beat 1 on stage, verdict still sealed (past the §4 tap guard)
 
   const beat1 = await page.evaluate(() => ({
     name: document.querySelector('.mc-pname').textContent,
@@ -4120,6 +4108,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
     endActPhases();
   });
   await phone.waitForFunction(() => document.getElementById('missionCeremony').classList.contains('active'), { timeout: 8000 });
+  await sleep(450);   // past the inherited-tap guard (§4) — no human taps at +0ms
   await phone.evaluate(() => document.getElementById('missionCeremony').click());
   await sleep(500);
   const pfitc = await phone.evaluate(() => {
@@ -4273,6 +4262,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   });
   // The ceremony narrates the failure first…
   await page.waitForFunction(() => document.getElementById('missionCeremony').classList.contains('active'), { timeout: 8000 });
+  await sleep(450);   // past the inherited-tap guard (§4) — no human taps at +0ms
   await page.evaluate(() => document.getElementById('missionCeremony').click());   // reveal the verdict
   await sleep(450);
   await page.evaluate(() => document.getElementById('missionCeremony').click());   // …then past it, into the deal
@@ -7530,14 +7520,17 @@ console.log('── Side B: ribbon + badges + chooser + the table rides the B bo
     localStorage.removeItem('favorOffer');
   });
 
-  // The level curve is pure arithmetic — assert it cold.
+  // The level curve is pure arithmetic — assert it cold. 7/20 ramp:
+  // step(n)=min(75+15(n−1),300) → L2 at 75, L5 (Side B) at 390.
   const lv = await page.evaluate(() => [
-    FLB.heroLevel(0), FLB.heroLevel(799), FLB.heroLevel(800),
-    FLB.heroLevel(19800), FLB.heroLevel(10 ** 9), FLB.heroLevelPct(100),
+    FLB.heroLevel(0), FLB.heroLevel(74), FLB.heroLevel(75),
+    FLB.heroLevel(389), FLB.heroLevel(390),
+    FLB.heroLevel(10 ** 9), FLB.heroLevelPct(120),
   ]);
-  ok(lv[0] === 1 && lv[1] === 4 && lv[2] === 5, `curve: 0→1, 799→4, 800→5 (${lv.slice(0, 3)})`);
-  ok(lv[3] === 100 && lv[4] === 100, 'level caps at 100');
-  ok(lv[5] === 50, `mid-level fill reads 50% (${lv[5]})`);
+  ok(lv[0] === 1 && lv[1] === 1 && lv[2] === 2, `curve anchor: 74→1, 75→2 (${lv.slice(0, 3)})`);
+  ok(lv[3] === 4 && lv[4] === 5, `Side B sits at 390 (389→4, 390→5)`);
+  ok(lv[5] === 100, 'level caps at 100');
+  ok(Math.abs(lv[6] - 50) < 0.01, `mid-level fill reads 50% at 120 fv (${lv[6]})`);
 
   // Rig the Knight to Level 6 — the chooser must appear for him alone.
   await page.evaluate(() => {
@@ -7568,41 +7561,67 @@ console.log('── Side B: ribbon + badges + chooser + the table rides the B bo
   });
   ok(sel.knight && sel.knight.lit && /Side A ⇄ B/.test(sel.knight.badge),
     `Knight's badge is LIT (${sel.knight && sel.knight.badge})`);
-  ok(sel.explorer && !sel.explorer.lit && /Side B · Lv 5/.test(sel.explorer.badge),
-    `Explorer's badge is the greyed lock (${sel.explorer && sel.explorer.badge})`);
+  ok(sel.explorer && sel.explorer.badge === null,
+    "Explorer wears NO badge — a locked player must not know Side B exists (7/20 §1)");
   ok(Object.values(sel).every(c => c.ribbon), 'every offered hero wears the ribbon');
-  ok(sel.knight.lvl === '6', `Knight's ribbon reads Level 6 at 1,000 Favor (${sel.knight.lvl})`);
+  ok(sel.knight.lvl === '8', `Knight's ribbon reads Level 8 at 1,000 Favor on the new curve (${sel.knight.lvl})`);
 
-  // Tap the Knight — step two expands; tap Side B; Begin.
+  // Tap the Knight — the board goes near-fullscreen (7/20 §2), slots
+  // spelled out from DATA; the A/B choice lives here.
   await page.evaluate(() => {
     const c = [...document.querySelectorAll('#characterGrid .character-card')]
       .find(x => x.dataset.id === 'knight');
     c.click();
   });
-  await sleep(450);
-  const chooser = await page.evaluate(() => {
-    const box = document.getElementById('sideChooser');
-    const sides = [...box.querySelectorAll('.sc-side')];
+  await sleep(350);
+  const detailA = await page.evaluate(() => {
+    const el = document.getElementById('charDetail');
+    const cells = [...el.querySelectorAll('.cd-slot')];
     return {
-      on: box.classList.contains('on'),
-      sides: sides.length,
-      aName: (box.querySelector('.sc-side[data-side="a"] .sc-lab i') || {}).textContent,
-      bName: (box.querySelector('.sc-side[data-side="b"] .sc-lab i') || {}).textContent,
-      bArt: (box.querySelector('.sc-side[data-side="b"] img') || {}).src || '',
+      active: el.classList.contains('active'),
+      cells: cells.length,
+      farLeft: cells[0] ? cells[0].textContent : '',
+      tabs: [...el.querySelectorAll('.cd-tab')].map(t => t.textContent.trim()),
+      aOn: !!el.querySelector('.cd-tab[data-side="a"].on'),
+      art: (el.querySelector('.cd-art img') || {}).src || '',
     };
   });
-  ok(chooser.on && chooser.sides === 2, 'the side chooser expands with two boards');
-  ok(chooser.aName === 'Deadly Duelist' && chooser.bName === 'Oathbreaker',
-    `each side wears its own epithet (${chooser.aName} / ${chooser.bName})`);
-  ok(/Knight_B\.jpg/.test(chooser.bArt), 'Side B shows the real B painting');
-  await page.screenshot({ path: join(SHOTS, 'sideb-chooser.png') });
+  ok(detailA.active && detailA.cells === 5, `the detail view opens with five slot cells (${detailA.cells})`);
+  ok(/18 Favor/.test(detailA.farLeft), `Side A far-left reads its DATA (18 Favor at game end)`);
+  ok(detailA.aOn && detailA.tabs.length === 2 && /Oathbreaker/.test(detailA.tabs[1]),
+    `the A/B tabs are here, each wearing its epithet (${detailA.tabs.join(' | ')})`);
+  await page.screenshot({ path: join(SHOTS, 'sideb-detail-a.png') });
 
-  await page.evaluate(() => document.querySelector('#sideChooser .sc-side[data-side="b"]').click());
+  await page.evaluate(() => document.querySelector('#charDetail .cd-tab[data-side="b"]').click());
+  await sleep(250);
+  const detailB = await page.evaluate(() => {
+    const el = document.getElementById('charDetail');
+    const cells = [...el.querySelectorAll('.cd-slot')];
+    return {
+      bOn: !!el.querySelector('.cd-tab[data-side="b"].on'),
+      art: (el.querySelector('.cd-art img') || {}).src || '',
+      farRight: cells[4] ? cells[4].textContent : '',
+    };
+  });
+  ok(detailB.bOn && /Knight_B\.jpg/.test(detailB.art), 'Side B tab swaps in the real B painting');
+  ok(/\+15 Scorn/.test(detailB.farRight) && /\+7 Power/.test(detailB.farRight),
+    'Side B far-right spells out the gambit slot (+7 Power, +15 Scorn)');
+  await page.screenshot({ path: join(SHOTS, 'sideb-detail-b.png') });
+
+  // Back leaves the grid unchanged; re-open and Confirm locks it in.
+  await page.evaluate(() => document.getElementById('cdBack').click());
   await sleep(150);
-  const bOn = await page.evaluate(() =>
-    document.querySelector('#sideChooser .sc-side[data-side="b"]').classList.contains('on'));
-  ok(bOn, 'tapping Side B selects it');
-  await page.evaluate(() => document.getElementById('confirmBtn').click());
+  const backOk = await page.evaluate(() => ({
+    closed: !document.getElementById('charDetail').classList.contains('active'),
+    selEmpty: !window.selectedCharacter,
+  }));
+  ok(backOk.closed, 'Back folds the detail without selecting');
+  await page.evaluate(() => {
+    [...document.querySelectorAll('#characterGrid .character-card')]
+      .find(x => x.dataset.id === 'knight').click();
+  });
+  await sleep(300);
+  await page.evaluate(() => document.getElementById('cdConfirm').click());
   await page.waitForFunction(() =>
     document.getElementById('game-screen').classList.contains('active'), { timeout: 20000 });
   await sleep(400);
@@ -7627,6 +7646,86 @@ console.log('── Side B: ribbon + badges + chooser + the table rides the B bo
   ok(/Knight_B\.jpg/.test(table.thumb) || table.thumb === '',
     'the board thumb shows the B painting');
   await page.screenshot({ path: join(SHOTS, 'sideb-table.png') });
+
+  // §5 (7/20): the slide preview is a NET delta — gains and the leaving
+  // slot's losses — measured through the engine.
+  const delta = await page.evaluate(() => {
+    const p = game.players[0];
+    const before = { pos: p.sliderPosition, skills: { ...p.skills }, peak: { ...(p.peakSkills || {}) } };
+    // Knight B: center (Power 2) → slot 0 (Knowledge 3, Power 3).
+    const d = game.previewSlotDelta(0, 0);
+    const after = { pos: p.sliderPosition, skills: { ...p.skills }, peak: { ...(p.peakSkills || {}) } };
+    // And the confirm bubble renders the chips. ⚠ _ovSlideTarget is a
+    // top-level `let` — bare-name assignment reaches the script binding;
+    // window._ovSlideTarget would only shadow it.
+    openBoardOverlay();
+    _ovSlideTarget = 0;
+    renderBoardOvConfirm();
+    const bub = document.querySelector('#boardOvConfirm .sc-delta');
+    const chips = bub ? [...bub.querySelectorAll('.sc-d')].map(x => x.textContent.trim()) : [];
+    const bubbleUp = document.getElementById('boardOvConfirm').classList.contains('active');
+    return { d, before, after, chips, bubbleUp };
+  });
+  ok(delta.d && delta.d.knowledge === 3 && delta.d.power === 1,
+    `preview measures the NET move (Knowledge +3, Power +1 → ${JSON.stringify(delta.d)})`);
+  ok(delta.before.pos === delta.after.pos
+    && JSON.stringify(delta.before.skills) === JSON.stringify(delta.after.skills),
+    'the preview is pure — position and skills restored');
+  ok(JSON.stringify(delta.before.peak) === JSON.stringify(delta.after.peak),
+    'the preview mints no peak telemetry');
+  ok(delta.bubbleUp && delta.chips.length === 2,
+    `the confirm bubble wears the ± chips (${delta.chips.join(' ')})`);
+  await page.screenshot({ path: join(SHOTS, 'slide-delta.png') });
+  // A LOSING move reads negative: from slot 0 back to center.
+  const delta2 = await page.evaluate(() => {
+    game.players[0].sliderPosition = 0;
+    game.applySlotSkills(game.players[0]);
+    const d = game.previewSlotDelta(0, 2);
+    game.players[0].sliderPosition = 2;
+    game.applySlotSkills(game.players[0]);
+    _ovSlideTarget = null;
+    if (typeof closeBoardOverlay === 'function') closeBoardOverlay();
+    else document.getElementById('boardOverlay').classList.remove('active');
+    return d;
+  });
+  ok(delta2 && delta2.knowledge === -3 && delta2.power === -1,
+    `the leaving slot's loss shows as −N (${JSON.stringify(delta2)})`);
+
+  // §4 (7/20): the mission ceremony must NEVER play under the z-9999
+  // action panel — Wyatt's "completed it and went straight to the melee".
+  // Force the panel up, fire a real ceremony, and look.
+  const occl = await page.evaluate(() => {
+    const panel = document.getElementById('actionPanel');
+    panel.classList.add('active');
+    const m = window.FAVOR_DATA.missions.find(x => x.name === 'A Day With the Birds')
+      || window.FAVOR_DATA.missions[0];
+    const done = showMissionCeremony([{ playerIndex: 0, results: [{
+      mission: m, success: true,
+      deltas: { favor: m.favorValue || 10, gold: 0, prestige: 0, scorn: 0, stones: 0, discarded: [], others: [] },
+      details: { missing: [] },
+    }] }], 2);
+    window._ceremonyDone = false;
+    done.then(() => { window._ceremonyDone = true; });
+    return {
+      ceremonyUp: document.getElementById('missionCeremony').classList.contains('active'),
+      panelUp: panel.classList.contains('active'),
+    };
+  });
+  ok(occl.ceremonyUp, 'ceremony raised with the action panel previously up');
+  ok(!occl.panelUp, 'the panel STEPS ASIDE — the ceremony owns the stage (§4 fix)');
+  await sleep(1400);
+  await page.screenshot({ path: join(SHOTS, 'mission-ceremony-visible.png') });
+  await page.evaluate(() => document.getElementById('missionCeremony').click());  // reveal (guard already past)
+  await sleep(500);
+  await page.evaluate(() => document.getElementById('missionCeremony').click());  // onward
+  await page.waitForFunction(() => window._ceremonyDone === true, { timeout: 15000 });
+  const restored = await page.evaluate(() => ({
+    panelBack: document.getElementById('actionPanel').classList.contains('active'),
+    ceremonyDown: !document.getElementById('missionCeremony').classList.contains('active'),
+  }));
+  ok(restored.ceremonyDown && restored.panelBack,
+    'ceremony closed and the panel came back (mid-act turn-ins keep their panel)');
+  await page.evaluate(() => document.getElementById('actionPanel').classList.remove('active'));
 
   // Victory chip: crossing paints the arrow; not crossing stays quiet.
   const chip = await page.evaluate(() => {

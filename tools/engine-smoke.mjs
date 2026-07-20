@@ -3051,6 +3051,38 @@ console.log('── pick_one with SPECIAL options (Magician B slot 3) ──');
   ok(r3.success === true && (you.skills.knowledge || 0) === 1, 'a skill pick still rides bonusSkills');
 }
 
+console.log('── previewSlotDelta: net move, engine-measured, pure (7/20 §5) ──');
+{
+  const g = new FavorGame(3);
+  g.loadDecks();
+  g.initPlayers([
+    { characterId: 'scientist', playerName: 'You', side: 'b' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
+  g.phase = 'gameplay';
+  g.currentAct = 1;
+  const you = g.players[0];
+  you.sliderPosition = 1;                    // Scientist B slot 1 = alchemy_adds_to_power
+  you.bonusSkills = { alchemy: 5 };
+  g.applySlotSkills(you);
+  ok((you.skills.power || 0) === 5, `rig: 5 Alchemy rides as 5 Power on the coupling slot (${you.skills.power})`);
+
+  const peakBefore = JSON.stringify(you.peakSkills || {});
+  const skillsBefore = JSON.stringify(you.skills);
+  const d = g.previewSlotDelta(0, 3);        // slot 3 = Alchemy 4, no coupling
+  ok(d && d.alchemy === 4 && d.power === -5,
+    `the preview sees THROUGH the special: +4 Alchemy, −5 Power (${JSON.stringify(d)})`);
+  ok(you.sliderPosition === 1 && JSON.stringify(you.skills) === skillsBefore,
+    'preview is pure — position and skills restored');
+  ok(JSON.stringify(you.peakSkills || {}) === peakBefore,
+    'preview mints no peak telemetry (the sampler is muted mid-measure)');
+  ok(g.previewSlotDelta(0, 1) === null, 'previewing the current slot answers null');
+  const d2 = g.previewSlotDelta(0, 4);       // slot 4 = Scorn 10 + Knowledge 12
+  ok(d2 && d2.knowledge === 12 && d2.power === -5,
+    `a far slot reads its own grant net of the coupling (+12 Knowledge, −5 Power → ${JSON.stringify(d2)})`);
+}
+
 console.log('── Side B save shape: side survives a JSON round-trip ──');
 {
   const g = new FavorGame(3);

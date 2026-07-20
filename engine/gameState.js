@@ -1130,6 +1130,44 @@ class FavorGame {
     }
 
     /**
+     * §5 (7/20): what sliding to `targetPos` would DO to this player's
+     * ongoing skills — the leaving slot's loss included. MEASURED through
+     * applySlotSkills itself on a scratch flip, so slot specials (Mind's
+     * Eye ranks, alchemy_adds_to_power) and persistent bonusSkills behave
+     * exactly as a real landing would and the UI can never drift from the
+     * engine (the mission ceremony's measureResolution precedent).
+     * Pure: position and skills restore, and the telemetry sampler is
+     * muted so a preview can't mint peaks. Landing EVENTS (coins, steals,
+     * stones, scorn) are deliberately out of scope — those pay on arrival
+     * and the confirm chip already prices the move.
+     * Returns {skill: signedDelta} with zero-deltas dropped, or null.
+     */
+    previewSlotDelta(playerIndex, targetPos) {
+        const player = this.players[playerIndex];
+        if (!player || !player.character || !player.character.slots) return null;
+        if (!Number.isInteger(targetPos) || targetPos < 0
+            || targetPos >= SLIDER_POSITIONS || targetPos === player.sliderPosition) return null;
+        const savedPos = player.sliderPosition;
+        const before = { ...player.skills };
+        this._measuring = true;
+        try {
+            player.sliderPosition = targetPos;
+            this.applySlotSkills(player);
+            const after = { ...player.skills };
+            const delta = {};
+            new Set([...Object.keys(before), ...Object.keys(after)]).forEach(s => {
+                const d = (after[s] || 0) - (before[s] || 0);
+                if (d) delta[s] = d;
+            });
+            return delta;
+        } finally {
+            player.sliderPosition = savedPos;
+            this.applySlotSkills(player);
+            this._measuring = false;
+        }
+    }
+
+    /**
      * Achievement telemetry for one seat. PEAKS, not end-state: gold you earn
      * and then spend still counts toward "hold more than 30 Gold", and Power
      * you later lose to a penalty discard still counts toward "reach 10 Power".
@@ -1141,6 +1179,9 @@ class FavorGame {
      */
     sampleSeatStats(player) {
         if (!player) return;
+        // A slide PREVIEW recalcs skills on a scratch flip — telemetry
+        // sampled mid-measure would mint peaks the player never reached.
+        if (this._measuring) return;
         const i = this.players.indexOf(player);
         if (i < 0) return;
         player.peakGold = Math.max(player.peakGold || 0, player.gold || 0);

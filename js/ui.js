@@ -804,6 +804,9 @@ function commitHeroPick(auto) {
     const offer = _queueUx.offer;
     const fallback = offer[Math.floor(offer.length / 2)] || offer[0];
     const hero = selectedCharacter || (fallback && fallback.id);
+    // The 0:00 clock can fire while the detail view is up — it commits
+    // regardless, so the view folds rather than sitting over the table.
+    closeCharDetail();
     if (pick.mp) {
         selectedCharacter = hero;
         // Side rides the pick (spec §8): explicit chooser tap, else last
@@ -907,9 +910,113 @@ function chosenSideFor(heroId) {
     return side === 'b' ? 'b' : null;
 }
 
-// The two-step's second step: a hero at Level 5+ expands a side chooser
-// under the grid — two board thumbnails, each wearing its own epithet.
-// Below Level 5 the card's greyed badge IS the advertisement; no chooser.
+// ═══ §2 The fullscreen character detail (FAVOR-UPDATE-JUL20-SPEC.md) ═
+// Tap a hero card → the BOARD goes near-fullscreen with all five slots
+// spelled out from DATA — the printed art and the tuned digital values
+// disagree in places (art-verbatim contract), and the strip is the truth
+// the table actually plays. Back returns to the grid unchanged; Confirm
+// locks the hero in through the existing confirm path. When Side B is
+// unlocked, the A/B choice lives HERE — where reading the board pays off.
+let _detailChar = null;
+
+const CD_SLOT_NAMES = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
+function cdPretty(s) {
+    return s === 'minds_eye' ? "Mind's Eye"
+        : s === 'philosopher_stone' ? "Philosopher's Stone"
+        : s.charAt(0).toUpperCase() + s.slice(1);
+}
+function cdSlotHtml(slot, idx) {
+    const bits = [];
+    Object.entries(slot.skills || {}).forEach(([s, n]) => {
+        bits.push(`<span class="cd-bit"><img src="assets/icons/${s}.png" alt="">+${n} ${cdPretty(s)}</span>`);
+    });
+    if (slot.gold) bits.push(`<span class="cd-bit"><img src="assets/icons/gold.png" alt="">+${slot.gold} Gold</span>`);
+    if (slot.favor) bits.push(`<span class="cd-bit"><img src="assets/icons/favor.png" alt="">${slot.favor} Favor at game end</span>`);
+    if (slot.scorn) bits.push(`<span class="cd-bit bad"><img src="assets/icons/scorn.png" alt="">+${slot.scorn} Scorn</span>`);
+    if (slot.special === 'pick_one' && Array.isArray(slot.pickOptions)) {
+        bits.push(`<span class="cd-bit special">Pick one: ${slot.pickOptions.map(cdPretty).join(' / ')}</span>`);
+    } else if (slot.special) {
+        bits.push(`<span class="cd-bit special">${SPECIAL_DESCRIPTIONS[slot.special] || cdPretty(slot.special)}</span>`);
+    }
+    if (!bits.length) bits.push('<span class="cd-bit none">—</span>');
+    return `<div class="cd-slot${idx === 2 ? ' start' : ''}">
+        <div class="cd-slot-name">${CD_SLOT_NAMES[idx]}${idx === 2 ? ' · START' : ''}</div>
+        ${bits.join('')}
+    </div>`;
+}
+
+function openCharDetail(id) {
+    const base = window.FAVOR_DATA.characters.find(c => c.id === id);
+    if (!base) return;
+    _detailChar = id;
+    renderCharDetail();
+    document.getElementById('charDetail').classList.add('active');
+}
+function closeCharDetail() {
+    _detailChar = null;
+    const el = document.getElementById('charDetail');
+    if (!el) return;
+    el.classList.remove('active');
+    el.innerHTML = '';
+}
+function renderCharDetail() {
+    const el = document.getElementById('charDetail');
+    const base = _detailChar && window.FAVOR_DATA.characters.find(c => c.id === _detailChar);
+    if (!el || !base) return;
+    const unlocked = base.altSlots && window.FLB
+        && typeof FLB.sideBUnlocked === 'function' && FLB.sideBUnlocked(base.id);
+    const side = unlocked
+        ? ((window._sideChoice && window._sideChoice.hero === base.id)
+            ? window._sideChoice.side : sidePref(base.id))
+        : 'a';
+    const onB = side === 'b' && base.altSlots;
+    const view = onB
+        ? { epithet: base.altEpithet || base.epithet, filename: base.altFilename || base.filename, slots: base.altSlots }
+        : { epithet: base.epithet, filename: base.filename, slots: base.slots };
+    const fv = (window.FLB && typeof FLB.heroFv === 'function') ? FLB.heroFv(base.id) : 0;
+    const ribbon = (window.FLB && typeof FLB.xpRibbonHtml === 'function')
+        ? `<div class="cd-rb">${FLB.xpRibbonHtml(fv, 11, 13)}</div>` : '';
+    el.innerHTML = `
+        <div class="cd-frame">
+            <div class="cd-head">
+                <div class="cd-title">
+                    <h2>${base.name}</h2>
+                    ${view.epithet ? `<span class="cd-epithet">${view.epithet}</span>` : ''}
+                    <span class="cd-diff">Difficulty ${'★'.repeat(base.difficulty || 1)}</span>
+                </div>
+                ${ribbon}
+            </div>
+            ${unlocked ? `
+            <div class="cd-sidetabs">
+                <button class="cd-tab${!onB ? ' on' : ''}" data-side="a">Side A · ${base.epithet || ''}</button>
+                <button class="cd-tab${onB ? ' on' : ''}" data-side="b">Side B · ${base.altEpithet || ''}</button>
+            </div>` : ''}
+            <div class="cd-art"><img src="assets/characters/hd/${view.filename}" alt="${base.name}"></div>
+            <div class="cd-slots">${view.slots.map(cdSlotHtml).join('')}</div>
+            ${base.tip ? `<div class="cd-tip">Tip: <i>${base.tip}</i></div>` : ''}
+            <div class="cd-actions">
+                <button class="btn-royal" id="cdBack"><span>← Back</span></button>
+                <button class="btn-royal primary" id="cdConfirm"><span>Confirm</span></button>
+            </div>
+        </div>`;
+    el.querySelectorAll('.cd-tab').forEach(t => {
+        t.onclick = () => {
+            window._sideChoice = { hero: base.id, side: t.dataset.side };
+            renderCharDetail();
+        };
+    });
+    el.querySelector('#cdBack').onclick = () => closeCharDetail();
+    el.querySelector('#cdConfirm').onclick = () => {
+        selectedCharacter = base.id;
+        if (unlocked) window._sideChoice = { hero: base.id, side };
+        closeCharDetail();
+        confirmCharacter();
+    };
+}
+
+// The under-grid side chooser is RETIRED by §2 — the A/B choice lives in
+// the detail view now. Kept callable (it still bails safely) so nothing
+// dangles, but no path renders it.
 function renderSideChooser(heroId) {
     const box = document.getElementById('sideChooser');
     if (!box) return;
@@ -945,6 +1052,7 @@ function renderSideChooser(heroId) {
 // safety net under every queue teardown.
 function backToMenu() {
     if (window.FMP && FMP.cancelQueue) FMP.cancelQueue();
+    closeCharDetail();
     teardownQueueUx();
     window._gameMode = null;
     window._rivalDef = null;
@@ -1401,20 +1509,23 @@ function showCharacterSelect(offer) {
         const card = document.createElement('div');
         card.className = 'character-card fade-in';
         card.dataset.id = char.id;
-        card.onclick = () => selectCharacter(char.id, card);
+        // 7/20 §2: a tap opens the near-fullscreen board read — selection
+        // happens on ITS Confirm (the FLIP-to-center step is retired).
+        card.onclick = () => openCharDetail(char.id);
 
         const stars = '\u2605'.repeat(Math.floor(char.difficulty || 1));
 
-        // The Gilt Ribbon + the Side B badge. Below Level 5 the greyed
-        // lock badge is the advertisement (spec \u00a75); at 5+ it lights.
+        // The Gilt Ribbon + the Side B badge. \u26a0 Below Level 5 there is NO
+        // badge at all \u2014 Wyatt 7/20 REVERSED the shipped "the lock is the
+        // advertisement" design (FAVOR-UPDATE-JUL20-SPEC.md \u00a71): Side B is
+        // a SURPRISE, and a locked player must have no idea it exists.
+        // Do not "fix" the greyed lock badge back in.
         const fv = (window.FLB && typeof FLB.heroFv === 'function') ? FLB.heroFv(char.id) : 0;
         const ribbon = (window.FLB && typeof FLB.xpRibbonHtml === 'function')
             ? `<div class="hs-xp">${FLB.xpRibbonHtml(fv, 11, 13)}</div>` : '';
         const unlockedB = char.altSlots && window.FLB
             && typeof FLB.sideBUnlocked === 'function' && FLB.sideBUnlocked(char.id);
-        const badge = char.altSlots
-            ? `<span class="side-badge${unlockedB ? ' lit' : ''}">${unlockedB ? 'Side A \u21c4 B' : 'Side B \u00b7 Lv 5'}</span>`
-            : '';
+        const badge = unlockedB ? '<span class="side-badge lit">Side A \u21c4 B</span>' : '';
 
         card.innerHTML = `
             ${badge}
@@ -1431,18 +1542,9 @@ function showCharacterSelect(offer) {
         grid.appendChild(card);
     });
 
-    // The side chooser (two-step, step 2) lives between the grid and the
-    // Begin button; a fresh visit starts collapsed with no explicit choice.
-    let chooser = document.getElementById('sideChooser');
-    if (!chooser) {
-        chooser = document.createElement('div');
-        chooser.id = 'sideChooser';
-        chooser.className = 'side-chooser';
-        grid.parentNode.insertBefore(chooser, grid.nextSibling);
-    }
+    // A fresh visit carries no explicit side choice and no open detail.
     window._sideChoice = null;
-    chooser.classList.remove('on');
-    chooser.innerHTML = '';
+    closeCharDetail();
 }
 
 function selectCharacter(id, cardEl) {
@@ -3888,12 +3990,12 @@ function renderBoardOvSlots() {
             ? 'Your ring is here'
             : picking
                 ? (freeMove
-                    ? `Move to ${posNames[i]} \u2014 free`
-                    : (pickable ? `Slide to ${posNames[i]} \u2014 the discard pays`
+                    ? `Move to ${posNames[i]} \u2014 free${slideDeltaText(i)}`
+                    : (pickable ? `Slide to ${posNames[i]} \u2014 the discard pays${slideDeltaText(i)}`
                         : (steps === 1 && !dirOK
                             ? `Already slid ${slideLock < 0 ? 'left' : 'right'} this turn`
                             : 'One space per discard')))
-                : (reachable ? `Slide to ${posNames[i]} \u2014 ${steps * 5} Gold` : _ovWhyBlocked(i));
+                : (reachable ? `Slide to ${posNames[i]} \u2014 ${steps * 5} Gold${slideDeltaText(i)}` : _ovWhyBlocked(i));
         const cls = 'board-ov-slot'
             + (i === cur ? ' current' : '')
             + (pickable ? ' pickable' : '')
@@ -3969,6 +4071,33 @@ function boardOvSlotClick(i) {
 
 // The confirm chip floats just above the target circle, INSIDE the board
 // art \u2014 always on-screen wherever the board sits in the viewport.
+// \u00a75 (7/20): a slide's skill delta \u2014 the gains AND the leaving slot's
+// losses \u2014 measured through the engine (previewSlotDelta) so slot
+// specials and Side B rules can't drift from what the landing will do.
+const SLIDE_SKILL_ORDER = ['power', 'knowledge', 'survival', 'charisma', 'alchemy', 'prospecting'];
+function slideDeltaOf(targetPos) {
+    if (!game || !game.players[0] || typeof game.previewSlotDelta !== 'function') return null;
+    const d = game.previewSlotDelta(0, targetPos);
+    if (!d) return null;
+    const keys = Object.keys(d).sort((a, b) =>
+        SLIDE_SKILL_ORDER.indexOf(a) - SLIDE_SKILL_ORDER.indexOf(b));
+    return keys.length ? keys.map(s => ({ s, v: d[s] })) : null;
+}
+function slideDeltaHtml(targetPos) {
+    const d = slideDeltaOf(targetPos);
+    if (!d) return '';
+    return `<div class="sc-delta">${d.map(({ s, v }) =>
+        `<span class="sc-d ${v > 0 ? 'good' : 'bad'}"><img src="assets/icons/${s}.png" alt="">${v > 0 ? '+' : '\u2212'}${Math.abs(v)}</span>`
+    ).join('')}</div>`;
+}
+function slideDeltaText(targetPos) {
+    const d = slideDeltaOf(targetPos);
+    if (!d) return '';
+    const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+    return ' \u00b7 ' + d.map(({ s, v }) =>
+        `${v > 0 ? '+' : '\u2212'}${Math.abs(v)} ${cap(s)}`).join(', ');
+}
+
 function renderBoardOvConfirm() {
     const holder = document.getElementById('boardOvConfirm');
     if (!holder) return;
@@ -3987,6 +4116,7 @@ function renderBoardOvConfirm() {
         <div class="sc-bubble">
             <div class="sc-text">Slide to <b>${posNames[_ovSlideTarget]}</b>?</div>
             <div class="sc-cost">${steps} space${steps > 1 ? 's' : ''} \u00b7 <b>\u2212${cost} Gold</b></div>
+            ${slideDeltaHtml(_ovSlideTarget)}
             <div class="sc-actions">
                 <button class="btn-royal" onclick="event.stopPropagation(); _ovSlideCancel()"><span>\u2715</span></button>
                 <button class="btn-royal primary" onclick="event.stopPropagation(); _ovSlideConfirm()"><span>Pay &amp; Slide</span></button>
@@ -7598,7 +7728,11 @@ function showMissionCeremony(missionResults, actNum) {
             clearTimeout(timer);
             el.classList.remove('active');
             el.onclick = null;
-            setTimeout(resolve, 280);
+            // Restore AFTER the closing tap's event finishes bubbling — the
+            // document-level outside-click handler runs later in the SAME
+            // dispatch and would hide the panel again the instant we put it
+            // back (caught by the §4 regression flow).
+            setTimeout(() => { _tvPanelRestore(); resolve(); }, 280);
         };
 
         // Tap once = reveal the verdict now; tap again = next mission. A
@@ -7607,11 +7741,24 @@ function showMissionCeremony(missionResults, actNum) {
         // second tap must wait until the stamp has actually been seen.
         // Input debounce, not cinema: scale by CINEMATIC_SPEED alone, NOT
         // MISSION_PACE (the 1.4 pushed the gate past the audit's tap cadence).
+        // The first beat ALSO ignores the opener's inherited tap — the
+        // early-attempt chooser's confirm can land on the freshly-active
+        // overlay before renderBeat settles (7/20 spec §4, candidate 2).
+        // Input gate, so CINEMATIC_SPEED alone scales it (rigs run fast).
+        const openedAt = Date.now();
         el.onclick = () => {
+            if (Date.now() - openedAt < 350 * (window.CINEMATIC_SPEED || 1)) return;
             if (!stage.classList.contains('stamped')) stamp(beats[bi]);
             else if (Date.now() - stampedAt > 380 * (window.CINEMATIC_SPEED || 1)) next();
         };
 
+        // ⚠ 7/20 spec §4 — "completed it and went straight to the melee":
+        // the root #actionPanel rides z 9999, this overlay z 9500. If the
+        // panel is still up when the ceremony activates (an early turn-in
+        // at the act boundary can leave it standing), the whole ceremony
+        // plays UNDERNEATH it and resolves into the melee unseen. Step the
+        // panel aside for the ceremony's run; close() restores it.
+        _tvPanelStepAside();
         el.classList.add('active');
         renderBeat(beats[0]);
     });
@@ -7648,9 +7795,12 @@ function showMissionDrawBeat() {
             clearTimeout(timer);
             el.classList.remove('active');
             el.onclick = null;
-            setTimeout(resolve, 280);
+            // Same overlay, same z-battle (§4) — and the same bubbling
+            // trap: restore only after the closing tap's dispatch ends.
+            setTimeout(() => { _tvPanelRestore(); resolve(); }, 280);
         };
 
+        _tvPanelStepAside();     // the z-9999 root panel would occlude this too
         el.innerHTML = `
             <div class="mc-inner">
                 <div class="ms-banner">

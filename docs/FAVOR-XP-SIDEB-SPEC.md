@@ -28,6 +28,12 @@ archived to `~/Downloads/Favor_Assets/Characters_B/<Name>_B.png`). MPV 16 → 17
 >   carry no epithet text): Trailblazer, Oathbreaker (locked in this spec), Highwayman,
 >   Guildmaster, The Far-Seeing, Velvet Glove, Transmuter, Apothecary, Firebrand,
 >   Illusionist — one data field each in `characters.js` to retune.
+> - ⚠ **§5's "the lock is the advertisement" was REVERSED by Wyatt on 7/20**
+>   (FAVOR-UPDATE-JUL20-SPEC.md §1): below Level 5 there is NO badge, no hint —
+>   Side B is a surprise. Do not restore the greyed lock badge.
+> - ⚠ **§3's flat 200/level curve was retuned on 7/20** (same spec, §3): 75-anchor
+>   rising ramp, Side B at 390 banked Favor. `fv`-stored/level-derived made it a
+>   zero-migration change, exactly as designed.
 
 Visual reference: **`tools/xp-design.html`** — local preview, **deliberately uncommitted**
 (the repo root deploys to playfavor.net). Open it at any point on the track with `?fv=1100`;

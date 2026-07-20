@@ -508,16 +508,34 @@
     // read, never write it — the curve retunes with zero migration.
     // fv is monotonic and absent-means-zero (Level 1), so there is no
     // backfill and nothing to migrate.
-    const XP_PER_LEVEL = 200;
+    //
+    // 7/20 curve (docs/FAVOR-UPDATE-JUL20-SPEC.md §3): fast early, slow
+    // late. Wyatt's anchor — "75 favor in a game should level you up" —
+    // fixes step(1)=75; the slope is the tuning dial, the cap keeps
+    // Level 100 reachable (~27.9k lifetime vs ~225k uncapped).
+    //   step(n) = min(75 + 15·(n−1), 300)     // cost of level n → n+1
+    // Side B (Lv 5) now sits at 390 banked Favor, ≈4 games.
     const XP_MAX_LEVEL = 100;
     const SIDEB_LEVEL = 5;
+    const xpStep = (n) => Math.min(75 + 15 * (n - 1), 300);
+    // XP_CUM[L-1] = lifetime Favor at which level L begins (XP_CUM[0]=0).
+    const XP_CUM = (() => {
+        const c = [0];
+        for (let n = 1; n < XP_MAX_LEVEL; n++) c.push(c[n - 1] + xpStep(n));
+        return c;
+    })();
 
     function heroLevel(fv) {
-        return Math.min(XP_MAX_LEVEL, 1 + Math.floor((fv || 0) / XP_PER_LEVEL));
+        const v = fv || 0;
+        let lvl = 1;
+        while (lvl < XP_MAX_LEVEL && v >= XP_CUM[lvl]) lvl++;
+        return lvl;
     }
     function heroLevelPct(fv) {
-        if (heroLevel(fv) >= XP_MAX_LEVEL) return 100;
-        return ((fv || 0) % XP_PER_LEVEL) / XP_PER_LEVEL * 100;
+        const v = fv || 0;
+        const lvl = heroLevel(v);
+        if (lvl >= XP_MAX_LEVEL) return 100;
+        return (v - XP_CUM[lvl - 1]) / xpStep(lvl) * 100;
     }
     function heroFv(charId) {
         return (((_me || {}).chars || {})[charId] || {}).fv || 0;
@@ -611,14 +629,37 @@
         });
     }
 
+    // Retro-crossing latch (7/20 spec §3, decision 4): a curve retune can
+    // move a hero PAST Level 5 between games — the victory-txn crossing
+    // detector never sees it, so the ceremony would silently never fire.
+    // Re-derived on every menu load, idempotent via the same per-hero flag
+    // the victory path stamps; reaches anyone the curve promoted.
+    async function checkSideBRetro() {
+        const gameUp = ['game-screen', 'scoring-screen'].some(id => {
+            const el = document.getElementById(id);
+            return el && el.classList.contains('active');
+        });
+        if (gameUp) return;
+        const chars = ((window.FAVOR_DATA || {}).characters || []);
+        for (const c of chars) {
+            if (!c.altSlots || !sideBUnlocked(c.id)) continue;
+            if (localStorage.getItem('favorShownSideB_' + c.id)) continue;
+            await showSideBCelebration(c);
+        }
+    }
+
     // The champ overlay's FOURTH dress — Level 5, the board turns over.
     // Art rides #champArt (kept empty by every other dress); the flip
-    // runs the same 1s turn the design page locked.
+    // runs the same 1s turn the design page locked. Stamps its own
+    // once-per-hero flag FIRST, so the victory crossing and the retro
+    // latch can never double-fire it.
     function showSideBCelebration(char) {
         return new Promise(resolve => {
             const ov = document.getElementById('champOverlay');
             const art = document.getElementById('champArt');
             if (!ov || !char) { resolve(); return; }
+            try { localStorage.setItem('favorShownSideB_' + char.id, String(Date.now())); }
+            catch (e) { /* shown again next boot — harmless */ }
             document.getElementById('champTitle').textContent =
                 `The ${char.name} Turns the Board`;
             document.getElementById('champSub').innerHTML =
@@ -1002,9 +1043,11 @@
             ${ratingSpan(eloOf(_me), 'pc-rating')}
             ${gold > 0 ? `<span class="pc-crowns" title="Daily Championships">${CROWN_SVG}${gold}</span>` : ''}
         `;
-        // _me just landed — the earned-hero latch re-derives (idempotent,
-        // menu-gated inside; un-awaited so a celebration never holds the chip).
-        checkEarnedHero().catch(() => {});
+        // _me just landed — the earned-hero and Side-B-retro latches
+        // re-derive (idempotent, menu-gated inside; un-awaited so a
+        // celebration never holds the chip). Retro first: "your board
+        // turned" before "a stranger arrives".
+        checkSideBRetro().then(() => checkEarnedHero()).catch(() => {});
         // _me just landed -- repaint the WANTED plaque so its CLAIMED stamp is
         // driven by the row arriving rather than by a guessed timer. modes.js
         // loads after this file, so on the very first boot FMODES may not exist
@@ -1072,7 +1115,7 @@
             ${ledger.length ? `
             <div class="pf-sec">Your Heroes</div>
             <div class="pf-heroes">${ledger.map(({ c, s }) => `
-                <div class="pf-hero" title="${c.name}${c.altSlots ? ` — Side B at Level ${SIDEB_LEVEL}` : ''}">
+                <div class="pf-hero" title="${c.name}${c.altSlots && sideBUnlocked(c.id) ? ' — Side B unlocked' : ''}">
                     <img src="assets/characters/${c.filename}" alt="${c.name}">
                     <span class="pf-hero-name">${c.name}</span>
                     <span class="pf-hero-r">${ratingSpan(clampElo(s.r))}</span>
