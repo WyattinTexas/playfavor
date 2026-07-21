@@ -6901,6 +6901,8 @@ body:has(#handInspectOv.active) .thrown-zone { display: none; }
     font-family: 'EB Garamond', serif; font-size: 13px;
     color: var(--parchment, #e8d9b5); opacity: 0.6;
 }
+/* Two stacked notes read as one quiet block, not two lobby rows. */
+.rm-note + .rm-note { margin-top: -9px; }
 .rm-status {
     font-family: 'EB Garamond', serif; font-size: 14px; min-height: 18px;
     color: #ffd97a; opacity: 0.9;

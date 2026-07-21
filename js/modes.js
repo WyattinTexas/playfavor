@@ -339,6 +339,7 @@
                         <div class="rm-row open"><span class="rm-crown"></span><span class="rm-name">Open seat</span></div>`).join('')}
                 </div>
                 <div class="rm-note">Open seats play as AI.</div>
+                <div class="rm-note">Scores count here — rating, hero XP, and Daily Champions.</div>
                 <div class="rm-status">${host ? '' : 'Waiting for the host to start…'}</div>
                 <div class="ri-actions rm-actions">
                     <button class="btn-royal" onclick="FMODES.closePrivateRoom()"><span>Leave</span></button>
