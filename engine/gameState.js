@@ -438,8 +438,7 @@ class FavorGame {
         const p = this.players[playerIndex];
         let f = p.favor || 0;
         (p.playedCards || []).forEach(card => {
-            f += (card.favor ? card.favor * (card._favorDoubled ? 2 : 1) : 0)
-               + this.dynamicCardFavor(playerIndex, card);
+            f += this.scoredCardFavor(playerIndex, card);
         });
         (p.completedMissions || []).forEach(m => { if (m.favorValue) f += m.favorValue; });
         const char = p.character;
@@ -1648,8 +1647,7 @@ class FavorGame {
                 // at most once; a second Chemical Y picks a different one.
                 // (Pair bonus +15 w/ Chemical X pays in dynamicCardFavor.)
                 {
-                    const advs = player.playedCards.filter(c =>
-                        c.type === 'adventure' && (c.favor || 0) > 0 && !c._favorDoubled);
+                    const advs = this.chemYCandidates(playerIndex);
                     if (!advs.length) {
                         this.addLog(`${player.name}'s Chemical Y: no adventure favor to double`);
                         break;
@@ -1659,9 +1657,14 @@ class FavorGame {
                         // right after this activation resolves.
                         player._pendingChemYPick = true;
                     } else {
-                        const best = advs.reduce((a, b) => ((b.favor || 0) > (a.favor || 0) ? b : a));
+                        // Best by EFFECTIVE favor — printed + formula. Judging
+                        // by the printed number alone left the AI as blind to
+                        // Fang's Truce as the human picker was (Wyatt 7/21).
+                        const val = (c) => this.scoredCardFavor(playerIndex, c);
+                        const best = advs.reduce((a, b) => (val(b) > val(a) ? b : a));
+                        const added = val(best);
                         best._favorDoubled = true;
-                        this.addLog(`${player.name}'s Chemical Y doubles ${best.name} (+${best.favor} Favor at scoring)`);
+                        this.addLog(`${player.name}'s Chemical Y doubles ${best.name} (+${added} Favor at scoring)`);
                     }
                 }
                 break;
@@ -3151,6 +3154,26 @@ class FavorGame {
         }
     }
 
+    // TOTAL Favor a played card pays: printed + dynamic formula, doubled as
+    // ONE amount when Chemical Y marked it. The card says "multiply its
+    // Favor amount by 2", and a dynamic card's amount IS its formula —
+    // doubling only the printed number scored Fang's Truce (2 per Survival,
+    // printed 0) at ×1 and hid it from every picker (Wyatt 7/21).
+    scoredCardFavor(playerIndex, card) {
+        const base = (card.favor || 0) + this.dynamicCardFavor(playerIndex, card);
+        return card._favorDoubled ? base * 2 : base;
+    }
+
+    // The adventures Chemical Y may choose from: any played adventure whose
+    // Favor amount can be nonzero — printed, or a favor_per_* formula. A
+    // formula can read 0 right now and still pay at scoring (Survival grows),
+    // so the formula's PRESENCE is what qualifies it, never today's value.
+    chemYCandidates(playerIndex) {
+        return this.players[playerIndex].playedCards.filter(c =>
+            c.type === 'adventure' && !c._favorDoubled
+            && ((c.favor || 0) > 0 || String(c.special || '').indexOf('favor_per_') === 0));
+    }
+
     calculateFinalScores() {
         return this.players.map((p, i) => {
             // Favor from missions — the printed favorValue on every completed
@@ -3179,8 +3202,7 @@ class FavorGame {
                 else otherCardFavor += f;
             };
             p.playedCards.forEach(card => {
-                addByFamily(card.type, (card.favor ? card.favor * (card._favorDoubled ? 2 : 1) : 0)
-                    + this.dynamicCardFavor(i, card));
+                addByFamily(card.type, this.scoredCardFavor(i, card));
             });
             (p.favorLog || []).forEach(e => { if (e.src === 'card') addByFamily(e.type, e.amount); });
             const cardFavor = advFavor + artFavor + otherCardFavor;

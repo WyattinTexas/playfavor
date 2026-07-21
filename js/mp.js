@@ -134,7 +134,14 @@
     //     from 800 to 390 banked Favor. The level math never enters the
     //     lockstep sim, but the gate decides who may publish side:'b' —
     //     bump on principle, per the Side-B precedent.
-    const MPV = 19;
+    // 20 (7/21): paid slides join multiplayer — each 5g step streams as its
+    //     own 'slide' move at the actor's reveal, and every peer applies it
+    //     just ahead of that seat's 'act'. A v19 seat never publishes or
+    //     applies 'slide', so board, purse and skills fork on the first paid
+    //     slide. Same window: Chemical Y candidates + doubling now run on
+    //     scoredCardFavor (printed + formula) — a v19 AI would double a
+    //     different card from the identical state.
+    const MPV = 20;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.
@@ -1057,6 +1064,36 @@
         });
     }
 
+    /**
+     * Take queued moves of a type from a seat, synchronously, in stream
+     * order — for moves that PRECEDE a barrier move rather than answer a
+     * waiter (paid 'slide' steps land ahead of the seat's 'act').
+     *
+     * beforeMove bounds the take by TOTAL stream order (g.moveQ): only
+     * entries that arrived ahead of it are taken; later ones stay queued.
+     * This matters on the final-round pair — slide·act·slide·act — and
+     * whenever the actor runs a full reveal ahead of a still-animating
+     * peer: a bare type-FIFO drain would replay a LATER slide before an
+     * EARLIER action and fork the tables. No beforeMove (a boot) takes
+     * everything: those steps happened on every surviving client alike.
+     */
+    function drain(seat, type, beforeMove) {
+        if (!g) return [];
+        const bySeat = g.perSeat[seat];
+        if (!bySeat || !bySeat[type] || !bySeat[type].length) return [];
+        const q = bySeat[type];
+        if (beforeMove) {
+            const cut = g.moveQ.indexOf(beforeMove);
+            if (cut >= 0) {
+                const take = q.filter(m => g.moveQ.indexOf(m) < cut);
+                bySeat[type] = q.filter(m => g.moveQ.indexOf(m) >= cut);
+                return take;
+            }
+        }
+        bySeat[type] = [];
+        return q;
+    }
+
     // Boot delivery: resolve every outstanding waiter on that seat with
     // null (the caller falls back to AI) and remember the conversion.
     function onBroadcast(type, cb) {
@@ -1281,7 +1318,7 @@
         queueStartedAt: () => (q ? q.startedAt : 0),
         hostRoom, joinRoom, leaveRoom, roomSetSize, roomStart,
         active, mySeat, isHost, record, localIdx, canonSeat,
-        publish, waitFor, collectThrows, onBroadcast, markBooted,
+        publish, waitFor, drain, collectThrows, onBroadcast, markBooted,
         leaveGame, gameOver,
         gid: () => (g ? g.gid : null),
         _T: T,   // timers — the audit suite shrinks these

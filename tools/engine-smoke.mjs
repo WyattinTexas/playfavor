@@ -648,6 +648,40 @@ console.log('── Chemical Y: choose ONE adventure card, its favor doubles at 
   ok(!g3.players[0].playedCards.some(c => c._favorDoubled), 'no card marked until the human picks');
 }
 
+console.log("── Chemical Y sees DYNAMIC favor: Fang's Truce (Wyatt 7/21)");
+{
+  // Wyatt played Chemical Y with a played Fang's Truce (2 Favor per
+  // Survival — printed favor 0) and the picker never offered it: every
+  // ChemY site filtered on the printed number. Candidates and doubling
+  // now run on scoredCardFavor = printed + formula, doubled as one amount.
+  const g = newGame();
+  const p = g.players[0];
+  p.playedCards.push({ ...cardByName("Fang's Truce") });
+  p.skills.survival = 6;                              // formula reads 12
+  ok(g.chemYCandidates(0).some(c => c.name === "Fang's Truce"),
+    'a formula adventure is a Chemical Y candidate (printed favor 0)');
+  ok(g.scoredCardFavor(0, p.playedCards[p.playedCards.length - 1]) === 12,
+    'scoredCardFavor reads the live formula (12)');
+
+  // The AI judges by EFFECTIVE favor: a 12 formula beats a printed 10.
+  const q = g.players[1];
+  q.playedCards.push({ ...cardByName("Fang's Truce") }, { ...cardByName('Finding the Lost Corridor') });
+  q.skills.survival = 6;
+  g.resolveSpecial(1, { name: 'Chemical Y', special: 'double_adventure_favor' });
+  const qFang = q.playedCards.find(c => c.name === "Fang's Truce");
+  const qCorr = q.playedCards.find(c => c.name === 'Finding the Lost Corridor');
+  ok(qFang._favorDoubled === true && !qCorr._favorDoubled,
+    'AI doubles the 12-Favor formula over the printed 10');
+
+  // Doubling pays double the FORMULA — live favor and the score sheet agree.
+  const before = g.currentFavor(0);
+  p.playedCards[p.playedCards.length - 1]._favorDoubled = true;
+  ok(g.currentFavor(0) - before === 12,
+    `doubling adds the formula again (+12, held ${g.currentFavor(0) - before})`);
+  const sheet = g.calculateFinalScores().find(s => s.playerIndex === 0);
+  ok(sheet.advFavor === 24, `the sheet books 24 under Adventures (got ${sheet.advFavor})`);
+}
+
 console.log('── Double Mission Letter finale: letter #1 never wipes letter #2');
 {
   // Wyatt's 7/5 freeze: final 2 cards BOTH Mission Letters, 1 gold.

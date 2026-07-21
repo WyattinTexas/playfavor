@@ -3411,6 +3411,17 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
 .vs-delta.stars b { color: #ffd97a; }
 .vs-d-what { color: var(--gold); letter-spacing: 1px; }
 .vs-d-arrow { color: var(--parchment-dark); opacity: 0.8; }
+/* The fellowship note rides INSIDE the Stars chip, on its own line. */
+.vs-delta.stars { flex-wrap: wrap; }
+.vs-d-fellow {
+    flex-basis: 100%;
+    text-align: center;
+    font-size: 0.58em;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: #ffd97a;
+    opacity: 0.85;
+}
 
 /* ── The Score Sheet — the box's tally grid recreated: heirs across,
    color-coded categories down, chunky numbers, one glance tells all. ── */

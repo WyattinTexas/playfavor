@@ -1321,8 +1321,10 @@ console.log('── Desktop: Chemical Y presents the choose-one picker');
   await page.evaluate(() => {
     const p = game.players[0];
     const pick = (n) => ({ ...FAVOR_DATA.cards.find(c => c.name === n) });
-    p.playedCards.push(pick('Fur Trading'), pick('Forming a Bond'));
-    p.skills.alchemy = 6;
+    p.playedCards.push(pick('Fur Trading'), pick('Forming a Bond'), pick("Fang's Truce"));
+    p.bonusSkills = { ...(p.bonusSkills || {}), survival: 4 };  // the formula card reads a real number
+    game.applySlotSkills(p);          // rebuild skills from cards+bonus FIRST…
+    p.skills.alchemy = 6;             // …then pin the rig's requirement skills
     p.philosopherStone = 1;
     p.gold = 30;
     p.hand = [pick('Chemical Y'), pick('First Aid')];
@@ -1343,9 +1345,21 @@ console.log('── Desktop: Chemical Y presents the choose-one picker');
   ok(pickerShown, 'Chemical Y picker appears on play');
 
   if (pickerShown) {
+    // The DYNAMIC adventure must be offered, with its live formula doubled
+    // in the label (Wyatt 7/21 — Fang's Truce never appeared before).
+    const offer = await page.evaluate(() => ({
+      names: [...document.querySelectorAll('#promisePicker .pp-card img')].map(i => i.alt),
+      labels: [...document.querySelectorAll('#promisePicker .pp-favor')].map(e => e.textContent),
+    }));
+    ok(offer.names.includes("Fang's Truce"),
+      `Fang's Truce (2/Survival, printed 0) is offered (${offer.names.join(', ')})`);
+    const fLabel = offer.labels[offer.names.indexOf("Fang's Truce")] || '';
+    const fm = /^(\d+) ➜ (\d+)$/.exec(fLabel);
+    ok(!!fm && +fm[2] === 2 * +fm[1] && +fm[1] >= 4,
+      `its label doubles the LIVE formula (${fLabel})`);
     const result = await page.evaluate(() => {
       const cards = [...document.querySelectorAll('#promisePicker .pp-card')];
-      cards[cards.length - 1].click(); // choose the second adventure
+      cards[cards.length - 1].click(); // the dynamic card sits last (pushed last)
       document.getElementById('chemYConfirm').click();
       return null;
     });
@@ -1356,6 +1370,14 @@ console.log('── Desktop: Chemical Y presents the choose-one picker');
     }));
     ok(state.doubled.length === 1, `exactly one card doubled (${state.doubled.join(',')})`);
     ok(state.badge === 1, 'doubled card wears its gold ring in the stacks');
+    const dyn = await page.evaluate(() => {
+      const p = game.players[0];
+      const c = p.playedCards.find(x => x._favorDoubled);
+      return { name: c && c.name, paid: c ? game.scoredCardFavor(0, c) : -1,
+               formula: 4 * (p.skills.survival || 0) };   // 2/Survival, doubled
+    });
+    ok(dyn.name === "Fang's Truce" && dyn.paid === dyn.formula && dyn.paid >= 8,
+      `doubling pays DOUBLE THE FORMULA (${dyn.paid} = 4 × ${dyn.formula / 4} Survival)`);
   }
   await page.close();
 }
@@ -6374,8 +6396,15 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     await pA.screenshot({ path: join(SHOTS, 'mp-match-hostA.png') });
     await pB.screenshot({ path: join(SHOTS, 'mp-match-clientB.png') });
 
-    // ── Beat 3: one full lockstep round — both THROW, the stream locks the
-    //    table on both clients, and each answers its reveal with a discard. ──
+    // ── Beat 3: one full lockstep round — both THROW, A PAYS TO SLIDE at
+    //    its reveal (MPV 20), and each answers its reveal with a discard. ──
+    // Rig the slide purse SYMMETRICALLY, by canonical seat, on BOTH clients
+    // (the MP rig rule: never mutate one table alone — hashes must agree).
+    const rigGold = (pg) => pg.evaluate(() => {
+      game.players[FMP.localIdx(0)].gold = 30;   // canonical seat 0 = A
+      renderGameState();
+    });
+    await Promise.all([rigGold(pA), rigGold(pB)]);
     await pA.evaluate(() => throwCard(0));
     await sleep(250);
     await pB.evaluate(() => throwCard(0));
@@ -6387,7 +6416,26 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
         if (b) b.click();
       });
     };
-    await Promise.all([answerDiscard(pA), answerDiscard(pB)]);
+    // Reveals resolve in seat order, so B must be ready to answer WHILE A
+    // is still at its own reveal paying to slide — run them concurrently.
+    const bAnswered = answerDiscard(pB);
+    await pA.waitForFunction(() => window._finalChoicePending === true, { timeout: 30000 });
+    const slid = await pA.evaluate(async () => {
+      const p = game.players[0];
+      const before = { pos: p.sliderPosition, gold: p.gold };
+      await payToSlide(p.sliderPosition >= 4 ? -1 : 1);
+      return { before, pos: p.sliderPosition, gold: p.gold, lock: p._paidSlideDir };
+    });
+    // (Gold is NOT asserted as before−5 here: the landing slot may pay a
+    // bonus. The purse check that matters is cross-client, below.)
+    ok(slid.pos !== slid.before.pos && !!slid.lock,
+      `A pays to slide at its OWN reveal (slot ${slid.before.pos + 1} → ${slid.pos + 1}, direction locked ${slid.lock})`);
+    await pA.evaluate(() => {
+      const b = [...document.querySelectorAll('#actionPanel .action-btn')]
+        .find(x => /discard \(\+3g\)/i.test(x.textContent) && !x.disabled);
+      if (b) b.click();
+    });
+    await bAnswered;
     // Next round's bots pick the instant finishRound hands over, so the
     // all-pendings-null state is transient — gate on YOUR seat + the hand.
     const roundDone = (pg) => pg.waitForFunction(() => game.phase === 'gameplay'
@@ -6400,6 +6448,17 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     ok(hA === hB, `LOCKSTEP: state hashes agree after a full round (${hA} vs ${hB})`);
     const bLog = await pB.evaluate(() => document.getElementById('logEntries').innerText);
     ok(/Audit MpA (discards|plays)/.test(bLog), "B's log narrates A's move (stream applied)");
+    // The paid slide crossed the wire: B's copy of A stands on the same
+    // slot with the same purse (slot bonuses included), and B's log says so.
+    const boardOf = (pg) => pg.evaluate(() => ({
+      pos: game.players[FMP.localIdx(0)].sliderPosition,
+      gold: game.players[FMP.localIdx(0)].gold,
+    }));
+    const [slotA, slotB] = await Promise.all([boardOf(pA), boardOf(pB)]);
+    ok(slotA.pos === slotB.pos && slotA.gold === slotB.gold,
+      `the paid slide landed on B's copy of A too (slot ${slotB.pos + 1}, ${slotB.gold}g on both)`);
+    ok(slotA.pos === slid.pos, `and it is the slot A chose (slot ${slid.pos + 1})`);
+    ok(/pays 5 Gold to slide/i.test(bLog), "B's log narrates A's paid slide");
 
     // ── Beat 4: A throws, B goes silent — the 2-minute boot (shrunk to
     //    4.5s NOW; the collector's clock reads it live) converts B's seat

@@ -2298,6 +2298,49 @@ async function mpActivateRemote(pi, card, cardIdx) {
     const mv = await FMP.waitFor(cs, 'act');
     mpWaitHide();
 
+    // Paid slides (MPV 20): the actor may pay 5g a space at their reveal,
+    // BEFORE choosing the card's action. Each step streamed as its own
+    // 'slide' move, and stream order lands them ahead of this seat's 'act'
+    // — so they are already queued when the act resolves. Apply them
+    // through the same engine call before the action (a slide can change
+    // what the revealed card meets). The act move BOUNDS the take: on the
+    // final-round pair (slide·act·slide·act) the second slide must wait
+    // for the second act, exactly as it happened on the actor's table.
+    // A boot (mv null) takes everything that made the stream — those
+    // steps happened on every surviving client alike.
+    let slidAny = false;
+    for (const sm of FMP.drain(cs, 'slide', mv)) {
+        const sdir = (sm.dir === -1 || sm.dir === 1) ? sm.dir : 0;
+        if (!sdir) continue;
+        const slid = game.moveSlider(pi, sdir);
+        if (!slid || !slid.success) continue;   // lockstep twins can't disagree; belt-and-braces
+        slidAny = true;
+        addLogEntry(`${p.name} pays 5 Gold to slide their ring`);
+        // A landing can open the SAME slot choosers a discard-slide can —
+        // the owner's picks stream right behind the slide that caused them.
+        if (p._pendingSlotMission) {
+            p._pendingSlotMission = false;
+            mpWaitShow(pi, 'choosing a mission');
+            const pick = await FMP.waitFor(cs, 'slot_mission');
+            mpWaitHide();
+            const idx = pick && Number.isInteger(pick.missionIdx)
+                && pick.missionIdx >= 0 && pick.missionIdx < game.visibleMissions.length
+                ? pick.missionIdx : aiBestMission(pi);
+            game.chooseMission(pi, idx);
+        }
+        if (p._pendingSlotPick) {
+            p._pendingSlotPick = null;
+            mpWaitShow(pi, 'choosing a skill from their board');
+            const pick = await FMP.waitFor(cs, 'slot_pick');
+            mpWaitHide();
+            const opts = game.slotPickOptions(pi);
+            const skill = (pick && opts.includes(pick.skill)) ? pick.skill : game.aiSlotPick(pi, opts);
+            const res = game.applySlotPick(pi, skill);
+            if (res && res.success) addLogEntry(`${p.name} picks +1 ${res.skill} from their board`);
+        }
+    }
+    if (slidAny) renderGameState();
+
     let action = mv && mv.action;
     if (!action) {
         // Boot/fallback: the same default the AI takes, on every client.
@@ -2370,11 +2413,13 @@ async function mpActivateRemote(pi, card, cardIdx) {
         mpWaitShow(pi, 'choosing which favor doubles');
         const pick = await FMP.waitFor(cs, 'chemy');
         mpWaitHide();
-        const advs = p.playedCards.filter(c =>
-            c.type === 'adventure' && (c.favor || 0) > 0 && !c._favorDoubled);
+        const advs = game.chemYCandidates(pi);
         let target = pick && advs.find(c => c.id === pick.cardId);
         if (!target && advs.length) {
-            target = advs.reduce((a, b) => ((b.favor || 0) > (a.favor || 0) ? b : a));
+            // Same tie-break as the engine's AI — every client must land the
+            // identical fallback card for a booted/silent seat.
+            const val = (c) => game.scoredCardFavor(pi, c);
+            target = advs.reduce((a, b) => (val(b) > val(a) ? b : a));
         }
         if (target) {
             target._favorDoubled = true;
@@ -2610,7 +2655,10 @@ function mpStateHash() {
     const rows = [];
     for (let cs = 0; cs < n; cs++) {
         const p = game.players[FMP.localIdx(cs)];
-        rows.push([p.gold, p.prestige, p.scorn, p.favor,
+        // sliderPosition joined at MPV 20 (paid slides stream now, and a
+        // missed slide whose slot bonus offsets the 5g fee would otherwise
+        // fork silently). Safe to change: the matcher never mixes versions.
+        rows.push([p.gold, p.prestige, p.scorn, p.favor, p.sliderPosition,
             (p.hand || []).map(c => c.id).join(','),
             (p.playedCards || []).map(c => c.id).join(','),
             (p.missions || []).map(m => m.id || m.name).join(',')].join('|'));
@@ -3120,7 +3168,7 @@ function renderCardStacks(state) {
         html += `<div class="stack-label">${label}</div>`;
         cards.forEach(card => {
             const doubled = card._favorDoubled ? ' doubled' : '';
-            const doubledTip = card._favorDoubled ? ` — Chemical Y: worth ${card.favor * 2} Favor (×2)` : '';
+            const doubledTip = card._favorDoubled ? ` — Chemical Y: worth ${game.scoredCardFavor(0, card)} Favor (×2)` : '';
             html += `<img class="stack-card${doubled}" src="assets/cards/regular/${card.filename}"
                         alt="${card.name}" title="${card.name}${doubledTip}"
                         onclick="zoomCard('assets/cards/regular/${card.filename}')">`;
@@ -3930,7 +3978,7 @@ let _ovSlideTarget = null;   // slot index awaiting Pay & Slide, or null
 // matching the direction already taken this turn (engine truth).
 function _ovPaidReach() {
     const ok = new Set();
-    if (!game || _slidePick || mpActive()) return ok;
+    if (!game || _slidePick) return ok;
     // Paid slides live at YOUR reveal — before you choose the card's
     // action (rulebook p.4) — not during the throw phase.
     if (game.phase !== 'activate' || !window._finalChoicePending) return ok;
@@ -5079,9 +5127,9 @@ function showCardChoice(card, cardIdx) {
             html += btn('⇄ Discard → Slide Ring (free)', 'discard_slide_pick', false);
             // The rulebook's optional beat: before choosing your action you
             // may pay gold to shift your ring (5g a space, one direction a
-            // turn) — the board itself is the picker. Solo for now; paid
-            // slides ride the next multiplayer protocol window.
-            if (!mpActive() && player.gold >= 5) {
+            // turn) — the board itself is the picker. In multiplayer every
+            // step streams ('slide', MPV 20) ahead of your action.
+            if (player.gold >= 5) {
                 html += btn('⟡ Pay to Slide (5g/space)', 'pay_slide', false);
             }
             html += '</div></div>';
@@ -5212,13 +5260,6 @@ async function resolveCardChoice(card, cardIdx) {
 // anytime-action; the throw-first flow pins it to your turn, which is
 // also exactly what the printed rules say.)
 async function payToSlide(direction) {
-    // Paid slides still sit out of multiplayer v1 — they'd need their own
-    // streamed move (slot events cascade off a landing). Discard-to-slide
-    // covers the ring in MP.
-    if (mpActive()) {
-        showNotification('Paid slides return in a future multiplayer update.', 'error');
-        return;
-    }
     if (!game || game.phase !== 'activate' || !window._finalChoicePending) {
         showNotification('The ring slides on your turn — when your card is revealed.', 'error');
         return;
@@ -5233,6 +5274,11 @@ async function payToSlide(direction) {
 
     const result = game.moveSlider(0, direction);
     if (result.success) {
+        // Multiplayer (MPV 20): every STEP streams as its own 'slide' move.
+        // Paid slides only exist at YOUR reveal, so stream order puts them
+        // all ahead of this seat's 'act' — every client applies them at the
+        // same engine point, right before the action (mpActivateRemote).
+        mpPub('slide', { dir: direction });
         const posNames = ['Far Left', 'Left', 'Center', 'Right', 'Far Right'];
         showNotification(`Slider moved to ${posNames[player.sliderPosition]} (\u22125g)`, 'play');
         addLogEntry(`You pay 5g to slide to ${posNames[player.sliderPosition]}`);
@@ -5242,6 +5288,7 @@ async function payToSlide(direction) {
         // Magician slot 2: choose a mission from the pool
         if (player._pendingSlotMission) {
             player._pendingSlotMission = false;
+            if (mpActive()) window._mpMissionCtx = 'slot_mission';
             await showMissionSelectAsync();
             renderGameState();
             renderBoardOvSlots();
@@ -6460,17 +6507,22 @@ function showChemYPicker() {
     return new Promise((resolve) => {
         const ov = document.getElementById('promisePicker');
         const player = game.players[0];
+        // The ENGINE owns the candidate list (printed favor OR a favor_per_
+        // formula — Fang's Truce and kin were invisible when this filtered on
+        // the printed number alone); amounts shown are the LIVE formula.
+        const cands = new Set(game.chemYCandidates(0));
         const advs = player.playedCards
             .map((c, i) => ({ c, i }))
-            .filter(x => x.c.type === 'adventure' && (x.c.favor || 0) > 0 && !x.c._favorDoubled);
+            .filter(x => cands.has(x.c));
         if (!ov || !advs.length) { resolve(); return; }
 
+        const baseFav = (c) => game.scoredCardFavor(0, c);   // un-doubled: candidates never carry the mark
         let chosen = advs[0].i;
         const render = () => {
             const cards = advs.map(({ c, i }) => `
                 <div class="pp-card${chosen === i ? ' chosen' : ''}" data-i="${i}">
                     <img src="assets/cards/regular/${c.filename}" alt="${c.name}">
-                    <span class="pp-favor">${c.favor} ➜ ${c.favor * 2}</span>
+                    <span class="pp-favor">${baseFav(c)} ➜ ${baseFav(c) * 2}</span>
                 </div>`).join('');
             const pick = player.playedCards[chosen];
             ov.innerHTML = `
@@ -6480,7 +6532,7 @@ function showChemYPicker() {
                     <div class="pp-cards">${cards}</div>
                     <div class="pp-actions">
                         <button class="btn-royal primary" id="chemYConfirm">
-                            <span>Double ${pick.name} — +${pick.favor} Favor at scoring</span>
+                            <span>Double ${pick.name} — +${baseFav(pick)} Favor at scoring</span>
                         </button>
                     </div>
                 </div>`;
@@ -6489,10 +6541,11 @@ function showChemYPicker() {
             });
             ov.querySelector('#chemYConfirm').onclick = () => {
                 const card = player.playedCards[chosen];
+                const added = baseFav(card);   // read BEFORE the mark doubles it
                 mpPub('chemy', { cardId: card.id });
                 card._favorDoubled = true;
-                addLogEntry(`Chemical Y doubles ${card.name} (+${card.favor} Favor at scoring)`);
-                showNotification(`${card.name} is now worth ${card.favor * 2} Favor`, 'play');
+                addLogEntry(`Chemical Y doubles ${card.name} (+${added} Favor at scoring)`);
+                showNotification(`${card.name} is now worth ${added * 2} Favor`, 'play');
                 ov.classList.remove('active');
                 renderGameState();
                 resolve();
@@ -6683,6 +6736,12 @@ function showScoring() {
     const before = (window.FLB && typeof FLB.snapshot === 'function')
         ? FLB.snapshot() : { rating: 0, stars: 0 };
 
+    // The FELLOWSHIP: real people at the table when it ended. Booted seats
+    // already read as AI (_remoteHuman false); personas and bots never count.
+    // Solo tables are a fellowship of one — no bonus. Private rooms and the
+    // public queue pay alike (Wyatt 7/21: humans at the table is what counts).
+    const humansAtTable = 1 + game.players.filter(p => p._remoteHuman).length;
+
     // Post YOUR result to the leaderboard the moment scoring resolves —
     // rating points vs the table + best-Favor for today's daily board.
     // Seated persona rivals post rating-only placements to their permanent
@@ -6715,7 +6774,7 @@ function showScoring() {
         // the victory chip late and raises the Level 5 ceremony — never a
         // re-read of the row, so it can neither miss nor double-fire.
         FLB.postGameResult(scores, personaPlaces,
-            { ratings: tableRatings, myChar: myHeroId })
+            { ratings: tableRatings, myChar: myHeroId, humans: humansAtTable })
             .then(xp => { if (xp) paintVictoryXp(xp); })
             .catch(() => { /* offline — no track moved, no chip */ });
     }
@@ -6770,11 +6829,15 @@ function showScoring() {
         </div>`;
         }
         if (typeof FLB.gameStars === 'function') {
-            const sDelta = FLB.gameStars(place, scores.length);
+            // Same function the write uses — the chip and the ledger can
+            // never disagree about what this game paid.
+            const sDelta = FLB.gameStars(place, scores.length, humansAtTable);
+            const fellow = sDelta - FLB.gameStars(place, scores.length, 1);
             const newStars = (before.stars || 0) + sDelta;
             deltas += `<div class="vs-delta stars">
                 <span class="vs-d-what">★ Stars</span><b>+${sDelta}</b>
                 <span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${newStars}">0</b>
+                ${fellow > 0 ? `<span class="vs-d-fellow">+${fellow}★ for a fellowship of ${humansAtTable}</span>` : ''}
             </div>`;
         }
     }
@@ -6936,8 +6999,7 @@ function paintVictoryXp(xp) {
 function showScoreBreakdown(pi, cat) {
     const gp = game.players[pi];
     if (!gp) return;
-    const cardFav = (c) => (c.favor ? c.favor * (c._favorDoubled ? 2 : 1) : 0)
-        + (typeof game.dynamicCardFavor === 'function' ? game.dynamicCardFavor(pi, c) : 0);
+    const cardFav = (c) => game.scoredCardFavor(pi, c);
     const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
     const name = pi === 0 ? 'You' : gp.name;
 

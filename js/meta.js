@@ -51,11 +51,16 @@
     const STORE_PRICE = 100;
     const FREE_CHAR_COUNT = 5;   // data/characters.js order: first five are free
 
-    function gameStars(place, count) {
-        if (place === 0) return 10;
-        if (place === 1) return 6;
-        if (place === 2) return 4;
-        return 2;
+    // The FELLOWSHIP bonus (Wyatt 7/21): playing with real people pays extra —
+    // per fellow HUMAN at the table, on top of placement, win or lose. Bots
+    // and personas never count, a booted seat stops counting the moment it
+    // converts to AI, and private rooms pay exactly like the public queue.
+    // A full five-human table banks +20 apiece. (Default for Wyatt to veto.)
+    const FELLOWSHIP_STARS_PER_HUMAN = 5;
+
+    function gameStars(place, count, humans) {
+        const base = place === 0 ? 10 : place === 1 ? 6 : place === 2 ? 4 : 2;
+        return base + FELLOWSHIP_STARS_PER_HUMAN * Math.max(0, (humans || 1) - 1);
     }
 
     // ── Persona rivals (defaults for Wyatt to veto) ──────────────────
@@ -695,9 +700,10 @@
     // their permanent rows. Generic bots stay off the board entirely.
 
     async function postGameResult(scores, personaPlaces, ctx) {
-        // ctx (ui.js): { ratings: perSeatTableRating[], myChar: heroId }.
-        // Missing ctx (older rigs) → every opponent rates as a 1200 bot
-        // and the per-character ledger simply doesn't move.
+        // ctx (ui.js): { ratings: perSeatTableRating[], myChar: heroId,
+        // humans: real people at the table (fellowship Stars) }.
+        // Missing ctx (older rigs) → every opponent rates as a 1200 bot,
+        // no fellowship, and the per-character ledger simply doesn't move.
         const ratings = (ctx && ctx.ratings) || [];
         const myChar = (ctx && ctx.myChar) || null;
         // The XP result rides back to the caller: the victory screen's delta
@@ -709,7 +715,7 @@
             const place = scores.findIndex(s => s.name === 'You');
             if (place < 0) return null;
             const mine = scores[place];
-            const starsWon = gameStars(place, scores.length);
+            const starsWon = gameStars(place, scores.length, ctx && ctx.humans);
             // ⚠ `won` has THREE consumers below — the wins count, the
             // streak/bestStreak pair, and (through the streak) the gain
             // boost. It is no longer `place === 0`: a top-40% finish is a
@@ -2199,7 +2205,8 @@
         personaDefs, rivalDayClaimed, claimRivalWin, msUntilNextWindow,
         settleDue, drainMsgs, currentDateKey, generateName,
         tableDelta, fmtRating, fmtRatingDelta, eloOf, ratingColor, ratingTier, ratingSpan,
-        gameStars, ownedIds, buyCharacter, openStore, closeStore, askBuy, confirmBuy,
+        gameStars, fellowshipStars: FELLOWSHIP_STARS_PER_HUMAN,
+        ownedIds, buyCharacter, openStore, closeStore, askBuy, confirmBuy,
         inspectChar, closeInspect,
         heroLevel, heroLevelPct, heroFv, sideBUnlocked, xpRibbonHtml,
         checkEarnedHero, showSideBCelebration, sideBLevel: () => SIDEB_LEVEL,
