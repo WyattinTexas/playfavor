@@ -7301,6 +7301,123 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     .tfx-img { animation: none !important; }
 }
 
+/* ═══ STORE ECONOMY (Wyatt 7/21) ═══ */
+.st-stars-btn {
+    position: absolute; top: 44px; right: 16px; z-index: 3;
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: 12px;
+    letter-spacing: 1.4px; text-transform: uppercase;
+    color: #2a1810; cursor: pointer;
+    background: linear-gradient(165deg, #f7ecd2, #e2cd9d);
+    border: 1px solid #a98d54; border-radius: 999px;
+    padding: 6px 14px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+}
+.st-stars-btn:hover { transform: translateY(-1px); box-shadow: 0 5px 12px rgba(232, 195, 75, 0.4); }
+.mint-inner { width: min(620px, 90%); padding-bottom: 10px; }
+.mint-head { border-top: none; text-align: center; padding: 14px 0 0; margin: 0 0 4px; }
+.tt-insp-lock {
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: 12px;
+    letter-spacing: 1.2px; color: #cbb377; opacity: 0.85; text-align: right;
+}
+/* locked shelf cards: still browsable, clearly not yours yet */
+.st-table-card.locked .st-table-swatch { filter: saturate(0.65) brightness(0.72); }
+.st-table-card.locked .st-table-state { color: #b39a63; }
+@media (orientation: landscape) and (max-height: 540px) {
+    .st-stars-btn { top: 34px; right: 10px; font-size: 10px; padding: 4px 10px; }
+}
+
+/* ═══ TABLE INSPECT — the surface at size before you equip ═══ */
+.tt-insp-inner {
+    display: flex; flex-direction: column;
+    width: min(680px, 88%); max-height: 86%;
+    border: 2px solid var(--gold, #c9a84c); border-radius: 12px;
+    overflow: hidden; background: #170e06;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.7);
+}
+.tt-insp-surface {
+    position: relative; overflow: hidden;
+    height: min(46vh, 380px);
+    /* the swatch classes carry the REAL skin css; layers fill the box */
+}
+.tt-insp-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 16px 12px;
+    border-top: 1px solid rgba(201, 168, 76, 0.35);
+    background: linear-gradient(180deg, rgba(46, 30, 12, 0.9), rgba(26, 15, 6, 0.95));
+}
+.tt-insp-id { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+/* same taming the hero easel does — the shelf's hanging price tag becomes a button */
+.tt-insp-row .st-buy {
+    position: static;
+    transform: none;
+    animation: none;
+    padding: 6px 14px;
+    font-size: 13px;
+}
+.tt-insp-row .st-buy::before, .tt-insp-row .st-buy::after { display: none; }
+.tt-insp-row .st-owned {
+    position: static;
+    width: auto; height: auto;
+    border-radius: 999px;
+    transform: none;
+    padding: 5px 14px;
+    font-size: 12px;
+}
+.tt-insp-id .st-name { font-size: 16px; }
+.tt-insp-rare {
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: 11px;
+    letter-spacing: 2px; color: #ffd98a;
+    text-shadow: 0 0 10px rgba(255, 200, 100, 0.45);
+}
+@media (orientation: landscape) and (max-height: 540px) {
+    .tt-insp-inner { width: min(560px, 90%); }
+    .tt-insp-surface { height: 52vh; }
+    .tt-insp-row { padding: 6px 12px 8px; }
+}
+
+/* ═══ STORE TABS (Wyatt+Skylar 7/21) — one category per pane ═══ */
+.st-tabs {
+    display: flex; gap: 8px; justify-content: center; align-items: center;
+    padding: 8px 6px 2px; flex: 0 0 auto;
+}
+.st-tab {
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: 13px;
+    letter-spacing: 1.6px; text-transform: uppercase;
+    color: #cbb377; background: rgba(28, 21, 12, 0.6);
+    border: 2px solid rgba(201, 168, 76, 0.28); border-radius: 999px;
+    padding: 5px 16px 6px; cursor: pointer; opacity: 0.82;
+    transition: border-color 0.15s, opacity 0.15s, background 0.15s, transform 0.15s;
+}
+.st-tab:hover { opacity: 1; border-color: rgba(201, 168, 76, 0.55); }
+.st-tab.on {
+    color: #ffe9ad; opacity: 1;
+    background: rgba(70, 50, 22, 0.72);
+    border-color: var(--gold, #c9a84c);
+    box-shadow: 0 0 12px rgba(201, 168, 76, 0.25);
+}
+.st-tab-secret { letter-spacing: 3px; padding-left: 13px; padding-right: 13px; }
+.st-tab-secret.locked { opacity: 0.5; border-style: dashed; }
+.st-tab-secret.locked.on { opacity: 0.9; }
+.st-pane { display: none; }
+.st-pane.on { display: block; }
+/* the mystery pane speaks in whispers */
+.st-secret-tease {
+    text-align: center; padding: 46px 20px 40px; color: #cbb377;
+    font-family: 'Cinzel', serif;
+}
+.st-secret-mark {
+    font-size: 64px; font-weight: 900; color: rgba(201, 168, 76, 0.5);
+    text-shadow: 0 0 24px rgba(201, 168, 76, 0.25); margin-bottom: 10px;
+}
+.st-secret-tease p { margin: 4px 0; font-size: 16px; letter-spacing: 1.5px; }
+.st-secret-sub { font-size: 12px; opacity: 0.65; font-style: italic; letter-spacing: 1px; }
+@media (orientation: landscape) and (max-height: 540px) {
+    .st-tabs { padding-top: 5px; gap: 6px; }
+    .st-tab { font-size: 11px; padding: 3px 11px 4px; letter-spacing: 1.1px; }
+    .st-secret-tease { padding: 22px 16px 18px; }
+    .st-secret-mark { font-size: 42px; }
+}
+
 /* The Table Maker — a quiet shelf below the heroes */
 .st-tables-head {
     font-family: 'Cinzel', serif; font-weight: 700;

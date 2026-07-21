@@ -217,7 +217,41 @@
         schedule();
     }
 
-    window.TABLEFX = { apply: apply, FX: FX };
+    // ── decorate(el, skinId): the CSS-driven layers (glow/caustics/sheen)
+    // on ANY element — the store's table inspect uses this so a buyer sees
+    // a rare table breathing BEFORE equipping. Canvas fx (sparks/twinkles/
+    // meteor) stay game-only; the CSS motion is what sells the surface.
+    function decorate(el, skinId) {
+        undecorate(el);
+        var cfg = SKINS[skinId];
+        if (!cfg || off) return;
+        if (cfg.glow && FX.embers) {
+            var g = document.createElement('div');
+            g.className = 'tfx-img tfx-glow';
+            g.style.backgroundImage = 'url(' + ROOT + cfg.glow + ')';
+            g.style.backgroundSize = cfg.tile + 'px';
+            g.style.animation = cfg.glowAnim;
+            el.appendChild(g);
+        }
+        if (cfg.caustics && FX.caustics) {
+            cfg.caustics.forEach(function (src, i) {
+                var c = document.createElement('div');
+                c.className = 'tfx-img tfx-caustic tfx-caustic-' + i;
+                c.style.backgroundImage = 'url(' + ROOT + src + ')';
+                el.appendChild(c);
+            });
+        }
+        if (cfg.sheen && FX.sheen) {
+            var s = document.createElement('div');
+            s.className = 'tfx-img tfx-sheen';
+            el.appendChild(s);
+        }
+    }
+    function undecorate(el) {
+        el.querySelectorAll('.tfx-img').forEach(function (x) { x.remove(); });
+    }
+
+    window.TABLEFX = { apply: apply, decorate: decorate, undecorate: undecorate, FX: FX };
 
     // ui.js applies the persisted skin before this file loads (defer order) —
     // self-apply once so a rare skin equipped last session animates on boot.

@@ -8007,39 +8007,95 @@ function shuffleArray(arr) {
 // ═══ Table skins — cosmetic play surfaces (The Table Maker) ═════════════
 // A skin is a material, never a scene: every option keeps the same warm
 // vignette so gameplay reads identically. Free while we tune; Stars later.
+// Economy (Wyatt 7/21): oak + leather free; priced skins unlock with Stars;
+// hero tables are EARNED by leveling that hero; rare tables by royal deed.
+// Star DEDUCTION belongs to FLB (meta.js) — buyTable() calls FLB.buyTable
+// when it exists; until then the button explains, grants nothing.
 const TABLE_SKINS = [
     { id: 'oak',    name: 'Royal Oak',        cls: '',            swatch: '' },
     { id: 'leather', name: 'Oxblood Leather', cls: 'skin-leather', swatch: 'tsw-leather' },
-    { id: 'velvet', name: 'Crimson Velvet',   cls: 'skin-velvet', swatch: 'tsw-velvet' },
-    { id: 'queens', name: "The Queen's Table", cls: 'skin-queens', swatch: 'tsw-queens' },
-    { id: 'emerald',   name: 'Emerald Court',           cls: 'skin-emerald',   swatch: 'tsw-emerald' },
-    { id: 'celestial', name: 'Midnight Atlas',          cls: 'skin-celestial', swatch: 'tsw-celestial' },
-    { id: 'map',       name: "The Cartographer's Desk", cls: 'skin-map',       swatch: 'tsw-map' },
-    { id: 'alchemist', name: "Alchemist's Slate",       cls: 'skin-alchemist', swatch: 'tsw-alchemist' },
+    { id: 'velvet', name: 'Crimson Velvet',   cls: 'skin-velvet', swatch: 'tsw-velvet', price: 15 },
+    { id: 'queens', name: "The Queen's Table", cls: 'skin-queens', swatch: 'tsw-queens', price: 15 },
+    { id: 'emerald',   name: 'Emerald Court',           cls: 'skin-emerald',   swatch: 'tsw-emerald',   price: 25 },
+    { id: 'celestial', name: 'Midnight Atlas',          cls: 'skin-celestial', swatch: 'tsw-celestial', price: 25 },
+    { id: 'map',       name: "The Cartographer's Desk", cls: 'skin-map',       swatch: 'tsw-map',       price: 25 },
+    { id: 'alchemist', name: "Alchemist's Slate",       cls: 'skin-alchemist', swatch: 'tsw-alchemist', price: 35 },
     // Hero Tables — one per character board, tone-on-tone (own shelf row)
-    { id: 'hero-explorer',  name: "The Explorer's Table",  cls: 'skin-hero-explorer',  swatch: 'tsw-hero-explorer',  group: 'hero' },
-    { id: 'hero-merchant',  name: "The Merchant's Table",  cls: 'skin-hero-merchant',  swatch: 'tsw-hero-merchant',  group: 'hero' },
-    { id: 'hero-bandit',    name: "The Bandit's Table",    cls: 'skin-hero-bandit',    swatch: 'tsw-hero-bandit',    group: 'hero' },
-    { id: 'hero-fisherman', name: "The Fisherman's Table", cls: 'skin-hero-fisherman', swatch: 'tsw-hero-fisherman', group: 'hero' },
-    { id: 'hero-scientist', name: "The Scientist's Table", cls: 'skin-hero-scientist', swatch: 'tsw-hero-scientist', group: 'hero' },
-    { id: 'hero-knight',    name: "The Knight's Table",    cls: 'skin-hero-knight',    swatch: 'tsw-hero-knight',    group: 'hero' },
-    { id: 'hero-doctor',    name: "The Doctor's Table",    cls: 'skin-hero-doctor',    swatch: 'tsw-hero-doctor',    group: 'hero' },
-    { id: 'hero-fiddler',   name: "The Fiddler's Table",   cls: 'skin-hero-fiddler',   swatch: 'tsw-hero-fiddler',   group: 'hero' },
-    { id: 'hero-duchess',   name: "The Duchess's Table",   cls: 'skin-hero-duchess',   swatch: 'tsw-hero-duchess',   group: 'hero' },
-    { id: 'hero-magician',  name: "The Magician's Table",  cls: 'skin-hero-magician',  swatch: 'tsw-hero-magician',  group: 'hero' },
+    { id: 'hero-explorer',  name: "The Explorer's Table",  cls: 'skin-hero-explorer',  lock: 'hero', swatch: 'tsw-hero-explorer',  group: 'hero' },
+    { id: 'hero-merchant',  name: "The Merchant's Table",  cls: 'skin-hero-merchant',  lock: 'hero', swatch: 'tsw-hero-merchant',  group: 'hero' },
+    { id: 'hero-bandit',    name: "The Bandit's Table",    cls: 'skin-hero-bandit',    lock: 'hero', swatch: 'tsw-hero-bandit',    group: 'hero' },
+    { id: 'hero-fisherman', name: "The Fisherman's Table", cls: 'skin-hero-fisherman', lock: 'hero', swatch: 'tsw-hero-fisherman', group: 'hero' },
+    { id: 'hero-scientist', name: "The Scientist's Table", cls: 'skin-hero-scientist', lock: 'hero', swatch: 'tsw-hero-scientist', group: 'hero' },
+    { id: 'hero-knight',    name: "The Knight's Table",    cls: 'skin-hero-knight',    lock: 'hero', swatch: 'tsw-hero-knight',    group: 'hero' },
+    { id: 'hero-doctor',    name: "The Doctor's Table",    cls: 'skin-hero-doctor',    lock: 'hero', swatch: 'tsw-hero-doctor',    group: 'hero' },
+    { id: 'hero-fiddler',   name: "The Fiddler's Table",   cls: 'skin-hero-fiddler',   lock: 'hero', swatch: 'tsw-hero-fiddler',   group: 'hero' },
+    { id: 'hero-duchess',   name: "The Duchess's Table",   cls: 'skin-hero-duchess',   lock: 'hero', swatch: 'tsw-hero-duchess',   group: 'hero' },
+    { id: 'hero-magician',  name: "The Magician's Table",  cls: 'skin-hero-magician',  lock: 'hero', swatch: 'tsw-hero-magician',  group: 'hero' },
     // Rare Tables — precious materials with animated life (js/tablefx.js).
     // Acquisition gating TBD (Wyatt) — free to equip while we tune.
-    { id: 'rare-ember',      name: 'The Ember Throne',     cls: 'skin-rare-ember',      swatch: 'tsw-rare-ember',      group: 'rare' },
-    { id: 'rare-astronomer', name: 'The Astronomer Royal', cls: 'skin-rare-astronomer', swatch: 'tsw-rare-astronomer', group: 'rare' },
-    { id: 'rare-vault',      name: 'The Drowned Vault',    cls: 'skin-rare-vault',      swatch: 'tsw-rare-vault',      group: 'rare' },
+    { id: 'rare-ember',      name: 'The Ember Throne',     cls: 'skin-rare-ember',      lock: 'feat', swatch: 'tsw-rare-ember',      group: 'rare' },
+    { id: 'rare-astronomer', name: 'The Astronomer Royal', cls: 'skin-rare-astronomer', lock: 'feat', swatch: 'tsw-rare-astronomer', group: 'rare' },
+    { id: 'rare-vault',      name: 'The Drowned Vault',    cls: 'skin-rare-vault',      lock: 'feat', swatch: 'tsw-rare-vault',      group: 'rare' },
 ];
 
 function currentTableSkin() {
     try { return localStorage.getItem('favor_table_skin') || 'oak'; } catch (e) { return 'oak'; }
 }
 
+// ── Table ownership ─────────────────────────────────────────────────────
+function ownedTableIds() {
+    try { return JSON.parse(localStorage.getItem('favor_tables_owned') || '[]'); }
+    catch (e) { return []; }
+}
+function canUseTable(id) {
+    const s = TABLE_SKINS.find(x => x.id === id);
+    if (!s) return false;
+    if (!s.price && !s.lock) return true;          // oak + leather: everyone's
+    return ownedTableIds().includes(id);
+}
+function starsBalance() {
+    // FLB paints the balance into the sign; reading it beats reaching into
+    // meta.js internals. Display/affordability only — never deducted here.
+    const el = document.getElementById('storeStars');
+    const m = el && el.textContent.match(/\d+/);
+    return m ? parseInt(m[0], 10) : 0;
+}
+let _confirmingTableBuy = null;
+function buyTable(id) {
+    const s = TABLE_SKINS.find(x => x.id === id);
+    if (!s || !s.price || canUseTable(id)) return;
+    if (_confirmingTableBuy !== id) { _confirmingTableBuy = id; renderTableInspect(); return; }
+    _confirmingTableBuy = null;
+    if (window.FLB && FLB.buyTable) {
+        // meta.js owns Stars — it deducts, records ownership, and repaints.
+        FLB.buyTable(id, s.price, function granted() {
+            const own = ownedTableIds(); own.push(id);
+            try { localStorage.setItem('favor_tables_owned', JSON.stringify(own)); } catch (e) {}
+            renderStoreTables(); renderTableInspect();
+        });
+    } else {
+        _tableBuyNote = 'Purchases open with the next royal decree.';
+        renderTableInspect();
+    }
+}
+let _tableBuyNote = null;
+window.buyTable = buyTable;
+
+// ── The Royal Mint easel (was a tab; now the sign-side Stars button) ────
+function openMint() {
+    const p = document.getElementById('mintPanel');
+    if (p) p.classList.add('active');
+}
+function closeMint() {
+    const p = document.getElementById('mintPanel');
+    if (p) p.classList.remove('active');
+}
+window.openMint = openMint;
+window.closeMint = closeMint;
+
 function applyTableSkin(id) {
-    const skin = TABLE_SKINS.find(s => s.id === id) || TABLE_SKINS[0];
+    let skin = TABLE_SKINS.find(s => s.id === id) || TABLE_SKINS[0];
+    if (!canUseTable(skin.id)) skin = TABLE_SKINS[0];   // locked skins never equip (covers stale saves too)
     try { localStorage.setItem('favor_table_skin', skin.id); } catch (e) {}
     const g = document.getElementById('game-screen');
     if (g) {
@@ -8053,14 +8109,21 @@ window.applyTableSkin = applyTableSkin;
 
 function renderStoreTables() {
     const cur = currentTableSkin();
+    const stateLine = s => {
+        if (s.id === cur) return '✦ On your table';
+        if (canUseTable(s.id)) return 'Tap to view';
+        if (s.lock === 'hero') return '🔒 Level up to earn';
+        if (s.lock === 'feat') return '🔒 Earned by deed';
+        return `★ ${s.price} to unlock`;
+    };
     const card = s => `
-        <div class="st-table-card${s.id === cur ? ' equipped' : ''}"
-             onclick="event.stopPropagation(); applyTableSkin('${s.id}')">
+        <div class="st-table-card${s.id === cur ? ' equipped' : ''}${canUseTable(s.id) ? '' : ' locked'}"
+             onclick="event.stopPropagation(); inspectTable('${s.id}')">
             <div class="st-table-swatch ${s.swatch}"
                  ${s.swatch ? '' : 'style="background: radial-gradient(ellipse at 50% 40%, #6b4a30 0%, #4a3020 55%, #2a1a10 100%)"'}></div>
             <div class="st-table-plate">
                 <span class="st-table-name">${s.name}</span>
-                <span class="st-table-state">${s.id === cur ? '✦ On your table' : 'Free — tap to equip'}</span>
+                <span class="st-table-state">${stateLine(s)}</span>
             </div>
         </div>`;
     const shelves = [
@@ -8074,13 +8137,140 @@ function renderStoreTables() {
     });
 }
 
+// ── Table inspect — see the surface at size before equipping ────────────
+// Mirrors the hero easel (st-inspect). The surface div wears the same
+// swatch class as the card, so it IS the real skin CSS at panel size;
+// TABLEFX.decorate adds the living layers for rare tables.
+let _inspectingTable = null;
+
+function inspectTable(id) {
+    _inspectingTable = id;
+    renderTableInspect();
+}
+function closeTableInspect() {
+    _inspectingTable = null;
+    _confirmingTableBuy = null;
+    renderTableInspect();
+}
+window.inspectTable = inspectTable;
+window.closeTableInspect = closeTableInspect;
+
+function renderTableInspect() {
+    const box = document.getElementById('tableInspect');
+    if (!box) return;
+    const s = _inspectingTable && TABLE_SKINS.find(x => x.id === _inspectingTable);
+    if (!s) { box.classList.remove('active'); box.innerHTML = ''; return; }
+    const cur = currentTableSkin();
+    const equipped = s.id === cur;
+    let action;
+    if (equipped) {
+        action = '<span class="st-owned">✦ On your table</span>';
+    } else if (canUseTable(s.id)) {
+        action = `<button class="st-buy" onclick="event.stopPropagation(); applyTableSkin('${s.id}'); renderTableInspect()">Equip</button>`;
+    } else if (s.lock === 'hero') {
+        action = '<span class="tt-insp-lock">🔒 Earned by leveling your hero</span>';
+    } else if (s.lock === 'feat') {
+        action = '<span class="tt-insp-lock">🔒 Earned by royal deed</span>';
+    } else if (_tableBuyNote) {
+        action = `<span class="tt-insp-lock">${_tableBuyNote}</span>`;
+        _tableBuyNote = null;
+    } else if (starsBalance() >= s.price) {
+        action = `<button class="st-buy${_confirmingTableBuy === s.id ? ' confirm' : ''}"
+            onclick="event.stopPropagation(); buyTable('${s.id}')">${_confirmingTableBuy === s.id ? `Unlock — ★ ${s.price}?` : `Unlock — ★ ${s.price}`}</button>`;
+    } else {
+        action = `<button class="st-buy poor" disabled>★ ${s.price}</button>`;
+    }
+    box.innerHTML = `
+        <div class="tt-insp-inner" onclick="event.stopPropagation()">
+            <div class="tt-insp-surface ${s.swatch}" id="ttInspSurface"
+                 ${s.swatch ? '' : 'style="background: radial-gradient(ellipse at 50% 40%, #6b4a30 0%, #4a3020 55%, #2a1a10 100%)"'}></div>
+            <div class="tt-insp-row">
+                <span class="tt-insp-id">
+                    <span class="st-name">${s.name}</span>
+                    ${s.group === 'rare' ? '<span class="tt-insp-rare">✦ RARE</span>' : ''}
+                </span>
+                ${action}
+            </div>
+        </div>
+        <div class="st-insp-close" onclick="event.stopPropagation(); closeTableInspect()">✕</div>`;
+    box.classList.add('active');
+    if (window.TABLEFX) TABLEFX.decorate(document.getElementById('ttInspSurface'), s.id);
+}
+
+// ── Store tabs (Wyatt+Skylar 7/21) ──────────────────────────────────────
+// Panes wrap the ids the renderers already write into; switching is pure
+// class toggling, so meta.js (FLB's) and the shelf renderers stay untouched.
+const SECRET_TAB_MODE = 'locked';   // 'locked' = visible + teaser | 'hidden' = absent until an unlock
+window.FAVOR_HIDDEN = window.FAVOR_HIDDEN || [];   // future hidden heroes: [{id,name,filename}]
+
+function hiddenUnlockedIds() {
+    try { return JSON.parse(localStorage.getItem('favor_hidden_unlocked') || '[]'); }
+    catch (e) { return []; }
+}
+
+function switchStoreTab(paneId) {
+    document.querySelectorAll('#stTabs .st-tab').forEach(b =>
+        b.classList.toggle('on', b.dataset.pane === paneId));
+    document.querySelectorAll('.st-pane').forEach(p =>
+        p.classList.toggle('on', p.id === paneId));
+    const sc = document.querySelector('#storePanel .st-scroll');
+    if (sc) sc.scrollTop = 0;
+    try { localStorage.setItem('favor_store_tab', paneId); } catch (e) {}
+    if (paneId === 'stPaneSecret') renderSecretPane();
+}
+window.switchStoreTab = switchStoreTab;
+
+function renderSecretPane() {
+    const body = document.getElementById('stSecretBody');
+    if (!body) return;
+    const unlocked = hiddenUnlockedIds();
+    const roster = (window.FAVOR_HIDDEN || []).filter(h => unlocked.includes(h.id));
+    if (!roster.length) {
+        body.innerHTML = `
+            <div class="st-secret-tease">
+                <div class="st-secret-mark">?</div>
+                <p>The court keeps its secrets.</p>
+                <p class="st-secret-sub">Some heroes are not for sale — they must be found.</p>
+            </div>`;
+        return;
+    }
+    body.innerHTML = `<div class="st-grid">` + roster.map(h => `
+        <div class="st-card" data-char="${h.id}" onclick="FLB.inspectChar('${h.id}')">
+            <div class="st-frame"><img src="assets/characters/${h.filename}" alt="${h.name}"></div>
+            <div class="st-plate"><span class="st-name">${h.name}</span></div>
+        </div>`).join('') + `</div>`;
+}
+
+function refreshSecretTab() {
+    const tab = document.getElementById('stTabSecret');
+    if (!tab) return;
+    const any = hiddenUnlockedIds().length > 0;
+    tab.classList.toggle('locked', !any);
+    if (SECRET_TAB_MODE === 'hidden') tab.style.display = any ? '' : 'none';
+}
+
+// Restore last-viewed tab (secret tab only if it survives its mode rules).
+(function () {
+    let t = null;
+    try { t = localStorage.getItem('favor_store_tab'); } catch (e) {}
+    refreshSecretTab();
+    if (t && document.getElementById(t)) {
+        if (t === 'stPaneSecret' && SECRET_TAB_MODE === 'hidden' && !hiddenUnlockedIds().length) t = null;
+        if (t) switchStoreTab(t);
+    }
+})();
+
 // The store panel is FLB's (meta.js, loads after us) — watch its class
 // instead of patching its code, and paint our shelf whenever it opens.
 (function () {
     const panel = document.getElementById('storePanel');
     if (!panel) return;
     new MutationObserver(() => {
-        if (panel.classList.contains('active')) renderStoreTables();
+        if (panel.classList.contains('active')) {
+            renderStoreTables();
+            refreshSecretTab();
+            if (document.getElementById('stPaneSecret')?.classList.contains('on')) renderSecretPane();
+        }
     }).observe(panel, { attributes: true, attributeFilter: ['class'] });
 })();
 
