@@ -54,11 +54,21 @@ for g in groups:
 detail = get(f"/v1/builds/{build['id']}/buildBetaDetail")["data"]
 state = detail["attributes"]["externalBuildState"]
 if state == "READY_FOR_BETA_SUBMISSION":
-    post("/v1/betaAppReviewSubmissions",
-         {"data": {"type": "betaAppReviewSubmissions",
-                   "relationships": {"build": {"data": {"type": "builds", "id": build["id"]}}}}})
-    state = get(f"/v1/builds/{build['id']}/buildBetaDetail")["data"]["attributes"]["externalBuildState"]
-    print(f"beta review submitted -> externalBuildState {state}")
+    try:
+        post("/v1/betaAppReviewSubmissions",
+             {"data": {"type": "betaAppReviewSubmissions",
+                       "relationships": {"build": {"data": {"type": "builds", "id": build["id"]}}}}})
+        state = get(f"/v1/builds/{build['id']}/buildBetaDetail")["data"]["attributes"]["externalBuildState"]
+        print(f"beta review submitted -> externalBuildState {state}")
+    except Exception as e:
+        # One build per train may sit in review (b18 blocked b19, 7/21).
+        # The attach above already stuck; re-run this script once the
+        # earlier build clears and the submission goes through.
+        if "ANOTHER_BUILD_IN_REVIEW" in str(getattr(getattr(e, "response", None), "text", "")):
+            print(f"beta review NOT submitted — another build in this train is "
+                  f"already in review. Re-run `tf_attach.py {want}` once it clears.")
+        else:
+            raise
 else:
     print(f"externalBuildState already {state}")
 
