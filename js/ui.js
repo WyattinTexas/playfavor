@@ -7945,39 +7945,95 @@ function shuffleArray(arr) {
 // ═══ Table skins — cosmetic play surfaces (The Table Maker) ═════════════
 // A skin is a material, never a scene: every option keeps the same warm
 // vignette so gameplay reads identically. Free while we tune; Stars later.
+// Economy (Wyatt 7/21): oak + leather free; priced skins unlock with Stars;
+// hero tables are EARNED by leveling that hero; rare tables by royal deed.
+// Star DEDUCTION belongs to FLB (meta.js) — buyTable() calls FLB.buyTable
+// when it exists; until then the button explains, grants nothing.
 const TABLE_SKINS = [
     { id: 'oak',    name: 'Royal Oak',        cls: '',            swatch: '' },
     { id: 'leather', name: 'Oxblood Leather', cls: 'skin-leather', swatch: 'tsw-leather' },
-    { id: 'velvet', name: 'Crimson Velvet',   cls: 'skin-velvet', swatch: 'tsw-velvet' },
-    { id: 'queens', name: "The Queen's Table", cls: 'skin-queens', swatch: 'tsw-queens' },
-    { id: 'emerald',   name: 'Emerald Court',           cls: 'skin-emerald',   swatch: 'tsw-emerald' },
-    { id: 'celestial', name: 'Midnight Atlas',          cls: 'skin-celestial', swatch: 'tsw-celestial' },
-    { id: 'map',       name: "The Cartographer's Desk", cls: 'skin-map',       swatch: 'tsw-map' },
-    { id: 'alchemist', name: "Alchemist's Slate",       cls: 'skin-alchemist', swatch: 'tsw-alchemist' },
+    { id: 'velvet', name: 'Crimson Velvet',   cls: 'skin-velvet', swatch: 'tsw-velvet', price: 15 },
+    { id: 'queens', name: "The Queen's Table", cls: 'skin-queens', swatch: 'tsw-queens', price: 15 },
+    { id: 'emerald',   name: 'Emerald Court',           cls: 'skin-emerald',   swatch: 'tsw-emerald',   price: 25 },
+    { id: 'celestial', name: 'Midnight Atlas',          cls: 'skin-celestial', swatch: 'tsw-celestial', price: 25 },
+    { id: 'map',       name: "The Cartographer's Desk", cls: 'skin-map',       swatch: 'tsw-map',       price: 25 },
+    { id: 'alchemist', name: "Alchemist's Slate",       cls: 'skin-alchemist', swatch: 'tsw-alchemist', price: 35 },
     // Hero Tables — one per character board, tone-on-tone (own shelf row)
-    { id: 'hero-explorer',  name: "The Explorer's Table",  cls: 'skin-hero-explorer',  swatch: 'tsw-hero-explorer',  group: 'hero' },
-    { id: 'hero-merchant',  name: "The Merchant's Table",  cls: 'skin-hero-merchant',  swatch: 'tsw-hero-merchant',  group: 'hero' },
-    { id: 'hero-bandit',    name: "The Bandit's Table",    cls: 'skin-hero-bandit',    swatch: 'tsw-hero-bandit',    group: 'hero' },
-    { id: 'hero-fisherman', name: "The Fisherman's Table", cls: 'skin-hero-fisherman', swatch: 'tsw-hero-fisherman', group: 'hero' },
-    { id: 'hero-scientist', name: "The Scientist's Table", cls: 'skin-hero-scientist', swatch: 'tsw-hero-scientist', group: 'hero' },
-    { id: 'hero-knight',    name: "The Knight's Table",    cls: 'skin-hero-knight',    swatch: 'tsw-hero-knight',    group: 'hero' },
-    { id: 'hero-doctor',    name: "The Doctor's Table",    cls: 'skin-hero-doctor',    swatch: 'tsw-hero-doctor',    group: 'hero' },
-    { id: 'hero-fiddler',   name: "The Fiddler's Table",   cls: 'skin-hero-fiddler',   swatch: 'tsw-hero-fiddler',   group: 'hero' },
-    { id: 'hero-duchess',   name: "The Duchess's Table",   cls: 'skin-hero-duchess',   swatch: 'tsw-hero-duchess',   group: 'hero' },
-    { id: 'hero-magician',  name: "The Magician's Table",  cls: 'skin-hero-magician',  swatch: 'tsw-hero-magician',  group: 'hero' },
+    { id: 'hero-explorer',  name: "The Explorer's Table",  cls: 'skin-hero-explorer',  lock: 'hero', swatch: 'tsw-hero-explorer',  group: 'hero' },
+    { id: 'hero-merchant',  name: "The Merchant's Table",  cls: 'skin-hero-merchant',  lock: 'hero', swatch: 'tsw-hero-merchant',  group: 'hero' },
+    { id: 'hero-bandit',    name: "The Bandit's Table",    cls: 'skin-hero-bandit',    lock: 'hero', swatch: 'tsw-hero-bandit',    group: 'hero' },
+    { id: 'hero-fisherman', name: "The Fisherman's Table", cls: 'skin-hero-fisherman', lock: 'hero', swatch: 'tsw-hero-fisherman', group: 'hero' },
+    { id: 'hero-scientist', name: "The Scientist's Table", cls: 'skin-hero-scientist', lock: 'hero', swatch: 'tsw-hero-scientist', group: 'hero' },
+    { id: 'hero-knight',    name: "The Knight's Table",    cls: 'skin-hero-knight',    lock: 'hero', swatch: 'tsw-hero-knight',    group: 'hero' },
+    { id: 'hero-doctor',    name: "The Doctor's Table",    cls: 'skin-hero-doctor',    lock: 'hero', swatch: 'tsw-hero-doctor',    group: 'hero' },
+    { id: 'hero-fiddler',   name: "The Fiddler's Table",   cls: 'skin-hero-fiddler',   lock: 'hero', swatch: 'tsw-hero-fiddler',   group: 'hero' },
+    { id: 'hero-duchess',   name: "The Duchess's Table",   cls: 'skin-hero-duchess',   lock: 'hero', swatch: 'tsw-hero-duchess',   group: 'hero' },
+    { id: 'hero-magician',  name: "The Magician's Table",  cls: 'skin-hero-magician',  lock: 'hero', swatch: 'tsw-hero-magician',  group: 'hero' },
     // Rare Tables — precious materials with animated life (js/tablefx.js).
     // Acquisition gating TBD (Wyatt) — free to equip while we tune.
-    { id: 'rare-ember',      name: 'The Ember Throne',     cls: 'skin-rare-ember',      swatch: 'tsw-rare-ember',      group: 'rare' },
-    { id: 'rare-astronomer', name: 'The Astronomer Royal', cls: 'skin-rare-astronomer', swatch: 'tsw-rare-astronomer', group: 'rare' },
-    { id: 'rare-vault',      name: 'The Drowned Vault',    cls: 'skin-rare-vault',      swatch: 'tsw-rare-vault',      group: 'rare' },
+    { id: 'rare-ember',      name: 'The Ember Throne',     cls: 'skin-rare-ember',      lock: 'feat', swatch: 'tsw-rare-ember',      group: 'rare' },
+    { id: 'rare-astronomer', name: 'The Astronomer Royal', cls: 'skin-rare-astronomer', lock: 'feat', swatch: 'tsw-rare-astronomer', group: 'rare' },
+    { id: 'rare-vault',      name: 'The Drowned Vault',    cls: 'skin-rare-vault',      lock: 'feat', swatch: 'tsw-rare-vault',      group: 'rare' },
 ];
 
 function currentTableSkin() {
     try { return localStorage.getItem('favor_table_skin') || 'oak'; } catch (e) { return 'oak'; }
 }
 
+// ── Table ownership ─────────────────────────────────────────────────────
+function ownedTableIds() {
+    try { return JSON.parse(localStorage.getItem('favor_tables_owned') || '[]'); }
+    catch (e) { return []; }
+}
+function canUseTable(id) {
+    const s = TABLE_SKINS.find(x => x.id === id);
+    if (!s) return false;
+    if (!s.price && !s.lock) return true;          // oak + leather: everyone's
+    return ownedTableIds().includes(id);
+}
+function starsBalance() {
+    // FLB paints the balance into the sign; reading it beats reaching into
+    // meta.js internals. Display/affordability only — never deducted here.
+    const el = document.getElementById('storeStars');
+    const m = el && el.textContent.match(/\d+/);
+    return m ? parseInt(m[0], 10) : 0;
+}
+let _confirmingTableBuy = null;
+function buyTable(id) {
+    const s = TABLE_SKINS.find(x => x.id === id);
+    if (!s || !s.price || canUseTable(id)) return;
+    if (_confirmingTableBuy !== id) { _confirmingTableBuy = id; renderTableInspect(); return; }
+    _confirmingTableBuy = null;
+    if (window.FLB && FLB.buyTable) {
+        // meta.js owns Stars — it deducts, records ownership, and repaints.
+        FLB.buyTable(id, s.price, function granted() {
+            const own = ownedTableIds(); own.push(id);
+            try { localStorage.setItem('favor_tables_owned', JSON.stringify(own)); } catch (e) {}
+            renderStoreTables(); renderTableInspect();
+        });
+    } else {
+        _tableBuyNote = 'Purchases open with the next royal decree.';
+        renderTableInspect();
+    }
+}
+let _tableBuyNote = null;
+window.buyTable = buyTable;
+
+// ── The Royal Mint easel (was a tab; now the sign-side Stars button) ────
+function openMint() {
+    const p = document.getElementById('mintPanel');
+    if (p) p.classList.add('active');
+}
+function closeMint() {
+    const p = document.getElementById('mintPanel');
+    if (p) p.classList.remove('active');
+}
+window.openMint = openMint;
+window.closeMint = closeMint;
+
 function applyTableSkin(id) {
-    const skin = TABLE_SKINS.find(s => s.id === id) || TABLE_SKINS[0];
+    let skin = TABLE_SKINS.find(s => s.id === id) || TABLE_SKINS[0];
+    if (!canUseTable(skin.id)) skin = TABLE_SKINS[0];   // locked skins never equip (covers stale saves too)
     try { localStorage.setItem('favor_table_skin', skin.id); } catch (e) {}
     const g = document.getElementById('game-screen');
     if (g) {
@@ -7991,14 +8047,21 @@ window.applyTableSkin = applyTableSkin;
 
 function renderStoreTables() {
     const cur = currentTableSkin();
+    const stateLine = s => {
+        if (s.id === cur) return '✦ On your table';
+        if (canUseTable(s.id)) return 'Tap to view';
+        if (s.lock === 'hero') return '🔒 Level up to earn';
+        if (s.lock === 'feat') return '🔒 Earned by deed';
+        return `★ ${s.price} to unlock`;
+    };
     const card = s => `
-        <div class="st-table-card${s.id === cur ? ' equipped' : ''}"
+        <div class="st-table-card${s.id === cur ? ' equipped' : ''}${canUseTable(s.id) ? '' : ' locked'}"
              onclick="event.stopPropagation(); inspectTable('${s.id}')">
             <div class="st-table-swatch ${s.swatch}"
                  ${s.swatch ? '' : 'style="background: radial-gradient(ellipse at 50% 40%, #6b4a30 0%, #4a3020 55%, #2a1a10 100%)"'}></div>
             <div class="st-table-plate">
                 <span class="st-table-name">${s.name}</span>
-                <span class="st-table-state">${s.id === cur ? '✦ On your table' : 'Tap to view'}</span>
+                <span class="st-table-state">${stateLine(s)}</span>
             </div>
         </div>`;
     const shelves = [
@@ -8024,6 +8087,7 @@ function inspectTable(id) {
 }
 function closeTableInspect() {
     _inspectingTable = null;
+    _confirmingTableBuy = null;
     renderTableInspect();
 }
 window.inspectTable = inspectTable;
@@ -8036,6 +8100,24 @@ function renderTableInspect() {
     if (!s) { box.classList.remove('active'); box.innerHTML = ''; return; }
     const cur = currentTableSkin();
     const equipped = s.id === cur;
+    let action;
+    if (equipped) {
+        action = '<span class="st-owned">✦ On your table</span>';
+    } else if (canUseTable(s.id)) {
+        action = `<button class="st-buy" onclick="event.stopPropagation(); applyTableSkin('${s.id}'); renderTableInspect()">Equip</button>`;
+    } else if (s.lock === 'hero') {
+        action = '<span class="tt-insp-lock">🔒 Earned by leveling your hero</span>';
+    } else if (s.lock === 'feat') {
+        action = '<span class="tt-insp-lock">🔒 Earned by royal deed</span>';
+    } else if (_tableBuyNote) {
+        action = `<span class="tt-insp-lock">${_tableBuyNote}</span>`;
+        _tableBuyNote = null;
+    } else if (starsBalance() >= s.price) {
+        action = `<button class="st-buy${_confirmingTableBuy === s.id ? ' confirm' : ''}"
+            onclick="event.stopPropagation(); buyTable('${s.id}')">${_confirmingTableBuy === s.id ? `Unlock — ★ ${s.price}?` : `Unlock — ★ ${s.price}`}</button>`;
+    } else {
+        action = `<button class="st-buy poor" disabled>★ ${s.price}</button>`;
+    }
     box.innerHTML = `
         <div class="tt-insp-inner" onclick="event.stopPropagation()">
             <div class="tt-insp-surface ${s.swatch}" id="ttInspSurface"
@@ -8043,11 +8125,9 @@ function renderTableInspect() {
             <div class="tt-insp-row">
                 <span class="tt-insp-id">
                     <span class="st-name">${s.name}</span>
-                    ${s.group === 'rare' ? '<span class="tt-insp-rare">✦ RARE — it moves</span>' : ''}
+                    ${s.group === 'rare' ? '<span class="tt-insp-rare">✦ RARE</span>' : ''}
                 </span>
-                ${equipped
-                    ? '<span class="st-owned">✦ On your table</span>'
-                    : `<button class="st-buy" onclick="event.stopPropagation(); applyTableSkin('${s.id}'); renderTableInspect()">Equip</button>`}
+                ${action}
             </div>
         </div>
         <div class="st-insp-close" onclick="event.stopPropagation(); closeTableInspect()">✕</div>`;

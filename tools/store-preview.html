@@ -30,16 +30,15 @@
     <div class="lb-inner st-inner" onclick="event.stopPropagation()">
         <div class="st-awning" aria-hidden="true"></div>
         <div class="lb-title st-sign">The Royal Emporium<span class="st-stars" id="storeStars">★ 110</span></div>
+        <button class="st-stars-btn" onclick="document.getElementById('mintPanel').classList.add('active')">★ Purchase Stars</button>
         <div class="st-tabs" id="stTabs">
             <button class="st-tab on" data-pane="stPaneHeroes" onclick="switchStoreTab('stPaneHeroes')">Heroes</button>
-            <button class="st-tab" data-pane="stPaneMint" onclick="switchStoreTab('stPaneMint')">The Mint</button>
             <button class="st-tab" data-pane="stPaneTables" onclick="switchStoreTab('stPaneTables')">Tables</button>
+            <button class="st-tab" data-pane="stPaneAvatars" onclick="switchStoreTab('stPaneAvatars')">Avatars</button>
+            <button class="st-tab" data-pane="stPaneCards" onclick="switchStoreTab('stPaneCards')">Cards</button>
             <button class="st-tab st-tab-secret locked" data-pane="stPaneSecret" id="stTabSecret" onclick="switchStoreTab('stPaneSecret')">? ?</button>
         </div>
         <div class="st-scroll">
-            <div class="st-pane" id="stPaneMint">
-                <div class="st-mint" id="storePacks"></div>
-            </div>
             <div class="st-pane on" id="stPaneHeroes">
                 <div class="st-grid" id="storeBody"></div>
             </div>
@@ -51,6 +50,12 @@
                 <div class="st-tables-head">Rare Tables</div>
                 <div class="st-tables" id="stRareTables"></div>
             </div>
+            <div class="st-pane" id="stPaneAvatars">
+                <div class="st-secret-tease"><div class="st-secret-mark">✦</div><p>The portrait artist takes commissions soon.</p></div>
+            </div>
+            <div class="st-pane" id="stPaneCards">
+                <div class="st-secret-tease"><div class="st-secret-mark">✦</div><p>The royal printer is inking the plates.</p></div>
+            </div>
             <div class="st-pane" id="stPaneSecret">
                 <div class="st-secret" id="stSecretBody"></div>
             </div>
@@ -61,8 +66,15 @@
         </div>
     </div>
     <div class="st-inspect" id="tableInspect" onclick="closeTableInspect()"></div>
+    <div class="st-inspect" id="mintPanel" onclick="this.classList.remove('active')">
+        <div class="tt-insp-inner mint-inner" onclick="event.stopPropagation()">
+            <div class="st-tables-head mint-head">The Royal Mint</div>
+            <div class="st-mint" id="storePacks"></div>
+        </div>
+        <div class="st-insp-close" onclick="event.stopPropagation(); document.getElementById('mintPanel').classList.remove('active')">✕</div>
+    </div>
 </div>
-<div class="pv-note">PREVIEW — mock data, nothing for sale. Tap the tabs. The ?? tab has a demo unlock.</div>
+<div class="pv-note">PREVIEW — mock data, nothing for sale. Unlocks here are pretend. The ?? tab has a demo unlock.</div>
 
 <script src="../js/tablefx-pts.js"></script>
 <script src="../js/tablefx.js"></script>
@@ -99,39 +111,48 @@ document.getElementById('storePacks').innerHTML = PACKS.map(function(p){
 var TABLE_SKINS = [
     { id: 'oak', name: 'Royal Oak', swatch: '' },
     { id: 'leather', name: 'Oxblood Leather', swatch: 'tsw-leather' },
-    { id: 'velvet', name: 'Crimson Velvet', swatch: 'tsw-velvet' },
-    { id: 'queens', name: "The Queen's Table", swatch: 'tsw-queens' },
-    { id: 'emerald', name: 'Emerald Court', swatch: 'tsw-emerald' },
-    { id: 'celestial', name: 'Midnight Atlas', swatch: 'tsw-celestial' },
-    { id: 'map', name: "The Cartographer's Desk", swatch: 'tsw-map' },
-    { id: 'alchemist', name: "Alchemist's Slate", swatch: 'tsw-alchemist' },
-    { id: 'hero-explorer', name: "The Explorer's Table", swatch: 'tsw-hero-explorer', group: 'hero' },
-    { id: 'hero-merchant', name: "The Merchant's Table", swatch: 'tsw-hero-merchant', group: 'hero' },
-    { id: 'hero-bandit', name: "The Bandit's Table", swatch: 'tsw-hero-bandit', group: 'hero' },
-    { id: 'hero-fisherman', name: "The Fisherman's Table", swatch: 'tsw-hero-fisherman', group: 'hero' },
-    { id: 'hero-scientist', name: "The Scientist's Table", swatch: 'tsw-hero-scientist', group: 'hero' },
-    { id: 'hero-knight', name: "The Knight's Table", swatch: 'tsw-hero-knight', group: 'hero' },
-    { id: 'hero-doctor', name: "The Doctor's Table", swatch: 'tsw-hero-doctor', group: 'hero' },
-    { id: 'hero-fiddler', name: "The Fiddler's Table", swatch: 'tsw-hero-fiddler', group: 'hero' },
-    { id: 'hero-duchess', name: "The Duchess's Table", swatch: 'tsw-hero-duchess', group: 'hero' },
-    { id: 'hero-magician', name: "The Magician's Table", swatch: 'tsw-hero-magician', group: 'hero' },
-    { id: 'rare-ember', name: 'The Ember Throne', swatch: 'tsw-rare-ember', group: 'rare' },
-    { id: 'rare-astronomer', name: 'The Astronomer Royal', swatch: 'tsw-rare-astronomer', group: 'rare' },
-    { id: 'rare-vault', name: 'The Drowned Vault', swatch: 'tsw-rare-vault', group: 'rare' }
+    { id: 'velvet', name: 'Crimson Velvet', swatch: 'tsw-velvet', price: 15 },
+    { id: 'queens', name: "The Queen's Table", swatch: 'tsw-queens', price: 15 },
+    { id: 'emerald', name: 'Emerald Court', swatch: 'tsw-emerald', price: 25 },
+    { id: 'celestial', name: 'Midnight Atlas', swatch: 'tsw-celestial', price: 25 },
+    { id: 'map', name: "The Cartographer's Desk", swatch: 'tsw-map', price: 25 },
+    { id: 'alchemist', name: "Alchemist's Slate", swatch: 'tsw-alchemist', price: 35 },
+    { id: 'hero-explorer', name: "The Explorer's Table", lock: 'hero', swatch: 'tsw-hero-explorer', group: 'hero' },
+    { id: 'hero-merchant', name: "The Merchant's Table", lock: 'hero', swatch: 'tsw-hero-merchant', group: 'hero' },
+    { id: 'hero-bandit', name: "The Bandit's Table", lock: 'hero', swatch: 'tsw-hero-bandit', group: 'hero' },
+    { id: 'hero-fisherman', name: "The Fisherman's Table", lock: 'hero', swatch: 'tsw-hero-fisherman', group: 'hero' },
+    { id: 'hero-scientist', name: "The Scientist's Table", lock: 'hero', swatch: 'tsw-hero-scientist', group: 'hero' },
+    { id: 'hero-knight', name: "The Knight's Table", lock: 'hero', swatch: 'tsw-hero-knight', group: 'hero' },
+    { id: 'hero-doctor', name: "The Doctor's Table", lock: 'hero', swatch: 'tsw-hero-doctor', group: 'hero' },
+    { id: 'hero-fiddler', name: "The Fiddler's Table", lock: 'hero', swatch: 'tsw-hero-fiddler', group: 'hero' },
+    { id: 'hero-duchess', name: "The Duchess's Table", lock: 'hero', swatch: 'tsw-hero-duchess', group: 'hero' },
+    { id: 'hero-magician', name: "The Magician's Table", lock: 'hero', swatch: 'tsw-hero-magician', group: 'hero' },
+    { id: 'rare-ember', name: 'The Ember Throne', lock: 'feat', swatch: 'tsw-rare-ember', group: 'rare' },
+    { id: 'rare-astronomer', name: 'The Astronomer Royal', lock: 'feat', swatch: 'tsw-rare-astronomer', group: 'rare' },
+    { id: 'rare-vault', name: 'The Drowned Vault', lock: 'feat', swatch: 'tsw-rare-vault', group: 'rare' }
 ];
 var equipped = 'oak';
+var ownedExtra = [];            // preview: unlocks land here
+function canUse(s) { return (!s.price && !s.lock) || ownedExtra.indexOf(s.id) >= 0; }
+function stateLine(s) {
+    if (s.id === equipped) return '✦ On your table';
+    if (canUse(s)) return 'Tap to view';
+    if (s.lock === 'hero') return '🔒 Level up to earn';
+    if (s.lock === 'feat') return '🔒 Earned by deed';
+    return '★ ' + s.price + ' to unlock';
+}
 function renderShelves() {
     [['stTables', TABLE_SKINS.filter(function(s){ return !s.group; })],
      ['stHeroTables', TABLE_SKINS.filter(function(s){ return s.group === 'hero'; })],
      ['stRareTables', TABLE_SKINS.filter(function(s){ return s.group === 'rare'; })]
     ].forEach(function(sh) {
         document.getElementById(sh[0]).innerHTML = sh[1].map(function(s){
-            return '<div class="st-table-card' + (s.id === equipped ? ' equipped' : '') + '" '
+            return '<div class="st-table-card' + (s.id === equipped ? ' equipped' : '') + (canUse(s) ? '' : ' locked') + '" '
                 + 'onclick="inspectTable(\'' + s.id + '\')">'
                 + '<div class="st-table-swatch ' + s.swatch + '"'
                 + (s.swatch ? '' : ' style="background: radial-gradient(ellipse at 50% 40%, #6b4a30 0%, #4a3020 55%, #2a1a10 100%)"') + '></div>'
                 + '<div class="st-table-plate"><span class="st-table-name">' + s.name + '</span>'
-                + '<span class="st-table-state">' + (s.id === equipped ? '✦ On your table' : 'Tap to view') + '</span></div></div>';
+                + '<span class="st-table-state">' + stateLine(s) + '</span></div></div>';
         }).join('');
     });
 }
@@ -179,13 +200,20 @@ function renderTableInspect() {
     TABLE_SKINS.forEach(function(x){ if (x.id === _inspecting) s = x; });
     if (!s) { box.classList.remove('active'); box.innerHTML = ''; return; }
     var isEq = s.id === equipped;
+    var MOCK_STARS = 110;
+    var action;
+    if (isEq) action = '<span class="st-owned">✦ On your table</span>';
+    else if (canUse(s)) action = '<button class="st-buy" onclick="event.stopPropagation(); equipped=\'' + s.id + '\'; renderShelves(); renderTableInspect()">Equip</button>';
+    else if (s.lock === 'hero') action = '<span class="tt-insp-lock">🔒 Earned by leveling your hero</span>';
+    else if (s.lock === 'feat') action = '<span class="tt-insp-lock">🔒 Earned by royal deed</span>';
+    else if (MOCK_STARS >= s.price) action = '<button class="st-buy" onclick="event.stopPropagation(); ownedExtra.push(\'' + s.id + '\'); renderShelves(); renderTableInspect()">Unlock — ★ ' + s.price + '</button>';
+    else action = '<button class="st-buy poor" disabled>★ ' + s.price + '</button>';
     box.innerHTML = '<div class="tt-insp-inner" onclick="event.stopPropagation()">'
         + '<div class="tt-insp-surface ' + s.swatch + '" id="ttInspSurface"'
         + (s.swatch ? '' : ' style="background: radial-gradient(ellipse at 50% 40%, #6b4a30 0%, #4a3020 55%, #2a1a10 100%)"') + '></div>'
         + '<div class="tt-insp-row"><span class="tt-insp-id"><span class="st-name">' + s.name + '</span>'
-        + (s.group === 'rare' ? '<span class="tt-insp-rare">✦ RARE — it moves</span>' : '') + '</span>'
-        + (isEq ? '<span class="st-owned">✦ On your table</span>'
-                : '<button class="st-buy" onclick="event.stopPropagation(); equipped=\'' + s.id + '\'; renderShelves(); renderTableInspect()">Equip</button>')
+        + (s.group === 'rare' ? '<span class="tt-insp-rare">✦ RARE</span>' : '') + '</span>'
+        + action
         + '</div></div>'
         + '<div class="st-insp-close" onclick="event.stopPropagation(); closeTableInspect()">✕</div>';
     box.classList.add('active');

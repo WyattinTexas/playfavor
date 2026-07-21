@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — A Game of Royal Succession</title>
-    <link rel="stylesheet" href="css/style.css?v=20260721160320">
+    <link rel="stylesheet" href="css/style.css?v=20260721164415">
     <!-- Skylar's melee cinematic — loaded AFTER style.css so its .ms-* rules win. -->
     <link rel="stylesheet" href="css/melee.css?v=20260720224914">
     <link rel="icon" type="image/png" href="assets/ui/favicon-serpent.png">
@@ -215,17 +215,17 @@
                  renderers write into (meta.js: storePacks/storeBody; ui.js:
                  the table shelves) so no renderer changed. "??" = hidden
                  heroes, teased while locked (see storeSecret in ui.js). -->
+            <!-- The Mint left the tab row (Wyatt 7/21) — Stars are bought from
+                 the sign-side button; the bundles live in the #mintPanel easel. -->
+            <button class="st-stars-btn" onclick="openMint()">★ Purchase Stars</button>
             <div class="st-tabs" id="stTabs">
                 <button class="st-tab on" data-pane="stPaneHeroes" onclick="switchStoreTab('stPaneHeroes')">Heroes</button>
-                <button class="st-tab" data-pane="stPaneMint" onclick="switchStoreTab('stPaneMint')">The Mint</button>
                 <button class="st-tab" data-pane="stPaneTables" onclick="switchStoreTab('stPaneTables')">Tables</button>
+                <button class="st-tab" data-pane="stPaneAvatars" onclick="switchStoreTab('stPaneAvatars')">Avatars</button>
+                <button class="st-tab" data-pane="stPaneCards" onclick="switchStoreTab('stPaneCards')">Cards</button>
                 <button class="st-tab st-tab-secret" data-pane="stPaneSecret" id="stTabSecret" onclick="switchStoreTab('stPaneSecret')">? ?</button>
             </div>
             <div class="st-scroll">
-                <!-- The Royal Mint — real-money star bundles (PayPal via the box IPN) -->
-                <div class="st-pane" id="stPaneMint">
-                    <div class="st-mint" id="storePacks"></div>
-                </div>
                 <div class="st-pane on" id="stPaneHeroes">
                     <div class="st-grid" id="storeBody"></div>
                 </div>
@@ -240,6 +240,19 @@
                     <div class="st-tables-head">Rare Tables</div>
                     <div class="st-tables" id="stRareTables"></div>
                 </div>
+                <!-- Avatars + Cards — shelves Wyatt stocks later -->
+                <div class="st-pane" id="stPaneAvatars">
+                    <div class="st-secret-tease">
+                        <div class="st-secret-mark">✦</div>
+                        <p>The portrait artist takes commissions soon.</p>
+                    </div>
+                </div>
+                <div class="st-pane" id="stPaneCards">
+                    <div class="st-secret-tease">
+                        <div class="st-secret-mark">✦</div>
+                        <p>The royal printer is inking the plates.</p>
+                    </div>
+                </div>
                 <div class="st-pane" id="stPaneSecret">
                     <div class="st-secret" id="stSecretBody"></div>
                 </div>
@@ -253,6 +266,14 @@
         <div class="st-inspect" id="storeInspect" onclick="event.stopPropagation(); FLB.closeInspect()"></div>
         <!-- Table inspect — see the surface (rare ones ANIMATE) before equipping -->
         <div class="st-inspect" id="tableInspect" onclick="event.stopPropagation(); closeTableInspect()"></div>
+        <!-- The Royal Mint easel — meta.js keeps writing into #storePacks -->
+        <div class="st-inspect" id="mintPanel" onclick="event.stopPropagation(); closeMint()">
+            <div class="tt-insp-inner mint-inner" onclick="event.stopPropagation()">
+                <div class="st-tables-head mint-head">The Royal Mint</div>
+                <div class="st-mint" id="storePacks"></div>
+            </div>
+            <div class="st-insp-close" onclick="event.stopPropagation(); closeMint()">✕</div>
+        </div>
         <div class="ov-close" onclick="FLB.closeStore()">ESC</div>
     </div>
 
@@ -589,9 +610,9 @@
     <script defer src="data/achievements.js?v=20260720224914"></script>
     <script defer src="engine/gameState.js?v=20260720224914"></script>
     <script defer src="js/melee.js?v=20260720224914"></script>
-    <script defer src="js/ui.js?v=20260721160320"></script>
-    <script defer src="js/tablefx-pts.js?v=20260721160320"></script>
-    <script defer src="js/tablefx.js?v=20260721160320"></script>
+    <script defer src="js/ui.js?v=20260721164415"></script>
+    <script defer src="js/tablefx-pts.js?v=20260721164415"></script>
+    <script defer src="js/tablefx.js?v=20260721164415"></script>
     <script defer src="js/ambient.js?v=20260720224914"></script>
     <script defer src="js/meta.js?v=20260720224914"></script>
     <script defer src="js/achievements.js?v=20260720224914"></script>

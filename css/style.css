@@ -7290,6 +7290,31 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     .tfx-img { animation: none !important; }
 }
 
+/* ═══ STORE ECONOMY (Wyatt 7/21) ═══ */
+.st-stars-btn {
+    position: absolute; top: 44px; right: 16px; z-index: 3;
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: 12px;
+    letter-spacing: 1.4px; text-transform: uppercase;
+    color: #2a1810; cursor: pointer;
+    background: linear-gradient(165deg, #f7ecd2, #e2cd9d);
+    border: 1px solid #a98d54; border-radius: 999px;
+    padding: 6px 14px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+}
+.st-stars-btn:hover { transform: translateY(-1px); box-shadow: 0 5px 12px rgba(232, 195, 75, 0.4); }
+.mint-inner { width: min(620px, 90%); padding-bottom: 10px; }
+.mint-head { border-top: none; text-align: center; padding: 14px 0 0; margin: 0 0 4px; }
+.tt-insp-lock {
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: 12px;
+    letter-spacing: 1.2px; color: #cbb377; opacity: 0.85; text-align: right;
+}
+/* locked shelf cards: still browsable, clearly not yours yet */
+.st-table-card.locked .st-table-swatch { filter: saturate(0.65) brightness(0.72); }
+.st-table-card.locked .st-table-state { color: #b39a63; }
+@media (orientation: landscape) and (max-height: 540px) {
+    .st-stars-btn { top: 34px; right: 10px; font-size: 10px; padding: 4px 10px; }
+}
+
 /* ═══ TABLE INSPECT — the surface at size before you equip ═══ */
 .tt-insp-inner {
     display: flex; flex-direction: column;
