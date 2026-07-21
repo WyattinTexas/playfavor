@@ -84,9 +84,13 @@
     const PERSONAS = [
         { key: 'thorne',     uid: 'persona_thorne',     name: 'Papa Johns',     hero: 'bandit',    seedRating: 1200, strong: ['power', 'prospecting'] },
         { key: 'rosalind',   uid: 'persona_rosalind',   name: 'Mable Stadango', hero: 'fisherman', seedRating: 1700, strong: ['survival', 'knowledge'] },
-        { key: 'vespertine', uid: 'persona_vespertine', name: 'Sneaky Penguin', hero: 'duchess',   seedRating: 2200, strong: ['knowledge', 'prospecting'] },
-        { key: 'balthazar',  uid: 'persona_balthazar',  name: 'Athene',         hero: 'scientist', seedRating: 2800, strong: ['alchemy', 'knowledge'] },
-        { key: 'ashcroft',   uid: 'persona_ashcroft',   name: 'HotshotGG',      hero: 'knight',    seedRating: 3500, strong: ['power', 'survival'] },
+        // ⚠ Top three RESEEDED 7/20 (Wyatt's numbers: 1.87 / 1.94 / 2.10).
+        // The seed is the mean-reversion ANCHOR (personaDelta's PULL), so it
+        // must match the live rows' ratings or every posted game drags them
+        // back toward the old rungs. Live rows PATCHed the same day.
+        { key: 'vespertine', uid: 'persona_vespertine', name: 'Sneaky Penguin', hero: 'duchess',   seedRating: 1870, strong: ['knowledge', 'prospecting'] },
+        { key: 'balthazar',  uid: 'persona_balthazar',  name: 'Athene',         hero: 'scientist', seedRating: 1940, strong: ['alchemy', 'knowledge'] },
+        { key: 'ashcroft',   uid: 'persona_ashcroft',   name: 'HotshotGG',      hero: 'knight',    seedRating: 2100, strong: ['power', 'survival'] },
     ];
 
     // Small gold crown — inline SVG so the champion mark is OURS (royal,
@@ -986,6 +990,10 @@
             else localStorage.removeItem('favorAvatar');
             mirrorOwned((row && row.owned) || {});
             localStorage.setItem('favorEarned', JSON.stringify([]));
+            // The adopted court's own linked identities ride along; any
+            // mirror of the abandoned account's link must not.
+            if (row && row.identities) localStorage.setItem('favorIdentity', JSON.stringify(row.identities));
+            else localStorage.removeItem('favorIdentity');
             ['favorSoloSave', 'favorOffer', 'favorPendingStars', 'favorSidePref']
                 .forEach(k => localStorage.removeItem(k));
             // Celebration latches belong to the account, not the glass —
@@ -994,8 +1002,242 @@
                 .filter(k => /^favorShown(SideB|Unlock)_/.test(k))
                 .forEach(k => localStorage.removeItem(k));
         } catch (e) { /* storage sick — the reload still lands most of it */ }
+        shellPersistUid(c);   // the Keychain follows the account, not the glass
         if (!opts.noReload) location.reload();
         return { ok: true };
+    }
+
+    // ═══ Court Sign-In — platform identity replaces the copy/paste seal
+    // (Wyatt 7/20 eve). One identity per provider per account, one account
+    // per identity: favor/identities/{provider_sub} → { uid } is the whole
+    // registry, claimed by transaction so two devices can't split it. The
+    // seal survives underneath as the internal token — signing in on a new
+    // device simply claimSeal()s the mapped uid. Platform picks the ONE
+    // offered door: Apple in the iOS shell, Steam identity in the Steam
+    // shell (stub until the Steam build is testable), Google on the web.
+    //
+    // CONFLICT RULE (deliberate): an identity already linked to another
+    // court NEVER re-links — the device SWITCHES to the linked court after
+    // a named two-tap confirm (the seal-restore grammar). An account
+    // already sealed to a different identity of the same provider refuses
+    // politely. First link wins; nothing merges; nothing silently moves.
+    const SHELL_IOS = /FavorShell-iOS/.test(navigator.userAgent);
+    const SHELL_STEAM = /FavorShell-Steam/.test(navigator.userAgent);
+    // "FAVOR Web" client on the testroom-75200 project (created 7/20).
+    // Origins: playfavor.net, www.playfavor.net, localhost:8891 (the rig).
+    const GOOGLE_CLIENT_ID = window.__FAVOR_GOOGLE_CLIENT
+        || '711812846396-bjsbsq2862torejihjrbbb13kl43393j.apps.googleusercontent.com';
+    // GIS only mounts where it can actually work: an authorized origin and
+    // a REAL browser. Under automation (navigator.webdriver — puppeteer,
+    // the ui-audit) Google's iframe just spills origin errors into the
+    // console the suite rightly refuses to accept — those environments get
+    // the quiet note instead. Humans never have webdriver set.
+    const GIS_ORIGINS = ['https://playfavor.net', 'https://www.playfavor.net', 'http://localhost:8891'];
+    const gisAvailable = () => GOOGLE_CLIENT_ID !== 'PENDING'
+        && GIS_ORIGINS.includes(location.origin) && !navigator.webdriver;
+    const SIGN_PROVIDER = SHELL_IOS ? 'apple' : SHELL_STEAM ? 'steam' : 'google';
+    const SIGN_PROV_NAME = { apple: 'Apple ID', google: 'Google account', steam: 'Steam identity' };
+
+    // The iOS shell (b18+) injects window.__FAVORSHELL at documentStart and
+    // listens on webkit.messageHandlers.favorSign. b17 has neither — the
+    // section says "next update" instead of drawing a dead button.
+    function shellBridge() {
+        try {
+            return window.__FAVORSHELL && window.webkit
+                && window.webkit.messageHandlers && window.webkit.messageHandlers.favorSign
+                ? window.webkit.messageHandlers.favorSign : null;
+        } catch (e) { return null; }
+    }
+    function shellPersistUid(u) {
+        const b = shellBridge();
+        if (b) try { b.postMessage({ cmd: 'keychain_uid', uid: String(u || uid()) }); } catch (e) { /* shell absent */ }
+    }
+
+    // Firebase keys can't hold . # $ [ ] / — Apple subs carry dots, so every
+    // sub is escaped deterministically (collision-free, reversible).
+    function idKey(provider, sub) {
+        return provider + '_' + String(sub).replace(/[^A-Za-z0-9_-]/g,
+            c => '-' + c.charCodeAt(0).toString(16));
+    }
+    function myIdentities() {
+        if (_me && _me.identities) return _me.identities;
+        try { return JSON.parse(localStorage.getItem('favorIdentity')) || {}; }
+        catch (e) { return {}; }
+    }
+
+    // One entry for every provider's credential: resolve the identity and
+    // land in exactly one state — linked / already / switch / taken_mine /
+    // offline / error. The UI renders the state; nothing here reloads
+    // except a confirmed switch (through claimSeal).
+    let _signState = null;   // null | {state, ...} — drives the section render
+    async function applyIdentity(provider, sub, dispName) {
+        if (mode !== 'firebase') return setSignState({ state: 'offline' });
+        const key = idKey(provider, sub);
+        try {
+            const existing = await dbGet(`identities/${key}`);
+            if (existing && existing.uid && existing.uid !== uid()) {
+                return await armSwitch(provider, sub, existing.uid);
+            }
+            const mineSub = myIdentities()[provider];
+            if (!existing && mineSub && String(mineSub) !== String(sub)) {
+                // This court is already sealed to a DIFFERENT identity —
+                // refuse; linking a second would orphan the first silently.
+                return setSignState({ state: 'taken_mine', provider });
+            }
+            const res = await dbTxn(`identities/${key}`, cur => {
+                // RTDB null-guess: returning the claim on the local null is
+                // the documented provisional-stub pattern — the server
+                // compare rejects a stale guess and re-runs us with truth.
+                if (cur == null) return { uid: uid(), provider, sub: String(sub), name: dispName || myName(), at: Date.now() };
+                if (cur.uid === uid()) return cur;
+                return;   // abort — another court holds this identity
+            });
+            if (res.committed && res.value && res.value.uid === uid()) {
+                const ids = { ...myIdentities(), [provider]: String(sub) };
+                await dbUpdate(`players/${uid()}`, { name: myName(), lastSeen: Date.now(), identities: ids });
+                _me = { ...(_me || {}), identities: ids };
+                try { localStorage.setItem('favorIdentity', JSON.stringify(ids)); } catch (e) { /* mirror only */ }
+                shellPersistUid(uid());
+                return setSignState({ state: 'linked', provider });
+            }
+            // Lost a claim race — the winner is the switch target.
+            const now = await dbGet(`identities/${key}`);
+            if (now && now.uid && now.uid !== uid()) return await armSwitch(provider, sub, now.uid);
+            return setSignState({ state: 'error' });
+        } catch (e) {
+            return setSignState({ state: 'error' });
+        }
+    }
+    async function armSwitch(provider, sub, targetUid) {
+        const prev = await previewSeal(targetUid);
+        if (!prev.ok) return setSignState({ state: 'error' });
+        return setSignState({
+            state: 'switch', provider, sub, targetUid,
+            name: prev.name, rating: prev.rating, games: prev.games, row: prev.row,
+        });
+    }
+    function confirmSwitch() {
+        if (!_signState || _signState.state !== 'switch') return;
+        claimSeal(_signState.targetUid, _signState.row);   // persists Keychain + reloads
+    }
+    function setSignState(s) {
+        _signState = s;
+        renderSigninSection();
+        return s;
+    }
+
+    // ── Google (web): GIS button, lazy-loaded ────────────────────────
+    let _gisLoading = false;
+    function ensureGis(cb) {
+        if (window.google && google.accounts && google.accounts.id) { cb(); return; }
+        if (_gisLoading) { setTimeout(() => ensureGis(cb), 250); return; }
+        _gisLoading = true;
+        const s = document.createElement('script');
+        s.src = 'https://accounts.google.com/gsi/client';
+        s.async = true;
+        s.onload = () => cb();
+        s.onerror = () => { _gisLoading = false; setSignState({ state: 'error' }); };
+        document.head.appendChild(s);
+    }
+    function decodeJwtPayload(jwt) {
+        const b64 = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+        return JSON.parse(atob(b64 + '='.repeat((4 - b64.length % 4) % 4)));
+    }
+    function mountGoogleButton() {
+        const host = document.getElementById('pfGsi');
+        if (!host || !gisAvailable()) return;
+        ensureGis(() => {
+            const live = document.getElementById('pfGsi');   // panel may have re-rendered
+            if (!live) return;
+            try {
+                google.accounts.id.initialize({
+                    client_id: GOOGLE_CLIENT_ID,
+                    callback: (resp) => {
+                        try {
+                            const p = decodeJwtPayload(resp.credential);
+                            applyIdentity('google', p.sub, p.name || p.email || null);
+                        } catch (e) { setSignState({ state: 'error' }); }
+                    },
+                    itp_support: true,
+                });
+                google.accounts.id.renderButton(live, {
+                    theme: 'filled_black', size: 'large', shape: 'pill',
+                    text: 'signin_with', logo_alignment: 'left', width: 280,
+                });
+            } catch (e) { setSignState({ state: 'error' }); }
+        });
+    }
+
+    // ── Apple (iOS shell b18+): the shell runs ASAuthorization ───────
+    function appleSignIn() {
+        const b = shellBridge();
+        if (!b) return;
+        setSignState({ state: 'waiting' });
+        try { b.postMessage({ cmd: 'apple_signin' }); }
+        catch (e) { setSignState({ state: 'error' }); }
+    }
+    // Called by the shell via evaluateJavaScript.
+    function _appleResult(res) {
+        if (!res || !res.ok) {
+            setSignState(res && res.error === 'canceled' ? null : { state: 'error' });
+            return;
+        }
+        applyIdentity('apple', res.sub, res.name || null);
+    }
+
+    // ── The profile section — ONE door per platform ──────────────────
+    function signinSectionHtml() {
+        return `<div class="pf-sec">Court Sign-In</div><div id="pfSignin">${signinBodyHtml()}</div>`;
+    }
+    function signinBodyHtml() {
+        const provName = SIGN_PROV_NAME[SIGN_PROVIDER];
+        const s = _signState;
+        if (s && s.state === 'switch') {
+            const cur = _me || {};
+            const curGames = cur.games || 0;
+            return `
+                <div class="pf-note">That ${SIGN_PROV_NAME[s.provider]} is the seal of <b>${s.name}</b>
+                    · rating ${fmtRating(s.rating)} · ${s.games} game${s.games === 1 ? '' : 's'}.
+                    Taking that seat replaces the court on THIS device${curGames > 0
+                        ? ` — your current court (<b>${myName()}</b>, ${curGames} game${curGames === 1 ? '' : 's'}) stays behind, unlinked`
+                        : ''}.</div>
+                <div class="pf-row pf-signrow">
+                    <button class="btn-royal primary" onclick="FLB._confirmSwitch()"><span>Become ${s.name}</span></button>
+                    <button class="btn-royal" onclick="FLB._cancelSign()"><span>Stay as ${myName()}</span></button>
+                </div>`;
+        }
+        if (s && s.state === 'waiting') return '<div class="pf-note">Awaiting the seal…</div>';
+        const ids = myIdentities();
+        if (ids[SIGN_PROVIDER]) {
+            return `<div class="pf-note"><span class="pf-sealed">✓ Sealed to your ${provName}</span>
+                — sign in there on any device to take this seat.</div>`;
+        }
+        let door = '';
+        if (mode !== 'firebase') {
+            door = '<div class="pf-note">The realm is unreachable — sign-in needs the wire.</div>';
+        } else if (SIGN_PROVIDER === 'apple') {
+            door = shellBridge()
+                ? '<button class="pf-apple" id="pfAppleBtn" onclick="FLB._appleSignIn()"><span class="pf-apple-logo"></span> Sign in with Apple</button>'
+                : '<div class="pf-note">Account linking arrives with the next FAVOR update.</div>';
+        } else if (SIGN_PROVIDER === 'steam') {
+            door = '<div class="pf-note">Steam sign-in arrives with the Steam release.</div>';
+        } else {
+            door = gisAvailable()
+                ? '<div class="pf-gsi-host" id="pfGsi"></div>'
+                : '<div class="pf-note">Sign-in is being fitted to this door — try again shortly.</div>';
+        }
+        const err = s && s.state === 'error' ? '<div class="pf-note pf-sign-err">The seal did not take — try again.</div>'
+            : s && s.state === 'offline' ? '<div class="pf-note pf-sign-err">The realm is unreachable — try again online.</div>'
+            : s && s.state === 'taken_mine' ? `<div class="pf-note pf-sign-err">This court already answers to a different ${provName}.</div>`
+            : '';
+        return `<div class="pf-note">Link your court to your ${provName} — then signing in on any
+            device seats you here, rating and heroes intact.</div>${door}${err}`;
+    }
+    function renderSigninSection() {
+        const host = document.getElementById('pfSignin');
+        if (!host) return;
+        host.innerHTML = signinBodyHtml();
+        mountGoogleButton();
     }
 
     // ═══ Menu UI — profile chip, profile panel, leaderboard ══════════
@@ -1194,6 +1436,7 @@
                     <img src="assets/characters/${c.filename}" alt="${c.name}">
                 </button>`).join('')}
             </div>
+            ${signinSectionHtml()}
             <div class="pf-sec">Court Seal</div>
             <div class="pf-note">Your seal restores this account on any device — copy it somewhere safe <b>before</b> deleting the app.</div>
             <div class="pf-row pf-sealrow">
@@ -1253,6 +1496,7 @@
             if (okd) { renderProfileChip(); closeProfile(); }
             else document.getElementById('pfName').classList.add('bad');
         };
+        mountGoogleButton();   // the section's HTML is in place — GIS can mount
         document.getElementById('profilePanel').classList.add('active');
     }
     function closeProfile() { document.getElementById('profilePanel').classList.remove('active'); }
@@ -1891,6 +2135,14 @@
         bindQueuePicker();
         await connect();
         await readPlayer();
+        // The Keychain mirrors whichever court this glass holds, every
+        // boot — so a reinstall (storage evicted) walks back in silently
+        // via the shell's documentStart heal. And the identity mirror
+        // heals from the row, same as the name/avatar mirrors above.
+        shellPersistUid(uid());
+        if (_me && _me.identities) {
+            try { localStorage.setItem('favorIdentity', JSON.stringify(_me.identities)); } catch (e) { /* mirror only */ }
+        }
         renderProfileChip();
         // A store opened during the 'connecting' window painted browse-only
         // — repaint now that the backend verdict is in.
@@ -2001,6 +2253,10 @@
         heroLevel, heroLevelPct, heroFv, sideBUnlocked, xpRibbonHtml,
         checkEarnedHero, showSideBCelebration, sideBLevel: () => SIDEB_LEVEL,
         previewSeal, claimSeal,
+        _appleSignIn: appleSignIn, _appleResult,
+        _confirmSwitch: confirmSwitch,
+        _cancelSign: () => setSignState(null),
+        _applyIdentity: applyIdentity,   // rig/verify seam — not a player door
         askBuyStars, buyStars, starCheckoutUrl, watchForStars,
         starPacks: () => STAR_PACKS,
         setAvatar, myAvatar, avatarDisc,

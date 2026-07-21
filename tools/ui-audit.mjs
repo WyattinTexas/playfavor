@@ -7578,10 +7578,20 @@ console.log('── Side B: ribbon + badges + chooser + the table rides the B bo
     const el = document.getElementById('charDetail');
     const frame = el.querySelector('.cd-frame');
     const ring = el.querySelector('.cd-ring');
+    const fr = frame ? frame.getBoundingClientRect() : null;
+    const confirm = el.querySelector('#cdConfirm');
+    const cr = confirm ? confirm.getBoundingClientRect() : null;
     return {
       active: el.classList.contains('active'),
       strip: !!el.querySelector('.cd-slot'),
-      frameW: frame ? Math.round(frame.getBoundingClientRect().width) : 0,
+      frameW: fr ? Math.round(fr.width) : 0,
+      // 7/20 eve contract: TWO COLUMNS, wider and shorter — the whole card
+      // (and its Confirm) must sit inside the viewport with no scrolling.
+      fits: !!fr && fr.top >= -0.5 && fr.bottom <= innerHeight + 0.5
+        && fr.left >= -0.5 && fr.right <= innerWidth + 0.5
+        && el.scrollHeight <= el.clientHeight + 1
+        && !!cr && cr.right <= innerWidth + 0.5 && cr.right <= fr.right + 0.5,
+      twoCol: !!el.querySelector('.cd-art-col') && !!el.querySelector('.cd-info-col'),
       ring: !!ring,
       ringLeft: ring ? ring.style.left : '',
       tabs: [...el.querySelectorAll('.cd-tab')].map(t => t.textContent.trim()),
@@ -7590,8 +7600,8 @@ console.log('── Side B: ribbon + badges + chooser + the table rides the B bo
   });
   ok(detailA.active && !detailA.strip,
     'the detail opens as a compact card — no slot summaries (7/20 pm)');
-  ok(detailA.frameW > 0 && detailA.frameW <= 500,
-    `the card is COMPACT (${detailA.frameW}px wide ≤ 500)`);
+  ok(detailA.twoCol && detailA.fits && detailA.frameW <= 880,
+    `the card is two-column and fits WHOLE — no clip, no scroll (${detailA.frameW}px wide, 7/20 eve)`);
   ok(detailA.ring && detailA.ringLeft === '50%',
     `the ring rides the CENTER slot of the viewed board (${detailA.ringLeft})`);
   ok(detailA.aOn && detailA.tabs.length === 2 && /Oathbreaker/.test(detailA.tabs[1]),

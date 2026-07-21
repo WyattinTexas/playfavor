@@ -16,6 +16,7 @@ class GameViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     private let gameURL = URL(string: "https://playfavor.net/")!
     private var webView: WKWebView!
     private var retryOverlay: UIView?
+    private let signBridge = FavorSignBridge()
 
     override var prefersStatusBarHidden: Bool { true }
     override var prefersHomeIndicatorAutoHidden: Bool { true }
@@ -31,6 +32,26 @@ class GameViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         config.mediaTypesRequiringUserActionForPlayback = []
         config.websiteDataStore = .default()
 
+        // ── Court Sign-In bridge (b18) + Keychain account persistence ──
+        // The page learns the bridge exists via __FAVORSHELL, and a
+        // reinstall (webview storage evicted) heals favorUid from the
+        // Keychain BEFORE any page script runs — the account walks back
+        // in with no user action. Keychain value is filtered to the uid
+        // alphabet on write, and re-filtered here before interpolation.
+        let ucc = WKUserContentController()
+        ucc.add(signBridge, name: "favorSign")
+        let kcUid = (FavorKeychain.get("favorUid") ?? "").filter { $0.isLetter || $0.isNumber }
+        let boot = """
+        window.__FAVORSHELL = { platform: 'ios', build: 18, apple: true };
+        try {
+            if (!localStorage.getItem('favorUid') && '\(kcUid)') {
+                localStorage.setItem('favorUid', '\(kcUid)');
+            }
+        } catch (e) {}
+        """
+        ucc.addUserScript(WKUserScript(source: boot, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        config.userContentController = ucc
+
         webView = WKWebView(frame: view.bounds, configuration: config)
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         webView.navigationDelegate = self
@@ -45,6 +66,9 @@ class GameViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.allowsBackForwardNavigationGestures = false
         view.addSubview(webView)
+
+        signBridge.webView = webView
+        signBridge.host = self
 
         webView.load(URLRequest(url: gameURL))
     }

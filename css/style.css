@@ -7313,34 +7313,54 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     padding: 8px 6px; border-top: 1px solid rgba(201,168,76,0.18);
 }
 
-/* ═══ §2 Character detail — the compact board read (7/20, resized same
-   day: Wyatt "too big, about 80% smaller" — a centered MODAL CARD now,
-   the board itself the read, no slot summaries). Width also bows to the
-   viewport height so the whole card always fits a phone in landscape. */
+/* ═══ §2 Character detail — the compact board read (7/20; re-laid the
+   same evening as TWO COLUMNS: the stacked card clipped its title at the
+   top, its Confirm at the right, and scrolled on landscape phones. Board
+   art carries the left column, everything written rides the right — the
+   card is wider and shorter and always fits whole. Scroll lives on the
+   BACKDROP with margin:auto centering, so if some pathological viewport
+   ever does overflow, the card scrolls from its top instead of clipping
+   it. Safe-area padding keeps the frame off notches; portrait falls back
+   to the stack via the media query below. */
 .char-detail {
     position: fixed; inset: 0; z-index: 8000; display: none;
     align-items: center; justify-content: center;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+             max(10px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
     background: rgba(10, 5, 2, 0.82); backdrop-filter: blur(4px);
 }
 .char-detail.active { display: flex; }
 .cd-frame {
-    width: min(480px, 92vw, calc((100vh - 175px) * 1.586));
-    max-height: 94vh; overflow-y: auto;
-    padding: 12px 14px 14px; border-radius: 12px;
+    margin: auto;   /* centered when it fits; scrolls from the TOP when it can't */
+    display: flex; align-items: center; gap: 16px;
+    width: min(880px, 100%);
+    padding: 14px; border-radius: 12px;
     border: 2px solid var(--gold-dark);
     background: linear-gradient(175deg, #2e1c0e, #1a0d05);
     box-shadow: 0 24px 80px rgba(0, 0, 0, 0.75);
 }
-.cd-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
-.cd-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.cd-title h2 { font-family: 'Cinzel', serif; font-size: clamp(20px, 3.4vw, 30px); color: var(--gold-light); text-shadow: 0 2px 0 #000; }
-.cd-epithet { font-family: 'EB Garamond', serif; font-style: italic; font-size: 16px; color: #e6cf9d; }
+/* The board is the read — as large as the viewport HEIGHT allows, capped
+   so the written column keeps its room. svh so iOS toolbars don't lie. */
+.cd-art-col {
+    flex: 0 0 auto;
+    width: clamp(220px, calc((100svh - 110px) * 1.586), 470px);
+    max-width: 56%; min-width: 0;
+}
+.cd-info-col {
+    flex: 1 1 0; min-width: 218px;
+    display: flex; flex-direction: column; justify-content: center;
+    gap: 10px;
+}
+.cd-title { display: flex; align-items: baseline; gap: 8px 12px; flex-wrap: wrap; }
+.cd-title h2 { font-family: 'Cinzel', serif; font-size: clamp(19px, 2.6vw, 26px); color: var(--gold-light); text-shadow: 0 2px 0 #000; }
+.cd-epithet { font-family: 'EB Garamond', serif; font-style: italic; font-size: 15px; color: #e6cf9d; }
 .cd-diff { font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.14em; color: var(--gold-dark); }
-.cd-rb { min-width: 200px; flex: 0 1 240px; }
-.cd-sidetabs { display: flex; gap: 10px; margin: 4px 0 10px; }
+.cd-rb { max-width: 240px; }
+.cd-sidetabs { display: flex; gap: 10px; }
 .cd-tab {
-    flex: 1; font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.1em;
-    padding: 9px 12px; border-radius: 6px; cursor: pointer; font-weight: 700;
+    flex: 1 1 0; min-width: 0; font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.1em;
+    padding: 7px 10px; border-radius: 6px; cursor: pointer; font-weight: 700;
     color: #b09a6d; background: linear-gradient(180deg, #3a2617, #241609);
     border: 1px solid rgba(201, 168, 76, 0.3);
 }
@@ -7361,8 +7381,25 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     transform: translate(-50%, -50%); pointer-events: none;
     filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
 }
-.cd-tip { margin-top: 8px; font-family: 'EB Garamond', serif; font-size: 13.5px; color: #8f7a5c; text-align: center; }
-.cd-actions { display: flex; gap: 12px; justify-content: center; margin-top: 12px; }
+.cd-tip { font-family: 'EB Garamond', serif; font-size: 13.5px; color: #8f7a5c; }
+.cd-actions { display: flex; gap: 12px; }
+/* btn-royal's stage dress (280px min, 48px pads, 3px tracking) cannot sit
+   two-abreast in this column — the letter-spaced text clips its own
+   overflow:hidden box. Sized to the column here, and never wrapped. */
+.cd-actions .btn-royal {
+    flex: 1 1 0; min-width: 0; padding: 12px 10px;
+    font-size: clamp(12px, 1.5vw, 15px); letter-spacing: 1.5px;
+}
+.cd-actions .btn-royal span { white-space: nowrap; }
+/* Portrait keeps the stack — width-bound, art on top, words below. */
+@media (orientation: portrait) {
+    .cd-frame { flex-direction: column; align-items: stretch; width: min(480px, 100%); gap: 12px; }
+    .cd-art-col { width: 100%; max-width: none; }
+    .cd-info-col { min-width: 0; }
+    .cd-title { justify-content: center; text-align: center; }
+    .cd-rb { max-width: none; }
+    .cd-tip { text-align: center; }
+}
 
 /* §5 (7/20) — the slide's skill delta in the confirm bubble */
 .sc-delta { display: flex; gap: 7px; justify-content: center; flex-wrap: wrap; margin: 2px 0 4px; }
@@ -7375,13 +7412,6 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
 .sc-d img { width: 14px; height: 14px; object-fit: contain; }
 .sc-d.good { color: #9fd79f; }
 .sc-d.bad { color: #e0a0a0; border-color: rgba(139, 26, 26, 0.45); }
-
-/* Compact detail-card chrome (7/20 pm resize) */
-.cd-head { margin-bottom: 8px; }
-.cd-title h2 { font-size: 19px; }
-.cd-rb { min-width: 150px; flex: 0 1 170px; }
-.cd-sidetabs { margin: 2px 0 8px; }
-.cd-tab { padding: 7px 10px; font-size: 10.5px; }
 
 /* ── The throw hint yields the stage (Wyatt 7/20): while ANY game overlay
    is up — mission browser/journal, a board, a rival, the hero detail, a
@@ -7410,3 +7440,22 @@ body:has(#howto-overlay.open) .throw-hint {
     padding: 8px 10px; user-select: all; -webkit-user-select: all;
 }
 .pf-restore-note b { color: var(--gold-light); }
+
+/* Court Sign-In (7/20) — the platform door that replaces the seal */
+#pfSignin .pf-note b { color: var(--gold-light); }
+.pf-sealed { color: #46d17f; font-style: normal; font-weight: 700; }
+.pf-sign-err { color: #e0a0a0; }
+.pf-gsi-host { display: flex; justify-content: center; padding: 6px 0 2px; min-height: 44px; }
+.pf-signrow { display: flex; gap: 10px; }
+.pf-signrow .btn-royal { flex: 1 1 0; min-width: 0; padding: 10px 12px; font-size: 12px; letter-spacing: 1px; }
+.pf-signrow .btn-royal span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pf-apple {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: min(280px, 100%); margin: 6px auto 2px; padding: 11px 18px;
+    border-radius: 99px; cursor: pointer;
+    background: #000; color: #fff; border: 1px solid #333;
+    font-family: -apple-system, 'Helvetica Neue', sans-serif;
+    font-size: 15px; font-weight: 600; letter-spacing: 0.01em;
+}
+.pf-apple:active { background: #1a1a1a; }
+.pf-apple-logo { font-size: 17px; line-height: 1; }

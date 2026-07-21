@@ -80,8 +80,11 @@ console.log('── Her Lost Father: grants 1 Prospecting, 3 Gold, 3 Scorn + map
   ok(g.players[0].gold === before.gold + 3, `+3 Gold (${before.gold} → ${g.players[0].gold})`);
   ok(g.players[0].scorn === before.scorn + 3, `+3 Scorn`);
   ok((g.players[0].skills.prospecting || 0) === before.pro + 1, `+1 Prospecting`);
-  ok(g.getPlayerMaps(0).includes('Her Lost Father') && g.getPlayerMaps(0).includes('Finding the Lost Corridor'),
-    'map held under both names');
+  // 7/20 (Skylar): a held map answers ONLY to its source name — the
+  // destination alias let step 1's map skip step 2 in every map chain
+  // (the Reunited exploit). reqMaps entries are all source names.
+  ok(g.getPlayerMaps(0).includes('Her Lost Father') && !g.getPlayerMaps(0).includes('Finding the Lost Corridor'),
+    'map held under its SOURCE name only (chain exploit closed)');
 
   console.log('── Finding the Lost Corridor: held map waives Mind\'s Eye ×2 AND cost');
   const flc = cardByName('Finding the Lost Corridor');
@@ -2104,8 +2107,10 @@ console.log('\n— Map chains: cards free missions, missions free cards (tester 
   p.playedCards = [{ ...cardByName('Guardian'), id: 'g1' }];
   p.missions = [{ ...missionByName('Defend the Throne') }];
   const held = g.getPlayerMaps(0);
-  ok(held.includes('Guardian') && held.includes('Defend the Throne'),
-    'a played map card answers to both its names');
+  // Source-name-only since 7/20 (the destination alias was the Reunited
+  // chain exploit); "OR Guardian Map" in the mission audit = source name.
+  ok(held.includes('Guardian') && !held.includes('Defend the Throne'),
+    'a played map card answers to its SOURCE name only');
   const probe = g.probeMissionRequirements(0, p.missions[0]);
   ok(probe.success && probe.details.mapUsed, 'the mission probe honors the held map');
   ok(g.turnInMission(0, 0).success, 'and the turn-in completes on the map alone');

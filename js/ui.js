@@ -976,34 +976,39 @@ function renderCharDetail() {
     const fv = (window.FLB && typeof FLB.heroFv === 'function') ? FLB.heroFv(base.id) : 0;
     const ribbon = (window.FLB && typeof FLB.xpRibbonHtml === 'function')
         ? `<div class="cd-rb">${FLB.xpRibbonHtml(fv, 11, 13)}</div>` : '';
-    // Compact modal (Wyatt 7/20 pm: "too big — about 80% smaller", and no
-    // slot summaries: the BOARD is the read). The ring rides the center
-    // slot at the shared BOARD_OV_TRACK geometry, exactly like the in-game
+    // Compact modal, TWO COLUMNS on landscape (Wyatt 7/20 eve: the stacked
+    // card clipped its title at the top, its Confirm at the right, and
+    // scrolled on phones — wider and shorter now: the board carries the
+    // left column, everything written rides the right; portrait phones
+    // keep the stack via the media query). The ring rides the center slot
+    // at the shared BOARD_OV_TRACK geometry, exactly like the in-game
     // thumbs, so the player sees where they'll start.
     el.innerHTML = `
         <div class="cd-frame">
-            <div class="cd-head">
+            <div class="cd-art-col">
+                <div class="cd-art">
+                    <img src="assets/characters/hd/${view.filename}" alt="${base.name}">
+                    <img class="cd-ring" src="assets/ui/slider-ring.png" alt=""
+                         style="left:${BOARD_OV_TRACK.lefts[2]}%; top:${BOARD_OV_TRACK.top}%">
+                </div>
+            </div>
+            <div class="cd-info-col">
                 <div class="cd-title">
                     <h2>${base.name}</h2>
                     ${view.epithet ? `<span class="cd-epithet">${view.epithet}</span>` : ''}
                     <span class="cd-diff">Difficulty ${'★'.repeat(base.difficulty || 1)}</span>
                 </div>
                 ${ribbon}
-            </div>
-            ${unlocked ? `
-            <div class="cd-sidetabs">
-                <button class="cd-tab${!onB ? ' on' : ''}" data-side="a">Side A · ${base.epithet || ''}</button>
-                <button class="cd-tab${onB ? ' on' : ''}" data-side="b">Side B · ${base.altEpithet || ''}</button>
-            </div>` : ''}
-            <div class="cd-art">
-                <img src="assets/characters/hd/${view.filename}" alt="${base.name}">
-                <img class="cd-ring" src="assets/ui/slider-ring.png" alt=""
-                     style="left:${BOARD_OV_TRACK.lefts[2]}%; top:${BOARD_OV_TRACK.top}%">
-            </div>
-            ${base.tip ? `<div class="cd-tip">Tip: <i>${base.tip}</i></div>` : ''}
-            <div class="cd-actions">
-                <button class="btn-royal" id="cdBack"><span>← Back</span></button>
-                <button class="btn-royal primary" id="cdConfirm"><span>Confirm</span></button>
+                ${unlocked ? `
+                <div class="cd-sidetabs">
+                    <button class="cd-tab${!onB ? ' on' : ''}" data-side="a">Side A · ${base.epithet || ''}</button>
+                    <button class="cd-tab${onB ? ' on' : ''}" data-side="b">Side B · ${base.altEpithet || ''}</button>
+                </div>` : ''}
+                ${base.tip ? `<div class="cd-tip">Tip: <i>${base.tip}</i></div>` : ''}
+                <div class="cd-actions">
+                    <button class="btn-royal" id="cdBack"><span>← Back</span></button>
+                    <button class="btn-royal primary" id="cdConfirm"><span>Confirm</span></button>
+                </div>
             </div>
         </div>`;
     el.onclick = (e) => { if (e.target === el) closeCharDetail(); };
