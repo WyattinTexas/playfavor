@@ -7430,18 +7430,7 @@ body:has(#howto-overlay.open) .throw-hint {
     display: none !important;
 }
 
-/* Court Seal (7/20) — the recovery code row in the profile */
-.pf-sealrow { display: flex; gap: 10px; align-items: center; }
-.pf-sealrow code {
-    flex: 1; min-width: 0; overflow-wrap: anywhere;
-    font-family: ui-monospace, Menlo, monospace; font-size: 13px;
-    color: var(--gold-light); background: rgba(0, 0, 0, 0.35);
-    border: 1px solid rgba(201, 168, 76, 0.3); border-radius: 6px;
-    padding: 8px 10px; user-select: all; -webkit-user-select: all;
-}
-.pf-restore-note b { color: var(--gold-light); }
-
-/* Court Sign-In (7/20) — the platform door that replaces the seal */
+/* Court Sign-In (7/20) — the platform door that replaced the Court Seal */
 #pfSignin .pf-note b { color: var(--gold-light); }
 .pf-sealed { color: #46d17f; font-style: normal; font-weight: 700; }
 .pf-sign-err { color: #e0a0a0; }

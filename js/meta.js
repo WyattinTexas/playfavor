@@ -1437,60 +1437,11 @@
                 </button>`).join('')}
             </div>
             ${signinSectionHtml()}
-            <div class="pf-sec">Court Seal</div>
-            <div class="pf-note">Your seal restores this account on any device — copy it somewhere safe <b>before</b> deleting the app.</div>
-            <div class="pf-row pf-sealrow">
-                <code id="pfSeal">${uid()}</code>
-                <button class="btn-royal" id="pfSealCopy"><span>Copy</span></button>
-            </div>
-            <div class="pf-row pf-namerow">
-                <input id="pfRestoreIn" maxlength="48" autocapitalize="off" autocorrect="off"
-                       spellcheck="false" placeholder="Paste a seal to restore that account">
-                <button class="btn-royal" id="pfRestoreBtn"><span>Restore</span></button>
-            </div>
-            <div class="pf-note pf-restore-note" id="pfRestoreNote" style="display:none"></div>
-
             <div class="pf-note">Champions are crowned nightly at 10 PM Eastern.${mode === 'local' ? '<br><b class="pf-local">LOCAL PROFILE — leaderboard offline</b>' : ''}</div>
         `;
-        document.getElementById('pfSealCopy').onclick = async () => {
-            const btn = document.getElementById('pfSealCopy').querySelector('span');
-            try { await navigator.clipboard.writeText(uid()); btn.textContent = 'Copied ✓'; }
-            catch (e) {
-                // Clipboard needs a secure context — select the code instead.
-                const sel = window.getSelection(), r = document.createRange();
-                r.selectNodeContents(document.getElementById('pfSeal'));
-                sel.removeAllRanges(); sel.addRange(r);
-                btn.textContent = 'Select & copy';
-            }
-            setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
-        };
-        // Two-tap restore: first tap PREVIEWS the row and names it, the
-        // second tap (button re-labelled) claims the seat and reloads.
-        let _sealArmed = null;
-        document.getElementById('pfRestoreBtn').onclick = async () => {
-            const inp = document.getElementById('pfRestoreIn');
-            const note = document.getElementById('pfRestoreNote');
-            const btn = document.getElementById('pfRestoreBtn').querySelector('span');
-            const code = inp.value.trim();
-            if (_sealArmed && _sealArmed.code === code) {
-                claimSeal(code, _sealArmed.row);
-                return;
-            }
-            _sealArmed = null;
-            btn.textContent = 'Restore';
-            const res = await previewSeal(code);
-            note.style.display = '';
-            if (!res.ok) {
-                note.innerHTML = res.why === 'shape' ? 'That doesn’t read like a Court Seal.'
-                    : res.why === 'self' ? 'That seal is already this account.'
-                    : res.why === 'offline' ? 'The realm is unreachable — try again online.'
-                    : 'No court answers this seal.';
-                return;
-            }
-            _sealArmed = { code, row: res.row };
-            note.innerHTML = `This seal belongs to <b>${res.name}</b> · rating ${fmtRating(res.rating)} · ${res.games} game${res.games === 1 ? '' : 's'}. Restoring replaces the account on THIS device.`;
-            btn.textContent = `Become ${res.name}`;
-        };
+        // The COURT SEAL section (copy/paste uid restore) retired 7/20 eve —
+        // Court Sign-In above is the restore mechanism now. previewSeal/
+        // claimSeal live on as the sign-in machinery's internal token.
         document.getElementById('pfSave').onclick = async () => {
             const okd = await rename(document.getElementById('pfName').value);
             if (okd) { renderProfileChip(); closeProfile(); }
