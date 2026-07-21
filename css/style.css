@@ -7290,6 +7290,49 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     .tfx-img { animation: none !important; }
 }
 
+/* ═══ STORE TABS (Wyatt+Skylar 7/21) — one category per pane ═══ */
+.st-tabs {
+    display: flex; gap: 8px; justify-content: center; align-items: center;
+    padding: 8px 6px 2px; flex: 0 0 auto;
+}
+.st-tab {
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: 13px;
+    letter-spacing: 1.6px; text-transform: uppercase;
+    color: #cbb377; background: rgba(28, 21, 12, 0.6);
+    border: 2px solid rgba(201, 168, 76, 0.28); border-radius: 999px;
+    padding: 5px 16px 6px; cursor: pointer; opacity: 0.82;
+    transition: border-color 0.15s, opacity 0.15s, background 0.15s, transform 0.15s;
+}
+.st-tab:hover { opacity: 1; border-color: rgba(201, 168, 76, 0.55); }
+.st-tab.on {
+    color: #ffe9ad; opacity: 1;
+    background: rgba(70, 50, 22, 0.72);
+    border-color: var(--gold, #c9a84c);
+    box-shadow: 0 0 12px rgba(201, 168, 76, 0.25);
+}
+.st-tab-secret { letter-spacing: 3px; padding-left: 13px; padding-right: 13px; }
+.st-tab-secret.locked { opacity: 0.5; border-style: dashed; }
+.st-tab-secret.locked.on { opacity: 0.9; }
+.st-pane { display: none; }
+.st-pane.on { display: block; }
+/* the mystery pane speaks in whispers */
+.st-secret-tease {
+    text-align: center; padding: 46px 20px 40px; color: #cbb377;
+    font-family: 'Cinzel', serif;
+}
+.st-secret-mark {
+    font-size: 64px; font-weight: 900; color: rgba(201, 168, 76, 0.5);
+    text-shadow: 0 0 24px rgba(201, 168, 76, 0.25); margin-bottom: 10px;
+}
+.st-secret-tease p { margin: 4px 0; font-size: 16px; letter-spacing: 1.5px; }
+.st-secret-sub { font-size: 12px; opacity: 0.65; font-style: italic; letter-spacing: 1px; }
+@media (orientation: landscape) and (max-height: 540px) {
+    .st-tabs { padding-top: 5px; gap: 6px; }
+    .st-tab { font-size: 11px; padding: 3px 11px 4px; letter-spacing: 1.1px; }
+    .st-secret-tease { padding: 22px 16px 18px; }
+    .st-secret-mark { font-size: 42px; }
+}
+
 /* The Table Maker — a quiet shelf below the heroes */
 .st-tables-head {
     font-family: 'Cinzel', serif; font-weight: 700;

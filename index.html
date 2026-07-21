@@ -210,22 +210,39 @@
         <div class="lb-inner st-inner" onclick="event.stopPropagation()">
             <div class="st-awning" aria-hidden="true"></div>
             <div class="lb-title st-sign">The Royal Emporium<span class="st-stars" id="storeStars"></span></div>
-            <!-- Everything below the sign scrolls as ONE region so the hero
-                 shelf gets full room and the Table Maker is no longer locked
-                 to the bottom (Wyatt 7/17). -->
+            <!-- TABS (Wyatt+Skylar 7/21): the one-page scroll got crowded —
+                 each category is a pane now. The panes only WRAP the ids the
+                 renderers write into (meta.js: storePacks/storeBody; ui.js:
+                 the table shelves) so no renderer changed. "??" = hidden
+                 heroes, teased while locked (see storeSecret in ui.js). -->
+            <div class="st-tabs" id="stTabs">
+                <button class="st-tab on" data-pane="stPaneHeroes" onclick="switchStoreTab('stPaneHeroes')">Heroes</button>
+                <button class="st-tab" data-pane="stPaneMint" onclick="switchStoreTab('stPaneMint')">The Mint</button>
+                <button class="st-tab" data-pane="stPaneTables" onclick="switchStoreTab('stPaneTables')">Tables</button>
+                <button class="st-tab st-tab-secret" data-pane="stPaneSecret" id="stTabSecret" onclick="switchStoreTab('stPaneSecret')">? ?</button>
+            </div>
             <div class="st-scroll">
                 <!-- The Royal Mint — real-money star bundles (PayPal via the box IPN) -->
-                <div class="st-mint" id="storePacks"></div>
-                <div class="st-grid" id="storeBody"></div>
-                <!-- Tables — cosmetic play surfaces (free while we tune; Stars later) -->
-                <div class="st-tables-head">The Table Maker</div>
-                <div class="st-tables" id="stTables"></div>
-                <!-- Hero Tables — one quiet tone-on-tone table per character board -->
-                <div class="st-tables-head">Hero Tables</div>
-                <div class="st-tables" id="stHeroTables"></div>
-                <!-- Rare Tables — precious materials, animated (js/tablefx.js) -->
-                <div class="st-tables-head">Rare Tables</div>
-                <div class="st-tables" id="stRareTables"></div>
+                <div class="st-pane" id="stPaneMint">
+                    <div class="st-mint" id="storePacks"></div>
+                </div>
+                <div class="st-pane on" id="stPaneHeroes">
+                    <div class="st-grid" id="storeBody"></div>
+                </div>
+                <div class="st-pane" id="stPaneTables">
+                    <!-- Tables — cosmetic play surfaces (free while we tune; Stars later) -->
+                    <div class="st-tables-head">The Table Maker</div>
+                    <div class="st-tables" id="stTables"></div>
+                    <!-- Hero Tables — one quiet tone-on-tone table per character board -->
+                    <div class="st-tables-head">Hero Tables</div>
+                    <div class="st-tables" id="stHeroTables"></div>
+                    <!-- Rare Tables — precious materials, animated (js/tablefx.js) -->
+                    <div class="st-tables-head">Rare Tables</div>
+                    <div class="st-tables" id="stRareTables"></div>
+                </div>
+                <div class="st-pane" id="stPaneSecret">
+                    <div class="st-secret" id="stSecretBody"></div>
+                </div>
                 <div class="st-counter" aria-hidden="true">
                     <img src="assets/icons/gold.png" alt=""><img src="assets/icons/prospecting.png" alt=""><img src="assets/icons/maps.png" alt=""><img src="assets/icons/favor.png" alt=""><img src="assets/icons/philosopher.png" alt=""><img src="assets/icons/minds_eye.png" alt=""><img src="assets/icons/alchemy.png" alt=""><img src="assets/icons/knowledge.png" alt="">
                 </div>

@@ -8012,13 +8012,80 @@ function renderStoreTables() {
     });
 }
 
+// ── Store tabs (Wyatt+Skylar 7/21) ──────────────────────────────────────
+// Panes wrap the ids the renderers already write into; switching is pure
+// class toggling, so meta.js (FLB's) and the shelf renderers stay untouched.
+const SECRET_TAB_MODE = 'locked';   // 'locked' = visible + teaser | 'hidden' = absent until an unlock
+window.FAVOR_HIDDEN = window.FAVOR_HIDDEN || [];   // future hidden heroes: [{id,name,filename}]
+
+function hiddenUnlockedIds() {
+    try { return JSON.parse(localStorage.getItem('favor_hidden_unlocked') || '[]'); }
+    catch (e) { return []; }
+}
+
+function switchStoreTab(paneId) {
+    document.querySelectorAll('#stTabs .st-tab').forEach(b =>
+        b.classList.toggle('on', b.dataset.pane === paneId));
+    document.querySelectorAll('.st-pane').forEach(p =>
+        p.classList.toggle('on', p.id === paneId));
+    const sc = document.querySelector('#storePanel .st-scroll');
+    if (sc) sc.scrollTop = 0;
+    try { localStorage.setItem('favor_store_tab', paneId); } catch (e) {}
+    if (paneId === 'stPaneSecret') renderSecretPane();
+}
+window.switchStoreTab = switchStoreTab;
+
+function renderSecretPane() {
+    const body = document.getElementById('stSecretBody');
+    if (!body) return;
+    const unlocked = hiddenUnlockedIds();
+    const roster = (window.FAVOR_HIDDEN || []).filter(h => unlocked.includes(h.id));
+    if (!roster.length) {
+        body.innerHTML = `
+            <div class="st-secret-tease">
+                <div class="st-secret-mark">?</div>
+                <p>The court keeps its secrets.</p>
+                <p class="st-secret-sub">Some heroes are not for sale — they must be found.</p>
+            </div>`;
+        return;
+    }
+    body.innerHTML = `<div class="st-grid">` + roster.map(h => `
+        <div class="st-card" data-char="${h.id}" onclick="FLB.inspectChar('${h.id}')">
+            <div class="st-frame"><img src="assets/characters/${h.filename}" alt="${h.name}"></div>
+            <div class="st-plate"><span class="st-name">${h.name}</span></div>
+        </div>`).join('') + `</div>`;
+}
+
+function refreshSecretTab() {
+    const tab = document.getElementById('stTabSecret');
+    if (!tab) return;
+    const any = hiddenUnlockedIds().length > 0;
+    tab.classList.toggle('locked', !any);
+    if (SECRET_TAB_MODE === 'hidden') tab.style.display = any ? '' : 'none';
+}
+
+// Restore last-viewed tab (secret tab only if it survives its mode rules).
+(function () {
+    let t = null;
+    try { t = localStorage.getItem('favor_store_tab'); } catch (e) {}
+    refreshSecretTab();
+    if (t && document.getElementById(t)) {
+        if (t === 'stPaneSecret' && SECRET_TAB_MODE === 'hidden' && !hiddenUnlockedIds().length) t = null;
+        if (t) switchStoreTab(t);
+    }
+})();
+
 // The store panel is FLB's (meta.js, loads after us) — watch its class
 // instead of patching its code, and paint our shelf whenever it opens.
 (function () {
     const panel = document.getElementById('storePanel');
     if (!panel) return;
     new MutationObserver(() => {
-        if (panel.classList.contains('active')) renderStoreTables();
+        if (panel.classList.contains('active')) {
+            renderStoreTables();
+            refreshSecretTab();
+            if (document.getElementById('stPaneSecret')?.classList.contains('on')) renderSecretPane();
+        }
     }).observe(panel, { attributes: true, attributeFilter: ['class'] });
 })();
 
