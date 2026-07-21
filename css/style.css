@@ -7185,6 +7185,67 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
         url('../assets/ui/table-alchemist.jpg') 0 0 / 640px repeat;
 }
 
+/* Hero Tables (2026-07-21): one table per character board. One shared
+   design language — tone-on-tone damask, the hero's signature color, their
+   motif woven faintly into the ornament — so the set stays quiet and cohesive.
+   All tile at 600px; every vignette is the skin's own hue, darkened. */
+#game-screen.skin-hero-explorer, .tsw-hero-explorer {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(8,26,30,0.04) 0%, rgba(5,17,20,0.48) 60%, rgba(2,8,10,0.76) 100%) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-char-explorer.jpg') 0 0 / 600px repeat;
+}
+#game-screen.skin-hero-merchant, .tsw-hero-merchant {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(34,14,6,0.06) 0%, rgba(24,9,4,0.5) 60%, rgba(12,4,2,0.78) 100%) 0 0 / 100% 100% no-repeat,
+        linear-gradient(rgba(20,8,3,0.22), rgba(20,8,3,0.22)) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-char-merchant.jpg') 0 0 / 600px repeat;
+}
+#game-screen.skin-hero-bandit, .tsw-hero-bandit {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(9,13,26,0.0) 0%, rgba(6,9,18,0.46) 60%, rgba(3,4,9,0.76) 100%) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-char-bandit.jpg') 0 0 / 600px repeat;
+}
+#game-screen.skin-hero-fisherman, .tsw-hero-fisherman {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(12,18,8,0.04) 0%, rgba(8,12,5,0.48) 60%, rgba(4,6,2,0.76) 100%) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-char-fisherman.jpg') 0 0 / 600px repeat;
+}
+#game-screen.skin-hero-scientist, .tsw-hero-scientist {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(14,14,14,0.02) 0%, rgba(9,9,9,0.46) 60%, rgba(4,4,4,0.76) 100%) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-char-scientist.jpg') 0 0 / 600px repeat;
+}
+#game-screen.skin-hero-knight, .tsw-hero-knight {
+    /* light silver needs the firmer edge + slight darkening (the map lesson) */
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(16,18,22,0.06) 0%, rgba(11,13,16,0.48) 60%, rgba(5,6,8,0.76) 100%) 0 0 / 100% 100% no-repeat,
+        linear-gradient(rgba(12,14,18,0.24), rgba(12,14,18,0.24)) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-char-knight.jpg') 0 0 / 600px repeat;
+}
+#game-screen.skin-hero-doctor, .tsw-hero-doctor {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(44,36,22,0.08) 0%, rgba(34,26,14,0.44) 60%, rgba(18,13,6,0.72) 100%) 0 0 / 100% 100% no-repeat,
+        linear-gradient(rgba(40,32,18,0.18), rgba(40,32,18,0.18)) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-char-doctor.jpg') 0 0 / 600px repeat;
+}
+#game-screen.skin-hero-fiddler, .tsw-hero-fiddler {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(30,11,4,0.06) 0%, rgba(21,7,3,0.5) 60%, rgba(10,3,1,0.78) 100%) 0 0 / 100% 100% no-repeat,
+        linear-gradient(rgba(24,8,2,0.2), rgba(24,8,2,0.2)) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-char-fiddler.jpg') 0 0 / 600px repeat;
+}
+#game-screen.skin-hero-duchess, .tsw-hero-duchess {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(26,8,12,0.04) 0%, rgba(18,5,8,0.48) 60%, rgba(9,2,4,0.76) 100%) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-char-duchess.jpg') 0 0 / 600px repeat;
+}
+#game-screen.skin-hero-magician, .tsw-hero-magician {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(18,9,30,0.04) 0%, rgba(12,6,20,0.48) 60%, rgba(6,3,10,0.78) 100%) 0 0 / 100% 100% no-repeat,
+        linear-gradient(rgba(14,7,24,0.2), rgba(14,7,24,0.2)) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-char-magician.jpg') 0 0 / 600px repeat;
+}
+
 /* The Table Maker — a quiet shelf below the heroes */
 .st-tables-head {
     font-family: 'Cinzel', serif; font-weight: 700;

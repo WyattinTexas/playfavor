@@ -7954,6 +7954,17 @@ const TABLE_SKINS = [
     { id: 'celestial', name: 'Midnight Atlas',          cls: 'skin-celestial', swatch: 'tsw-celestial' },
     { id: 'map',       name: "The Cartographer's Desk", cls: 'skin-map',       swatch: 'tsw-map' },
     { id: 'alchemist', name: "Alchemist's Slate",       cls: 'skin-alchemist', swatch: 'tsw-alchemist' },
+    // Hero Tables — one per character board, tone-on-tone (own shelf row)
+    { id: 'hero-explorer',  name: "The Explorer's Table",  cls: 'skin-hero-explorer',  swatch: 'tsw-hero-explorer',  group: 'hero' },
+    { id: 'hero-merchant',  name: "The Merchant's Table",  cls: 'skin-hero-merchant',  swatch: 'tsw-hero-merchant',  group: 'hero' },
+    { id: 'hero-bandit',    name: "The Bandit's Table",    cls: 'skin-hero-bandit',    swatch: 'tsw-hero-bandit',    group: 'hero' },
+    { id: 'hero-fisherman', name: "The Fisherman's Table", cls: 'skin-hero-fisherman', swatch: 'tsw-hero-fisherman', group: 'hero' },
+    { id: 'hero-scientist', name: "The Scientist's Table", cls: 'skin-hero-scientist', swatch: 'tsw-hero-scientist', group: 'hero' },
+    { id: 'hero-knight',    name: "The Knight's Table",    cls: 'skin-hero-knight',    swatch: 'tsw-hero-knight',    group: 'hero' },
+    { id: 'hero-doctor',    name: "The Doctor's Table",    cls: 'skin-hero-doctor',    swatch: 'tsw-hero-doctor',    group: 'hero' },
+    { id: 'hero-fiddler',   name: "The Fiddler's Table",   cls: 'skin-hero-fiddler',   swatch: 'tsw-hero-fiddler',   group: 'hero' },
+    { id: 'hero-duchess',   name: "The Duchess's Table",   cls: 'skin-hero-duchess',   swatch: 'tsw-hero-duchess',   group: 'hero' },
+    { id: 'hero-magician',  name: "The Magician's Table",  cls: 'skin-hero-magician',  swatch: 'tsw-hero-magician',  group: 'hero' },
 ];
 
 function currentTableSkin() {
@@ -7973,10 +7984,8 @@ function applyTableSkin(id) {
 window.applyTableSkin = applyTableSkin;
 
 function renderStoreTables() {
-    const holder = document.getElementById('stTables');
-    if (!holder) return;
     const cur = currentTableSkin();
-    holder.innerHTML = TABLE_SKINS.map(s => `
+    const card = s => `
         <div class="st-table-card${s.id === cur ? ' equipped' : ''}"
              onclick="event.stopPropagation(); applyTableSkin('${s.id}')">
             <div class="st-table-swatch ${s.swatch}"
@@ -7985,7 +7994,15 @@ function renderStoreTables() {
                 <span class="st-table-name">${s.name}</span>
                 <span class="st-table-state">${s.id === cur ? '✦ On your table' : 'Free — tap to equip'}</span>
             </div>
-        </div>`).join('');
+        </div>`;
+    const shelves = [
+        ['stTables',     TABLE_SKINS.filter(s => s.group !== 'hero')],
+        ['stHeroTables', TABLE_SKINS.filter(s => s.group === 'hero')],
+    ];
+    shelves.forEach(([id, skins]) => {
+        const holder = document.getElementById(id);
+        if (holder) holder.innerHTML = skins.map(card).join('');
+    });
 }
 
 // The store panel is FLB's (meta.js, loads after us) — watch its class
