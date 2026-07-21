@@ -7159,6 +7159,31 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
         linear-gradient(rgba(16,9,28,0.5), rgba(16,9,28,0.5)) 0 0 / 100% 100% no-repeat,
         url('../assets/ui/table-queens.jpg') 0 0 / 560px repeat;
 }
+/* Round-2 skins (2026-07-21): pattern-forward per the round-1 lesson —
+   damask/line-work patterns read as a table, material photos don't. */
+#game-screen.skin-emerald, .tsw-emerald {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(10,30,20,0.05) 0%, rgba(6,20,13,0.5) 60%, rgba(3,10,6,0.78) 100%) 0 0 / 100% 100% no-repeat,
+        linear-gradient(rgba(6,18,12,0.32), rgba(6,18,12,0.32)) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-emerald.jpg') 0 0 / 480px repeat;
+}
+#game-screen.skin-celestial, .tsw-celestial {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(10,16,34,0.0) 0%, rgba(6,10,24,0.46) 62%, rgba(3,5,14,0.76) 100%) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-celestial.jpg') 0 0 / 640px repeat;
+}
+#game-screen.skin-map, .tsw-map {
+    /* light parchment needs a firmer edge vignette or the gold UI washes out */
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(52,36,18,0.08) 0%, rgba(40,26,12,0.42) 62%, rgba(24,14,6,0.72) 100%) 0 0 / 100% 100% no-repeat,
+        linear-gradient(rgba(46,30,14,0.18), rgba(46,30,14,0.18)) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-map.jpg') 0 0 / 640px repeat;
+}
+#game-screen.skin-alchemist, .tsw-alchemist {
+    background:
+        radial-gradient(ellipse at 50% 40%, rgba(20,20,18,0.0) 0%, rgba(10,10,9,0.42) 62%, rgba(4,4,3,0.74) 100%) 0 0 / 100% 100% no-repeat,
+        url('../assets/ui/table-alchemist.jpg') 0 0 / 640px repeat;
+}
 
 /* The Table Maker — a quiet shelf below the heroes */
 .st-tables-head {

@@ -7950,6 +7950,10 @@ const TABLE_SKINS = [
     { id: 'leather', name: 'Oxblood Leather', cls: 'skin-leather', swatch: 'tsw-leather' },
     { id: 'velvet', name: 'Crimson Velvet',   cls: 'skin-velvet', swatch: 'tsw-velvet' },
     { id: 'queens', name: "The Queen's Table", cls: 'skin-queens', swatch: 'tsw-queens' },
+    { id: 'emerald',   name: 'Emerald Court',           cls: 'skin-emerald',   swatch: 'tsw-emerald' },
+    { id: 'celestial', name: 'Midnight Atlas',          cls: 'skin-celestial', swatch: 'tsw-celestial' },
+    { id: 'map',       name: "The Cartographer's Desk", cls: 'skin-map',       swatch: 'tsw-map' },
+    { id: 'alchemist', name: "Alchemist's Slate",       cls: 'skin-alchemist', swatch: 'tsw-alchemist' },
 ];
 
 function currentTableSkin() {
