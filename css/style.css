@@ -7208,7 +7208,7 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
 #game-screen.skin-hero-fisherman, .tsw-hero-fisherman {
     background:
         radial-gradient(ellipse at 50% 40%, rgba(12,18,8,0.04) 0%, rgba(8,12,5,0.48) 60%, rgba(4,6,2,0.76) 100%) 0 0 / 100% 100% no-repeat,
-        url('../assets/ui/table-char-fisherman.jpg') 0 0 / 600px repeat;
+        url('../assets/ui/table-char-fisherman.jpg') 0 0 / 440px repeat;
 }
 #game-screen.skin-hero-scientist, .tsw-hero-scientist {
     background:
