@@ -3751,6 +3751,10 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
     localStorage.setItem('favorName', 'Audit Herald');
     // Start crestless ONCE — this hook re-runs on startGame's later
     // navigation and must not wipe the crest we just picked.
+    // Ownership mirror starts empty on EVERY nav — the DB row (fresh uid
+    // per run) is the truth mid-flow, and a crashed run's leftover mirror
+    // would make a paid crest read as owned and skip the two-tap arm.
+    localStorage.removeItem('favorCrests');
     if (!localStorage.getItem('__crestFlowSeeded')) {
       localStorage.removeItem('favorAvatar');
       localStorage.setItem('__crestFlowSeeded', '1');
@@ -3764,21 +3768,37 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   const ashPowerBefore = await page.evaluate(() =>
     firebase.database().ref('favor/players/persona_ashcroft/power').get().then(s => s.val()));
 
-  // 1 · The crest picker: nine card-art paintings, picking one dresses the chip.
+  // 1 · The crest GALLERY (Wyatt 7/21): the grid left the profile — you
+  // tap your portrait, the gallery opens with 11 priced painted crests +
+  // 48 free starter portraits, and picking one lands you back on Standing.
   await page.evaluate(() => FLB.openProfile());
   await sleep(300);
-  ok(await page.evaluate(() => document.querySelectorAll('.pf-avatars .pf-av').length === 9),
-    'profile offers all nine crests');
-  await page.evaluate(() => document.querySelector('.pf-av[data-av="griffin"]').click());
+  ok(await page.evaluate(() => !document.querySelector('#profileBody .pf-avatars')),
+    'no inline crest grid on the Standing page — the gallery is behind your portrait');
+  await page.evaluate(() => document.querySelector('#profileBody .pf-crest-btn').click());
+  await sleep(300);
+  const gal = await page.evaluate(() => ({
+    px: document.querySelectorAll('.cp-px .pf-av').length,
+    paid: document.querySelectorAll('.cp-paid .pf-av').length,
+    griffinTag: (document.querySelector('.cp-tile[data-av="griffin"] .cp-price') || {}).textContent || '',
+    outlawTag: (document.querySelector('.cp-tile[data-av="outlaw"] .cp-price') || {}).textContent || '',
+    tulipTag: (document.querySelector('.cp-tile[data-av="tulip"] .cp-price') || {}).textContent || '',
+  }));
+  ok(gal.px === 48, `the gallery offers all 48 starter portraits (${gal.px})`);
+  ok(gal.paid === 11, `and all 11 painted crests (${gal.paid})`);
+  ok(gal.griffinTag === '★100' && gal.outlawTag === '★100' && gal.tulipTag === '★25',
+    `painted crests wear their prices (griffin ${gal.griffinTag}, outlaw ${gal.outlawTag}, tulip ${gal.tulipTag})`);
+  await page.screenshot({ path: join(SHOTS, 'profile-crests.png') });
+  await page.evaluate(() => document.querySelector('.cp-pxtile[data-av="px7"]').click());
   await sleep(600);
   const crest = await page.evaluate(() => ({
-    picked: document.querySelector('.pf-av[data-av="griffin"]').classList.contains('on'),
+    backOnStanding: !!document.querySelector('#profileBody .pf-standing'),
     mirror: localStorage.getItem('favorAvatar'),
-    chip: !!document.querySelector('#profileChip .av-disc img[src*="avatars/griffin"]'),
+    chip: !!document.querySelector('#profileChip .av-disc img[src*="avatars/pixel/Icon7.png"]'),
   }));
-  ok(crest.picked && crest.mirror === 'griffin', `crest picked + mirrored (${crest.mirror})`);
+  ok(crest.backOnStanding && crest.mirror === 'px7',
+    `picking a starter portrait returns to Standing wearing it (${crest.mirror})`);
   ok(crest.chip, 'the profile chip wears the crest');
-  await page.screenshot({ path: join(SHOTS, 'profile-crests.png') });
 
   // 1b · The profile leads with STANDING, not the crest picker (Wyatt 7/18:
   // "viewing profile is bad — you just see the different avatars you can
@@ -3786,28 +3806,26 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   const pf = await page.evaluate(() => {
     const body = document.getElementById('profileBody');
     const kids = [...body.children];
-    const idx = (sel) => kids.findIndex(k => k.matches(sel) || k.querySelector(sel));
     const cs = getComputedStyle(body);
     return {
       standingFirst: kids.length > 0 && kids[0].classList.contains('pf-standing'),
-      standingBeforePicker: idx('.pf-standing') < idx('.pf-avatars'),
       rating: !!body.querySelector('.pf-standing .pf-rating-val'),
       tier: /Tier \d/.test((body.querySelector('.pf-tier') || {}).textContent || ''),
       record: /\d+ W · \d+ played/.test((body.querySelector('.pf-record') || {}).textContent || ''),
       sections: [...body.querySelectorAll('.pf-sec')].map(s => s.firstChild.textContent.trim()),
-      pickerStill: body.querySelectorAll('.pf-avatars .pf-av').length,
+      crestDoor: !!body.querySelector('.pf-crestrow .pf-crest-btn'),
       scrolls: cs.overflowY === 'auto',
       // The panel must not hang on a modal: FACH.sync() is async, WRITES,
       // and awaits celebrate(), which blocks on user clicks.
       openedSync: true,
     };
   });
-  ok(pf.standingFirst && pf.standingBeforePicker,
-    'the profile LEADS with standing; the crest picker is demoted below it');
+  ok(pf.standingFirst,
+    'the profile LEADS with standing; the crest gallery lives behind a tap');
   ok(pf.rating && pf.tier && pf.record,
     'standing carries rating, tier and record at a glance');
   ok(pf.sections.length >= 2, `it has real sections now (${pf.sections.join(' / ')})`);
-  ok(pf.pickerStill === 9, 'all nine crests are still pickable, just no longer the centrepiece');
+  ok(pf.crestDoor, 'the Name & Crest row keeps a door into the gallery');
   ok(pf.scrolls, '#profileBody scrolls on its own so the title stays pinned');
 
   // Per-hero ledgers — the biggest win, and every field was already in _me.
@@ -3893,7 +3911,87 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   ok(row && row.chars && row.chars.duchess && row.chars.duchess.g === 2
      && row.chars.duchess.r === 1279,
     `the Duchess ledger rode both games to the same 1279 (${row && row.chars && JSON.stringify(row.chars.duchess)})`);
-  ok(row && row.avatar === 'griffin', 'the crest rides the game post too');
+  ok(row && row.avatar === 'px7', 'the crest rides the game post too');
+
+  // 2b · Buying a painted crest: two-tap in the gallery, one whole-record
+  // transaction (stars down, crests map up), worn out of the shop.
+  await page.evaluate(async (u) => {
+    await firebase.database().ref(`favor/players/${u}/stars`).set(60);
+    await FLB.renderProfileChip();   // _me re-reads — the gallery prices off it
+    FLB.openProfile();
+  }, AUDIT_UID);
+  await sleep(400);
+  await page.evaluate(() => document.querySelector('#profileBody .pf-crest-btn').click());
+  await sleep(300);
+  // Tap 1 arms the tag, tap 2 buys. hound = ★25.
+  await page.evaluate(() => document.querySelector('.cp-tile[data-av="hound"]').click());
+  await sleep(250);
+  const armed = await page.evaluate(() =>
+    (document.querySelector('.cp-tile[data-av="hound"] .cp-price') || {}).textContent || '');
+  ok(/Buy ★25\?/.test(armed), `first tap arms the purchase (${armed})`);
+  await page.evaluate(() => { document.querySelector('.cp-tile[data-av="hound"]').click(); });
+  // The buy chain runs txn → wear → re-render. Reading mid-chain flaked
+  // (avatar still px7, gallery still up) — wait for the UI to land back
+  // on Standing wearing it AND the row's avatar write to arrive.
+  await page.waitForFunction(() => localStorage.getItem('favorAvatar') === 'hound'
+    && !!document.querySelector('#profileBody .pf-standing'), { timeout: 15000 });
+  await page.waitForFunction((u) =>
+    firebase.database().ref(`favor/players/${u}/avatar`).get().then(s => s.val() === 'hound'),
+    { timeout: 15000 }, AUDIT_UID);
+  const bought = await page.evaluate(async (u) => {
+    const p = (await firebase.database().ref(`favor/players/${u}`).get()).val() || {};
+    return { stars: p.stars, hound: !!(p.crests && p.crests.hound), avatar: p.avatar,
+             mirror: localStorage.getItem('favorAvatar') };
+  }, AUDIT_UID);
+  ok(bought.stars === 35 && bought.hound,
+    `one txn: 60 − 25 Stars and the crest lands together (★${bought.stars})`);
+  ok(bought.avatar === 'hound' && bought.mirror === 'hound',
+    'the bought crest is worn out of the gallery');
+  // Can't afford the ★100 outlaw at 35 Stars — the tag says so, no txn.
+  await page.evaluate(() => document.querySelector('#profileBody .pf-crest-btn').click());
+  await sleep(300);
+  await page.evaluate(() => document.querySelector('.cp-tile[data-av="outlaw"]').click());
+  await sleep(250);
+  const poor = await page.evaluate(async (u) => ({
+    tag: (document.querySelector('.cp-tile[data-av="outlaw"] .cp-price') || {}).textContent || '',
+    stars: ((await firebase.database().ref(`favor/players/${u}/stars`).get()).val()),
+  }), AUDIT_UID);
+  ok(/Not enough/.test(poor.tag) && poor.stars === 35,
+    `a crest you can't afford refuses honestly (${poor.tag}, ★${poor.stars})`);
+  await page.screenshot({ path: join(SHOTS, 'crest-gallery-buy.png') });
+  await page.evaluate(() => { FLB.closeProfile(); });
+
+  // 2c · The Emporium's Avatars pane sells the same shelf — and knows
+  // what you already own.
+  await page.evaluate(() => FLB.openStore());
+  await sleep(600);
+  await page.evaluate(() => window.switchStoreTab('stPaneAvatars'));
+  await sleep(300);
+  const shelf = await page.evaluate(() => ({
+    cards: document.querySelectorAll('#stCrests .st-crest').length,
+    houndOwned: /Owned/.test((document.querySelector('.st-crest[data-crest="hound"]') || {}).textContent || ''),
+    outlawPrice: /★ 100/.test((document.querySelector('.st-crest[data-crest="outlaw"] .st-buy') || {}).textContent || ''),
+    paneOn: document.getElementById('stPaneAvatars').classList.contains('on'),
+    // The price is an ABSOLUTE rope tag — without position:relative on
+    // .st-crest all 11 escape to the pane corner in one stack. Geometry,
+    // not DOM presence, is the only honest check (this shipped once).
+    tagHangsOnCard: (() => {
+      const card = document.querySelector('.st-crest[data-crest="outlaw"]');
+      const tag = card && card.querySelector('.st-buy');
+      if (!card || !tag) return false;
+      const c = card.getBoundingClientRect(), t = tag.getBoundingClientRect();
+      return Math.abs(t.right - c.right) < 30 && Math.abs(t.top - c.top) < 30;
+    })(),
+  }));
+  ok(shelf.paneOn && shelf.cards === 11, `the Emporium Avatars pane stocks all 11 crests (${shelf.cards})`);
+  ok(shelf.houndOwned, 'the shelf knows the hound is already yours');
+  ok(shelf.outlawPrice, 'the outlaw hangs at ★ 100');
+  ok(shelf.tagHangsOnCard, "the price tag hangs on ITS card's corner, not the pane's");
+  await page.screenshot({ path: join(SHOTS, 'store-crests.png') });
+  await page.evaluate(() => FLB.closeStore());
+  // Back to the pixel crest — the later board-plate assert reads it.
+  await page.evaluate(() => FLB.setAvatar('px7'));
+  await sleep(400);
 
   // 3 · All-Time: medals on the podium, crest discs, your row glows.
   await page.evaluate(() => FLB.openLeaderboard('alltime'));
@@ -3998,7 +4096,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
     const panel = document.getElementById('statsPanel');
     return {
       there: !!plate,
-      crest: img ? /avatars\/griffin/.test(img.src) : false,
+      crest: img ? /avatars\/pixel\/Icon7\.png/.test(img.src) : false,
       name: plate ? plate.textContent.trim() : '',
       panelFits: panel ? panel.scrollHeight <= panel.clientHeight + 1 : false,
     };
@@ -4011,6 +4109,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   // shared-profile crest keys (localStorage outlives this flow).
   const scrub2 = await page.evaluate(async (u) => {
     localStorage.removeItem('favorAvatar');
+    localStorage.removeItem('favorCrests');
     localStorage.removeItem('__crestFlowSeeded');
     for (let i = 0; i < 6; i++) {
       await firebase.database().ref(`favor/players/${u}`).remove();

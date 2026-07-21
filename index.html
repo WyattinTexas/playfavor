@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — A Game of Royal Succession</title>
-    <link rel="stylesheet" href="css/style.css?v=20260721172010">
+    <link rel="stylesheet" href="css/style.css?v=20260721192519">
     <!-- Skylar's melee cinematic — loaded AFTER style.css so its .ms-* rules win. -->
-    <link rel="stylesheet" href="css/melee.css?v=20260721172010">
+    <link rel="stylesheet" href="css/melee.css?v=20260721192519">
     <link rel="icon" type="image/png" href="assets/ui/favicon-serpent.png">
     <link rel="apple-touch-icon" href="assets/ui/favicon-serpent.png">
 </head>
@@ -242,10 +242,9 @@
                 </div>
                 <!-- Avatars + Cards — shelves Wyatt stocks later -->
                 <div class="st-pane" id="stPaneAvatars">
-                    <div class="st-secret-tease">
-                        <div class="st-secret-mark">✦</div>
-                        <p>The portrait artist takes commissions soon.</p>
-                    </div>
+                    <!-- Painted crests — meta.js renderStoreCrests stocks this shelf -->
+                    <div class="st-tables-head">The Portrait Gallery</div>
+                    <div class="st-crests" id="stCrests"></div>
                 </div>
                 <div class="st-pane" id="stPaneCards">
                     <div class="st-secret-tease">
@@ -604,19 +603,19 @@
          falls back to local standings if these can't reach the project) -->
     <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script defer src="data/cards.js?v=20260721172010"></script>
-    <script defer src="data/missions.js?v=20260721172010"></script>
-    <script defer src="data/characters.js?v=20260721172010"></script>
-    <script defer src="data/achievements.js?v=20260721172010"></script>
-    <script defer src="engine/gameState.js?v=20260721172010"></script>
-    <script defer src="js/melee.js?v=20260721172010"></script>
-    <script defer src="js/ui.js?v=20260721172010"></script>
-    <script defer src="js/tablefx-pts.js?v=20260721172010"></script>
-    <script defer src="js/tablefx.js?v=20260721172010"></script>
-    <script defer src="js/ambient.js?v=20260721172010"></script>
-    <script defer src="js/meta.js?v=20260721172010"></script>
-    <script defer src="js/achievements.js?v=20260721172010"></script>
-    <script defer src="js/mp.js?v=20260721172010"></script>
-    <script defer src="js/modes.js?v=20260721172010"></script>
+    <script defer src="data/cards.js?v=20260721192519"></script>
+    <script defer src="data/missions.js?v=20260721192519"></script>
+    <script defer src="data/characters.js?v=20260721192519"></script>
+    <script defer src="data/achievements.js?v=20260721192519"></script>
+    <script defer src="engine/gameState.js?v=20260721192519"></script>
+    <script defer src="js/melee.js?v=20260721192519"></script>
+    <script defer src="js/ui.js?v=20260721192519"></script>
+    <script defer src="js/tablefx-pts.js?v=20260721192519"></script>
+    <script defer src="js/tablefx.js?v=20260721192519"></script>
+    <script defer src="js/ambient.js?v=20260721192519"></script>
+    <script defer src="js/meta.js?v=20260721192519"></script>
+    <script defer src="js/achievements.js?v=20260721192519"></script>
+    <script defer src="js/mp.js?v=20260721192519"></script>
+    <script defer src="js/modes.js?v=20260721192519"></script>
 </body>
 </html>

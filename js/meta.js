@@ -1292,29 +1292,54 @@
     }
 
     // ── Avatars — a chosen crest that rides the chip, the boards and the
-    // table. Crest set = nine card-art paintings (Wyatt 7/21, replacing the
-    // ten character portraits); stored at players/{uid}/avatar + a local
-    // mirror so every surface paints instantly. Legacy character-id crests
-    // (old player rows, the five personas) still resolve to their portrait
-    // so no seated row ever paints an empty disc.
+    // table. Two shelves (Wyatt 7/21): 48 free pixel PORTRAITS everyone
+    // starts with (assets/avatars/pixel/Icon1..48.png), and 11 PAINTED
+    // crests sold for Stars — in the Emporium's Avatars pane and straight
+    // from the picker. Worn crest at players/{uid}/avatar, owned paid
+    // crests at players/{uid}/crests (+ mirrors favorAvatar/favorCrests).
+    // Legacy character-id crests (old rows, the five personas) still
+    // RENDER via the character fallback so no seated row ever paints an
+    // empty disc — they just left the picker.
     const CRESTS = [
-        { id: 'tulip', name: 'The Tulip' },
-        { id: 'hound', name: 'The Hound' },
-        { id: 'violin', name: 'The Violin' },
-        { id: 'griffin', name: 'The Griffin' },
-        { id: 'snowbeast', name: 'The Snow Beast' },
-        { id: 'serpent', name: 'The Serpent' },
-        { id: 'owl', name: 'The White Owl' },
-        { id: 'outlaw', name: 'The Outlaw' },
-        { id: 'star', name: 'The Falling Star' },
+        { id: 'tulip',     name: 'The Tulip',          cost: 25 },
+        { id: 'hound',     name: 'The Hound',          cost: 25 },
+        { id: 'violin',    name: 'The Violin',         cost: 25 },
+        { id: 'griffin',   name: 'The Griffin',        cost: 100 },
+        { id: 'snowbeast', name: 'The Snow Beast',     cost: 50 },
+        { id: 'serpent',   name: 'The Serpent',        cost: 50 },
+        { id: 'owl',       name: 'The White Owl',      cost: 25 },
+        { id: 'outlaw',    name: 'The Outlaw',         cost: 100 },
+        { id: 'star',      name: 'The Falling Star',   cost: 25 },
+        { id: 'fortune',   name: 'The Fortune Teller', cost: 50 },
+        { id: 'wolf',      name: 'The Wolf',           cost: 25 },
     ];
+    const PIXEL_CREST_COUNT = 48;
+    function crestById(id) { return CRESTS.find(c => c.id === id) || null; }
     function myAvatar() {
         return localStorage.getItem('favorAvatar') || (_me && _me.avatar) || null;
     }
     function avatarFile(id) {
-        if (CRESTS.some(cr => cr.id === id)) return `assets/avatars/${id}.jpg`;
+        const px = /^px([1-9][0-9]?)$/.exec(id || '');
+        if (px && +px[1] <= PIXEL_CREST_COUNT) return `assets/avatars/pixel/Icon${px[1]}.png`;
+        if (crestById(id)) return `assets/avatars/${id}.jpg`;
         const c = ((window.FAVOR_DATA || {}).characters || []).find(x => x.id === id);
         return c ? `assets/characters/${c.filename}` : null;
+    }
+    function ownedCrests() {
+        if (_me && _me.crests) return _me.crests;
+        try { return JSON.parse(localStorage.getItem('favorCrests') || '{}'); }
+        catch (e) { return {}; }
+    }
+    function mirrorCrests(map) {
+        try { localStorage.setItem('favorCrests', JSON.stringify(map || {})); } catch (e) { /* private mode */ }
+    }
+    function ownsCrest(id) {
+        if (/^px/.test(id || '')) return true;   // starters are everyone's
+        if (!crestById(id)) return false;        // legacy ids render but can't be re-picked
+        if (ownedCrests()[id]) return true;
+        // Grandfather: a crest picked during the free week stays honest
+        // while worn — switching away is the moment it needs buying.
+        return myAvatar() === id;
     }
     function avatarDisc(id, cls) {
         const f = avatarFile(id);
@@ -1323,12 +1348,112 @@
             : `<span class="av-disc av-empty ${cls || ''}"><img src="assets/icons/favor.png" alt=""></span>`;
     }
     async function setAvatar(id) {
-        if (!avatarFile(id)) return;
+        if (!avatarFile(id) || !ownsCrest(id)) return;
         localStorage.setItem('favorAvatar', id);
         _me = { ...(_me || {}), avatar: id };
         try { await dbUpdate(`players/${uid()}`, { avatar: id }); } catch (e) { /* mirror holds */ }
         renderProfileChip();
         if (document.getElementById('profilePanel').classList.contains('active')) openProfile();
+    }
+
+    // Purchase — same whole-record transaction discipline as buyCharacter:
+    // balance check and ownership commit together or not at all.
+    async function buyCrest(crestId) {
+        const crest = crestById(crestId);
+        if (!crest) return { ok: false, why: 'unknown' };
+        if (ownsCrest(crestId)) return { ok: false, why: 'owned' };
+        if (mode !== 'firebase') return { ok: false, why: 'offline' };
+        // Server-side pre-read — see buyCharacter: never let a player who
+        // can't afford it reach the txn (the null stub would materialize
+        // nameless rows on the all-time board).
+        try {
+            const current = await dbGet(`players/${uid()}`);
+            if (((current && current.stars) || 0) < crest.cost) return { ok: false, why: 'stars' };
+            if (current && current.crests && current.crests[crestId]) return { ok: false, why: 'owned' };
+        } catch (e) {
+            return { ok: false, why: 'offline' };
+        }
+        const res = await dbTxn(`players/${uid()}`, p => {
+            if (p == null) return { stars: 0 };   // null-guess stub — see buyCharacter
+            const stars = p.stars || 0;
+            if (stars < crest.cost) return;            // abort — can't afford
+            if (p.crests && p.crests[crestId]) return; // abort — exactly once
+            return { ...p, stars: stars - crest.cost,
+                     crests: { ...(p.crests || {}), [crestId]: true } };
+        });
+        if (!res.committed || !res.value || !res.value.crests || !res.value.crests[crestId]) {
+            return { ok: false, why: 'stars' };
+        }
+        _me = res.value;
+        mirrorCrests(res.value.crests);
+        renderProfileChip();
+        return { ok: true };
+    }
+
+    // ── The crest gallery — tap your portrait on the Standing page and
+    // every crest shows up here: painted works up top (priced until
+    // owned), the 48 starter portraits below. Selecting returns you to
+    // Standing wearing it.
+    let _confirmingCrest = null;   // two-tap arm — picker and Emporium shelf share it
+    function openCrestPicker() {
+        _confirmingCrest = null;
+        renderCrestPicker();
+    }
+    function renderCrestPicker() {
+        const body = document.getElementById('profileBody');
+        if (!body) return;
+        const worn = myAvatar();
+        const stars = (_me && _me.stars) || 0;
+        const px = Array.from({ length: PIXEL_CREST_COUNT }, (_, i) => 'px' + (i + 1));
+        body.innerHTML = `
+            <div class="cp-head">
+                <button class="cp-back" onclick="FLB.openProfile()">‹ Standing</button>
+                <span class="cp-stars" title="Your Stars">★ ${stars}</span>
+            </div>
+            <div class="pf-sec">Painted Crests</div>
+            <div class="cp-note">Commissioned works from the Emporium — yours for Stars, forever.</div>
+            <div class="pf-avatars cp-paid">${CRESTS.map(c => {
+                const owned = ownsCrest(c.id);
+                const arm = _confirmingCrest === c.id;
+                return `
+                <button class="pf-av cp-tile${worn === c.id ? ' on' : ''}${owned ? '' : ' locked'}" data-av="${c.id}"
+                    onclick="FLB.crestTap('${c.id}')" title="${c.name}">
+                    <img src="assets/avatars/${c.id}.jpg" alt="${c.name}">
+                    ${owned ? '' : `<span class="cp-price${arm ? ' arm' : ''}${stars < c.cost ? ' poor' : ''}">${arm ? `Buy ★${c.cost}?` : `★${c.cost}`}</span>`}
+                </button>`;
+            }).join('')}</div>
+            <div class="pf-sec">Portraits</div>
+            <div class="pf-avatars cp-px">${px.map(id => `
+                <button class="pf-av cp-pxtile${worn === id ? ' on' : ''}" data-av="${id}"
+                    onclick="FLB.setAvatar('${id}')">
+                    <img src="${avatarFile(id)}" alt="" loading="lazy">
+                </button>`).join('')}</div>
+        `;
+    }
+    async function crestTap(id) {
+        if (ownsCrest(id)) { setAvatar(id); return; }
+        const crest = crestById(id);
+        if (!crest) return;
+        const stars = (_me && _me.stars) || 0;
+        if (stars < crest.cost) {
+            // Can't afford — the tag says so for a beat.
+            const tag = document.querySelector(`.cp-tile[data-av="${id}"] .cp-price`);
+            if (tag) { tag.textContent = 'Not enough ★'; setTimeout(renderCrestPicker, 1200); }
+            return;
+        }
+        if (_confirmingCrest !== id) { _confirmingCrest = id; renderCrestPicker(); return; }
+        _confirmingCrest = null;
+        const res = await buyCrest(id);
+        if (res.ok) {
+            await setAvatar(id);   // wear it out of the gallery — lands back on Standing
+        } else {
+            renderCrestPicker();
+            const tag = document.querySelector(`.cp-tile[data-av="${id}"] .cp-price`);
+            if (tag) {
+                tag.textContent = res.why === 'offline' ? 'Offline' : 'Not enough ★';
+                setTimeout(renderCrestPicker, 1200);
+            }
+        }
     }
 
     async function renderProfileChip() {
@@ -1338,6 +1463,7 @@
         if (_me && _me.avatar && !localStorage.getItem('favorAvatar')) {
             localStorage.setItem('favorAvatar', _me.avatar);   // heal the mirror
         }
+        if (_me && _me.crests) mirrorCrests(_me.crests);       // owned crests ride along
         const gold = (_me && _me.champs && _me.champs.gold) || 0;
         chip.innerHTML = `
             ${avatarDisc(myAvatar(), 'pc-av')}
@@ -1400,7 +1526,9 @@
 
         document.getElementById('profileBody').innerHTML = `
             <div class="pf-standing">
-                ${avatarDisc(myAvatar(), 'pf-av-current')}
+                <button class="pf-crest-btn" onclick="FLB.openCrestPicker()" title="Change your crest">
+                    ${avatarDisc(myAvatar(), 'pf-av-current')}<span class="pf-crest-edit">✎</span>
+                </button>
                 <div class="pf-standing-main">
                     <div class="pf-rating">${ratingSpan(elo, 'pf-rating-val')}
                         <span class="pf-tier">Tier ${ratingTier(elo)}</span></div>
@@ -1450,11 +1578,11 @@
                 <input id="pfName" maxlength="24" value="${myName().replace(/"/g, '&quot;')}">
                 <button class="btn-royal" id="pfSave"><span>Save</span></button>
             </div>
-            <div class="pf-avatars" title="Choose your crest">${CRESTS.map(c => `
-                <button class="pf-av${myAvatar() === c.id ? ' on' : ''}" data-av="${c.id}"
-                    onclick="FLB.setAvatar('${c.id}')" title="${c.name}">
-                    <img src="assets/avatars/${c.id}.jpg" alt="${c.name}">
-                </button>`).join('')}
+            <div class="pf-row pf-crestrow">
+                <button class="pf-crest-btn" onclick="FLB.openCrestPicker()" title="Change your crest">
+                    ${avatarDisc(myAvatar(), 'pf-av-current')}<span class="pf-crest-edit">✎</span>
+                </button>
+                <button class="btn-royal cp-open" onclick="FLB.openCrestPicker()"><span>Change Crest</span></button>
             </div>
             ${signinSectionHtml()}
             <div class="pf-note">Champions are crowned nightly at 10 PM Eastern.${mode === 'local' ? '<br><b class="pf-local">LOCAL PROFILE — leaderboard offline</b>' : ''}</div>
@@ -1817,6 +1945,7 @@
         document.getElementById('storeStars').innerHTML =
             `★ ${stars}${mode !== 'firebase' ? ' <span class="st-local">OFFLINE — BROWSE ONLY</span>' : ''}`;
         renderStorePacks();   // the Royal Mint row rides every store paint
+        renderStoreCrests();  // so does the Avatars pane's crest shelf
         const anim = _shelfAnim; _shelfAnim = false;
         body.innerHTML = chars.map((c, i) => {
             const isOwned = owned.includes(c.id);
@@ -1931,6 +2060,66 @@
             document.getElementById('champTitle').textContent = `${char.name} Joins Your Court!`;
             document.getElementById('champSub').innerHTML =
                 `${CROWN_SVG} A new hero enters your select pool`;
+            ov.classList.add('active');
+            const done = () => { ov.classList.remove('active'); resolve(); };
+            ov.onclick = done;
+            document.getElementById('champBtn').onclick = (e) => { e.stopPropagation(); done(); };
+        });
+    }
+
+    // ── The Emporium's crest shelf (Avatars pane) — the same 11 painted
+    // crests the picker sells: one two-tap confirm, one buyCrest.
+    function renderStoreCrests() {
+        const box = document.getElementById('stCrests');
+        if (!box) return;
+        const stars = (_me && _me.stars) || 0;
+        box.innerHTML = CRESTS.map(c => {
+            const owned = ownsCrest(c.id);
+            const arm = _confirmingCrest === c.id;
+            let action;
+            if (owned) action = '<span class="st-owned">Owned</span>';
+            else if (mode !== 'firebase') action = `<button class="st-buy poor" disabled>★ ${c.cost}</button>`;
+            else if (arm) action = `<button class="st-buy confirm" onclick="event.stopPropagation(); FLB.confirmBuyCrest('${c.id}')">Buy — ★ ${c.cost}?</button>`;
+            else action = `<button class="st-buy${stars < c.cost ? ' poor' : ''}" onclick="event.stopPropagation(); FLB.askBuyCrest('${c.id}')">★ ${c.cost}</button>`;
+            return `<div class="st-crest${owned ? ' owned' : ''}" data-crest="${c.id}">
+                <span class="av-disc st-crest-disc"><img src="assets/avatars/${c.id}.jpg" alt="${c.name}"></span>
+                <span class="st-name">${c.name}</span>
+                ${action}
+            </div>`;
+        }).join('');
+    }
+    function askBuyCrest(id) {
+        const c = crestById(id);
+        if (!c) return;
+        if (((_me && _me.stars) || 0) < c.cost) {
+            const b = document.querySelector(`.st-crest[data-crest="${id}"] .st-buy`);
+            if (b) { b.textContent = 'Not enough ★'; setTimeout(renderStoreCrests, 1200); }
+            return;
+        }
+        _confirmingCrest = id;
+        renderStoreCrests();
+    }
+    async function confirmBuyCrest(id) {
+        _confirmingCrest = null;
+        const res = await buyCrest(id);
+        renderStoreCrests();
+        if (res.ok) {
+            await showCrestCelebration(crestById(id));
+        } else if (res.why === 'stars' || res.why === 'offline') {
+            const b = document.querySelector(`.st-crest[data-crest="${id}"] .st-buy`);
+            if (b) {
+                b.textContent = res.why === 'offline' ? 'Offline — try again' : 'Not enough ★';
+                setTimeout(renderStoreCrests, 1200);
+            }
+        }
+    }
+    function showCrestCelebration(crest) {
+        return new Promise(resolve => {
+            const ov = document.getElementById('champOverlay');
+            if (!ov || !crest) { resolve(); return; }
+            document.getElementById('champTitle').textContent = `${crest.name} Is Yours!`;
+            document.getElementById('champSub').innerHTML =
+                `${CROWN_SVG} A painted crest joins your collection — wear it from your Standing page`;
             ov.classList.add('active');
             const done = () => { ov.classList.remove('active'); resolve(); };
             ov.onclick = done;
@@ -2232,6 +2421,8 @@
         askBuyStars, buyStars, starCheckoutUrl, watchForStars,
         starPacks: () => STAR_PACKS,
         setAvatar, myAvatar, avatarDisc,
+        openCrestPicker, crestTap, askBuyCrest, confirmBuyCrest,
+        crests: () => CRESTS, ownsCrest,
         checkForUpdate, applyUpdate,
         get mode() { return mode; }, uid,
     };

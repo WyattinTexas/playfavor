@@ -630,6 +630,66 @@ html, body {
 .pf-av:hover { transform: scale(1.08); border-color: var(--gold); }
 .pf-av.on { border-color: #ffd97a; box-shadow: 0 0 12px rgba(255,217,122,0.5); }
 
+/* ── Crest gallery — tap your portrait, every crest shows up ── */
+.pf-crest-btn {
+    background: none; border: none; padding: 0; cursor: pointer;
+    position: relative; display: inline-flex; flex: none;
+}
+.pf-crest-btn .av-disc { transition: box-shadow 0.15s ease, transform 0.15s ease; }
+.pf-crest-btn:hover .av-disc { box-shadow: 0 0 12px rgba(255,217,122,0.5); transform: scale(1.05); }
+.pf-crest-edit {
+    position: absolute; right: -4px; bottom: -4px;
+    width: 16px; height: 16px; line-height: 15px; text-align: center;
+    font-size: 10px; color: var(--gold);
+    background: #1d1106; border: 1px solid rgba(201,168,76,0.45); border-radius: 50%;
+    pointer-events: none;
+}
+.pf-crestrow { align-items: center; gap: 12px; }
+.cp-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 0 8px; }
+.cp-back {
+    background: none; border: 1px solid rgba(201,168,76,0.35); color: var(--gold);
+    border-radius: 14px; padding: 4px 14px; cursor: pointer;
+    font-family: 'EB Garamond', serif; font-size: 14px;
+}
+.cp-back:hover { border-color: var(--gold); }
+.cp-stars { color: #ffd97a; font-weight: 600; }
+.cp-note {
+    font-family: 'EB Garamond', serif; font-style: italic; font-size: 12.5px;
+    color: rgba(240,230,211,0.55); padding: 2px 0 4px;
+}
+.pf-avatars.cp-paid { border-bottom: none; padding-bottom: 18px; }
+.pf-avatars.cp-px { grid-template-columns: repeat(6, 1fr); border-bottom: none; }
+.cp-tile { position: relative; overflow: visible; }
+.cp-tile img { border-radius: 50%; }
+.cp-tile.locked img { filter: saturate(0.55) brightness(0.72); }
+.cp-price {
+    position: absolute; left: 50%; bottom: -7px; transform: translateX(-50%);
+    background: #1d1106; border: 1px solid rgba(201,168,76,0.5); color: #ffd97a;
+    border-radius: 10px; font-size: 10.5px; line-height: 1; padding: 3px 7px;
+    white-space: nowrap; pointer-events: none;
+}
+.cp-price.arm { background: var(--gold); color: #1d1106; border-color: var(--gold); }
+.cp-price.poor { color: rgba(240,230,211,0.45); }
+/* Pixel portraits stay crisp in every disc, at every size */
+.av-disc img[src*="avatars/pixel/"], .cp-pxtile img { image-rendering: pixelated; }
+/* The Emporium's crest shelf */
+.st-crests {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px; padding: 10px 4px;
+}
+.st-crest {
+    /* position:relative is load-bearing — .st-buy/.st-owned are absolute
+       rope tags that hang off their nearest positioned ancestor; without
+       this every card's tag escapes to the pane corner in one stack. */
+    position: relative;
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    background: rgba(29,17,6,0.55); border: 1px solid rgba(201,168,76,0.22);
+    border-radius: 12px; padding: 14px 8px 12px;
+}
+.st-crest.owned { border-color: rgba(201,168,76,0.5); }
+.st-crest-disc { width: 64px; height: 64px; }
+.st-crest .st-name { font-size: 13px; text-align: center; }
+
 /* In-game identity — your crest + royal name ride the board thumb's
    plate (a row on the stats panel broke its no-scroll fit). */
 .thumb-name {
