@@ -7313,6 +7313,9 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
 }
 .st-stars-btn:hover { transform: translateY(-1px); box-shadow: 0 5px 12px rgba(232, 195, 75, 0.4); }
+/* iOS/Steam shell: meta.js already empties the Mint (App Store 3.1.1) —
+   the door to it must vanish too, or the shell shows an empty easel */
+body.ios-shell .st-stars-btn, body.ios-shell #mintPanel { display: none !important; }
 .mint-inner { width: min(620px, 90%); padding-bottom: 10px; }
 .mint-head { border-top: none; text-align: center; padding: 14px 0 0; margin: 0 0 4px; }
 .tt-insp-lock {
