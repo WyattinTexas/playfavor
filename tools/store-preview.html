@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>FAVOR — Royal Emporium Preview (tabs)</title>
+<!-- Real game stylesheet: the store is judged under the exact chrome. -->
+<link rel="stylesheet" href="../css/style.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #17100a; }
+  /* the harness shows the store without the game behind it */
+  #storePanel { display: flex !important; position: fixed; inset: 0; align-items: center; justify-content: center; }
+  .pv-note {
+    position: fixed; bottom: 8px; left: 50%; transform: translateX(-50%);
+    z-index: 30000; font: 600 11px 'Cinzel', serif; letter-spacing: 1.5px;
+    color: rgba(232, 212, 139, 0.55); pointer-events: none; text-align: center;
+  }
+  /* preview-only chip that fakes an unlock so Wyatt sees both ?? states */
+  .pv-unlock {
+    margin-top: 14px; font: 700 11px 'Cinzel', serif; letter-spacing: 1.5px;
+    color: #e8d48b; background: rgba(201,168,76,0.12); cursor: pointer;
+    border: 1px dashed rgba(201,168,76,0.5); border-radius: 999px; padding: 6px 14px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══ The store panel, verbatim from index.html (FLB closers stubbed) ═══ -->
+<div class="lb-panel store-panel active" id="storePanel">
+    <div class="lb-inner st-inner" onclick="event.stopPropagation()">
+        <div class="st-awning" aria-hidden="true"></div>
+        <div class="lb-title st-sign">The Royal Emporium<span class="st-stars" id="storeStars">★ 110</span></div>
+        <div class="st-tabs" id="stTabs">
+            <button class="st-tab on" data-pane="stPaneHeroes" onclick="switchStoreTab('stPaneHeroes')">Heroes</button>
+            <button class="st-tab" data-pane="stPaneMint" onclick="switchStoreTab('stPaneMint')">The Mint</button>
+            <button class="st-tab" data-pane="stPaneTables" onclick="switchStoreTab('stPaneTables')">Tables</button>
+            <button class="st-tab st-tab-secret locked" data-pane="stPaneSecret" id="stTabSecret" onclick="switchStoreTab('stPaneSecret')">? ?</button>
+        </div>
+        <div class="st-scroll">
+            <div class="st-pane" id="stPaneMint">
+                <div class="st-mint" id="storePacks"></div>
+            </div>
+            <div class="st-pane on" id="stPaneHeroes">
+                <div class="st-grid" id="storeBody"></div>
+            </div>
+            <div class="st-pane" id="stPaneTables">
+                <div class="st-tables-head">The Table Maker</div>
+                <div class="st-tables" id="stTables"></div>
+                <div class="st-tables-head">Hero Tables</div>
+                <div class="st-tables" id="stHeroTables"></div>
+                <div class="st-tables-head">Rare Tables</div>
+                <div class="st-tables" id="stRareTables"></div>
+            </div>
+            <div class="st-pane" id="stPaneSecret">
+                <div class="st-secret" id="stSecretBody"></div>
+            </div>
+            <div class="st-counter" aria-hidden="true">
+                <img src="../assets/icons/gold.png" alt=""><img src="../assets/icons/prospecting.png" alt=""><img src="../assets/icons/maps.png" alt=""><img src="../assets/icons/favor.png" alt=""><img src="../assets/icons/philosopher.png" alt=""><img src="../assets/icons/minds_eye.png" alt=""><img src="../assets/icons/alchemy.png" alt=""><img src="../assets/icons/knowledge.png" alt="">
+            </div>
+            <div class="lb-foot">Every game pays Stars — 10 / 6 / 4 by finish, 2 for playing. New heroes join your select pool.</div>
+        </div>
+    </div>
+</div>
+<div class="pv-note">PREVIEW — mock data, nothing for sale. Tap the tabs. The ?? tab has a demo unlock.</div>
+
+<script>
+// ── FLB stub: swallow the real markup's clicks ──
+window.FLB = { inspectChar: function(){}, closeStore: function(){}, closeInspect: function(){} };
+
+// ── Mock heroes (real art/difficulties; first five owned, like a mid account) ──
+var CHARS = [
+    ['explorer','Explorer.jpg','Explorer',2,1],['knight','Knight.jpg','Knight',2,1],
+    ['bandit','Bandit.jpg','Bandit',4,1],['merchant','Merchant.jpg','Merchant',3,1],
+    ['fisherman','Fisherman.jpg','Fisherman',2,1],['duchess','Duchess.jpg','Duchess',3,0],
+    ['scientist','Scientist.jpg','Scientist',4,0],['doctor','Doctor.jpg','Doctor',2,0],
+    ['fiddler','Fiddler.jpg','Fiddler',5,0],['magician','Magician.jpg','Magician',4,0]
+];
+document.getElementById('storeBody').innerHTML = CHARS.map(function(c){
+    return '<div class="st-card' + (c[4] ? ' owned' : '') + '">'
+        + '<div class="st-frame"><img src="../assets/characters/' + c[1] + '" alt=""></div>'
+        + '<div class="st-plate"><span class="st-name">' + c[2] + '</span>'
+        + '<span class="st-diff">' + '★'.repeat(c[3]) + '</span></div>'
+        + (c[4] ? '<span class="st-owned">Owned</span>' : '<button class="st-buy">★ 100</button>')
+        + '</div>';
+}).join('');
+
+// ── Mock Mint bundles (layout stand-ins — real prices live in meta.js) ──
+var PACKS = [['Pouch of Stars', 500, '4.99'], ['Chest of Stars', 1200, '9.99'], ['Royal Vault', 3000, '19.99']];
+document.getElementById('storePacks').innerHTML = PACKS.map(function(p){
+    return '<div class="st-pack"><div class="st-pack-stars">★ ' + p[1].toLocaleString() + '</div>'
+        + '<div class="st-pack-name">' + p[0] + '</div>'
+        + '<button class="st-pack-buy">$' + p[2] + '</button></div>';
+}).join('');
+
+// ── Tables shelves: the real TABLE_SKINS roster, equip = visual only ──
+var TABLE_SKINS = [
+    { id: 'oak', name: 'Royal Oak', swatch: '' },
+    { id: 'leather', name: 'Oxblood Leather', swatch: 'tsw-leather' },
+    { id: 'velvet', name: 'Crimson Velvet', swatch: 'tsw-velvet' },
+    { id: 'queens', name: "The Queen's Table", swatch: 'tsw-queens' },
+    { id: 'emerald', name: 'Emerald Court', swatch: 'tsw-emerald' },
+    { id: 'celestial', name: 'Midnight Atlas', swatch: 'tsw-celestial' },
+    { id: 'map', name: "The Cartographer's Desk", swatch: 'tsw-map' },
+    { id: 'alchemist', name: "Alchemist's Slate", swatch: 'tsw-alchemist' },
+    { id: 'hero-explorer', name: "The Explorer's Table", swatch: 'tsw-hero-explorer', group: 'hero' },
+    { id: 'hero-merchant', name: "The Merchant's Table", swatch: 'tsw-hero-merchant', group: 'hero' },
+    { id: 'hero-bandit', name: "The Bandit's Table", swatch: 'tsw-hero-bandit', group: 'hero' },
+    { id: 'hero-fisherman', name: "The Fisherman's Table", swatch: 'tsw-hero-fisherman', group: 'hero' },
+    { id: 'hero-scientist', name: "The Scientist's Table", swatch: 'tsw-hero-scientist', group: 'hero' },
+    { id: 'hero-knight', name: "The Knight's Table", swatch: 'tsw-hero-knight', group: 'hero' },
+    { id: 'hero-doctor', name: "The Doctor's Table", swatch: 'tsw-hero-doctor', group: 'hero' },
+    { id: 'hero-fiddler', name: "The Fiddler's Table", swatch: 'tsw-hero-fiddler', group: 'hero' },
+    { id: 'hero-duchess', name: "The Duchess's Table", swatch: 'tsw-hero-duchess', group: 'hero' },
+    { id: 'hero-magician', name: "The Magician's Table", swatch: 'tsw-hero-magician', group: 'hero' },
+    { id: 'rare-ember', name: 'The Ember Throne', swatch: 'tsw-rare-ember', group: 'rare' },
+    { id: 'rare-astronomer', name: 'The Astronomer Royal', swatch: 'tsw-rare-astronomer', group: 'rare' },
+    { id: 'rare-vault', name: 'The Drowned Vault', swatch: 'tsw-rare-vault', group: 'rare' }
+];
+var equipped = 'oak';
+function renderShelves() {
+    [['stTables', TABLE_SKINS.filter(function(s){ return !s.group; })],
+     ['stHeroTables', TABLE_SKINS.filter(function(s){ return s.group === 'hero'; })],
+     ['stRareTables', TABLE_SKINS.filter(function(s){ return s.group === 'rare'; })]
+    ].forEach(function(sh) {
+        document.getElementById(sh[0]).innerHTML = sh[1].map(function(s){
+            return '<div class="st-table-card' + (s.id === equipped ? ' equipped' : '') + '" '
+                + 'onclick="equipped=\'' + s.id + '\'; renderShelves()">'
+                + '<div class="st-table-swatch ' + s.swatch + '"'
+                + (s.swatch ? '' : ' style="background: radial-gradient(ellipse at 50% 40%, #6b4a30 0%, #4a3020 55%, #2a1a10 100%)"') + '></div>'
+                + '<div class="st-table-plate"><span class="st-table-name">' + s.name + '</span>'
+                + '<span class="st-table-state">' + (s.id === equipped ? '✦ On your table' : 'Free — tap to equip') + '</span></div></div>';
+        }).join('');
+    });
+}
+renderShelves();
+
+// ── Tabs + the ?? pane (same logic as ui.js, demo unlock added) ──
+var demoUnlocked = false;
+function switchStoreTab(paneId) {
+    document.querySelectorAll('#stTabs .st-tab').forEach(function(b){
+        b.classList.toggle('on', b.dataset.pane === paneId); });
+    document.querySelectorAll('.st-pane').forEach(function(p){
+        p.classList.toggle('on', p.id === paneId); });
+    document.querySelector('.st-scroll').scrollTop = 0;
+    if (paneId === 'stPaneSecret') renderSecretPane();
+}
+function renderSecretPane() {
+    var body = document.getElementById('stSecretBody');
+    document.getElementById('stTabSecret').classList.toggle('locked', !demoUnlocked);
+    if (!demoUnlocked) {
+        body.innerHTML = '<div class="st-secret-tease">'
+            + '<div class="st-secret-mark">?</div>'
+            + '<p>The court keeps its secrets.</p>'
+            + '<p class="st-secret-sub">Some heroes are not for sale — they must be found.</p>'
+            + '<button class="pv-unlock" onclick="demoUnlocked=true; renderSecretPane()">preview: simulate an unlock</button>'
+            + '</div>';
+        return;
+    }
+    body.innerHTML = '<div class="st-grid">'
+        + '<div class="st-card owned"><div class="st-frame"><img src="../assets/characters/Magician.jpg" alt=""></div>'
+        + '<div class="st-plate"><span class="st-name">The Hooded One</span></div>'
+        + '<span class="st-owned">Found</span></div>'
+        + '</div>'
+        + '<div class="st-secret-tease" style="padding-top:6px">'
+        + '<p class="st-secret-sub">(demo card — hidden heroes appear here once discovered)</p>'
+        + '<button class="pv-unlock" onclick="demoUnlocked=false; renderSecretPane()">preview: relock</button></div>';
+}
+</script>
+</body>
+</html>
