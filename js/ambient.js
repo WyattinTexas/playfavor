@@ -32,10 +32,25 @@
 
     const canvas = document.getElementById('tsAmbient');
     if (!canvas) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    // Reduce Motion: REDUCE, don't remove (the old hard return blanked the
+    // menu for every iOS device with the accessibility setting on — that's
+    // how the TestFlight app "lost" its ambience). Calm mode keeps the
+    // gentlest elements; ?ambient=on forces the full show, =off kills all.
+    let motionPref = 'full';
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) motionPref = 'calm';
     try {
-        if (new URLSearchParams(location.search).get('ambient') === 'off') return;
+        const q = new URLSearchParams(location.search).get('ambient');
+        if (q === 'off') motionPref = 'off';
+        if (q === 'on') motionPref = 'full';
     } catch (e) {}
+    document.documentElement.dataset.ambient = motionPref;   // state beacon
+    if (motionPref === 'off') return;
+    if (motionPref === 'calm') {
+        AMBIENT.birds = false;
+        AMBIENT.butterflies = false;
+        AMBIENT.petals = false;
+        AMBIENT.smoke = false;      // pollen + sparkle stay: slow, tiny, serene
+    }
 
     const ctx = canvas.getContext('2d');
 
