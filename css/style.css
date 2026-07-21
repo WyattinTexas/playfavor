@@ -7290,6 +7290,55 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
     .tfx-img { animation: none !important; }
 }
 
+/* ═══ TABLE INSPECT — the surface at size before you equip ═══ */
+.tt-insp-inner {
+    display: flex; flex-direction: column;
+    width: min(680px, 88%); max-height: 86%;
+    border: 2px solid var(--gold, #c9a84c); border-radius: 12px;
+    overflow: hidden; background: #170e06;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.7);
+}
+.tt-insp-surface {
+    position: relative; overflow: hidden;
+    height: min(46vh, 380px);
+    /* the swatch classes carry the REAL skin css; layers fill the box */
+}
+.tt-insp-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 16px 12px;
+    border-top: 1px solid rgba(201, 168, 76, 0.35);
+    background: linear-gradient(180deg, rgba(46, 30, 12, 0.9), rgba(26, 15, 6, 0.95));
+}
+.tt-insp-id { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+/* same taming the hero easel does — the shelf's hanging price tag becomes a button */
+.tt-insp-row .st-buy {
+    position: static;
+    transform: none;
+    animation: none;
+    padding: 6px 14px;
+    font-size: 13px;
+}
+.tt-insp-row .st-buy::before, .tt-insp-row .st-buy::after { display: none; }
+.tt-insp-row .st-owned {
+    position: static;
+    width: auto; height: auto;
+    border-radius: 999px;
+    transform: none;
+    padding: 5px 14px;
+    font-size: 12px;
+}
+.tt-insp-id .st-name { font-size: 16px; }
+.tt-insp-rare {
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: 11px;
+    letter-spacing: 2px; color: #ffd98a;
+    text-shadow: 0 0 10px rgba(255, 200, 100, 0.45);
+}
+@media (orientation: landscape) and (max-height: 540px) {
+    .tt-insp-inner { width: min(560px, 90%); }
+    .tt-insp-surface { height: 52vh; }
+    .tt-insp-row { padding: 6px 12px 8px; }
+}
+
 /* ═══ STORE TABS (Wyatt+Skylar 7/21) — one category per pane ═══ */
 .st-tabs {
     display: flex; gap: 8px; justify-content: center; align-items: center;

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — A Game of Royal Succession</title>
-    <link rel="stylesheet" href="css/style.css?v=20260721153326">
+    <link rel="stylesheet" href="css/style.css?v=20260721160320">
     <!-- Skylar's melee cinematic — loaded AFTER style.css so its .ms-* rules win. -->
     <link rel="stylesheet" href="css/melee.css?v=20260720224914">
     <link rel="icon" type="image/png" href="assets/ui/favicon-serpent.png">
@@ -251,6 +251,8 @@
         </div>
         <!-- Board inspect — tap a painting, see the whole board before buying -->
         <div class="st-inspect" id="storeInspect" onclick="event.stopPropagation(); FLB.closeInspect()"></div>
+        <!-- Table inspect — see the surface (rare ones ANIMATE) before equipping -->
+        <div class="st-inspect" id="tableInspect" onclick="event.stopPropagation(); closeTableInspect()"></div>
         <div class="ov-close" onclick="FLB.closeStore()">ESC</div>
     </div>
 
@@ -587,9 +589,9 @@
     <script defer src="data/achievements.js?v=20260720224914"></script>
     <script defer src="engine/gameState.js?v=20260720224914"></script>
     <script defer src="js/melee.js?v=20260720224914"></script>
-    <script defer src="js/ui.js?v=20260721153326"></script>
-    <script defer src="js/tablefx-pts.js?v=20260721153326"></script>
-    <script defer src="js/tablefx.js?v=20260721153326"></script>
+    <script defer src="js/ui.js?v=20260721160320"></script>
+    <script defer src="js/tablefx-pts.js?v=20260721160320"></script>
+    <script defer src="js/tablefx.js?v=20260721160320"></script>
     <script defer src="js/ambient.js?v=20260720224914"></script>
     <script defer src="js/meta.js?v=20260720224914"></script>
     <script defer src="js/achievements.js?v=20260720224914"></script>

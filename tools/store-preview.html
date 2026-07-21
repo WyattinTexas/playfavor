@@ -61,8 +61,11 @@
         </div>
     </div>
 </div>
+<div class="st-inspect" id="tableInspect" onclick="closeTableInspect()"></div>
 <div class="pv-note">PREVIEW — mock data, nothing for sale. Tap the tabs. The ?? tab has a demo unlock.</div>
 
+<script src="../js/tablefx-pts.js"></script>
+<script src="../js/tablefx.js"></script>
 <script>
 // ── FLB stub: swallow the real markup's clicks ──
 window.FLB = { inspectChar: function(){}, closeStore: function(){}, closeInspect: function(){} };
@@ -124,11 +127,11 @@ function renderShelves() {
     ].forEach(function(sh) {
         document.getElementById(sh[0]).innerHTML = sh[1].map(function(s){
             return '<div class="st-table-card' + (s.id === equipped ? ' equipped' : '') + '" '
-                + 'onclick="equipped=\'' + s.id + '\'; renderShelves()">'
+                + 'onclick="inspectTable(\'' + s.id + '\')">'
                 + '<div class="st-table-swatch ' + s.swatch + '"'
                 + (s.swatch ? '' : ' style="background: radial-gradient(ellipse at 50% 40%, #6b4a30 0%, #4a3020 55%, #2a1a10 100%)"') + '></div>'
                 + '<div class="st-table-plate"><span class="st-table-name">' + s.name + '</span>'
-                + '<span class="st-table-state">' + (s.id === equipped ? '✦ On your table' : 'Free — tap to equip') + '</span></div></div>';
+                + '<span class="st-table-state">' + (s.id === equipped ? '✦ On your table' : 'Tap to view') + '</span></div></div>';
         }).join('');
     });
 }
@@ -164,6 +167,29 @@ function renderSecretPane() {
         + '<div class="st-secret-tease" style="padding-top:6px">'
         + '<p class="st-secret-sub">(demo card — hidden heroes appear here once discovered)</p>'
         + '<button class="pv-unlock" onclick="demoUnlocked=false; renderSecretPane()">preview: relock</button></div>';
+}
+
+// ── Table inspect — the surface at size; rare ones animate (real tablefx) ──
+var _inspecting = null;
+function inspectTable(id) { _inspecting = id; renderTableInspect(); }
+function closeTableInspect() { _inspecting = null; renderTableInspect(); }
+function renderTableInspect() {
+    var box = document.getElementById('tableInspect');
+    var s = null;
+    TABLE_SKINS.forEach(function(x){ if (x.id === _inspecting) s = x; });
+    if (!s) { box.classList.remove('active'); box.innerHTML = ''; return; }
+    var isEq = s.id === equipped;
+    box.innerHTML = '<div class="tt-insp-inner" onclick="event.stopPropagation()">'
+        + '<div class="tt-insp-surface ' + s.swatch + '" id="ttInspSurface"'
+        + (s.swatch ? '' : ' style="background: radial-gradient(ellipse at 50% 40%, #6b4a30 0%, #4a3020 55%, #2a1a10 100%)"') + '></div>'
+        + '<div class="tt-insp-row"><span class="tt-insp-id"><span class="st-name">' + s.name + '</span>'
+        + (s.group === 'rare' ? '<span class="tt-insp-rare">✦ RARE — it moves</span>' : '') + '</span>'
+        + (isEq ? '<span class="st-owned">✦ On your table</span>'
+                : '<button class="st-buy" onclick="event.stopPropagation(); equipped=\'' + s.id + '\'; renderShelves(); renderTableInspect()">Equip</button>')
+        + '</div></div>'
+        + '<div class="st-insp-close" onclick="event.stopPropagation(); closeTableInspect()">✕</div>';
+    box.classList.add('active');
+    if (window.TABLEFX) TABLEFX.decorate(document.getElementById('ttInspSurface'), s.id);
 }
 </script>
 </body>

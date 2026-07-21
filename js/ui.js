@@ -7993,12 +7993,12 @@ function renderStoreTables() {
     const cur = currentTableSkin();
     const card = s => `
         <div class="st-table-card${s.id === cur ? ' equipped' : ''}"
-             onclick="event.stopPropagation(); applyTableSkin('${s.id}')">
+             onclick="event.stopPropagation(); inspectTable('${s.id}')">
             <div class="st-table-swatch ${s.swatch}"
                  ${s.swatch ? '' : 'style="background: radial-gradient(ellipse at 50% 40%, #6b4a30 0%, #4a3020 55%, #2a1a10 100%)"'}></div>
             <div class="st-table-plate">
                 <span class="st-table-name">${s.name}</span>
-                <span class="st-table-state">${s.id === cur ? '✦ On your table' : 'Free — tap to equip'}</span>
+                <span class="st-table-state">${s.id === cur ? '✦ On your table' : 'Tap to view'}</span>
             </div>
         </div>`;
     const shelves = [
@@ -8010,6 +8010,49 @@ function renderStoreTables() {
         const holder = document.getElementById(id);
         if (holder) holder.innerHTML = skins.map(card).join('');
     });
+}
+
+// ── Table inspect — see the surface at size before equipping ────────────
+// Mirrors the hero easel (st-inspect). The surface div wears the same
+// swatch class as the card, so it IS the real skin CSS at panel size;
+// TABLEFX.decorate adds the living layers for rare tables.
+let _inspectingTable = null;
+
+function inspectTable(id) {
+    _inspectingTable = id;
+    renderTableInspect();
+}
+function closeTableInspect() {
+    _inspectingTable = null;
+    renderTableInspect();
+}
+window.inspectTable = inspectTable;
+window.closeTableInspect = closeTableInspect;
+
+function renderTableInspect() {
+    const box = document.getElementById('tableInspect');
+    if (!box) return;
+    const s = _inspectingTable && TABLE_SKINS.find(x => x.id === _inspectingTable);
+    if (!s) { box.classList.remove('active'); box.innerHTML = ''; return; }
+    const cur = currentTableSkin();
+    const equipped = s.id === cur;
+    box.innerHTML = `
+        <div class="tt-insp-inner" onclick="event.stopPropagation()">
+            <div class="tt-insp-surface ${s.swatch}" id="ttInspSurface"
+                 ${s.swatch ? '' : 'style="background: radial-gradient(ellipse at 50% 40%, #6b4a30 0%, #4a3020 55%, #2a1a10 100%)"'}></div>
+            <div class="tt-insp-row">
+                <span class="tt-insp-id">
+                    <span class="st-name">${s.name}</span>
+                    ${s.group === 'rare' ? '<span class="tt-insp-rare">✦ RARE — it moves</span>' : ''}
+                </span>
+                ${equipped
+                    ? '<span class="st-owned">✦ On your table</span>'
+                    : `<button class="st-buy" onclick="event.stopPropagation(); applyTableSkin('${s.id}'); renderTableInspect()">Equip</button>`}
+            </div>
+        </div>
+        <div class="st-insp-close" onclick="event.stopPropagation(); closeTableInspect()">✕</div>`;
+    box.classList.add('active');
+    if (window.TABLEFX) TABLEFX.decorate(document.getElementById('ttInspSurface'), s.id);
 }
 
 // ── Store tabs (Wyatt+Skylar 7/21) ──────────────────────────────────────
