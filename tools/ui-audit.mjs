@@ -3764,19 +3764,19 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   const ashPowerBefore = await page.evaluate(() =>
     firebase.database().ref('favor/players/persona_ashcroft/power').get().then(s => s.val()));
 
-  // 1 · The crest picker: ten paintings, picking one dresses the chip.
+  // 1 · The crest picker: nine card-art paintings, picking one dresses the chip.
   await page.evaluate(() => FLB.openProfile());
   await sleep(300);
-  ok(await page.evaluate(() => document.querySelectorAll('.pf-avatars .pf-av').length === 10),
-    'profile offers all ten crests');
-  await page.evaluate(() => document.querySelector('.pf-av[data-av="knight"]').click());
+  ok(await page.evaluate(() => document.querySelectorAll('.pf-avatars .pf-av').length === 9),
+    'profile offers all nine crests');
+  await page.evaluate(() => document.querySelector('.pf-av[data-av="griffin"]').click());
   await sleep(600);
   const crest = await page.evaluate(() => ({
-    picked: document.querySelector('.pf-av[data-av="knight"]').classList.contains('on'),
+    picked: document.querySelector('.pf-av[data-av="griffin"]').classList.contains('on'),
     mirror: localStorage.getItem('favorAvatar'),
-    chip: !!document.querySelector('#profileChip .av-disc img[src*="Knight"], #profileChip .av-disc img[src*="knight"]'),
+    chip: !!document.querySelector('#profileChip .av-disc img[src*="avatars/griffin"]'),
   }));
-  ok(crest.picked && crest.mirror === 'knight', `crest picked + mirrored (${crest.mirror})`);
+  ok(crest.picked && crest.mirror === 'griffin', `crest picked + mirrored (${crest.mirror})`);
   ok(crest.chip, 'the profile chip wears the crest');
   await page.screenshot({ path: join(SHOTS, 'profile-crests.png') });
 
@@ -3807,7 +3807,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   ok(pf.rating && pf.tier && pf.record,
     'standing carries rating, tier and record at a glance');
   ok(pf.sections.length >= 2, `it has real sections now (${pf.sections.join(' / ')})`);
-  ok(pf.pickerStill === 10, 'all ten crests are still pickable, just no longer the centrepiece');
+  ok(pf.pickerStill === 9, 'all nine crests are still pickable, just no longer the centrepiece');
   ok(pf.scrolls, '#profileBody scrolls on its own so the title stays pinned');
 
   // Per-hero ledgers — the biggest win, and every field was already in _me.
@@ -3893,7 +3893,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   ok(row && row.chars && row.chars.duchess && row.chars.duchess.g === 2
      && row.chars.duchess.r === 1279,
     `the Duchess ledger rode both games to the same 1279 (${row && row.chars && JSON.stringify(row.chars.duchess)})`);
-  ok(row && row.avatar === 'knight', 'the crest rides the game post too');
+  ok(row && row.avatar === 'griffin', 'the crest rides the game post too');
 
   // 3 · All-Time: medals on the podium, crest discs, your row glows.
   await page.evaluate(() => FLB.openLeaderboard('alltime'));
@@ -3998,12 +3998,12 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
     const panel = document.getElementById('statsPanel');
     return {
       there: !!plate,
-      knight: img ? /knight/i.test(img.src) : false,
+      crest: img ? /avatars\/griffin/.test(img.src) : false,
       name: plate ? plate.textContent.trim() : '',
       panelFits: panel ? panel.scrollHeight <= panel.clientHeight + 1 : false,
     };
   });
-  ok(ident.there && ident.knight && /Audit Herald/.test(ident.name),
+  ok(ident.there && ident.crest && /Audit Herald/.test(ident.name),
     `your crest + royal name ride the board plate (${ident.name})`);
   ok(ident.panelFits, 'stats panel keeps its no-scroll fit');
 

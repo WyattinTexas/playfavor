@@ -1292,13 +1292,27 @@
     }
 
     // ── Avatars — a chosen crest that rides the chip, the boards and the
-    // table. Starter set = the ten character paintings (round-cropped like
-    // the rival rail); stored at players/{uid}/avatar + a local mirror so
-    // every surface paints instantly.
+    // table. Crest set = nine card-art paintings (Wyatt 7/21, replacing the
+    // ten character portraits); stored at players/{uid}/avatar + a local
+    // mirror so every surface paints instantly. Legacy character-id crests
+    // (old player rows, the five personas) still resolve to their portrait
+    // so no seated row ever paints an empty disc.
+    const CRESTS = [
+        { id: 'tulip', name: 'The Tulip' },
+        { id: 'hound', name: 'The Hound' },
+        { id: 'violin', name: 'The Violin' },
+        { id: 'griffin', name: 'The Griffin' },
+        { id: 'snowbeast', name: 'The Snow Beast' },
+        { id: 'serpent', name: 'The Serpent' },
+        { id: 'owl', name: 'The White Owl' },
+        { id: 'outlaw', name: 'The Outlaw' },
+        { id: 'star', name: 'The Falling Star' },
+    ];
     function myAvatar() {
         return localStorage.getItem('favorAvatar') || (_me && _me.avatar) || null;
     }
     function avatarFile(id) {
+        if (CRESTS.some(cr => cr.id === id)) return `assets/avatars/${id}.jpg`;
         const c = ((window.FAVOR_DATA || {}).characters || []).find(x => x.id === id);
         return c ? `assets/characters/${c.filename}` : null;
     }
@@ -1436,10 +1450,10 @@
                 <input id="pfName" maxlength="24" value="${myName().replace(/"/g, '&quot;')}">
                 <button class="btn-royal" id="pfSave"><span>Save</span></button>
             </div>
-            <div class="pf-avatars" title="Choose your crest">${chars.map(c => `
+            <div class="pf-avatars" title="Choose your crest">${CRESTS.map(c => `
                 <button class="pf-av${myAvatar() === c.id ? ' on' : ''}" data-av="${c.id}"
                     onclick="FLB.setAvatar('${c.id}')" title="${c.name}">
-                    <img src="assets/characters/${c.filename}" alt="${c.name}">
+                    <img src="assets/avatars/${c.id}.jpg" alt="${c.name}">
                 </button>`).join('')}
             </div>
             ${signinSectionHtml()}
