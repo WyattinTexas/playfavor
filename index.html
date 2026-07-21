@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — A Game of Royal Succession</title>
-    <link rel="stylesheet" href="css/style.css?v=20260721151542">
+    <link rel="stylesheet" href="css/style.css?v=20260721153326">
     <!-- Skylar's melee cinematic — loaded AFTER style.css so its .ms-* rules win. -->
     <link rel="stylesheet" href="css/melee.css?v=20260720224914">
     <link rel="icon" type="image/png" href="assets/ui/favicon-serpent.png">
@@ -223,6 +223,9 @@
                 <!-- Hero Tables — one quiet tone-on-tone table per character board -->
                 <div class="st-tables-head">Hero Tables</div>
                 <div class="st-tables" id="stHeroTables"></div>
+                <!-- Rare Tables — precious materials, animated (js/tablefx.js) -->
+                <div class="st-tables-head">Rare Tables</div>
+                <div class="st-tables" id="stRareTables"></div>
                 <div class="st-counter" aria-hidden="true">
                     <img src="assets/icons/gold.png" alt=""><img src="assets/icons/prospecting.png" alt=""><img src="assets/icons/maps.png" alt=""><img src="assets/icons/favor.png" alt=""><img src="assets/icons/philosopher.png" alt=""><img src="assets/icons/minds_eye.png" alt=""><img src="assets/icons/alchemy.png" alt=""><img src="assets/icons/knowledge.png" alt="">
                 </div>
@@ -567,7 +570,9 @@
     <script defer src="data/achievements.js?v=20260720224914"></script>
     <script defer src="engine/gameState.js?v=20260720224914"></script>
     <script defer src="js/melee.js?v=20260720224914"></script>
-    <script defer src="js/ui.js?v=20260721151542"></script>
+    <script defer src="js/ui.js?v=20260721153326"></script>
+    <script defer src="js/tablefx-pts.js?v=20260721153326"></script>
+    <script defer src="js/tablefx.js?v=20260721153326"></script>
     <script defer src="js/ambient.js?v=20260720224914"></script>
     <script defer src="js/meta.js?v=20260720224914"></script>
     <script defer src="js/achievements.js?v=20260720224914"></script>

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>FAVOR — Table Skins Preview</title>
 <!-- Real game stylesheet: the skins are judged under the exact UI chrome. -->
-<link rel="stylesheet" href="../css/style.css?v=20260721151542">
+<link rel="stylesheet" href="../css/style.css?v=20260721153326">
 <style>
   html, body { margin: 0; height: 100%; background: #140a04; font-family: 'Cinzel', serif; }
   /* the harness shows the game screen without playing a game */
@@ -64,6 +64,10 @@
   <button class="pv-btn" data-skin="skin-hero-fiddler">Fiddler</button>
   <button class="pv-btn" data-skin="skin-hero-duchess">Duchess</button>
   <button class="pv-btn" data-skin="skin-hero-magician">Magician</button>
+  <b style="margin-left:10px">Rare</b>
+  <button class="pv-btn" data-skin="skin-rare-ember" data-fx="rare-ember">Ember Throne</button>
+  <button class="pv-btn" data-skin="skin-rare-astronomer" data-fx="rare-astronomer">Astronomer Royal</button>
+  <button class="pv-btn" data-skin="skin-rare-vault" data-fx="rare-vault">Drowned Vault</button>
 </div>
 
 <!-- A representative mid-game table: seats, purse, skills, missions, board,
@@ -79,14 +83,18 @@
   </div>
 </div>
 
+<script src="../js/tablefx-pts.js"></script>
+<script src="../js/tablefx.js"></script>
 <script>
   // Skin classes come from the REAL stylesheet — this harness only toggles them.
+  // Rare skins also get their live animation layer via the REAL tablefx.js.
   document.querySelectorAll('[data-skin]').forEach(b => b.onclick = () => {
     document.querySelectorAll('[data-skin]').forEach(x => x.classList.remove('on'));
     b.classList.add('on');
     const g = document.getElementById('game-screen');
     g.className = '';
     if (b.dataset.skin) g.classList.add(b.dataset.skin);
+    if (window.TABLEFX) TABLEFX.apply(b.dataset.fx || '');
   });
   // URL: ?skin=skin-velvet preselects (headless captures)
   const q = new URLSearchParams(location.search).get('skin');

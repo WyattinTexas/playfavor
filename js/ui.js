@@ -7965,6 +7965,11 @@ const TABLE_SKINS = [
     { id: 'hero-fiddler',   name: "The Fiddler's Table",   cls: 'skin-hero-fiddler',   swatch: 'tsw-hero-fiddler',   group: 'hero' },
     { id: 'hero-duchess',   name: "The Duchess's Table",   cls: 'skin-hero-duchess',   swatch: 'tsw-hero-duchess',   group: 'hero' },
     { id: 'hero-magician',  name: "The Magician's Table",  cls: 'skin-hero-magician',  swatch: 'tsw-hero-magician',  group: 'hero' },
+    // Rare Tables — precious materials with animated life (js/tablefx.js).
+    // Acquisition gating TBD (Wyatt) — free to equip while we tune.
+    { id: 'rare-ember',      name: 'The Ember Throne',     cls: 'skin-rare-ember',      swatch: 'tsw-rare-ember',      group: 'rare' },
+    { id: 'rare-astronomer', name: 'The Astronomer Royal', cls: 'skin-rare-astronomer', swatch: 'tsw-rare-astronomer', group: 'rare' },
+    { id: 'rare-vault',      name: 'The Drowned Vault',    cls: 'skin-rare-vault',      swatch: 'tsw-rare-vault',      group: 'rare' },
 ];
 
 function currentTableSkin() {
@@ -7979,6 +7984,7 @@ function applyTableSkin(id) {
         TABLE_SKINS.forEach(s => { if (s.cls) g.classList.remove(s.cls); });
         if (skin.cls) g.classList.add(skin.cls);
     }
+    if (window.TABLEFX) TABLEFX.apply(skin.id);   // rare-skin animated layers
     renderStoreTables();
 }
 window.applyTableSkin = applyTableSkin;
@@ -7996,8 +8002,9 @@ function renderStoreTables() {
             </div>
         </div>`;
     const shelves = [
-        ['stTables',     TABLE_SKINS.filter(s => s.group !== 'hero')],
+        ['stTables',     TABLE_SKINS.filter(s => !s.group)],
         ['stHeroTables', TABLE_SKINS.filter(s => s.group === 'hero')],
+        ['stRareTables', TABLE_SKINS.filter(s => s.group === 'rare')],
     ];
     shelves.forEach(([id, skins]) => {
         const holder = document.getElementById(id);
