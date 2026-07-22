@@ -460,7 +460,9 @@ class FavorGame {
         if (card.reqMaps && card.reqMaps.length > 0) {
             const held = this.getPlayerMaps(playerIndex);
             if (card.reqMaps.some(m => held.includes(m))) {
-                return { canPlay: true, missingSkills: [], missingSpecial: [] };
+                // mapFree: the map plays the card for NO cost (rulebook p.12)
+                // — the UI highlights these orange in the hand.
+                return { canPlay: true, missingSkills: [], missingSpecial: [], mapFree: true };
             }
         }
 

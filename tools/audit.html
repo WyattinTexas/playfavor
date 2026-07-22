@@ -45,6 +45,13 @@
     .vbtn.isb.sel { background: #6e2424; color: #ffd7d7; border-color: #c05050; }
     .vnote { font-family: inherit; font-size: 12.5px; background: #1c1207; color: #f0e6d3; border: 1px solid rgba(201,168,76,0.35); border-radius: 7px; padding: 6px; min-height: 54px; resize: vertical; }
     .slotrow td { border-top: 1px solid rgba(201,168,76,0.18); }
+    .sp-ctx { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; border-radius: 6px; padding: 1px 7px; margin-right: 7px; vertical-align: 2px; }
+    .sp-ctx.play { background: #274a27; color: #b8e0b8; } .sp-ctx.slot { background: #2a3a5a; color: #b9ccf0; }
+    .sp-ctx.success { background: #4a3a1a; color: #ecd9a0; } .sp-ctx.fail { background: #4a2020; color: #f0b9b9; }
+    .sp-ctx.scoring { background: #3a2a4a; color: #d9c0f0; } .sp-ctx.melee { background: #4a2a10; color: #f0c9a0; }
+    .sp-note { font-size: 12.5px; color: #ffcf8a; margin-top: 4px; }
+    .sp-used { font-size: 12px; color: rgba(240,230,211,0.55); margin-top: 4px; }
+    .sp-dead { color: #ff9d9d; }
     .zoom { position: fixed; inset: 0; background: rgba(8,5,2,0.9); display: none; align-items: center; justify-content: center; z-index: 50; cursor: zoom-out; }
     .zoom.on { display: flex; }
     .zoom img { max-width: 94vw; max-height: 94vh; border-radius: 10px; }
@@ -69,6 +76,7 @@
         <button class="tab on" data-t="cards" onclick="setTab('cards')">Cards <span id="nCards"></span></button>
         <button class="tab" data-t="missions" onclick="setTab('missions')">Missions <span id="nMissions"></span></button>
         <button class="tab" data-t="boards" onclick="setTab('boards')">Boards <span id="nBoards"></span></button>
+        <button class="tab" data-t="specials" onclick="setTab('specials')">Specials <span id="nSpecials"></span></button>
         <div class="tools">
             <select id="fAct" onchange="render()"><option value="">All acts</option><option>1</option><option>2</option><option>3</option></select>
             <select id="fState" onchange="render()"><option value="">All items</option><option value="un">Unreviewed</option><option value="ok">OK</option><option value="issue">Issues</option></select>
@@ -198,12 +206,166 @@ function item(id, img, name, sub, rows, auditStr, raw, isBoard, dots) {
 }
 function zoom(src) { document.getElementById('zoomImg').src = src; document.getElementById('zoom').classList.add('on'); }
 
+// ── SPECIALS BEHAVIOR AUDIT (Claude, 7/22) ──────────────────────────
+// What the ENGINE actually does for every special key — read from the
+// handlers themselves, not the key names (the trade_route lesson).
+// ctx: play = fires when the card is played · slot = board slot event on
+// landing · success/fail = mission resolution · scoring = end-of-game
+// Favor formula · melee = flag applied at the melee.
+const SPECIALS = [
+ // — card plays —
+ { k:'philosopher_stone', ctx:'play', what:"+1 Philosopher's Stone token. Stacks. A requirement resource only — never worth Favor by itself." },
+ { k:'minds_eye', ctx:'play', what:"+1 Mind's Eye (counted live from your played cards)." },
+ { k:'minds_eye_x2', ctx:'play', what:"+2 Mind's Eye (Deadeye — its +1 Power rides the card's skill list)." },
+ { k:'minds_eye_x3', ctx:'play', what:"+3 Mind's Eye (Shattering the Mirror Prison)." },
+ { k:'knowledge_x5', ctx:'play', what:"Royal Library: 5 Knowledge total (1 from the skill list + 4 from the handler)." },
+ { k:'power_6_if_blind_faith', ctx:'melee', what:"+6 Power at the melee while Blind Faith AND this card are both on your field (Heaven's Blade / Archeus).", note:"No play-time handler on purpose — the log prints 'unknown special (ignored)' when played; cosmetic only." },
+ { k:'power_x2', ctx:'melee', what:"Doubles your total Power for this act's melee." },
+ { k:'minus_3_power_all_others', ctx:'melee', what:"Fuzzy Head: every OTHER player −3 Power at this act's melee." },
+ { k:'coin_flip_4_power', ctx:'melee', what:"Shot of Courage: coin decided at play (revealed live at the melee) — heads +4 Power, tails nothing." },
+ { k:'king_of_the_sky', ctx:'melee', what:"Dawnharbinger: +3 Power at the melee ONLY if you have strictly the most Survival.", note:"A tie loses the bonus — is that the printed intent?" },
+ { k:'defend_the_throne', ctx:'melee', what:"Guardian: negates the first Power reduction against you (up to 3), once." },
+ { k:'move_slider_any', ctx:'play', what:"Chemical X: you choose ANY slot and the ring moves there free; the landing pays out normally." },
+ { k:'double_adventure_favor', ctx:'play', what:"Chemical Y: choose ONE of your adventure cards — its Favor doubles at scoring. Owning Chemical X also pays +15 Favor at scoring." },
+ { k:'scorn_to_prestige', ctx:'play', what:"Mind Warper: ALL your Scorn becomes Prestige, 1:1." },
+ { k:'gold_to_prestige', ctx:'play', what:"Gold Luster: ALL your Gold becomes Prestige, 1:1." },
+ { k:'others_15_scorn', ctx:'play', what:"Chemical Z: every other player +15 Scorn (you take 5 via the card's own rewards)." },
+ { k:'multiply_gold_x2', ctx:'play', what:"Duplicating Goo: doubles your current Gold." },
+ { k:'gold_2_per_alchemy_triangle', ctx:'play', what:"Marketplace Sales: +2 Gold per Alchemy that you AND both neighbors currently have (summed)." },
+ { k:'gold_2_per_power_neighbors', ctx:'play', what:"Melee Spectacular: +2 Gold per Power your two neighbors currently have (pairings count)." },
+ { k:'remove_mission_requirements', ctx:'play', what:"Life Essence: choose one ACTIVE mission — its requirement is waived permanently." },
+ { k:'remove_13_scorn', ctx:'play', what:"Mind Eraser: removes up to 13 Scorn." },
+ { k:'discard_opponent_weapon', ctx:'play', what:"Archeus: every OTHER player must discard 1 weapon — the victim chooses which." },
+ { k:'trade_route', ctx:'play', what:"Trade Route (GNC / Market Trade Exchange): while on your field, borrow Survival/Alchemy/Charisma/Prospecting from ANY player.", note:"FIXED 7/22 — previously paid an invented +3 Gold per adventure and granted no borrowing." },
+ { k:'sacred_chest', ctx:'play', what:"No effect by design — the card's whole link is the map that plays it free; its Favor pays per artifact at scoring." },
+ { k:'map', ctx:'play', what:"Map half: when both a 1/2 and 2/2 half are on your field, +20 Favor, once." },
+ { k:'map_lost_north', ctx:'play', what:"Lost North Map half — same +20 pair rule." },
+ { k:'map_finding_lost_corridor', ctx:'play', what:"Finding the Lost Corridor half — same +20 pair rule." },
+ { k:'or_choice', ctx:'play', what:"Legacy: logs a line, grants nothing extra (the flex-skill specials replaced it)." },
+ { k:'charisma_or_prospecting', ctx:'play', what:"Mining Guild: ONE flex unit that counts as Charisma OR Prospecting per check — never both at once." },
+ { k:'alchemy_or_prospecting', ctx:'play', what:"Forbidden Lab: flex — Alchemy OR Prospecting per check." },
+ { k:'alchemy_or_survival', ctx:'play', what:"Hermit's Lab: flex — Alchemy OR Survival per check." },
+ // — board slot events —
+ { k:'steal_3_prestige_each', ctx:'slot', what:"Take up to 3 Prestige from EACH rival. Recharges once per act." },
+ { k:'steal_2_gold_each', ctx:'slot', what:"Take up to 2 Gold from each rival. Fires on every landing." },
+ { k:'give_1_gold_each', ctx:'slot', what:"Give 1 Gold to each rival, from your purse. Every landing.", note:"No zero-floor — a broke player's Gold can go NEGATIVE here. Worth a guard." },
+ { k:'all_others_1_scorn', ctx:'slot', what:"+1 Scorn to each rival. Every landing." },
+ { k:'convert_gold_to_prestige', ctx:'slot', what:"ALL your Gold becomes Prestige, 1:1. Every landing." },
+ { k:'philosopher_stone', ctx:'slot', what:"+1 Philosopher's Stone — this slot pays once per GAME." },
+ { k:'philosopher_stone_x2', ctx:'slot', what:"+2 Philosopher's Stones — once per game." },
+ { k:'minds_eye', ctx:'slot', what:"Ongoing +1 Knowledge WHILE the ring stands here (leaves when you slide away)." },
+ { k:'minds_eye_x5', ctx:'slot', what:"Ongoing +5 Knowledge while standing here." },
+ { k:'minds_eye_x8', ctx:'slot', what:"Ongoing +8 Knowledge while standing here." },
+ { k:'minds_eye_and_philosopher', ctx:'slot', what:"Mind's Eye (ongoing while here) + 1 Philosopher's Stone (once per game)." },
+ { k:'adventure_card_5_prestige', ctx:'slot', what:"While standing here: each Adventure card you play pays +5 Prestige." },
+ { k:'weapon_card_3_gold', ctx:'slot', what:"While standing here: each Weapon card you play pays +3 Gold." },
+ { k:'free_potion_per_round', ctx:'slot', what:"While standing here: one Potion per round plays with its Gold cost waived." },
+ { k:'alchemy_adds_to_power', ctx:'slot', what:"While standing here: your Alchemy total also counts as Power." },
+ { k:'borrow_any_player', ctx:'slot', what:"While standing here: borrow ANY skill from ANY player (not just neighbors)." },
+ { k:'mission_fail_10_gold', ctx:'slot', what:"While standing here: failing a mission pays you +10 Gold." },
+ { k:'choose_mission', ctx:'slot', what:"Take a mission from the visible pool, free — you pick. Recharges once per act." },
+ { k:'pick_one', ctx:'slot', what:"Pick one skill from the printed options — the skill is PERMANENT and stays after the ring leaves. Once per act.", note:"This is the likely source of the 'Magician board +1 Power at melee' report: Side B's options include Power, and the melee's Board tile wears all unattributed power." },
+ // — mission success —
+ { k:'favor_per_charisma_x2', ctx:'success', what:"+2 Favor per Charisma you have, booked to the mission." },
+ { k:'favor_per_knowledge_x1', ctx:'success', what:"+1 Favor per Knowledge." },
+ { k:'favor_per_minds_eye_x5', ctx:'success', what:"+5 Favor per Mind's Eye." },
+ { k:'favor_per_philstone_x10', ctx:'success', what:"+10 Favor per Philosopher's Stone (King of the Sky — the one printed mechanic that pays for stones)." },
+ { k:'philosopher_stone_x2_grant', ctx:'success', what:"+2 Philosopher's Stones." },
+ { k:'scorn_to_prestige_all', ctx:'success', what:"ALL your Scorn becomes Prestige, 1:1." },
+ { k:'remove_20_scorn', ctx:'success', what:"Removes up to 20 Scorn." },
+ { k:'duplicate_artifact', ctx:'success', what:"Copies your MOST RECENT artifact — its skills grant again.", note:"Auto-picks the last one played; the physical game would let you choose." },
+ { k:'duplicate_potion', ctx:'success', what:"Copies your MOST RECENT potion and its effect FIRES again.", note:"Auto-picks the last one played — no choice." },
+ // — mission failure —
+ { k:'others_gain_5_gold', ctx:'fail', what:"Every other player +5 Gold." },
+ { k:'others_gain_3_gold', ctx:'fail', what:"Every other player +3 Gold." },
+ { k:'others_gain_3_prestige', ctx:'fail', what:"Every other player +3 Prestige." },
+ { k:'others_remove_15_scorn', ctx:'fail', what:"Every other player removes up to 15 Scorn." },
+ { k:'all_gain_2_gold', ctx:'fail', what:"EVERY player (you included) +2 Gold." },
+ { k:'you_gain_1_gold', ctx:'fail', what:"You gain 1 Gold." },
+ { k:'gain_20_prestige', ctx:'fail', what:"You gain 20 Prestige." },
+ { k:'scorn_2_per_charisma', ctx:'fail', what:"+2 Scorn per Charisma you have." },
+ { k:'scorn_10_per_knowledge', ctx:'fail', what:"+10 Scorn per Knowledge you have." },
+ { k:'scorn_5_per_knowledge', ctx:'fail', what:"+5 Scorn per Knowledge (Trust of the Elders — art reads 5)." },
+ { k:'prestige_2_per_knowledge', ctx:'fail', what:"+2 Prestige per Knowledge." },
+ { k:'discard_1_played', ctx:'fail', what:"Discard 1 of your played cards — you choose." },
+ { k:'discard_5_played', ctx:'fail', what:"Discard 5 of your played cards — you choose." },
+ { k:'discard_1_artifact', ctx:'fail', what:"Discard 1 artifact from your field." },
+ { k:'discard_weapons_gain_5_prestige', ctx:'fail', what:"Discard ALL your weapons, +5 Prestige each." },
+ { k:'discard_wisdom_gain_8_gold', ctx:'fail', what:"Discard ALL your wisdom cards, +8 Gold each." },
+ { k:'discard_power_gain_10_prestige', ctx:'fail', what:"Secret Grotto: discard ALL your weapons, +10 Prestige each." },
+ { k:'discard_any_gain_8_prestige_each', ctx:'fail', what:"A Promise: discard as many of your played cards as you like, +8 Prestige each — you choose." },
+ { k:'fortune_teller_50_prestige', ctx:'fail', what:"If Fortune Teller is on your field when this fails: +50 Prestige. Otherwise nothing moves." },
+ { k:'lose_all_prestige_and_scorn', ctx:'fail', what:"Your Prestige AND Scorn both drop to zero." },
+ { k:'all_draw_act3_mission', ctx:'fail', what:"The Midnight Crash: EVERY player draws an Act 3 mission." },
+ // — scoring-time favor formulas —
+ { k:'favor_per_survival_x2', ctx:'scoring', what:"Card scores 2 Favor per Survival you have." },
+ { k:'favor_per_quest_x5', ctx:'scoring', what:"5 Favor per completed mission." },
+ { k:'favor_per_knowledge_x2', ctx:'scoring', what:"Family Ring: 2 Favor per Knowledge." },
+ { k:'favor_per_sur_cha_pro', ctx:'scoring', what:"1 Favor per Survival + Charisma + Prospecting, summed." },
+ { k:'favor_per_artifact_x8', ctx:'scoring', what:"Sacred Chest: 8 Favor per artifact on your field (it counts itself)." },
+ { k:'favor_per_potion_x5', ctx:'scoring', what:"Secret Lab: 5 Favor per potion on your field." },
+ { k:'favor_per_neighbor_power', ctx:'scoring', what:"Royal Hilt: Favor equal to both neighbors' Power, summed at scoring." },
+];
+const CTX_LABEL = { play:'On play', slot:'Board slot', success:'Mission success', fail:'Mission failure', scoring:'At scoring', melee:'At the melee' };
+function specialUsers(key, ctx) {
+    const d = D(); const users = [];
+    if (ctx === 'play' || ctx === 'melee' || ctx === 'scoring') {
+        (d.cards || []).forEach(c => { if (c.special === key) users.push(c.name); });
+    }
+    if (ctx === 'slot') {
+        (d.characters || []).forEach(c => {
+            (c.slots || []).forEach((sl, i) => { if (sl.special === key) users.push(`${c.name} A/slot${i}`); });
+            (c.altSlots || []).forEach((sl, i) => { if (sl.special === key) users.push(`${c.name} B/slot${i}`); });
+        });
+    }
+    if (ctx === 'success') (d.missions || []).forEach(m => { if (m.successSpecial === key) users.push(m.name); });
+    if (ctx === 'fail') (d.missions || []).forEach(m => { if (m.failSpecial === key) users.push(m.name); });
+    return users;
+}
+function undocumentedSpecials() {
+    const d = D(); const known = new Set(SPECIALS.map(x => x.ctx + ':' + x.k)); const out = [];
+    (d.cards || []).forEach(c => { if (c.special && !SPECIALS.some(x => x.k === c.special && ['play','melee','scoring'].includes(x.ctx))) out.push({ k: c.special, ctx: 'play', what: '', undoc: true }); });
+    (d.characters || []).forEach(c => [...(c.slots||[]), ...(c.altSlots||[])].forEach(sl => {
+        if (sl.special && !known.has('slot:' + sl.special)) out.push({ k: sl.special, ctx: 'slot', what: '', undoc: true }); }));
+    (d.missions || []).forEach(m => {
+        if (m.successSpecial && !known.has('success:' + m.successSpecial)) out.push({ k: m.successSpecial, ctx: 'success', what: '', undoc: true });
+        if (m.failSpecial && !known.has('fail:' + m.failSpecial)) out.push({ k: m.failSpecial, ctx: 'fail', what: '', undoc: true });
+    });
+    const seen = new Set();
+    return out.filter(x => { const kk = x.ctx + ':' + x.k; if (seen.has(kk)) return false; seen.add(kk); return true; });
+}
+function specialItem(sp) {
+    const id = `special:${sp.ctx}:${sp.k}`;
+    const v = verdicts[id] || {};
+    const cls = v.status === 'ok' ? ' ok' : v.status === 'issue' ? ' issue' : '';
+    const users = specialUsers(sp.k, sp.ctx);
+    const usedLine = sp.undoc
+        ? '<span class="sp-dead">⚠ IN THE DATA BUT NOT IN THIS AUDIT — the engine may silently ignore it. Flag it.</span>'
+        : users.length ? 'Used by: ' + users.join(', ')
+        : '<span class="sp-dead">Used by NOTHING in the data — dead engine code (harmless, but worth pruning).</span>';
+    return `<div class="item${cls}" data-id="${id}">
+        <div class="meta">
+            <div class="nm"><span class="sp-ctx ${sp.ctx}">${CTX_LABEL[sp.ctx]}</span><code>${sp.k}</code></div>
+            <div style="margin-top:5px">${sp.what || '<i>No behavior documented.</i>'}</div>
+            ${sp.note ? `<div class="sp-note">⚑ ${sp.note}</div>` : ''}
+            <div class="sp-used">${usedLine}</div>
+        </div>
+        <div class="verd">
+            <button class="vbtn okb${v.status === 'ok' ? ' sel' : ''}" onclick="setV('${id}', 'ok')">✓ Looks right</button>
+            <button class="vbtn isb${v.status === 'issue' ? ' sel' : ''}" onclick="setV('${id}', 'issue')">⚠ Issue</button>
+            <textarea class="vnote" placeholder="note…" onchange="setNote('${id}', this.value)">${v.note || ''}</textarea>
+        </div>
+    </div>`;
+}
+function allSpecials() { return [...SPECIALS, ...undocumentedSpecials()]; }
+
 // ── Render + report ─────────────────────────────────────────────────
 function allIds() {
     const ids = [];
     (D().cards || []).forEach(c => ids.push('card:' + c.name));
     (D().missions || []).forEach(m => ids.push('mission:' + m.name));
     (D().characters || []).forEach(c => { ids.push(`board:${c.id}:A`); if (c.altSlots) ids.push(`board:${c.id}:B`); });
+    allSpecials().forEach(sp => ids.push(`special:${sp.ctx}:${sp.k}`));
     return ids;
 }
 function progress() {
@@ -230,9 +392,11 @@ function render() {
     document.getElementById('nCards').textContent = `(${d.cards.length})`;
     document.getElementById('nMissions').textContent = `(${d.missions.length})`;
     document.getElementById('nBoards').textContent = `(${d.characters.length * 2 - d.characters.filter(c => !c.altSlots).length})`;
+    document.getElementById('nSpecials').textContent = `(${allSpecials().length})`;
     let html = '';
     if (TAB === 'cards') html = d.cards.filter(c => passFilter('card:' + c.name, c.act)).map(cardItem).join('');
     if (TAB === 'missions') html = d.missions.filter(m => passFilter('mission:' + m.name, m.act)).map(missionItem).join('');
+    if (TAB === 'specials') html = allSpecials().filter(sp => passFilter(`special:${sp.ctx}:${sp.k}`)).map(specialItem).join('');
     if (TAB === 'boards') html = d.characters.map(c =>
         (passFilter(`board:${c.id}:A`) ? boardItem(c, 'A') : '') +
         (c.altSlots && passFilter(`board:${c.id}:B`) ? boardItem(c, 'B') : '')).join('');

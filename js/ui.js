@@ -3285,11 +3285,14 @@ function renderHand(state) {
         const angle = startAngle + step * i;
         const lift = -Math.abs(angle) * 0.4;
 
-        html += `<div class="hand-card"
+        let mapFree = false;
+        try { mapFree = !!game.checkRequirements(0, card).mapFree; } catch (e) { /* not free */ }
+        html += `<div class="hand-card${mapFree ? ' mapfree' : ''}"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
                     data-hand-i="${i}"
                     ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
                     <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
+                    ${mapFree ? '<span class="mapfree-tag">FREE</span>' : ''}
                 </div>`;
     });
 
@@ -3680,12 +3683,17 @@ function renderTvHand(state) {
                 try { playable = game.checkRequirements(0, card).canPlay; } catch (e) { playable = false; }
             }
         }
+        // Map-free (Wyatt 7/22): a held map plays this card for FREE — the
+        // orange glow says so at a glance, any turn, no card-reading needed.
+        let mapFree = false;
+        try { mapFree = !!game.checkRequirements(0, card).mapFree; } catch (e) { /* not free */ }
         // No tap-to-select here: committing a card is the DRAG-UP gesture
         // (touch = bloom to read, drag up + release = the throw).
-        html += `<div class="hand-card${playable ? ' playable' : ''}"
+        html += `<div class="hand-card${playable ? ' playable' : ''}${mapFree ? ' mapfree' : ''}"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
                     data-hand-i="${i}">
                     <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
+                    ${mapFree ? '<span class="mapfree-tag">FREE</span>' : ''}
                 </div>`;
     });
     html += '</div>';
