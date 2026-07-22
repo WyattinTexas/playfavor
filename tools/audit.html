@@ -60,7 +60,7 @@
     <div class="findings">
         <b>Findings on the two reported bugs (7/22):</b>
         <ul>
-            <li><b>Great North Connection + 18 Gold:</b> the card grants NO gold (data and engine both: 5 Favor + trade-route borrowing + a map). The only mechanic that pays you gold on another player's turn is <b>lending</b>: 2 Gold per skill borrowed from you. 18 Gold = 9 skills borrowed — most likely the next player borrowed heavily for a big card or mission. Working as designed, but 9-skill borrows may deserve a design cap.</li>
+            <li><b>Great North Connection + 18 Gold — CONFIRMED ENGINE BUG, FIXED 7/22:</b> the engine's <code>trade_route</code> handler was pure invention: it paid <b>+3 Gold per adventure card played</b> (your 6 adventures × 3 = the 18) and granted <b>no borrowing at all</b>. Now fixed live: no phantom gold, and a played GNC/Market Trade Exchange lets you borrow Survival/Alchemy/Charisma/Prospecting from ANY player (Knowledge & Power stay neighbors-only, per the printed card).</li>
             <li><b>Magician +1 Power at melee (ring at center):</b> the Magician board has NO Power in any slot, either side — verified in data. The melee's "Board" tile is a catch-all: it wears ALL power not attributable to a played card or mission. The likely true source: Side B's 4th-slot pick-one includes <b>Power</b>, and a picked skill is permanent — it stays after the ring moves away. So the +1 was probably real, just mislabeled as "the board." Recommended fix: record slot picks so the melee can caption them honestly.</li>
         </ul>
     </div>

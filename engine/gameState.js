@@ -42,6 +42,9 @@ const SLIDER_MOVE_COST = 5;
 const SLIDER_POSITIONS = 5;       // 5 slots (0-4), center = 2
 const SLIDER_CENTER = 2;
 const BORROW_SKILL_COST = 2;
+// The Trade Route's printed skills — GNC/MTE holders may borrow these from
+// any player at the table (getBorrowableSkills).
+const TRADE_ROUTE_SKILLS = ['survival', 'alchemy', 'charisma', 'prospecting'];
 
 // Slot events that recharge ONCE PER ACT rather than firing on every landing.
 // Everything else on a character board re-fires freely (see applySliderAbilities).
@@ -620,26 +623,29 @@ class FavorGame {
     getBorrowableSkills(playerIndex) {
         const player = this.players[playerIndex];
 
-        // Merchant's "borrow_any_player" slot: can borrow from ALL players
+        // Merchant's "borrow_any_player" slot: ALL players, every skill.
         const char = player.character;
         const currentSlot = char && char.slots ? char.slots[player.sliderPosition] : null;
         const canBorrowAny = currentSlot && currentSlot.special === 'borrow_any_player';
+        // Trade Route (Great North Connection / Market Trade Exchange) on
+        // the field: ALL players too, but only for the four skills the
+        // card prints — Survival / Alchemy / Charisma / Prospecting.
+        // Knowledge and Power stay neighbors-only.
+        const hasTradeRoute = (player.playedCards || []).some(c => c.special === 'trade_route');
 
-        let sources;
-        if (canBorrowAny) {
-            sources = [];
-            for (let i = 0; i < this.playerCount; i++) {
-                if (i !== playerIndex) sources.push(i);
-            }
-        } else {
-            const leftNeighbor = (playerIndex - 1 + this.playerCount) % this.playerCount;
-            const rightNeighbor = (playerIndex + 1) % this.playerCount;
-            sources = [leftNeighbor, rightNeighbor];
+        const everyone = [];
+        for (let i = 0; i < this.playerCount; i++) {
+            if (i !== playerIndex) everyone.push(i);
         }
+        const leftNeighbor = (playerIndex - 1 + this.playerCount) % this.playerCount;
+        const rightNeighbor = (playerIndex + 1) % this.playerCount;
+        const neighbors = [...new Set([leftNeighbor, rightNeighbor])];
 
         const borrowable = {};
-        sources.forEach(ni => {
-            SKILLS.forEach(skill => {
+        SKILLS.forEach(skill => {
+            const wide = canBorrowAny
+                || (hasTradeRoute && TRADE_ROUTE_SKILLS.includes(skill));
+            (wide ? everyone : neighbors).forEach(ni => {
                 // Only skills from played cards can be borrowed (not slider proficiency)
                 if (this.playerHasSkillOnCards(ni, skill)) {
                     if (!borrowable[skill]) borrowable[skill] = [];
@@ -1835,17 +1841,17 @@ class FavorGame {
                 break;
 
             case 'trade_route':
-                // Market Trade Exchange / Great North Connection: +3 Gold per adventure card played
-                {
-                    const adventureCount = player.playedCards.filter(c => c.type === 'adventure').length;
-                    const bonus = adventureCount * 3;
-                    if (bonus > 0) {
-                        player.gold += bonus;
-                        this.addLog(`${player.name}'s ${card.name}: +${bonus} Gold (${adventureCount} adventure cards × 3)`);
-                    } else {
-                        this.addLog(`${player.name}'s ${card.name}: no adventure cards played yet`);
-                    }
-                }
+                // Great North Connection / Market Trade Exchange: the TRADE
+                // ROUTE. The printed card grants BORROW RIGHTS — while this
+                // card is on your field you may borrow Survival / Alchemy /
+                // Charisma / Prospecting from ANY player, not just your
+                // neighbors. getBorrowableSkills derives it from the played
+                // card, so there is nothing to store here.
+                // ⚠ AUDIT FIX 7/22 (operator's 18-Gold report): the old
+                // handler paid +3 Gold per adventure card played — pure
+                // invention, on no printed card. GNC with 5 prior adventures
+                // paid a silent 18 Gold and granted no borrowing at all.
+                this.addLog(`${player.name}'s ${card.name}: Trade Route open — may borrow Sur/Alc/Cha/Pro from ANY player`);
                 break;
 
             case 'sacred_chest':
