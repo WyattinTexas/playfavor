@@ -8009,8 +8009,9 @@ function shuffleArray(arr) {
 // vignette so gameplay reads identically. Free while we tune; Stars later.
 // Economy (Wyatt 7/21): oak + leather free; priced skins unlock with Stars;
 // hero tables are EARNED by leveling that hero; rare tables by royal deed.
-// Star DEDUCTION belongs to FLB (meta.js) — buyTable() calls FLB.buyTable
-// when it exists; until then the button explains, grants nothing.
+// Star DEDUCTION belongs to FLB (meta.js) — buyTable() calls FLB.buyTable,
+// which deducts and records ownership at players/{uid}/tables in one txn;
+// the local grant here fires only after that ledger leg commits.
 const TABLE_SKINS = [
     { id: 'oak',    name: 'Royal Oak',        cls: '',            swatch: '' },
     { id: 'leather', name: 'Oxblood Leather', cls: 'skin-leather', swatch: 'tsw-leather' },
@@ -8068,10 +8069,21 @@ function buyTable(id) {
     _confirmingTableBuy = null;
     if (window.FLB && FLB.buyTable) {
         // meta.js owns Stars — it deducts, records ownership, and repaints.
-        FLB.buyTable(id, s.price, function granted() {
-            const own = ownedTableIds(); own.push(id);
+        Promise.resolve(FLB.buyTable(id, s.price, function granted() {
+            const own = ownedTableIds();
+            if (!own.includes(id)) own.push(id);
             try { localStorage.setItem('favor_tables_owned', JSON.stringify(own)); } catch (e) {}
             renderStoreTables(); renderTableInspect();
+        })).then(function (res) {
+            if (res && res.ok === false) {
+                _tableBuyNote = res.why === 'offline'
+                    ? 'The Mint is closed — connect to purchase.'
+                    : 'Not enough Stars.';
+                renderTableInspect();
+            }
+        }).catch(function () {
+            _tableBuyNote = 'The Mint is closed — connect to purchase.';
+            renderTableInspect();
         });
     } else {
         _tableBuyNote = 'Purchases open with the next royal decree.';

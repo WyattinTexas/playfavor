@@ -1389,6 +1389,63 @@
         return { ok: true };
     }
 
+    // ── Table skins — the Stars leg of ui.js's Table Maker shelf. ui.js
+    // owns the skins list, the shelf, and equipping; it calls
+    // FLB.buyTable(id, price, grantCb) and grants locally only when this
+    // ledger leg commits. Ownership lives at players/{uid}/tables/{id}
+    // so a purchase survives a reinstall; the local mirror is ui.js's
+    // favor_tables_owned (a JSON id array) — UNION the ledger in, never
+    // replace, because hero-level and deed grants may exist only locally.
+    function mirrorTables(map) {
+        try {
+            const own = JSON.parse(localStorage.getItem('favor_tables_owned') || '[]');
+            const ids = Object.keys(map || {}).filter(k => map[k]);
+            localStorage.setItem('favor_tables_owned',
+                JSON.stringify([...new Set([...own, ...ids])]));
+        } catch (e) { /* private mode */ }
+    }
+    // Same whole-record discipline as buyCrest: the balance check and the
+    // ownership write commit together or not at all. price arrives from
+    // ui.js's TABLE_SKINS — sanitized here, but the txn is the authority.
+    async function buyTable(tableId, price, grantCb) {
+        price = Math.floor(+price || 0);
+        if (!tableId || price <= 0) return { ok: false, why: 'unknown' };
+        if (mode !== 'firebase') return { ok: false, why: 'offline' };
+        try {
+            const current = await dbGet(`players/${uid()}`);
+            if (current && current.tables && current.tables[tableId]) {
+                // Already on the ledger (bought on another device) — the
+                // local mirror just lagged. Heal it free of charge.
+                mirrorTables(current.tables);
+                if (grantCb) grantCb();
+                return { ok: true, why: 'owned' };
+            }
+            // Pre-read affordability — see buyCharacter: never let a player
+            // who can't afford it reach the txn (the null stub would
+            // materialize nameless rows on the all-time board).
+            if (((current && current.stars) || 0) < price) return { ok: false, why: 'stars' };
+        } catch (e) {
+            return { ok: false, why: 'offline' };
+        }
+        const res = await dbTxn(`players/${uid()}`, p => {
+            if (p == null) return { stars: 0 };   // null-guess stub — see buyCharacter
+            const stars = p.stars || 0;
+            if (stars < price) return;                 // abort — can't afford
+            if (p.tables && p.tables[tableId]) return; // abort — exactly once
+            return { ...p, stars: stars - price,
+                     tables: { ...(p.tables || {}), [tableId]: true } };
+        });
+        if (!res.committed || !res.value || !res.value.tables || !res.value.tables[tableId]) {
+            return { ok: false, why: 'stars' };
+        }
+        _me = res.value;
+        mirrorTables(res.value.tables);
+        renderStore();        // the ★ sign repaints before ui.js re-shelves
+        renderProfileChip();
+        if (grantCb) grantCb();
+        return { ok: true };
+    }
+
     // ── The crest gallery — tap your portrait on the Standing page and
     // every crest shows up here: painted works up top (priced until
     // owned), the 48 starter portraits below. Selecting returns you to
@@ -1463,6 +1520,7 @@
             localStorage.setItem('favorAvatar', _me.avatar);   // heal the mirror
         }
         if (_me && _me.crests) mirrorCrests(_me.crests);       // owned crests ride along
+        if (_me && _me.tables) mirrorTables(_me.tables);       // owned tables too
         const gold = (_me && _me.champs && _me.champs.gold) || 0;
         chip.innerHTML = `
             ${avatarDisc(myAvatar(), 'pc-av')}
@@ -1861,6 +1919,7 @@
         try {
             _me = await dbGet(`players/${uid()}`) || _me;
             if (_me && _me.owned) mirrorOwned(_me.owned);
+            if (_me && _me.tables) mirrorTables(_me.tables);
             renderStore();
         } catch (e) { /* keep the already-rendered shelf */ }
     }
@@ -2380,7 +2439,7 @@
         _applyIdentity: applyIdentity,   // rig/verify seam — not a player door
         askBuyStars, buyStars, starCheckoutUrl, watchForStars,
         starPacks: () => STAR_PACKS,
-        setAvatar, myAvatar, avatarDisc,
+        setAvatar, myAvatar, avatarDisc, buyTable,
         openCrestPicker, crestTap, askBuyCrest, confirmBuyCrest,
         crests: () => CRESTS, ownsCrest,
         checkForUpdate, applyUpdate,
