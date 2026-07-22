@@ -66,11 +66,42 @@
     }
 
     // ── Grant ────────────────────────────────────────────────────────
-    async function sync(gameSnap) {
+    // Once-per-account, three layers deep (duplicate-award report 7/22):
+    //   1. syncs SERIALIZE on a promise chain — the boot sync and the
+    //      post-game sync used to run concurrently, both reading the row
+    //      before either grant committed, so both celebrated the same id.
+    //   2. a per-account localStorage mirror of granted ids joins the row's
+    //      map in evaluate — a flaky one-shot row read can never re-earn.
+    //   3. the whole-row txn's own ach[d.id] guard stays the pay authority.
+    const mirrorKey = () => 'favorAch_' + window.FLB.uid();
+    function claimedMirror() {
+        try { return JSON.parse(localStorage.getItem(mirrorKey())) || {}; }
+        catch (e) { return {}; }
+    }
+    function addClaimedMirror(ids) {
+        try {
+            const m = claimedMirror();
+            ids.forEach(id => { m[id] = 1; });
+            localStorage.setItem(mirrorKey(), JSON.stringify(m));
+        } catch (e) { /* private mode — the row + txn guards still hold */ }
+    }
+
+    let _syncChain = Promise.resolve();
+    function sync(gameSnap) {
+        const run = _syncChain.then(() => doSync(gameSnap));
+        // The chain must survive a failed leg or every later sync dies.
+        _syncChain = run.catch(() => {});
+        return run;
+    }
+    async function doSync(gameSnap) {
         if (!window.FLB || !window.FLB.uid) return [];
         try {
             const row = await window.FLB.readRow();
-            const { earned, stars, charWins } = evaluate(row, gameSnap);
+            // The local mirror backs the row read: either source saying
+            // "already granted" makes it so.
+            const rowPlus = { ...(row || {}),
+                achievements: { ...claimedMirror(), ...((row || {}).achievements || {}) } };
+            const { earned, stars, charWins } = evaluate(rowPlus, gameSnap);
             if (!earned.length) return [];
 
             const now = Date.now();
@@ -94,6 +125,7 @@
                     stars: (c.stars || 0) + paid,
                 };
             });
+            addClaimedMirror(ids);
 
             await celebrate(earned);
             return ids;

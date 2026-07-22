@@ -6815,7 +6815,7 @@ function showScoring() {
         // The resolved XP (computed INSIDE the posting transaction) paints
         // the victory chip late and raises the Level 5 ceremony — never a
         // re-read of the row, so it can neither miss nor double-fire.
-        FLB.postGameResult(scores, personaPlaces,
+        window._postGamePromise = FLB.postGameResult(scores, personaPlaces,
             { ratings: tableRatings, myChar: myHeroId, humans: humansAtTable })
             .then(xp => { if (xp) paintVictoryXp(xp); })
             .catch(() => { /* offline — no track moved, no chip */ });
@@ -6832,7 +6832,11 @@ function showScoring() {
     if (window.FACH && window.FLB) {
         const meFirst = scores.length && scores[0].name === 'You';
         const snap = FACH.seatSnapshot(game, meFirst);
-        if (snap) Promise.resolve(FLB.postGameResult).then(() => FACH.sync(snap));
+        // ⚠ Was `Promise.resolve(FLB.postGameResult)` — which resolves
+        // INSTANTLY with the function object, so the achievements sync raced
+        // the row write it depends on (duplicate-award report, 7/22). Now it
+        // chains on the ACTUAL post captured above.
+        if (snap) Promise.resolve(window._postGamePromise).then(() => FACH.sync(snap));
     }
 
     document.getElementById('game-screen').classList.remove('active');
