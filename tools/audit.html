@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FAVOR — Card &amp; Board Audit</title>
+<style>
+    * { box-sizing: border-box; margin: 0; }
+    body { background: #17100a; color: #f0e6d3; font-family: Georgia, 'Times New Roman', serif; line-height: 1.45; }
+    .aw { max-width: 1150px; margin: 0 auto; padding: 22px 16px 90px; }
+    h1 { font-size: 26px; color: #e9d48b; letter-spacing: 0.04em; text-align: center; margin: 6px 0 2px; font-variant: small-caps; }
+    .tag { text-align: center; color: rgba(240,230,211,0.6); margin-bottom: 16px; font-size: 14px; }
+    .findings { background: rgba(38,24,10,0.7); border: 1px solid rgba(201,168,76,0.45); border-radius: 12px; padding: 12px 18px; margin-bottom: 18px; font-size: 14px; }
+    .findings b { color: #e9d48b; }
+    .findings li { margin: 7px 0 7px 18px; }
+    /* Tabs + toolbar */
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; position: sticky; top: 0; background: #17100a; padding: 10px 0; z-index: 5; border-bottom: 1px solid rgba(201,168,76,0.3); align-items: center; }
+    .tab { font-size: 13px; font-weight: 700; color: #e9d48b; background: #241709; border: 1px solid rgba(201,168,76,0.5); border-radius: 8px; padding: 7px 13px; cursor: pointer; font-family: inherit; }
+    .tab.on { background: #c9a84c; color: #1d1106; }
+    .tools { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    select, input[type=search] { font-family: inherit; font-size: 13px; background: #241709; color: #f0e6d3; border: 1px solid rgba(201,168,76,0.4); border-radius: 7px; padding: 6px 8px; }
+    .prog { font-size: 12.5px; color: rgba(240,230,211,0.7); }
+    .copybtn { font-size: 13px; font-weight: 700; color: #1d1106; background: #c9a84c; border: none; border-radius: 8px; padding: 7px 13px; cursor: pointer; font-family: inherit; }
+    /* Item rows */
+    .item { display: flex; gap: 16px; background: linear-gradient(180deg, #221507, #1a1006); border: 1px solid rgba(201,168,76,0.35); border-radius: 12px; padding: 14px; margin: 12px 0; }
+    .item.ok { border-color: rgba(90,160,90,0.55); }
+    .item.issue { border-color: #c05050; box-shadow: 0 0 10px rgba(192,80,80,0.25); }
+    .art { flex: 0 0 235px; }
+    .art img { width: 100%; border-radius: 8px; border: 1px solid rgba(201,168,76,0.4); cursor: zoom-in; }
+    .art.board { flex: 0 0 380px; position: relative; }
+    .slotdot { position: absolute; transform: translate(-50%, -50%); width: 20px; height: 20px; border-radius: 50%; background: rgba(20,12,4,0.85); border: 1.5px solid #e9d48b; color: #e9d48b; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+    .meta { flex: 1; min-width: 0; }
+    .nm { font-size: 17px; font-weight: 700; color: #e9d48b; }
+    .sub { font-size: 12px; color: rgba(240,230,211,0.55); margin-bottom: 6px; }
+    table.kv { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+    .kv td { padding: 2.5px 10px 2.5px 0; vertical-align: top; }
+    .kv td:first-child { color: #c9a84c; white-space: nowrap; width: 118px; font-size: 12.5px; }
+    .auditstr { font-size: 12.5px; color: rgba(240,230,211,0.75); font-style: italic; margin-top: 7px; border-top: 1px dashed rgba(201,168,76,0.3); padding-top: 6px; }
+    details { margin-top: 6px; font-size: 12px; } summary { color: #8a7a55; cursor: pointer; }
+    pre { white-space: pre-wrap; color: rgba(240,230,211,0.6); font-size: 11px; }
+    /* Verdict controls */
+    .verd { flex: 0 0 150px; display: flex; flex-direction: column; gap: 7px; }
+    .vbtn { font-size: 13px; font-weight: 700; border-radius: 8px; padding: 7px 0; cursor: pointer; font-family: inherit; border: 1px solid rgba(201,168,76,0.4); background: #241709; color: #d9cdb2; }
+    .vbtn.okb.sel { background: #2c5a2c; color: #cfe8cf; border-color: #5aa05a; }
+    .vbtn.isb.sel { background: #6e2424; color: #ffd7d7; border-color: #c05050; }
+    .vnote { font-family: inherit; font-size: 12.5px; background: #1c1207; color: #f0e6d3; border: 1px solid rgba(201,168,76,0.35); border-radius: 7px; padding: 6px; min-height: 54px; resize: vertical; }
+    .slotrow td { border-top: 1px solid rgba(201,168,76,0.18); }
+    .zoom { position: fixed; inset: 0; background: rgba(8,5,2,0.9); display: none; align-items: center; justify-content: center; z-index: 50; cursor: zoom-out; }
+    .zoom.on { display: flex; }
+    .zoom img { max-width: 94vw; max-height: 94vh; border-radius: 10px; }
+    @media (max-width: 760px) { .item { flex-wrap: wrap; } .art, .art.board { flex: 1 1 100%; } .verd { flex: 1 1 100%; flex-direction: row; } .vnote { flex: 1; } }
+</style>
+</head>
+<body>
+<div class="aw">
+    <h1>FAVOR — Card &amp; Board Audit</h1>
+    <p class="tag">Art vs engine data, loaded LIVE from playfavor.net — always audits what the game is running right now.<br>
+    Verdicts save on this device; when done, tap <b>Copy Report</b> and paste it to Claude/each other.</p>
+
+    <div class="findings">
+        <b>Findings on the two reported bugs (7/22):</b>
+        <ul>
+            <li><b>Great North Connection + 18 Gold:</b> the card grants NO gold (data and engine both: 5 Favor + trade-route borrowing + a map). The only mechanic that pays you gold on another player's turn is <b>lending</b>: 2 Gold per skill borrowed from you. 18 Gold = 9 skills borrowed — most likely the next player borrowed heavily for a big card or mission. Working as designed, but 9-skill borrows may deserve a design cap.</li>
+            <li><b>Magician +1 Power at melee (ring at center):</b> the Magician board has NO Power in any slot, either side — verified in data. The melee's "Board" tile is a catch-all: it wears ALL power not attributable to a played card or mission. The likely true source: Side B's 4th-slot pick-one includes <b>Power</b>, and a picked skill is permanent — it stays after the ring moves away. So the +1 was probably real, just mislabeled as "the board." Recommended fix: record slot picks so the melee can caption them honestly.</li>
+        </ul>
+    </div>
+
+    <div class="tabs" id="tabs">
+        <button class="tab on" data-t="cards" onclick="setTab('cards')">Cards <span id="nCards"></span></button>
+        <button class="tab" data-t="missions" onclick="setTab('missions')">Missions <span id="nMissions"></span></button>
+        <button class="tab" data-t="boards" onclick="setTab('boards')">Boards <span id="nBoards"></span></button>
+        <div class="tools">
+            <select id="fAct" onchange="render()"><option value="">All acts</option><option>1</option><option>2</option><option>3</option></select>
+            <select id="fState" onchange="render()"><option value="">All items</option><option value="un">Unreviewed</option><option value="ok">OK</option><option value="issue">Issues</option></select>
+            <input type="search" id="fQ" placeholder="search name…" oninput="render()">
+            <span class="prog" id="prog"></span>
+            <button class="copybtn" onclick="copyReport()">Copy Report</button>
+        </div>
+    </div>
+    <div id="list">Loading live game data…</div>
+</div>
+<div class="zoom" id="zoom" onclick="this.classList.remove('on')"><img id="zoomImg" alt=""></div>
+
+<script>
+const LIVE = 'https://playfavor.net';
+// Load the LIVE data files with a cache-buster so the audit never reads stale.
+['data/cards.js', 'data/missions.js', 'data/characters.js'].forEach(f => {
+    document.write(`<script src="${LIVE}/${f}?audit=${Date.now()}"><\/script>`);
+});
+</script>
+<script>
+const SKILL_ABBR = { survival: 'Sur', charisma: 'Cha', alchemy: 'Alc', prospecting: 'Pro', knowledge: 'Kno', power: 'POW', minds_eye: "Mind's Eye", mindsEye: "Mind's Eye", philosopher_stone: "Phil. Stone", philosopherStone: "Phil. Stone" };
+const nice = k => SKILL_ABBR[k] || k;
+function countList(arr) {
+    // ["survival","survival",["alchemy","charisma"]] → "2 Sur + (Alc OR Cha)"
+    if (!arr || !arr.length) return '—';
+    const flat = {}, flex = [];
+    arr.forEach(x => Array.isArray(x) ? flex.push('(' + x.map(nice).join(' OR ') + ')') : (flat[x] = (flat[x] || 0) + 1));
+    return [...Object.entries(flat).map(([k, n]) => `${n} ${nice(k)}`), ...flex].join(' + ') || '—';
+}
+function obj(o) {
+    if (!o || !Object.keys(o).length) return '—';
+    return Object.entries(o).map(([k, v]) => typeof v === 'object' ? `${nice(k)}: ${obj(v)}` : `${v} ${nice(k)}`).join(', ');
+}
+
+// ── Verdict store ───────────────────────────────────────────────────
+const KEY = 'favor_audit_v1';
+let verdicts = {};
+try { verdicts = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+function saveV() { try { localStorage.setItem(KEY, JSON.stringify(verdicts)); } catch (e) {} }
+function setV(id, status) {
+    const v = verdicts[id] = verdicts[id] || {};
+    v.status = v.status === status ? null : status;   // tap again to clear
+    saveV(); render();
+}
+function setNote(id, note) {
+    const v = verdicts[id] = verdicts[id] || {};
+    v.note = note; saveV(); progress();
+}
+
+// ── Items ───────────────────────────────────────────────────────────
+let TAB = 'cards';
+function setTab(t) { TAB = t; document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.t === t)); render(); }
+const D = () => window.FAVOR_DATA || {};
+
+function cardItem(c) {
+    const id = 'card:' + c.name;
+    const rows = [
+        ['Act / Type', `${c.act} / ${c.type}`],
+        ['Grants skills', countList(c.skills)],
+        ['Requirements', countList(c.requirements) + (c.reqMaps && c.reqMaps.length ? ` — OR map: ${c.reqMaps.join(', ')}` : '')],
+        ['Gold cost', c.cost != null ? c.cost + ' Gold' : '—'],
+        ['Favor', c.favor || '—'],
+        ['Rewards', obj(c.rewards)],
+        ['Special', c.special || '—'],
+        ['Grants map', c.grantsMap || '—'],
+    ];
+    return item(id, `${LIVE}/assets/cards/regular/${encodeURIComponent(c.filename)}`, c.name,
+        `card #${c.id ?? ''} · ${c.filename}`, rows, c.audit, c, false);
+}
+function missionItem(m) {
+    const id = 'mission:' + m.name;
+    const req = [countList(m.requirements)];
+    if (m.reqGold) req.push(`${m.reqGold} Gold`);
+    if (m.reqFavor) req.push(`${m.reqFavor} Favor`);
+    const rows = [
+        ['Act / Round', `${m.act} / activates R${m.activationRound ?? '—'}`],
+        ['Success req', req.filter(x => x !== '—').join(' + ') || '—'],
+        ['Success reward', obj(m.successRewards) + (m.favorValue ? ` · ${m.favorValue} Favor` : '')],
+        ['Failure', obj(m.failurePenalties) + (m.failSpecial ? ` · ${m.failSpecial}` : '')],
+        ['Grants map', m.grantsMap || '—'],
+    ];
+    return item(id, `${LIVE}/assets/cards/missions/${encodeURIComponent(m.filename)}`, m.name,
+        `mission · ${m.filename}`, rows, m.audit, m, false);
+}
+function boardItem(c, side) {
+    const B = side === 'B';
+    const id = `board:${c.id}:${side}`;
+    const slots = B ? c.altSlots : c.slots;
+    const file = B ? c.altFilename : c.filename;
+    if (!slots || !file) return '';
+    const slotRows = slots.map((s, i) => {
+        const bits = [];
+        if (s.skills) bits.push('Skills: ' + obj(s.skills));
+        if (s.gold) bits.push(`+${s.gold} Gold`);
+        if (s.favor) bits.push(`Favor: ${s.favor}`);
+        if (s.scorn) bits.push(`${s.scorn} Scorn`);
+        if (s.special) bits.push('⚡ ' + s.special + (s.pickOptions ? ` (${s.pickOptions.map(nice).join(' / ')})` : ''));
+        return [`Slot ${i}${i === 2 ? ' ★start' : ''}`, bits.join(' · ') || '(empty)'];
+    });
+    const rows = [['Starting gold', c.startingGold ?? '—'], ['Epithet', (B ? c.altEpithet : c.epithet) || '—'], ...slotRows];
+    // Numbered dots ride the printed slider track (17/33/50/66/83% × 84.7%).
+    const dots = [17, 33.4, 50, 66.3, 82.9].map((x, i) =>
+        `<span class="slotdot" style="left:${x}%; top:84.7%">${i}</span>`).join('');
+    return item(id, `${LIVE}/assets/characters/${encodeURIComponent(file)}`,
+        `${c.name} — Side ${side}`, `board · ${file}`, rows, null, { slots: slots, startingGold: c.startingGold }, true, dots);
+}
+function item(id, img, name, sub, rows, auditStr, raw, isBoard, dots) {
+    const v = verdicts[id] || {};
+    const cls = v.status === 'ok' ? ' ok' : v.status === 'issue' ? ' issue' : '';
+    return `<div class="item${cls}" data-id="${id}">
+        <div class="art${isBoard ? ' board' : ''}">
+            <img loading="lazy" src="${img}" alt="" onclick="zoom('${img}')">${dots || ''}
+        </div>
+        <div class="meta">
+            <div class="nm">${name}</div>
+            <div class="sub">${sub}</div>
+            <table class="kv">${rows.map(r => `<tr class="slotrow"><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>
+            ${auditStr ? `<div class="auditstr">Transcription: ${auditStr}</div>` : ''}
+            <details><summary>raw data</summary><pre>${JSON.stringify(raw, null, 1).replace(/</g, '&lt;')}</pre></details>
+        </div>
+        <div class="verd">
+            <button class="vbtn okb${v.status === 'ok' ? ' sel' : ''}" onclick="setV('${id}', 'ok')">✓ Looks right</button>
+            <button class="vbtn isb${v.status === 'issue' ? ' sel' : ''}" onclick="setV('${id}', 'issue')">⚠ Issue</button>
+            <textarea class="vnote" placeholder="note…" onchange="setNote('${id}', this.value)">${v.note || ''}</textarea>
+        </div>
+    </div>`;
+}
+function zoom(src) { document.getElementById('zoomImg').src = src; document.getElementById('zoom').classList.add('on'); }
+
+// ── Render + report ─────────────────────────────────────────────────
+function allIds() {
+    const ids = [];
+    (D().cards || []).forEach(c => ids.push('card:' + c.name));
+    (D().missions || []).forEach(m => ids.push('mission:' + m.name));
+    (D().characters || []).forEach(c => { ids.push(`board:${c.id}:A`); if (c.altSlots) ids.push(`board:${c.id}:B`); });
+    return ids;
+}
+function progress() {
+    const ids = allIds();
+    const done = ids.filter(i => (verdicts[i] || {}).status).length;
+    const issues = ids.filter(i => (verdicts[i] || {}).status === 'issue').length;
+    document.getElementById('prog').textContent = `${done}/${ids.length} checked · ${issues} issues`;
+}
+function passFilter(id, act) {
+    const st = document.getElementById('fState').value;
+    const v = (verdicts[id] || {}).status || null;
+    if (st === 'un' && v) return false;
+    if (st === 'ok' && v !== 'ok') return false;
+    if (st === 'issue' && v !== 'issue') return false;
+    const fa = document.getElementById('fAct').value;
+    if (fa && TAB !== 'boards' && String(act) !== fa) return false;
+    const q = document.getElementById('fQ').value.trim().toLowerCase();
+    if (q && !id.toLowerCase().includes(q)) return false;
+    return true;
+}
+function render() {
+    const d = D();
+    if (!d.cards) { document.getElementById('list').textContent = 'Could not load live data from playfavor.net — check the connection and refresh.'; return; }
+    document.getElementById('nCards').textContent = `(${d.cards.length})`;
+    document.getElementById('nMissions').textContent = `(${d.missions.length})`;
+    document.getElementById('nBoards').textContent = `(${d.characters.length * 2 - d.characters.filter(c => !c.altSlots).length})`;
+    let html = '';
+    if (TAB === 'cards') html = d.cards.filter(c => passFilter('card:' + c.name, c.act)).map(cardItem).join('');
+    if (TAB === 'missions') html = d.missions.filter(m => passFilter('mission:' + m.name, m.act)).map(missionItem).join('');
+    if (TAB === 'boards') html = d.characters.map(c =>
+        (passFilter(`board:${c.id}:A`) ? boardItem(c, 'A') : '') +
+        (c.altSlots && passFilter(`board:${c.id}:B`) ? boardItem(c, 'B') : '')).join('');
+    document.getElementById('list').innerHTML = html || '<p style="padding:30px 0; color:#8a7a55">Nothing matches the filter.</p>';
+    progress();
+}
+function copyReport() {
+    const lines = ['FAVOR audit report — ' + new Date().toLocaleString()];
+    const ids = allIds();
+    const issues = ids.filter(i => (verdicts[i] || {}).status === 'issue');
+    const done = ids.filter(i => (verdicts[i] || {}).status).length;
+    lines.push(`${done}/${ids.length} reviewed, ${issues.length} issues\n`);
+    issues.forEach(i => lines.push(`⚠ ${i}${verdicts[i].note ? ' — ' + verdicts[i].note : ''}`));
+    ids.filter(i => (verdicts[i] || {}).status === 'ok' && (verdicts[i] || {}).note)
+       .forEach(i => lines.push(`✓(note) ${i} — ${verdicts[i].note}`));
+    const txt = lines.join('\n');
+    navigator.clipboard.writeText(txt).then(() => {
+        const b = document.querySelector('.copybtn'); b.textContent = 'Copied!';
+        setTimeout(() => b.textContent = 'Copy Report', 1400);
+    });
+}
+window.addEventListener('load', () => { setTimeout(render, 150); });
+</script>
+</body>
+</html>
