@@ -7,8 +7,11 @@
 <base href="../">
 <link rel="stylesheet" href="css/style.css?v=preview">
 <style>
-    /* Preview shell — repo-only, the game never loads this page. */
-    body { background: #17100a; overflow-y: auto !important; height: auto !important; }
+    /* Preview shell — repo-only, the game never loads this page.
+       The game sheet locks BOTH html and body (overflow:hidden, height:100%,
+       and a 100dvh media re-lock) for its fixed viewport — unlock both. */
+    html, body { overflow: auto !important; height: auto !important; min-height: 100%; }
+    body { background: #17100a; }
     .rp-wrap { max-width: 1060px; margin: 0 auto; padding: 26px 18px 80px; font-family: 'Crimson Text', serif; color: #f0e6d3; }
     .rp-h1 { font-family: 'Cinzel', serif; font-size: 30px; color: #e9d48b; text-align: center; margin: 6px 0 2px; letter-spacing: 0.04em; }
     .rp-tag { text-align: center; color: rgba(240,230,211,0.65); margin: 0 0 6px; font-size: 15px; }
