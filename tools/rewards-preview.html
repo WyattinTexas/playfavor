@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FAVOR — The Gilt Ladder (Hero Leveling Preview)</title>
 <base href="../">
-<link rel="stylesheet" href="css/style.css?v=20260722144125">
+<link rel="stylesheet" href="css/style.css?v=20260722144921">
 <style>
     /* Preview shell — repo-only, the game never loads this page.
        The game sheet locks BOTH html and body (overflow:hidden, height:100%,
@@ -55,6 +55,11 @@
     input[type=range] { width: 100%; accent-color: #c9a84c; }
     .rp-simlv { font-family: 'Cinzel', serif; font-size: 22px; color: #ffe9a8; text-align: center; }
     .side-badge.lit { position: absolute; top: 8px; right: 8px; z-index: 2; }
+    /* Level-up moment */
+    .rp-lustage { background: linear-gradient(180deg, #221507, #170f06); border: 1px solid rgba(201,168,76,0.35); border-radius: 12px; padding: 14px; min-height: 90px; }
+    .rp-lustage .vs-delta.xp { margin: 0 auto; width: fit-content; }
+    .rp-lunote { text-align: center; font-size: 13.5px; color: rgba(240,230,211,0.75); margin-top: 10px; }
+    .rp-lunote .rp-btn { font-size: 11px; padding: 5px 10px; margin: 3px 4px 0; }
     /* Ring showcase */
     .rp-rings { display: flex; gap: 16px; flex-wrap: wrap; }
     .rp-ringcell { flex: 0 0 130px; background: linear-gradient(180deg, #241709, #1a1006); border: 1px solid rgba(201,168,76,0.35); border-radius: 11px; padding: 12px 12px 9px; text-align: center; }
@@ -85,7 +90,7 @@
     <div class="rp-miles" id="miles"></div>
 
     <div class="rp-sec">The Number's Ring</div>
-    <p class="rp-note">The level number wears a circular ring that climbs the materials: <b>bronze at 10, silver at 30, gold at 50</b> — and per your 75/100 question, <b>platinum at 75</b> and a <b>radiant ring at 100</b>. Easy to drop either if they don't earn their keep.</p>
+    <p class="rp-note">The level number wears a circular ring that climbs the materials: <b>bronze at 10, silver at 30, gold at 50</b> — and per your 75/100 question, <b>platinum at 75</b> and a <b>radiant ring at 100</b>. <b>The ring never leaves once earned</b>: bronze rides every level 10–29, silver 30–49, gold 50–74, platinum 75–99. Easy to drop the last two if they don't earn their keep.</p>
     <div class="rp-rings" id="ringRow"></div>
 
     <div class="rp-sec">Feel It — a player at any level</div>
@@ -99,6 +104,24 @@
             <div class="rp-simrow">Lifetime Favor: <b id="simFv">0</b> · <b id="simGames">~0 games</b></div>
             <div class="rp-locks" id="simLocks"></div>
         </div>
+    </div>
+
+    <div class="rp-sec">The Level-Up Moment — game by game</div>
+    <p class="rp-note">Exactly what the player sees on the victory screen after each game (+100 Favor a game here). Play games one at a time, or jump straight to a milestone crossing. When a level-up unlocks something big, the ceremony greets them back at the menu — buttons appear below the chip.</p>
+    <div class="rp-lu">
+        <div class="rp-btns">
+            <button class="rp-btn" onclick="luPlay()">Play a game ▸</button>
+            <button class="rp-btn" onclick="luJump(3)">First stars (3)</button>
+            <button class="rp-btn" onclick="luJump(8)">Table (8)</button>
+            <button class="rp-btn" onclick="luJump(10)">Bronze + Side B (10)</button>
+            <button class="rp-btn" onclick="luJump(15)">Crest (15)</button>
+            <button class="rp-btn" onclick="luJump(30)">Silver (30)</button>
+            <button class="rp-btn" onclick="luJump(50)">Gold + Gilded (50)</button>
+            <button class="rp-btn" onclick="luJump(75)">Platinum (75)</button>
+            <button class="rp-btn" onclick="luJump(100)">Radiant + Mastery (100)</button>
+            <button class="rp-btn" onclick="luReset()">Reset</button>
+        </div>
+        <div class="rp-lustage" id="luStage"><div class="rp-sub" style="padding:18px">Play a game to see the first chip.</div></div>
     </div>
 
     <div class="rp-sec">The Ceremonies</div>
@@ -264,7 +287,9 @@ document.getElementById('simRange').oninput = renderSim;
 document.getElementById('ringRow').innerHTML = [
     { lvl: 9,  cap: 'below 10 — bare' },
     { lvl: 10, cap: 'bronze' },
+    { lvl: 17, cap: 'level 17 — bronze holds' },
     { lvl: 30, cap: 'silver' },
+    { lvl: 42, cap: 'level 42 — silver holds' },
     { lvl: 50, cap: 'gold' },
     { lvl: 75, cap: 'platinum' },
     { lvl: 100, cap: 'radiant' },
@@ -273,6 +298,56 @@ document.getElementById('ringRow').innerHTML = [
         <div class="rp-ringrb">${ribbonHtml(XP_CUM[r.lvl - 1], 13, 15)}</div>
         <div class="rp-sub">${r.cap}</div>
     </div>`).join('');
+
+// ── Level-Up Moment: the victory chip + menu ceremonies, game by game.
+const lvlOf = fv => { let l = 1; while (l < 100 && fv >= XP_CUM[l]) l++; return l; };
+let luFv = 0;
+function luPlay() {
+    const before = luFv, after = before + 100;
+    luFv = after;
+    luRender(before, after);
+}
+function luJump(level) {
+    // land one game short of the crossing, then play it
+    luFv = Math.max(0, XP_CUM[level - 1] - 60);
+    luPlay();
+}
+function luReset() {
+    luFv = 0;
+    document.getElementById('luStage').innerHTML = '<div class="rp-sub" style="padding:18px">Play a game to see the first chip.</div>';
+}
+function luRender(before, after) {
+    const lb = lvlOf(before), la = lvlOf(after);
+    const gained = after - before;
+    const rose = la > lb;
+    const rung = REWARDS.filter(r => r.stars && r.lvl > lb && r.lvl <= la).reduce((s, r) => s + r.stars, 0);
+    const nr = nextReward(la);
+    let nextLine = '';
+    if (nr) {
+        const games = Math.max(1, Math.ceil((XP_CUM[nr.lvl - 1] - after) / 100));
+        nextLine = `<div class="vs-d-next">${nr.label} at Lv ${nr.lvl} — ${games === 1 ? 'a game away' : '~' + games + ' games away'}</div>`;
+    }
+    const chip = `<div class="vs-deltas"><div class="vs-delta xp">
+        <span class="vs-d-what">${hero.name} · Level</span>
+        ${rose ? `<b>${lb}</b><span class="vs-d-arrow">→</span><b class="vs-d-new">${la}</b>` : `<b>${la}</b>`}
+        <span class="vs-d-fv">+${gained} Favor</span>
+        ${rung ? `<span class="vs-d-stars">+ ★ ${rung}</span>` : ''}
+        <div class="vs-d-rb">${ribbonHtml(after, 9, 11)}</div>
+        ${nextLine}</div></div>`;
+    const crossed = REWARDS.filter(r => !r.stars && r.lvl > lb && r.lvl <= la);
+    let note = '';
+    if (crossed.length) {
+        const bits = crossed.map(r => {
+            if (r.kind === 'table') return `<button class="rp-btn" onclick="ceremony('table')">The ${hero.name}'s Table ceremony</button>`;
+            if (r.kind === 'sideb') return `<button class="rp-btn" onclick="ceremony('sideb')">Side B ceremony</button>`;
+            if (r.kind === 'crest') return `<button class="rp-btn" onclick="ceremony('crest')">Crest ceremony</button>`;
+            if (r.kind === 'gild') return '<span>✦ the ribbon re-gilds gold — no overlay, the mark IS the moment</span>';
+            return '<span>👑 crown + title land on the portrait</span>';
+        });
+        note = `<div class="rp-lunote">Back at the menu: ${bits.join(' ')}</div>`;
+    }
+    document.getElementById('luStage').innerHTML = chip + note;
+}
 
 // ── Ceremony previews: the real overlay classes, dressed per unlock.
 function ceremony(kind) {
