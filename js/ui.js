@@ -3285,14 +3285,13 @@ function renderHand(state) {
         const angle = startAngle + step * i;
         const lift = -Math.abs(angle) * 0.4;
 
-        let mapFree = false;
-        try { mapFree = !!game.checkRequirements(0, card).mapFree; } catch (e) { /* not free */ }
-        html += `<div class="hand-card${mapFree ? ' mapfree' : ''}"
+        const free = cardPlaysFree(card);
+        html += `<div class="hand-card${free ? ' freeplay' : ''}"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
                     data-hand-i="${i}"
                     ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
                     <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
-                    ${mapFree ? '<span class="mapfree-tag">FREE</span>' : ''}
+                    ${free ? '<span class="freeplay-tag">FREE</span>' : ''}
                 </div>`;
     });
 
@@ -3629,6 +3628,19 @@ function missionJournalOpen() {
     return !!el && el.classList.contains('active');
 }
 
+// Would the engine play this card for FREE right now? The one answer both
+// hand renders share: a held Map (requirements + cost waived), or Doctor B's
+// one-Potion-per-round slot waiver — which also covers a costly potion the
+// player could afford, because the engine spends the waiver to save the gold.
+function cardPlaysFree(card) {
+    try {
+        const r = game.checkRequirements(0, card);
+        if (r.mapFree || r.potionWaived) return true;
+        return !!(card.cost > 0 && typeof game.freePotionAvailable === 'function'
+            && game.freePotionAvailable(0, card));
+    } catch (e) { return false; }
+}
+
 function renderTvHand(state) {
     const zone = document.getElementById('tvHand');
     if (!zone) return;
@@ -3683,17 +3695,18 @@ function renderTvHand(state) {
                 try { playable = game.checkRequirements(0, card).canPlay; } catch (e) { playable = false; }
             }
         }
-        // Map-free (Wyatt 7/22): a held map plays this card for FREE — the
-        // orange glow says so at a glance, any turn, no card-reading needed.
-        let mapFree = false;
-        try { mapFree = !!game.checkRequirements(0, card).mapFree; } catch (e) { /* not free */ }
+        // FREE glow (Wyatt 7/22, "glow means free, period"): orange marks any
+        // card the engine would play for free right now — a held Map, or the
+        // Doctor B slot's one-Potion-per-round waiver (including a costly
+        // potion the player could afford: the waiver still saves the gold).
+        const free = cardPlaysFree(card);
         // No tap-to-select here: committing a card is the DRAG-UP gesture
         // (touch = bloom to read, drag up + release = the throw).
-        html += `<div class="hand-card${playable ? ' playable' : ''}${mapFree ? ' mapfree' : ''}"
+        html += `<div class="hand-card${playable ? ' playable' : ''}${free ? ' freeplay' : ''}"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
                     data-hand-i="${i}">
                     <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
-                    ${mapFree ? '<span class="mapfree-tag">FREE</span>' : ''}
+                    ${free ? '<span class="freeplay-tag">FREE</span>' : ''}
                 </div>`;
     });
     html += '</div>';
