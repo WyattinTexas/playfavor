@@ -3813,7 +3813,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
       tier: /Tier \d/.test((body.querySelector('.pf-tier') || {}).textContent || ''),
       record: /\d+ W · \d+ played/.test((body.querySelector('.pf-record') || {}).textContent || ''),
       sections: [...body.querySelectorAll('.pf-sec')].map(s => s.firstChild.textContent.trim()),
-      crestDoor: !!body.querySelector('.pf-crestrow .pf-crest-btn'),
+      crestDoor: !!body.querySelector('.pf-standing .pf-crest-btn'),
       scrolls: cs.overflowY === 'auto',
       // The panel must not hang on a modal: FACH.sync() is async, WRITES,
       // and awaits celebrate(), which blocks on user clicks.
@@ -3825,7 +3825,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   ok(pf.rating && pf.tier && pf.record,
     'standing carries rating, tier and record at a glance');
   ok(pf.sections.length >= 2, `it has real sections now (${pf.sections.join(' / ')})`);
-  ok(pf.crestDoor, 'the Name & Crest row keeps a door into the gallery');
+  ok(pf.crestDoor, 'the standing crest disc is the door into the gallery');
   ok(pf.scrolls, '#profileBody scrolls on its own so the title stays pinned');
 
   // Per-hero ledgers — the biggest win, and every field was already in _me.

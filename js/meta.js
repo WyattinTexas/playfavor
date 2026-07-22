@@ -1193,7 +1193,7 @@
 
     // ── The profile section — ONE door per platform ──────────────────
     function signinSectionHtml() {
-        return `<div class="pf-sec">Court Sign-In</div><div id="pfSignin">${signinBodyHtml()}</div>`;
+        return `<div class="pf-sec">Account Sign-in</div><div id="pfSignin">${signinBodyHtml()}</div>`;
     }
     function signinBodyHtml() {
         const provName = SIGN_PROV_NAME[SIGN_PROVIDER];
@@ -1487,9 +1487,9 @@
     // you can choose and then you don't really see much else." He was right:
     // the panel led with a ten-crest picker grid (the visual mass) and then
     // five thin text rows. EVERYTHING below already sat in _me and none of it
-    // was rendered. Order now: standing, then the per-hero ledgers, then
-    // achievements, then today's bounty — with the picker demoted from
-    // centrepiece to a control at the bottom.
+    // was rendered. Order now (trimmed again 7/21): standing, the per-hero
+    // ledgers, name, sign-in. The top-left crest disc is the one door into
+    // the crest gallery.
     function openProfile() {
         const p = _me || { rating: 0, stars: 0, champs: {} };
         const ch = p.champs || {};
@@ -1505,25 +1505,9 @@
             .filter(x => x.s && (x.s.g || 0) > 0)
             .sort((a, b) => (b.s.r || 0) - (a.s.r || 0));
 
-        // ⚠ NEVER await FACH.sync() in a render: it is async, it WRITES, and
-        // it awaits celebrate(), which blocks on user clicks — awaiting it
-        // here would hang the panel on a modal. Read the row we already hold,
-        // exactly as openGallery does.
-        const have = p.achievements || {};
-        const defs = (window.FACH && typeof FACH.defs === 'function') ? FACH.defs() : [];
-        const got = defs.filter(d => have[d.id]);
-        const achStars = got.reduce((n, d) => n + (d.stars || 0), 0);
-        const recent = got
-            .slice()
-            .sort((a, b) => (have[b.id] || 0) - (have[a.id] || 0))
-            .slice(0, 3);
-
-        // Today's bounty is free — rivalOfDay and rivalStars are both pure,
-        // and the claim state is already on the row we are rendering.
-        const rival = (window.FMODES && FMODES.rivalOfDay) ? FMODES.rivalOfDay() : null;
-        const rivalHero = rival ? chars.find(c => c.id === rival.hero) : null;
-        const claimed = rivalDayClaimed() === currentDateKey();
-
+        // Achievements + Today's Bounty left the panel (Wyatt 7/21: "the
+        // viewing profile screen right now is an eyesore") — the gallery
+        // keeps its own title-screen card and the bounty its WANTED plaque.
         document.getElementById('profileBody').innerHTML = `
             <div class="pf-standing">
                 <button class="pf-crest-btn" onclick="FLB.openCrestPicker()" title="Change your crest">
@@ -1556,33 +1540,10 @@
             <div class="pf-sec">Your Heroes</div>
             <div class="pf-note">No hero has ridden into a rated game yet — every one you play keeps its own rating and high score.</div>`}
 
-            ${defs.length ? `
-            <div class="pf-sec">Achievements
-                <button class="pf-seeall" onclick="FLB.closeProfile(); FACH.openGallery()">See all</button></div>
-            <div class="pf-ach">
-                <b>${got.length}</b> of ${defs.length} unlocked · <b>★ ${achStars}</b> earned
-                ${recent.length ? `<div class="pf-ach-recent">${recent
-                    .map(d => `<span title="${(d.desc || '').replace(/"/g, '&quot;')}">${d.name}</span>`).join('')}</div>` : ''}
-            </div>` : ''}
-
-            ${rival ? `
-            <div class="pf-sec">Today's Bounty</div>
-            <div class="pf-bounty${claimed ? ' done' : ''}">
-                ${rivalHero ? `<img src="assets/characters/${rivalHero.filename}" alt="">` : ''}
-                <span class="pf-bounty-name">${rival.name}</span>
-                <span class="pf-bounty-stars">${claimed ? 'Claimed' : `★ +${FMODES.rivalStars(rival)}`}</span>
-            </div>` : ''}
-
-            <div class="pf-sec">Name &amp; Crest</div>
+            <div class="pf-sec">Name</div>
             <div class="pf-row pf-namerow">
                 <input id="pfName" maxlength="24" value="${myName().replace(/"/g, '&quot;')}">
                 <button class="btn-royal" id="pfSave"><span>Save</span></button>
-            </div>
-            <div class="pf-row pf-crestrow">
-                <button class="pf-crest-btn" onclick="FLB.openCrestPicker()" title="Change your crest">
-                    ${avatarDisc(myAvatar(), 'pf-av-current')}<span class="pf-crest-edit">✎</span>
-                </button>
-                <button class="btn-royal cp-open" onclick="FLB.openCrestPicker()"><span>Change Crest</span></button>
             </div>
             ${signinSectionHtml()}
             <div class="pf-note">Champions are crowned nightly at 10 PM Eastern.${mode === 'local' ? '<br><b class="pf-local">LOCAL PROFILE — leaderboard offline</b>' : ''}</div>

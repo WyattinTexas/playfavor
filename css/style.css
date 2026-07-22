@@ -610,7 +610,7 @@ html, body {
 .av-disc.av-empty img { object-fit: contain; padding: 4px; opacity: 0.7; }
 .av-disc.pc-av { width: 24px; height: 24px; }
 .av-disc.lb-av { width: 30px; height: 30px; }
-.av-disc.pf-av-current { width: 44px; height: 44px; }
+.av-disc.pf-av-current { width: 53px; height: 53px; }   /* +20% (Wyatt 7/21) — this disc IS the crest-gallery door */
 
 /* Profile — the crest picker grid */
 .pf-avatars {
