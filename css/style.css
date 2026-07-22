@@ -7771,3 +7771,41 @@ body:has(#howto-overlay.open) .throw-hint {
 }
 .pf-apple:active { background: #1a1a1a; }
 .pf-apple-logo { font-size: 17px; line-height: 1; }
+
+/* ═══ GILT LADDER — hero-leveling rewards (branch hero-leveling) ═══ */
+/* Level 50+ ribbon re-gilds gold everywhere — the public mastery mark. */
+.rb.gild .rb-fill { background: linear-gradient(160deg, #f6e3a4, #e8c34b 30%, #b8902e 60%, #f0d278); box-shadow: 0 0 12px rgba(240,210,120,0.65); }
+.rb.gild .rb-num { color: #ffe9a8; text-shadow: 0 0 9px rgba(233,212,139,0.9); }
+.rb.gild .rb-track { box-shadow: inset 0 2px 5px rgba(0,0,0,0.9), 0 0 0 1px var(--gold-light), 0 0 10px rgba(201,168,76,0.5); }
+
+/* Hero select: the next visible reward on this hero's climb. */
+.hs-next {
+    margin: 2px 12px 0; padding: 2px 8px;
+    font-family: 'Cinzel', serif; font-size: 10px; font-weight: 700;
+    letter-spacing: 0.06em; color: #e9d48b;
+    background: rgba(38,24,10,0.72); border: 1px solid rgba(201,168,76,0.4);
+    border-radius: 9px; width: fit-content;
+}
+.hs-next.hs-mastered { color: #fff3cf; border-color: var(--gold-light); }
+.hs-next .crown-ico { width: 13px; height: 9px; vertical-align: -1px; }
+
+/* Victory chip: star drop + next-reward loop line. */
+.vs-d-stars { color: #ffe9a8; font-weight: 800; text-shadow: 0 0 8px rgba(233,212,139,0.7); }
+.vs-d-next {
+    flex-basis: 100%; margin-top: 3px;
+    font-size: 10px; letter-spacing: 0.05em; color: rgba(240,230,211,0.75);
+}
+
+/* Champ-overlay dress: a table swatch or crest as the celebration art. */
+.champ-table {
+    width: min(300px, 64vw); height: min(170px, 36vw);
+    margin: 10px auto; border-radius: 10px;
+    border: 2px solid var(--gold); box-shadow: 0 6px 24px rgba(0,0,0,0.6), inset 0 0 40px rgba(0,0,0,0.35);
+    background-size: 340px;
+}
+.champ-table.champ-rare { box-shadow: 0 6px 28px rgba(233,212,139,0.35), inset 0 0 40px rgba(0,0,0,0.35); }
+.champ-crest { width: 92px; height: 92px; margin: 10px auto; display: block; }
+.champ-crest img { width: 100%; height: 100%; }
+
+/* Crest gallery: hero-crest tiles reuse cp-tile; locked shows Lv n/15. */
+.cp-heroes .cp-tile.locked img { filter: grayscale(0.75) brightness(0.6); }

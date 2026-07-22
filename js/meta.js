@@ -523,9 +523,9 @@
     // fixes step(1)=75; the slope is the tuning dial, the cap keeps
     // Level 100 reachable (~27.9k lifetime vs ~225k uncapped).
     //   step(n) = min(75 + 15·(n−1), 300)     // cost of level n → n+1
-    // Side B (Lv 5) now sits at 390 banked Favor, ≈4 games.
+    // Side B (Lv 10) sits at 1,215 banked Favor, ≈15 games.
     const XP_MAX_LEVEL = 100;
-    const SIDEB_LEVEL = 5;
+    const SIDEB_LEVEL = 10;   // was 5 — hero-leveling ladder (Wyatt 7/22)
     const xpStep = (n) => Math.min(75 + 15 * (n - 1), 300);
     // XP_CUM[L-1] = lifetime Favor at which level L begins (XP_CUM[0]=0).
     const XP_CUM = (() => {
@@ -561,10 +561,100 @@
         const lvl = heroLevel(fv);
         const max = lvl >= XP_MAX_LEVEL;
         const pct = max ? 100 : heroLevelPct(fv);
-        return `<div class="rb${max ? ' max' : ''}" style="--h:${h || 11}px;--nsz:${nsz || 12}px">
+        // Level 50+ re-gilds the ribbon gold on every surface — the Gilt
+        // Ladder's public mark (other players see it on the boards).
+        const gild = lvl >= GILD_LEVEL;
+        return `<div class="rb${max ? ' max' : ''}${gild ? ' gild' : ''}" style="--h:${h || 11}px;--nsz:${nsz || 12}px">
             <span class="rb-num">${lvl}</span>
             <div class="rb-track"><div class="rb-fill" style="--pct:${pct.toFixed(1)}%"></div></div>
         </div>`;
+    }
+
+    // ═══ Hero Rewards — the Gilt Ladder (Wyatt 7/22 design) ══════════
+    // ONE data table per hero; everything below DERIVES from level, same
+    // discipline as the XP curve: no unlock is ever written, so the
+    // ladder retunes with zero migration. Stars are the exception — they
+    // PAY OUT once, inside the postGameResult transaction, computed from
+    // the same fvBefore/fvAfter the commit writes (monotonic fv = a
+    // crossing happens exactly once; a txn retry recomputes both legs).
+    // `hidden` = Side B's surprise rule (7/20 spec §1): a locked player
+    // must have no idea it exists — nextReward() skips it silently.
+    const HERO_REWARDS = [
+        { lvl: 3,   stars: 5 },
+        { lvl: 5,   stars: 10 },
+        { lvl: 7,   stars: 10 },
+        { lvl: 8,   kind: 'table' },
+        { lvl: 9,   stars: 10 },
+        { lvl: 10,  kind: 'sideb', hidden: true },
+        { lvl: 12,  stars: 15 },
+        { lvl: 15,  kind: 'crest' },
+        { lvl: 20,  stars: 20 },
+        { lvl: 30,  stars: 20 },
+        { lvl: 40,  stars: 20 },
+        { lvl: 50,  kind: 'gild' },
+        { lvl: 100, kind: 'mastery' },
+    ];
+    const TABLE_LEVEL = 8, CREST_LEVEL = 15, GILD_LEVEL = 50;
+    // Every RARE_EVERY heroes at Level 10 earns one Rare Table (3/6/9 →
+    // the full set of three).
+    const RARE_EVERY = 3;
+    const RARE_TABLE_IDS = ['rare-ember', 'rare-astronomer', 'rare-vault'];
+
+    // Stars crossed between two levels — called INSIDE the game txn.
+    function levelStars(levelBefore, levelAfter) {
+        return HERO_REWARDS
+            .filter(r => r.stars && r.lvl > levelBefore && r.lvl <= levelAfter)
+            .reduce((s, r) => s + r.stars, 0);
+    }
+    function heroTableUnlocked(charId) {
+        return heroLevel(heroFv(charId)) >= TABLE_LEVEL;
+    }
+    function heroCrestUnlocked(charId) {
+        return heroLevel(heroFv(charId)) >= CREST_LEVEL;
+    }
+    function heroesAtTen() {
+        const chars = (_me || {}).chars || {};
+        return Object.values(chars)
+            .filter(c => heroLevel((c || {}).fv || 0) >= SIDEB_LEVEL).length;
+    }
+    // The random order the three rares arrive in is a deterministic
+    // per-account shuffle — derived from the uid, never stored, so every
+    // device agrees and two collectors at 3-heroes-deep show off
+    // different tables.
+    function rareOrder() {
+        let h = 2166136261;
+        const u = uid();
+        for (let i = 0; i < u.length; i++) { h ^= u.charCodeAt(i); h = Math.imul(h, 16777619); }
+        const order = [...RARE_TABLE_IDS];
+        for (let i = order.length - 1; i > 0; i--) {
+            h = Math.imul(h ^ (h >>> 15), 2246822519); h ^= h >>> 13;
+            const j = (h >>> 0) % (i + 1);
+            [order[i], order[j]] = [order[j], order[i]];
+        }
+        return order;
+    }
+    function rareTablesEarnedIds() {
+        const n = Math.min(RARE_TABLE_IDS.length, Math.floor(heroesAtTen() / RARE_EVERY));
+        return rareOrder().slice(0, n);
+    }
+    function rareTableEarned(tableId) {
+        return rareTablesEarnedIds().includes(tableId);
+    }
+    // The next VISIBLE rung above this hero's level — feeds the select
+    // screen chip and the victory screen's "N games away" line. Side B
+    // (hidden) never appears here.
+    function nextReward(charId) {
+        const fv = heroFv(charId);
+        const lvl = heroLevel(fv);
+        const r = HERO_REWARDS.find(x => !x.hidden && x.lvl > lvl);
+        if (!r) return null;
+        const label = r.stars ? `★ ${r.stars}`
+            : r.kind === 'table' ? 'Your Table'
+            : r.kind === 'crest' ? "Hero's Crest"
+            : r.kind === 'gild' ? 'Gilded Ribbon'
+            : 'Mastery';
+        return { lvl: r.lvl, kind: r.kind || 'stars', label,
+                 fvNeeded: Math.max(0, XP_CUM[r.lvl - 1] - fv) };
     }
 
     // ═══ The earned hero — two heroes at Level 5 (spec §6) ═══════════
@@ -576,10 +666,13 @@
     // granted by this predicate, refused by buyCharacter at any price and
     // kept out of every bot pool. Wyatt appends the row + art when ready —
     // until then the roster has none, so nothing renders and nothing fires.
+    // DECOUPLED from SIDEB_LEVEL (which moved 5 → 10 on 7/22): the earned
+    // hero stays at two heroes at Level 5 unless Wyatt retunes it here.
+    const EARNED_HERO_LEVEL = 5;
     function earnedHeroQualified() {
         const chars = (_me || {}).chars || {};
         return Object.values(chars)
-            .filter(c => heroLevel((c || {}).fv || 0) >= SIDEB_LEVEL).length >= 2;
+            .filter(c => heroLevel((c || {}).fv || 0) >= EARNED_HERO_LEVEL).length >= 2;
     }
     function earnedOnlyIds() {
         return ((window.FAVOR_DATA || {}).characters || [])
@@ -655,6 +748,65 @@
             if (localStorage.getItem('favorShownSideB_' + c.id)) continue;
             await showSideBCelebration(c);
         }
+    }
+
+    // ═══ Gilt Ladder ceremonies — table, crest, rare table ═══════════
+    // Same shape as the Side B retro latch: derived on every menu load,
+    // menu-gated, once-per-unlock via localStorage flags. The victory
+    // path never fires these directly — they greet the player back at
+    // the menu, where the celebration can't stack over the score sheet.
+    async function checkRewardRetro() {
+        const gameUp = ['game-screen', 'scoring-screen'].some(id => {
+            const el = document.getElementById(id);
+            return el && el.classList.contains('active');
+        });
+        if (gameUp) return;
+        const chars = ((window.FAVOR_DATA || {}).characters || []);
+        for (const c of chars) {
+            if (heroTableUnlocked(c.id) && !localStorage.getItem('favorShownUnlock_table_' + c.id)) {
+                try { localStorage.setItem('favorShownUnlock_table_' + c.id, String(Date.now())); } catch (e) { /* re-shows next boot */ }
+                await showRewardCelebration(
+                    `The ${c.name}'s Table Is Yours`,
+                    `Level ${TABLE_LEVEL} — a table woven for this hero waits in the Emporium`,
+                    `<div class="champ-table tsw-hero-${c.id}"></div>`);
+            }
+            if (heroCrestUnlocked(c.id) && !localStorage.getItem('favorShownUnlock_crest_' + c.id)) {
+                try { localStorage.setItem('favorShownUnlock_crest_' + c.id, String(Date.now())); } catch (e) { /* re-shows next boot */ }
+                await showRewardCelebration(
+                    `The ${c.name}'s Crest Is Yours`,
+                    `Level ${CREST_LEVEL} — wear this hero's painted crest from your Standing page`,
+                    avatarDisc(c.id, 'champ-crest'));
+            }
+        }
+        for (const id of rareTablesEarnedIds()) {
+            if (localStorage.getItem('favorShownUnlock_rare_' + id)) continue;
+            try { localStorage.setItem('favorShownUnlock_rare_' + id, String(Date.now())); } catch (e) { /* re-shows next boot */ }
+            const n = heroesAtTen() - (heroesAtTen() % RARE_EVERY);
+            await showRewardCelebration(
+                'A Rare Table Answers Your Renown',
+                `${n} heroes at Level ${SIDEB_LEVEL} — a living table joins your collection`,
+                `<div class="champ-table champ-rare tsw-${id}"></div>`);
+        }
+    }
+    // The champ overlay dressed for a Gilt Ladder unlock — art rides
+    // #champArt like the Side B flip (every dress restores it empty).
+    function showRewardCelebration(title, sub, artHtml) {
+        return new Promise(resolve => {
+            const ov = document.getElementById('champOverlay');
+            const art = document.getElementById('champArt');
+            if (!ov) { resolve(); return; }
+            document.getElementById('champTitle').textContent = title;
+            document.getElementById('champSub').innerHTML = `${CROWN_SVG} ${sub}`;
+            if (art) art.innerHTML = artHtml || '';
+            ov.classList.add('active');
+            const done = () => {
+                ov.classList.remove('active');
+                if (art) art.innerHTML = '';
+                resolve();
+            };
+            ov.onclick = done;
+            document.getElementById('champBtn').onclick = (e) => { e.stopPropagation(); done(); };
+        });
     }
 
     // The champ overlay's FOURTH dress — Level 5, the board turns over.
@@ -761,10 +913,17 @@
                     // writes — a retry recomputes both together.
                     const fvBefore = cc.fv || 0;
                     const fvAfter = fvBefore + Math.max(0, Math.round(mine.finalScore || 0));
+                    // Gilt Ladder star drops ride THIS commit: crossed
+                    // rungs pay into the same stars total the txn writes,
+                    // so a retry can never double-pay (fv is monotonic —
+                    // each rung is crossable exactly once).
+                    const rungStars = levelStars(heroLevel(fvBefore), heroLevel(fvAfter));
+                    if (rungStars) out.stars = (out.stars || 0) + rungStars;
                     pendingXp = {
                         charId: myChar, fvBefore, fvAfter,
                         levelBefore: heroLevel(fvBefore),
                         levelAfter: heroLevel(fvAfter),
+                        rungStars,
                     };
                     out.chars = {
                         ...(cur.chars || {}),
@@ -1334,6 +1493,10 @@
     }
     function ownsCrest(id) {
         if (/^px/.test(id || '')) return true;   // starters are everyone's
+        // Hero crests — a character's own portrait, earned at CREST_LEVEL
+        // on the Gilt Ladder. Derived, never written.
+        const heroRow = ((window.FAVOR_DATA || {}).characters || []).find(x => x.id === id);
+        if (heroRow) return heroCrestUnlocked(id);
         if (!crestById(id)) return false;        // legacy ids render but can't be re-picked
         if (ownedCrests()[id]) return true;
         // Grandfather: a crest picked during the free week stays honest
@@ -1478,6 +1641,18 @@
                     ${owned ? '' : `<span class="cp-price${arm ? ' arm' : ''}${stars < c.cost ? ' poor' : ''}">${arm ? `Buy ★${c.cost}?` : `★${c.cost}`}</span>`}
                 </button>`;
             }).join('')}</div>
+            <div class="pf-sec">Hero Crests</div>
+            <div class="cp-note">Earned at Level ${CREST_LEVEL} on each hero's ladder — proof you lived with them.</div>
+            <div class="pf-avatars cp-heroes">${(((window.FAVOR_DATA || {}).characters || []).filter(c => !c.earnedOnly)).map(c => {
+                const hOwned = heroCrestUnlocked(c.id);
+                const hLvl = heroLevel(heroFv(c.id));
+                return `
+                <button class="pf-av cp-tile${worn === c.id ? ' on' : ''}${hOwned ? '' : ' locked'}" data-av="${c.id}"
+                    onclick="${hOwned ? `FLB.setAvatar('${c.id}')` : ''}" title="${c.name}">
+                    <img src="assets/characters/${c.filename}" alt="${c.name}">
+                    ${hOwned ? '' : `<span class="cp-price">Lv ${hLvl}/${CREST_LEVEL}</span>`}
+                </button>`;
+            }).join('')}</div>
             <div class="pf-sec">Portraits</div>
             <div class="pf-avatars cp-px">${px.map(id => `
                 <button class="pf-av cp-pxtile${worn === id ? ' on' : ''}" data-av="${id}"
@@ -1532,7 +1707,7 @@
         // re-derive (idempotent, menu-gated inside; un-awaited so a
         // celebration never holds the chip). Retro first: "your board
         // turned" before "a stranger arrives".
-        checkSideBRetro().then(() => checkEarnedHero()).catch(() => {});
+        checkSideBRetro().then(() => checkEarnedHero()).then(() => checkRewardRetro()).catch(() => {});
         // _me just landed -- repaint the WANTED plaque so its CLAIMED stamp is
         // driven by the row arriving rather than by a guessed timer. modes.js
         // loads after this file, so on the very first boot FMODES may not exist
@@ -2465,6 +2640,10 @@
         inspectChar, closeInspect,
         heroLevel, heroLevelPct, heroFv, sideBUnlocked, xpRibbonHtml,
         checkEarnedHero, showSideBCelebration, sideBLevel: () => SIDEB_LEVEL,
+        heroTableUnlocked, heroCrestUnlocked, rareTableEarned, nextReward,
+        heroesAtTen, rareEvery: () => RARE_EVERY, tableLevel: () => TABLE_LEVEL,
+        crestLevel: () => CREST_LEVEL, heroRewards: () => HERO_REWARDS,
+        crownSvg: () => CROWN_SVG,
         previewSeal, claimSeal,
         _appleSignIn: appleSignIn, _appleResult,
         _confirmSwitch: confirmSwitch,

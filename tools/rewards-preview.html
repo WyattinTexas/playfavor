@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FAVOR — The Gilt Ladder (Hero Leveling Preview)</title>
+<base href="../">
+<link rel="stylesheet" href="css/style.css?v=preview">
+<style>
+    /* Preview shell — repo-only, the game never loads this page. */
+    body { background: #17100a; overflow-y: auto !important; height: auto !important; }
+    .rp-wrap { max-width: 1060px; margin: 0 auto; padding: 26px 18px 80px; font-family: 'Crimson Text', serif; color: #f0e6d3; }
+    .rp-h1 { font-family: 'Cinzel', serif; font-size: 30px; color: #e9d48b; text-align: center; margin: 6px 0 2px; letter-spacing: 0.04em; }
+    .rp-tag { text-align: center; color: rgba(240,230,211,0.65); margin: 0 0 6px; font-size: 15px; }
+    .rp-badge { display: block; width: fit-content; margin: 0 auto 22px; padding: 3px 12px; border: 1px solid #a33; color: #e88; border-radius: 8px; font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.12em; }
+    .rp-sec { font-family: 'Cinzel', serif; font-size: 19px; color: #e9d48b; margin: 38px 0 4px; border-bottom: 1px solid rgba(201,168,76,0.35); padding-bottom: 5px; }
+    .rp-note { color: rgba(240,230,211,0.7); font-size: 14.5px; margin: 4px 0 14px; }
+    /* Rung cards */
+    .rp-ladder { display: flex; gap: 12px; overflow-x: auto; padding: 12px 4px 18px; }
+    .rp-rung { flex: 0 0 150px; background: linear-gradient(180deg, #241709, #1a1006); border: 1px solid rgba(201,168,76,0.4); border-radius: 12px; padding: 10px 10px 12px; text-align: center; position: relative; }
+    .rp-rung.milestone { border-color: var(--gold, #c9a84c); box-shadow: 0 0 14px rgba(201,168,76,0.25); }
+    .rp-lvl { font-family: 'Cinzel', serif; font-weight: 900; font-size: 15px; color: #e9d48b; }
+    .rp-art { height: 96px; display: flex; align-items: center; justify-content: center; margin: 8px 0; }
+    .rp-star { font-family: 'Cinzel', serif; font-size: 26px; font-weight: 900; color: #ffe9a8; text-shadow: 0 0 12px rgba(233,212,139,0.6); }
+    .rp-swatch { width: 118px; height: 74px; border-radius: 8px; border: 1.5px solid var(--gold, #c9a84c); background-size: 200px; box-shadow: inset 0 0 24px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.5); }
+    .rp-crest { width: 72px; height: 72px; border-radius: 50%; overflow: hidden; border: 2px solid var(--gold, #c9a84c); box-shadow: 0 0 14px rgba(201,168,76,0.4); }
+    .rp-crest img { width: 100%; height: 100%; object-fit: cover; }
+    .rp-board { width: 112px; border-radius: 6px; border: 1.5px solid var(--gold, #c9a84c); }
+    .rp-what { font-family: 'Cinzel', serif; font-size: 12.5px; font-weight: 700; color: #f0e6d3; }
+    .rp-sub { font-size: 12px; color: rgba(240,230,211,0.6); margin-top: 3px; }
+    .rp-secret { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); background: #3a1020; color: #ff9db4; border: 1px solid #7c2c46; border-radius: 7px; padding: 1px 8px; font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 0.1em; white-space: nowrap; }
+    /* Hero picker */
+    .rp-heroes { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 4px; }
+    .rp-hero { width: 64px; border-radius: 9px; overflow: hidden; border: 2px solid rgba(201,168,76,0.35); cursor: pointer; padding: 0; background: none; }
+    .rp-hero img { width: 100%; display: block; }
+    .rp-hero.on { border-color: #ffe9a8; box-shadow: 0 0 12px rgba(233,212,139,0.5); }
+    .rp-hero span { display: block; font-family: 'Cinzel', serif; font-size: 8.5px; color: #e9d48b; padding: 2px 0 3px; text-align: center; }
+    /* Account milestones */
+    .rp-miles { display: flex; gap: 14px; flex-wrap: wrap; }
+    .rp-mile { flex: 1 1 240px; background: linear-gradient(180deg, #241709, #1a1006); border: 1px solid var(--gold, #c9a84c); border-radius: 12px; padding: 14px; text-align: center; }
+    .rp-mile .rp-swatch { margin: 10px auto; width: 150px; height: 92px; }
+    /* Simulator */
+    .rp-sim { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; background: rgba(0,0,0,0.25); border: 1px solid rgba(201,168,76,0.3); border-radius: 14px; padding: 18px; }
+    .rp-simcard { width: 210px; background: linear-gradient(180deg, #2a1b0c, #1c1207); border: 1.5px solid rgba(201,168,76,0.5); border-radius: 12px; overflow: hidden; padding-bottom: 10px; position: relative; }
+    .rp-simcard img.portrait { width: 100%; display: block; }
+    .rp-simname { font-family: 'Cinzel', serif; font-size: 15px; color: #f0e6d3; padding: 6px 12px 0; }
+    .rp-simcard .hs-xp { padding: 7px 12px 2px; }
+    .rp-simright { flex: 1; min-width: 260px; }
+    .rp-simrow { margin: 10px 0; font-size: 14.5px; }
+    .rp-simrow b { color: #e9d48b; font-family: 'Cinzel', serif; }
+    .rp-locks { background: rgba(0,0,0,0.3); border: 1px solid rgba(201,168,76,0.25); border-radius: 10px; padding: 10px 14px; font-size: 13.5px; line-height: 1.9; }
+    input[type=range] { width: 100%; accent-color: #c9a84c; }
+    .rp-simlv { font-family: 'Cinzel', serif; font-size: 22px; color: #ffe9a8; text-align: center; }
+    .side-badge.lit { position: absolute; top: 8px; right: 8px; z-index: 2; }
+    /* Ceremony preview buttons */
+    .rp-btns { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+    .rp-btn { font-family: 'Cinzel', serif; font-size: 12.5px; font-weight: 700; letter-spacing: 0.05em; color: #e9d48b; background: linear-gradient(180deg, #2a1b0c, #1c1207); border: 1px solid var(--gold, #c9a84c); border-radius: 9px; padding: 8px 14px; cursor: pointer; }
+    .rp-btn:hover { color: #fff3cf; box-shadow: 0 0 10px rgba(201,168,76,0.4); }
+    /* Wyatt notes */
+    .rp-wyatt { background: rgba(38,24,10,0.6); border: 1px solid rgba(201,168,76,0.4); border-radius: 12px; padding: 6px 20px 14px; }
+    .rp-wyatt li { margin: 9px 0; font-size: 14.5px; line-height: 1.55; }
+    .rp-wyatt b { color: #e9d48b; }
+</style>
+</head>
+<body>
+<div class="rp-wrap">
+    <h1 class="rp-h1">The Gilt Ladder</h1>
+    <p class="rp-tag">Hero leveling rewards — every rung, as designed 7/22</p>
+    <span class="rp-badge">BRANCH PREVIEW — NOT IN THE LIVE GAME</span>
+
+    <div class="rp-sec">One Hero's Climb</div>
+    <p class="rp-note">Each of the 10 heroes climbs this same ladder independently, Level 1 → 100. XP = lifetime Favor scored with that hero (~75 a game). Pick a hero to see their table and crest. <b style="color:#ffe9a8">★ 110 total</b> per hero — only ★35 of it below Level 10.</p>
+    <div class="rp-heroes" id="heroPicker"></div>
+    <div class="rp-ladder" id="ladder"></div>
+
+    <div class="rp-sec">The Court's Milestones (account-wide)</div>
+    <p class="rp-note">The pull toward leveling <em>many</em> heroes. Order of the three rare tables is a random shuffle fixed per account — two collectors at 3-heroes-deep show off different tables.</p>
+    <div class="rp-miles" id="miles"></div>
+
+    <div class="rp-sec">Feel It — a player at any level</div>
+    <p class="rp-note">Drag the slider. This is the real hero-select card logic: the ribbon (gold from Level 50), the next-reward chip (it skips Side B — the surprise rule), and the store's live lock lines.</p>
+    <div class="rp-sim">
+        <div class="rp-simcard" id="simCard"></div>
+        <div class="rp-simright">
+            <div class="rp-simlv" id="simLv">Level 1</div>
+            <input type="range" id="simRange" min="1" max="100" value="1">
+            <div class="rp-simrow">Stars collected on this hero so far: <b id="simStars">★ 0</b></div>
+            <div class="rp-simrow">Lifetime Favor: <b id="simFv">0</b> · <b id="simGames">~0 games</b></div>
+            <div class="rp-locks" id="simLocks"></div>
+        </div>
+    </div>
+
+    <div class="rp-sec">The Ceremonies</div>
+    <p class="rp-note">Milestone unlocks greet the player back at the menu with the real celebration overlay (star drops stay quiet — a toast on the victory screen). Tap to preview:</p>
+    <div class="rp-btns">
+        <button class="rp-btn" onclick="ceremony('table')">Hero's Table — Level 8</button>
+        <button class="rp-btn" onclick="ceremony('sideb')">Side B — Level 10</button>
+        <button class="rp-btn" onclick="ceremony('crest')">Hero's Crest — Level 15</button>
+        <button class="rp-btn" onclick="ceremony('rare')">Rare Table — 3 heroes at 10</button>
+    </div>
+
+    <div class="rp-sec">Decisions on the table (for Wyatt)</div>
+    <div class="rp-wyatt"><ul>
+        <li><b>Side B moved 5 → 10</b> on this branch, per the ladder. Its "surprise" rule is honored: the next-reward chip and this ladder's in-game surfaces never mention it before it unlocks. (This preview page shows it only because it's for you.)</li>
+        <li><b>The earned hero stays at "two heroes at Level 5"</b> — it was tied to the Side B constant, so moving Side B would have silently moved it to 10. I decoupled them; retune if you want.</li>
+        <li><b>Star economy:</b> ★110 per hero lifetime, ★35 below Level 10 (~15 games). All ten heroes to 10 ≈ ★350 — Mint stays meaningful.</li>
+        <li><b>Rare-table random order</b> is derived from the account id — no server writes, same order on every device.</li>
+        <li><b>Mastery title text</b> (Level 100) is placeholder — pick the wording when we get there.</li>
+    </ul></div>
+</div>
+
+<!-- Real champ-overlay markup, dressed by the ceremony buttons -->
+<div class="champ-overlay" id="champOverlay">
+    <div class="champ-card" onclick="event.stopPropagation()">
+        <div class="champ-rays"></div>
+        <div class="champ-title" id="champTitle"></div>
+        <div class="champ-sub" id="champSub"></div>
+        <div class="champ-art" id="champArt"></div>
+        <button class="btn-royal primary" id="champBtn"><span>Splendid</span></button>
+    </div>
+</div>
+
+<script src="data/characters.js?v=preview"></script>
+<script>
+// ── Ladder data + XP math: mirrors of js/meta.js (branch hero-leveling).
+const REWARDS = [
+    { lvl: 3,   stars: 5 },
+    { lvl: 5,   stars: 10 },
+    { lvl: 7,   stars: 10 },
+    { lvl: 8,   kind: 'table' },
+    { lvl: 9,   stars: 10 },
+    { lvl: 10,  kind: 'sideb', hidden: true },
+    { lvl: 12,  stars: 15 },
+    { lvl: 15,  kind: 'crest' },
+    { lvl: 20,  stars: 20 },
+    { lvl: 30,  stars: 20 },
+    { lvl: 40,  stars: 20 },
+    { lvl: 50,  kind: 'gild' },
+    { lvl: 100, kind: 'mastery' },
+];
+const xpStep = n => Math.min(75 + 15 * (n - 1), 300);
+const XP_CUM = (() => { const c = [0]; for (let n = 1; n < 100; n++) c.push(c[n-1] + xpStep(n)); return c; })();
+const gamesAt = lvl => Math.max(1, Math.round(XP_CUM[lvl - 1] / 75));
+const CHARS = (window.FAVOR_DATA.characters || []).filter(c => !c.earnedOnly);
+let hero = CHARS[0];
+
+const CROWN = '<svg viewBox="0 0 24 16" style="width:22px;height:15px" aria-hidden="true"><path d="M2 14 L1 4 L7 8 L12 1 L17 8 L23 4 L22 14 Z" fill="#e8c34b" stroke="#8a6a1f" stroke-width="1"/><rect x="2" y="14" width="20" height="2" fill="#c9a84c"/></svg>';
+
+function rungArt(r) {
+    if (r.stars) return `<div class="rp-star">★ ${r.stars}</div>`;
+    if (r.kind === 'table') return `<div class="rp-swatch tsw-hero-${hero.id}"></div>`;
+    if (r.kind === 'sideb') return `<img class="rp-board" src="assets/characters/${hero.altFilename || hero.filename}" alt="">`;
+    if (r.kind === 'crest') return `<div class="rp-crest"><img src="assets/characters/${hero.filename}" alt=""></div>`;
+    if (r.kind === 'gild') return ribbonHtml(XP_CUM[49], 13, 15);
+    return `<div>${CROWN}</div>`;
+}
+function rungWhat(r) {
+    if (r.stars) return 'Star drop';
+    return { table: `The ${hero.name}'s Table`, sideb: 'Side B board', crest: `The ${hero.name}'s Crest`,
+             gild: 'Gilded Ribbon', mastery: 'Mastery — crown + title' }[r.kind];
+}
+function rungSub(r) {
+    if (r.kind === 'gild') return 'gold ribbon on every surface, visible to rivals';
+    if (r.kind === 'mastery') return 'the climb complete';
+    if (r.kind === 'crest') return 'wearable avatar, from the Standing page';
+    if (r.kind === 'sideb') return 'the board turns over';
+    if (r.kind === 'table') return 'waits on the Emporium shelf';
+    return 'quiet toast on the victory screen';
+}
+function renderLadder() {
+    document.getElementById('ladder').innerHTML = REWARDS.map(r => `
+        <div class="rp-rung${r.kind && !r.stars ? ' milestone' : ''}">
+            ${r.hidden ? '<span class="rp-secret">SECRET — never advertised</span>' : ''}
+            <div class="rp-lvl">Level ${r.lvl}</div>
+            <div class="rp-art">${rungArt(r)}</div>
+            <div class="rp-what">${rungWhat(r)}</div>
+            <div class="rp-sub">${rungSub(r)}<br>${XP_CUM[r.lvl-1].toLocaleString()} Favor · ~${gamesAt(r.lvl)} games</div>
+        </div>`).join('');
+}
+function renderHeroes() {
+    document.getElementById('heroPicker').innerHTML = CHARS.map(c => `
+        <button class="rp-hero${c.id === hero.id ? ' on' : ''}" onclick="pickHero('${c.id}')">
+            <img src="assets/characters/${c.filename}" alt=""><span>${c.name}</span>
+        </button>`).join('');
+}
+function pickHero(id) { hero = CHARS.find(c => c.id === id); renderHeroes(); renderLadder(); renderSim(); }
+
+// Account milestones
+const RARES = [
+    { id: 'rare-ember', name: 'The Ember Throne' },
+    { id: 'rare-astronomer', name: 'The Astronomer Royal' },
+    { id: 'rare-vault', name: 'The Drowned Vault' },
+];
+document.getElementById('miles').innerHTML = RARES.map((r, i) => `
+    <div class="rp-mile">
+        <div class="rp-lvl">${(i + 1) * 3} heroes at Level 10</div>
+        <div class="rp-swatch tsw-${r.id}" style="background-size:280px"></div>
+        <div class="rp-what">A random Rare Table</div>
+        <div class="rp-sub">${i === 2 ? 'the set completes' : 'one of the three, account-random order'}</div>
+    </div>`).join('') + `
+    <div class="rp-mile" style="border-style:dashed; opacity:0.8">
+        <div class="rp-lvl">2 heroes at Level 5</div>
+        <div class="rp-what" style="margin-top:34px">Earned hero</div>
+        <div class="rp-sub">already live — kept at 5 (decoupled from Side B's move)</div>
+    </div>`;
+
+// ── Simulator: the REAL chip/ribbon/lock logic at any level.
+function ribbonHtml(fv, h, nsz) {
+    let lvl = 1; while (lvl < 100 && fv >= XP_CUM[lvl]) lvl++;
+    const max = lvl >= 100, gild = lvl >= 50;
+    const pct = max ? 100 : (fv - XP_CUM[lvl-1]) / xpStep(lvl) * 100;
+    return `<div class="rb${max ? ' max' : ''}${gild ? ' gild' : ''}" style="--h:${h}px;--nsz:${nsz}px">
+        <span class="rb-num">${lvl}</span>
+        <div class="rb-track"><div class="rb-fill" style="--pct:${pct.toFixed(1)}%"></div></div></div>`;
+}
+function nextReward(lvl) {
+    const r = REWARDS.find(x => !x.hidden && x.lvl > lvl);
+    if (!r) return null;
+    const label = r.stars ? `★ ${r.stars}` : { table: 'Your Table', crest: "Hero's Crest", gild: 'Gilded Ribbon', mastery: 'Mastery' }[r.kind];
+    return { lvl: r.lvl, label };
+}
+function renderSim() {
+    const lvl = +document.getElementById('simRange').value;
+    const fv = XP_CUM[lvl - 1];
+    const nr = nextReward(lvl);
+    const chip = lvl >= 100
+        ? `<div class="hs-next hs-mastered">${CROWN} Mastered</div>`
+        : nr ? `<div class="hs-next">Lv ${nr.lvl} · ${nr.label}</div>` : '';
+    document.getElementById('simCard').innerHTML = `
+        ${lvl >= 10 ? '<span class="side-badge lit">Side A ⇄ B</span>' : ''}
+        <img class="portrait" src="assets/characters/${hero.filename}" alt="">
+        <div class="hs-xp">${ribbonHtml(fv, 11, 13)}</div>
+        ${chip}
+        <div class="rp-simname">${hero.name}</div>`;
+    document.getElementById('simLv').textContent = 'Level ' + lvl;
+    const starsSoFar = REWARDS.filter(r => r.stars && r.lvl <= lvl).reduce((s, r) => s + r.stars, 0);
+    document.getElementById('simStars').textContent = '★ ' + starsSoFar;
+    document.getElementById('simFv').textContent = fv.toLocaleString();
+    document.getElementById('simGames').textContent = lvl === 1 ? 'a fresh hero' : '~' + gamesAt(lvl) + ' games';
+    document.getElementById('simLocks').innerHTML = `
+        <b>Emporium shelf at this level:</b><br>
+        ${hero.name}'s Table — ${lvl >= 8 ? '✦ unlocked' : `🔒 Hero Level ${lvl}/8`}<br>
+        ${hero.name}'s Crest — ${lvl >= 15 ? '✦ unlocked' : `🔒 Lv ${lvl}/15`}<br>
+        Rare Tables — 🔒 counts heroes at Lv 10 across the roster (3/6/9)`;
+}
+document.getElementById('simRange').oninput = renderSim;
+
+// ── Ceremony previews: the real overlay classes, dressed per unlock.
+function ceremony(kind) {
+    const t = document.getElementById('champTitle'), s = document.getElementById('champSub'),
+          a = document.getElementById('champArt'), ov = document.getElementById('champOverlay');
+    const CR = '<svg class="crown-ico" viewBox="0 0 24 16" aria-hidden="true"><path d="M2 14 L1 4 L7 8 L12 1 L17 8 L23 4 L22 14 Z" fill="#e8c34b" stroke="#8a6a1f" stroke-width="1"/><rect x="2" y="14" width="20" height="2" fill="#c9a84c"/></svg>';
+    if (kind === 'table') {
+        t.textContent = `The ${hero.name}'s Table Is Yours`;
+        s.innerHTML = `${CR} Level 8 — a table woven for this hero waits in the Emporium`;
+        a.innerHTML = `<div class="champ-table tsw-hero-${hero.id}"></div>`;
+    } else if (kind === 'sideb') {
+        t.textContent = `The ${hero.name} Turns the Board`;
+        s.innerHTML = `Side B unlocked — <em>${hero.altEpithet || 'the other side'}</em>`;
+        a.innerHTML = `<div class="champ-flip"><div class="cf-inner">
+            <div class="cf-face"><img src="assets/characters/${hero.filename}" alt=""></div>
+            <div class="cf-face cf-back"><img src="assets/characters/${hero.altFilename || hero.filename}" alt=""></div></div></div>`;
+        requestAnimationFrame(() => setTimeout(() => {
+            const f = a.querySelector('.cf-inner'); if (f) f.classList.add('turned');
+        }, 650));
+    } else if (kind === 'crest') {
+        t.textContent = `The ${hero.name}'s Crest Is Yours`;
+        s.innerHTML = `${CR} Level 15 — wear this hero's painted crest from your Standing page`;
+        a.innerHTML = `<span class="av-disc champ-crest"><img src="assets/characters/${hero.filename}" alt=""></span>`;
+    } else {
+        t.textContent = 'A Rare Table Answers Your Renown';
+        s.innerHTML = `${CR} 3 heroes at Level 10 — a living table joins your collection`;
+        a.innerHTML = `<div class="champ-table champ-rare tsw-rare-ember"></div>`;
+    }
+    ov.classList.add('active');
+    const done = () => { ov.classList.remove('active'); a.innerHTML = ''; };
+    ov.onclick = done;
+    document.getElementById('champBtn').onclick = e => { e.stopPropagation(); done(); };
+}
+
+renderHeroes(); renderLadder(); renderSim();
+</script>
+</body>
+</html>

@@ -1539,11 +1539,20 @@ function showCharacterSelect(offer) {
         const unlockedB = char.altSlots && window.FLB
             && typeof FLB.sideBUnlocked === 'function' && FLB.sideBUnlocked(char.id);
         const badge = unlockedB ? '<span class="side-badge lit">Side A \u21c4 B</span>' : '';
+        // Gilt Ladder: the next VISIBLE reward on this hero's climb rides
+        // under the ribbon (nextReward skips Side B \u2014 the surprise rule).
+        // Mastery (Lv 100) wears the crown instead of a chip.
+        const nr = (window.FLB && typeof FLB.nextReward === 'function') ? FLB.nextReward(char.id) : null;
+        const mastered = window.FLB && typeof FLB.heroLevel === 'function' && FLB.heroLevel(fv) >= 100;
+        const nextChip = mastered
+            ? `<div class="hs-next hs-mastered">${(typeof FLB.crownSvg === 'function') ? FLB.crownSvg() : ''} Mastered</div>`
+            : nr ? `<div class="hs-next">Lv ${nr.lvl} \u00b7 ${nr.label}</div>` : '';
 
         card.innerHTML = `
             ${badge}
             <img src="assets/characters/${char.filename}" alt="${char.name}">
             ${ribbon}
+            ${nextChip}
             <div class="character-info">
                 <h3>${char.name}</h3>
                 ${char.epithet ? `<div class="epithet">${char.epithet}</div>` : ''}
@@ -6974,12 +6983,25 @@ function paintVictoryXp(xp) {
     const rose = xp.levelAfter > xp.levelBefore;
     const chip = document.createElement('div');
     chip.className = 'vs-delta xp';
+    // Gilt Ladder: star drops crossed this game toast on the chip; the
+    // next VISIBLE reward closes the loop ("one more game"). Games-away
+    // estimates from THIS game's pace, floored at 1.
+    const nr = (typeof FLB.nextReward === 'function') ? FLB.nextReward(xp.charId) : null;
+    let nextLine = '';
+    if (nr && gained > 0) {
+        const games = Math.max(1, Math.ceil(nr.fvNeeded / gained));
+        nextLine = `<div class="vs-d-next">${nr.label} at Lv ${nr.lvl} — ${games === 1 ? 'a game away' : `~${games} games away`}</div>`;
+    } else if (nr) {
+        nextLine = `<div class="vs-d-next">${nr.label} at Lv ${nr.lvl}</div>`;
+    }
     chip.innerHTML = `
         <span class="vs-d-what">${hero.name} · Level</span>
         ${rose ? `<b>${xp.levelBefore}</b><span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${xp.levelAfter}">0</b>`
                : `<b>${xp.levelAfter}</b>`}
         <span class="vs-d-fv">+${gained} Favor</span>
-        <div class="vs-d-rb">${FLB.xpRibbonHtml(xp.fvAfter, 9, 11)}</div>`;
+        ${xp.rungStars ? `<span class="vs-d-stars">+ ★ ${xp.rungStars}</span>` : ''}
+        <div class="vs-d-rb">${FLB.xpRibbonHtml(xp.fvAfter, 9, 11)}</div>
+        ${nextLine}`;
     row.appendChild(chip);
     animateVsTotals(chip);
 
@@ -8052,7 +8074,28 @@ function canUseTable(id) {
     const s = TABLE_SKINS.find(x => x.id === id);
     if (!s) return false;
     if (!s.price && !s.lock) return true;          // oak + leather: everyone's
+    // Gilt Ladder unlocks are DERIVED from hero levels (FLB), never owned:
+    // hero tables at Level 8 with that hero, rare tables at every 3 heroes
+    // reaching Level 10 (random order per account).
+    if (s.lock === 'hero') return !!(window.FLB && FLB.heroTableUnlocked
+        && FLB.heroTableUnlocked(id.replace(/^hero-/, '')));
+    if (s.lock === 'feat') return !!(window.FLB && FLB.rareTableEarned
+        && FLB.rareTableEarned(id));
     return ownedTableIds().includes(id);
+}
+// Lock-line helpers — live progress instead of a flat padlock.
+function heroTableLockLine(id) {
+    if (!(window.FLB && FLB.heroLevel && FLB.heroFv)) return '🔒 Level up to earn';
+    const need = (FLB.tableLevel && FLB.tableLevel()) || 8;
+    const lvl = FLB.heroLevel(FLB.heroFv(id.replace(/^hero-/, '')));
+    return `🔒 Hero Level ${Math.min(lvl, need)}/${need}`;
+}
+function rareTableLockLine() {
+    if (!(window.FLB && FLB.heroesAtTen)) return '🔒 Earned by deed';
+    const every = (FLB.rareEvery && FLB.rareEvery()) || 3;
+    const at = FLB.heroesAtTen();
+    const nextNeed = (Math.floor(at / every) + 1) * every;
+    return `🔒 ${at}/${nextNeed} heroes at Lv 10`;
 }
 function starsBalance() {
     // FLB paints the balance into the sign; reading it beats reaching into
@@ -8124,8 +8167,8 @@ function renderStoreTables() {
     const stateLine = s => {
         if (s.id === cur) return '✦ On your table';
         if (canUseTable(s.id)) return 'Tap to view';
-        if (s.lock === 'hero') return '🔒 Level up to earn';
-        if (s.lock === 'feat') return '🔒 Earned by deed';
+        if (s.lock === 'hero') return heroTableLockLine(s.id);
+        if (s.lock === 'feat') return rareTableLockLine();
         return `★ ${s.price} to unlock`;
     };
     const card = s => `
@@ -8180,9 +8223,9 @@ function renderTableInspect() {
     } else if (canUseTable(s.id)) {
         action = `<button class="st-buy" onclick="event.stopPropagation(); applyTableSkin('${s.id}'); renderTableInspect()">Equip</button>`;
     } else if (s.lock === 'hero') {
-        action = '<span class="tt-insp-lock">🔒 Earned by leveling your hero</span>';
+        action = `<span class="tt-insp-lock">${heroTableLockLine(s.id)} — earned by leveling this hero</span>`;
     } else if (s.lock === 'feat') {
-        action = '<span class="tt-insp-lock">🔒 Earned by royal deed</span>';
+        action = `<span class="tt-insp-lock">${rareTableLockLine()} — every 3 heroes at Lv 10 earns a rare table</span>`;
     } else if (_tableBuyNote) {
         action = `<span class="tt-insp-lock">${_tableBuyNote}</span>`;
         _tableBuyNote = null;
