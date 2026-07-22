@@ -1236,8 +1236,7 @@
             : s && s.state === 'offline' ? '<div class="pf-note pf-sign-err">The realm is unreachable — try again online.</div>'
             : s && s.state === 'taken_mine' ? `<div class="pf-note pf-sign-err">This court already answers to a different ${provName}.</div>`
             : '';
-        return `<div class="pf-note">Link your court to your ${provName} — then signing in on any
-            device seats you here, rating and heroes intact.</div>${door}${err}`;
+        return `${door}${err}`;
     }
     function renderSigninSection() {
         const host = document.getElementById('pfSignin');
@@ -1538,7 +1537,7 @@
                     <div class="pf-xp">${xpRibbonHtml(s.fv || 0, 7, 9)}</div>
                 </div>`).join('')}</div>` : `
             <div class="pf-sec">Your Heroes</div>
-            <div class="pf-note">No hero has ridden into a rated game yet — every one you play keeps its own rating and high score.</div>`}
+            <div class="pf-note">Every one you play keeps its own rating and high score.</div>`}
 
             <div class="pf-sec">Name</div>
             <div class="pf-row pf-namerow">
@@ -1546,7 +1545,7 @@
                 <button class="btn-royal" id="pfSave"><span>Save</span></button>
             </div>
             ${signinSectionHtml()}
-            <div class="pf-note">Champions are crowned nightly at 10 PM Eastern.${mode === 'local' ? '<br><b class="pf-local">LOCAL PROFILE — leaderboard offline</b>' : ''}</div>
+            ${mode === 'local' ? '<div class="pf-note"><b class="pf-local">LOCAL PROFILE — leaderboard offline</b></div>' : ''}
         `;
         // The COURT SEAL section (copy/paste uid restore) retired 7/20 eve —
         // Court Sign-In above is the restore mechanism now. previewSeal/
