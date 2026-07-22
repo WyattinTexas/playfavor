@@ -754,7 +754,14 @@
         if (gameUp) return;
         const chars = ((window.FAVOR_DATA || {}).characters || []);
         for (const c of chars) {
-            if (!c.altSlots || !sideBUnlocked(c.id)) continue;
+            if (!c.altSlots) continue;
+            if (!sideBUnlocked(c.id)) {
+                // The 7/22 move to Level 10 can re-lock a board unlocked
+                // under the old Level 5 — clear the shown-latch so the
+                // ceremony fires again when they truly re-earn it.
+                try { localStorage.removeItem('favorShownSideB_' + c.id); } catch (e) { /* fine */ }
+                continue;
+            }
             if (localStorage.getItem('favorShownSideB_' + c.id)) continue;
             await showSideBCelebration(c);
         }
