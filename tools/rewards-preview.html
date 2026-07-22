@@ -322,11 +322,7 @@ function luRender(before, after) {
     const rose = la > lb;
     const rung = REWARDS.filter(r => r.stars && r.lvl > lb && r.lvl <= la).reduce((s, r) => s + r.stars, 0);
     const nr = nextReward(la);
-    let nextLine = '';
-    if (nr) {
-        const games = Math.max(1, Math.ceil((XP_CUM[nr.lvl - 1] - after) / 100));
-        nextLine = `<div class="vs-d-next">${nr.label} at Lv ${nr.lvl} — ${games === 1 ? 'a game away' : '~' + games + ' games away'}</div>`;
-    }
+    const nextLine = nr ? `<div class="vs-d-next">${nr.label} at Lv ${nr.lvl}</div>` : '';
     const chip = `<div class="vs-deltas"><div class="vs-delta xp">
         <span class="vs-d-what">${hero.name} · Level</span>
         ${rose ? `<b>${lb}</b><span class="vs-d-arrow">→</span><b class="vs-d-new">${la}</b>` : `<b>${la}</b>`}

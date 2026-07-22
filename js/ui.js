@@ -6984,16 +6984,10 @@ function paintVictoryXp(xp) {
     const chip = document.createElement('div');
     chip.className = 'vs-delta xp';
     // Gilt Ladder: star drops crossed this game toast on the chip; the
-    // next VISIBLE reward closes the loop ("one more game"). Games-away
-    // estimates from THIS game's pace, floored at 1.
+    // next VISIBLE reward closes the loop ("one more game"). No games-away
+    // estimate — Wyatt 7/22: don't tell players how many games it takes.
     const nr = (typeof FLB.nextReward === 'function') ? FLB.nextReward(xp.charId) : null;
-    let nextLine = '';
-    if (nr && gained > 0) {
-        const games = Math.max(1, Math.ceil(nr.fvNeeded / gained));
-        nextLine = `<div class="vs-d-next">${nr.label} at Lv ${nr.lvl} — ${games === 1 ? 'a game away' : `~${games} games away`}</div>`;
-    } else if (nr) {
-        nextLine = `<div class="vs-d-next">${nr.label} at Lv ${nr.lvl}</div>`;
-    }
+    const nextLine = nr ? `<div class="vs-d-next">${nr.label} at Lv ${nr.lvl}</div>` : '';
     chip.innerHTML = `
         <span class="vs-d-what">${hero.name} · Level</span>
         ${rose ? `<b>${xp.levelBefore}</b><span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${xp.levelAfter}">0</b>`
