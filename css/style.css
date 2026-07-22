@@ -7851,3 +7851,11 @@ body:has(#howto-overlay.open) .throw-hint {
     border: 1px solid #8a4a10; pointer-events: none; z-index: 2;
 }
 @media (prefers-reduced-motion: reduce) { .hand-card.freeplay img { animation: none; } }
+
+/* Desktop hand: the same playable green as the phone — the original rule was
+   scoped .tv-hand only, so full-screen web never glowed (operator 7/22). */
+.hand-zone .hand-card.playable {
+    box-shadow: 0 0 0 2px rgba(140,225,125,0.95), 0 0 18px 4px rgba(120,220,120,0.55);
+    animation: playableBreathe 2.2s ease-in-out infinite;
+    border-radius: 8px;
+}

@@ -3281,12 +3281,24 @@ function renderHand(state) {
     let html = '<div class="hand-hint" onclick="event.stopPropagation(); openHandInspect()">Click to inspect hand</div>';
     html += '<div class="hand-arc">';
 
+    // Same playable green as the phone hand (operator 7/22: "should work on
+    // any device") — identical turn gate and check as renderTvHand.
+    const myTurn = state.phase === 'gameplay' && game.pendingActivations[0] === null;
+
     hand.forEach((card, i) => {
         const angle = startAngle + step * i;
         const lift = -Math.abs(angle) * 0.4;
 
+        let playable = false;
+        if (myTurn) {
+            if (card.type === 'mission_letter') {
+                playable = game.players[0].gold >= 1 && (state.visibleMissions || []).length > 0;
+            } else {
+                try { playable = game.checkRequirements(0, card).canPlay; } catch (e) { playable = false; }
+            }
+        }
         const free = cardPlaysFree(card);
-        html += `<div class="hand-card${free ? ' freeplay' : ''}"
+        html += `<div class="hand-card${playable ? ' playable' : ''}${free ? ' freeplay' : ''}"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
                     data-hand-i="${i}"
                     ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
