@@ -255,7 +255,7 @@ function ceremony(kind) {
     const CR = '<svg class="crown-ico" viewBox="0 0 24 16" aria-hidden="true"><path d="M2 14 L1 4 L7 8 L12 1 L17 8 L23 4 L22 14 Z" fill="#e8c34b" stroke="#8a6a1f" stroke-width="1"/><rect x="2" y="14" width="20" height="2" fill="#c9a84c"/></svg>';
     if (kind === 'table') {
         t.textContent = `The ${hero.name}'s Table Is Yours`;
-        s.innerHTML = `${CR} Level 8 — a table woven for this hero waits in the Emporium`;
+        s.innerHTML = `Level 8 — a table woven for this hero waits in the Emporium`;
         a.innerHTML = `<div class="champ-table tsw-hero-${hero.id}"></div>`;
     } else if (kind === 'sideb') {
         t.textContent = `The ${hero.name} Turns the Board`;
@@ -268,11 +268,11 @@ function ceremony(kind) {
         }, 650));
     } else if (kind === 'crest') {
         t.textContent = `The ${hero.name}'s Crest Is Yours`;
-        s.innerHTML = `${CR} Level 15 — wear this hero's painted crest from your Standing page`;
+        s.innerHTML = `Level 15 — wear this hero's painted crest from your Standing page`;
         a.innerHTML = `<span class="av-disc champ-crest"><img src="assets/characters/${hero.filename}" alt=""></span>`;
     } else {
         t.textContent = 'A Rare Table Answers Your Renown';
-        s.innerHTML = `${CR} 3 heroes at Level 10 — a living table joins your collection`;
+        s.innerHTML = `3 heroes at Level 10 — a living table joins your collection`;
         a.innerHTML = `<div class="champ-table champ-rare tsw-rare-ember"></div>`;
     }
     ov.classList.add('active');

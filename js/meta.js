@@ -722,8 +722,9 @@
             const ov = document.getElementById('champOverlay');
             if (!ov || !char) { resolve(); return; }
             document.getElementById('champTitle').textContent = `${char.name} Answers Your Renown!`;
+            // No crown — same flex-wrap off-center flaw as showRewardCelebration.
             document.getElementById('champSub').innerHTML =
-                `${CROWN_SVG} Two heroes at Level 5 — a new hero joins your court, earned, never sold`;
+                'Two heroes at Level 5 — a new hero joins your court, earned, never sold';
             ov.classList.add('active');
             const done = () => { ov.classList.remove('active'); resolve(); };
             ov.onclick = done;
@@ -796,7 +797,10 @@
             const art = document.getElementById('champArt');
             if (!ov) { resolve(); return; }
             document.getElementById('champTitle').textContent = title;
-            document.getElementById('champSub').innerHTML = `${CROWN_SVG} ${sub}`;
+            // No crown in the sub: .champ-sub is a FLEX row, so with a
+            // long wrapping sub the inline crown becomes its own flex item
+            // and shoves the text off-center (operator caught it 7/22).
+            document.getElementById('champSub').innerHTML = sub;
             if (art) art.innerHTML = artHtml || '';
             ov.classList.add('active');
             const done = () => {
