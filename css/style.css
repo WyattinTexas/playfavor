@@ -7843,13 +7843,6 @@ body:has(#howto-overlay.open) .throw-hint {
     0%, 100% { box-shadow: 0 0 12px 2px rgba(255,157,60,0.65), 0 0 26px rgba(255,157,60,0.3); }
     50%      { box-shadow: 0 0 16px 4px rgba(255,157,60,0.9),  0 0 34px rgba(255,157,60,0.45); }
 }
-.freeplay-tag {
-    position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
-    background: linear-gradient(180deg, #ffb347, #e07b1f);
-    color: #2a1502; font-family: 'Cinzel', serif; font-size: 9px; font-weight: 900;
-    letter-spacing: 0.12em; padding: 1px 7px; border-radius: 7px;
-    border: 1px solid #8a4a10; pointer-events: none; z-index: 2;
-}
 @media (prefers-reduced-motion: reduce) { .hand-card.freeplay img { animation: none; } }
 
 /* Desktop hand: the same playable green as the phone — the original rule was

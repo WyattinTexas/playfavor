@@ -3298,12 +3298,11 @@ function renderHand(state) {
             }
         }
         const free = cardPlaysFree(card);
-        html += `<div class="hand-card${playable ? ' playable' : ''}${free ? ' freeplay' : ''}"
+        html += `<div class="hand-card${free ? ' freeplay' : (playable ? ' playable' : '')}"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
                     data-hand-i="${i}"
                     ondblclick="zoomCard('assets/cards/regular/${card.filename}')">
                     <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
-                    ${free ? '<span class="freeplay-tag">FREE</span>' : ''}
                 </div>`;
     });
 
@@ -3714,11 +3713,12 @@ function renderTvHand(state) {
         const free = cardPlaysFree(card);
         // No tap-to-select here: committing a card is the DRAG-UP gesture
         // (touch = bloom to read, drag up + release = the throw).
-        html += `<div class="hand-card${playable ? ' playable' : ''}${free ? ' freeplay' : ''}"
+        // Orange REPLACES green on a free card (Wyatt 7/22): one glow, one
+        // meaning — and no FREE tag; the color is the whole message.
+        html += `<div class="hand-card${free ? ' freeplay' : (playable ? ' playable' : '')}"
                     style="transform: rotate(${angle}deg) translateY(${lift}px)"
                     data-hand-i="${i}">
                     <img src="assets/cards/regular/${card.filename}" alt="${card.name}">
-                    ${free ? '<span class="freeplay-tag">FREE</span>' : ''}
                 </div>`;
     });
     html += '</div>';
