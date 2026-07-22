@@ -2237,6 +2237,7 @@
                     // knows the exact pack); fall back to our own count.
                     const shown = await drainMsgs();
                     if (!shown) await showStarsCelebration(gained);
+                    await nudgeSealAfterPurchase();
                     return;
                 }
             } catch (e) { /* wire hiccup — keep watching */ }
@@ -2255,6 +2256,38 @@
             const done = () => { ov.classList.remove('active'); resolve(); };
             ov.onclick = done;
             document.getElementById('champBtn').onclick = (e) => { e.stopPropagation(); done(); };
+        });
+    }
+
+    // Real money just landed on an UNSEALED court — one clear-of-browser-data
+    // from being stranded (the uid is the account; no Keychain on the web).
+    // Offer the seal right behind the celebration, once per purchase. The
+    // shells never see this: Keychain already guards them, and the Mint
+    // doesn't exist there anyway.
+    function nudgeSealAfterPurchase() {
+        if (IOS_SHELL) return Promise.resolve();
+        if (Object.keys(myIdentities()).length) return Promise.resolve();   // already sealed
+        return new Promise(resolve => {
+            const ov = document.getElementById('champOverlay');
+            if (!ov) { resolve(); return; }
+            const btn = document.getElementById('champBtn');
+            document.getElementById('champTitle').textContent = 'Seal Your Court';
+            document.getElementById('champSub').innerHTML =
+                'Your Stars live on this account. Sign in once and it can never be lost — not even on a new device.';
+            btn.innerHTML = '<span>Sign In</span>';
+            ov.classList.add('active');
+            const done = (go) => {
+                ov.classList.remove('active');
+                btn.innerHTML = '<span>Splendid</span>';   // restore the shared dress
+                if (go) {
+                    openProfile();
+                    const sec = document.getElementById('pfSignin');
+                    if (sec) sec.scrollIntoView({ block: 'center' });
+                }
+                resolve();
+            };
+            ov.onclick = () => done(false);
+            btn.onclick = (e) => { e.stopPropagation(); done(true); };
         });
     }
 
@@ -2437,6 +2470,7 @@
         _confirmSwitch: confirmSwitch,
         _cancelSign: () => setSignState(null),
         _applyIdentity: applyIdentity,   // rig/verify seam — not a player door
+        _nudgeSeal: nudgeSealAfterPurchase,   // rig/verify seam
         askBuyStars, buyStars, starCheckoutUrl, watchForStars,
         starPacks: () => STAR_PACKS,
         setAvatar, myAvatar, avatarDisc, buyTable,
