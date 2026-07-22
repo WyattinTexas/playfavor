@@ -7773,6 +7773,23 @@ body:has(#howto-overlay.open) .throw-hint {
 .pf-apple-logo { font-size: 17px; line-height: 1; }
 
 /* ═══ GILT LADDER — hero-leveling rewards (branch hero-leveling) ═══ */
+/* The number's ring (Wyatt 7/22): circular border on the level number —
+   bronze at 10, silver at 30, gold at 50, platinum at 75, radiant at 100.
+   Below 10 the number stays bare. Diameter rides --nsz so it scales with
+   every ribbon size (profile 7px → select 13px). */
+.rb-num.rn-bronze, .rb-num.rn-silver, .rb-num.rn-gold, .rb-num.rn-plat, .rb-num.rn-radiant {
+    min-width: 0; text-align: center;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: calc(var(--nsz, 12px) * 2.1); height: calc(var(--nsz, 12px) * 2.1);
+    border-radius: 50%; border: 1.5px solid; flex: none;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.55);
+}
+.rb-num.rn-bronze { border-color: #b0713a; color: #d99a5e; background: radial-gradient(circle at 38% 30%, #5a3417, #331a0a 74%); }
+.rb-num.rn-silver { border-color: #aeb4bf; color: #dfe3ea; background: radial-gradient(circle at 38% 30%, #4c5158, #26292e 74%); }
+.rb-num.rn-gold   { border-color: var(--gold-light); color: #ffe9a8; background: radial-gradient(circle at 38% 30%, #6d5316, #38290a 74%); box-shadow: inset 0 1px 3px rgba(0,0,0,0.55), 0 0 7px rgba(233,212,139,0.5); }
+.rb-num.rn-plat   { border-color: #e6ecf5; color: #f4f8ff; background: radial-gradient(circle at 38% 30%, #5d6672, #2d3239 74%); box-shadow: inset 0 1px 3px rgba(0,0,0,0.55), 0 0 8px rgba(214,228,255,0.55); }
+.rb-num.rn-radiant { border-color: #fff3cf; color: #fff8e2; background: radial-gradient(circle at 38% 30%, #8a6a1f, #3d2c08 74%); box-shadow: inset 0 1px 3px rgba(0,0,0,0.55), 0 0 10px rgba(255,240,200,0.85), 0 0 20px rgba(233,212,139,0.45); }
+
 /* Level 50+ ribbon re-gilds gold everywhere — the public mastery mark. */
 .rb.gild .rb-fill { background: linear-gradient(160deg, #f6e3a4, #e8c34b 30%, #b8902e 60%, #f0d278); box-shadow: 0 0 12px rgba(240,210,120,0.65); }
 .rb.gild .rb-num { color: #ffe9a8; text-shadow: 0 0 9px rgba(233,212,139,0.9); }

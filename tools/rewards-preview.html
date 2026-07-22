@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FAVOR — The Gilt Ladder (Hero Leveling Preview)</title>
 <base href="../">
-<link rel="stylesheet" href="css/style.css?v=20260722142711">
+<link rel="stylesheet" href="css/style.css?v=20260722144125">
 <style>
     /* Preview shell — repo-only, the game never loads this page.
        The game sheet locks BOTH html and body (overflow:hidden, height:100%,
@@ -55,6 +55,10 @@
     input[type=range] { width: 100%; accent-color: #c9a84c; }
     .rp-simlv { font-family: 'Cinzel', serif; font-size: 22px; color: #ffe9a8; text-align: center; }
     .side-badge.lit { position: absolute; top: 8px; right: 8px; z-index: 2; }
+    /* Ring showcase */
+    .rp-rings { display: flex; gap: 16px; flex-wrap: wrap; }
+    .rp-ringcell { flex: 0 0 130px; background: linear-gradient(180deg, #241709, #1a1006); border: 1px solid rgba(201,168,76,0.35); border-radius: 11px; padding: 12px 12px 9px; text-align: center; }
+    .rp-ringcell .rp-sub { margin-top: 7px; }
     /* Ceremony preview buttons */
     .rp-btns { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
     .rp-btn { font-family: 'Cinzel', serif; font-size: 12.5px; font-weight: 700; letter-spacing: 0.05em; color: #e9d48b; background: linear-gradient(180deg, #2a1b0c, #1c1207); border: 1px solid var(--gold, #c9a84c); border-radius: 9px; padding: 8px 14px; cursor: pointer; }
@@ -72,13 +76,17 @@
     <span class="rp-badge">BRANCH PREVIEW — NOT IN THE LIVE GAME</span>
 
     <div class="rp-sec">One Hero's Climb</div>
-    <p class="rp-note">Each of the 10 heroes climbs this same ladder independently, Level 1 → 100. XP = lifetime Favor scored with that hero (~75 a game). Pick a hero to see their table and crest. <b style="color:#ffe9a8">★ 110 total</b> per hero — only ★35 of it below Level 10.</p>
+    <p class="rp-note">Each of the 10 heroes climbs this same ladder independently, Level 1 → 100. XP = lifetime Favor scored with that hero (~100 a game; Level 10 = a flat 1,000 Favor, ~10 games). Pick a hero to see their table and crest. <b style="color:#ffe9a8">★ 110 total</b> per hero — only ★35 of it below Level 10.</p>
     <div class="rp-heroes" id="heroPicker"></div>
     <div class="rp-ladder" id="ladder"></div>
 
     <div class="rp-sec">The Court's Milestones (account-wide)</div>
     <p class="rp-note">The pull toward leveling <em>many</em> heroes. Order of the three rare tables is a random shuffle fixed per account — two collectors at 3-heroes-deep show off different tables.</p>
     <div class="rp-miles" id="miles"></div>
+
+    <div class="rp-sec">The Number's Ring</div>
+    <p class="rp-note">The level number wears a circular ring that climbs the materials: <b>bronze at 10, silver at 30, gold at 50</b> — and per your 75/100 question, <b>platinum at 75</b> and a <b>radiant ring at 100</b>. Easy to drop either if they don't earn their keep.</p>
+    <div class="rp-rings" id="ringRow"></div>
 
     <div class="rp-sec">Feel It — a player at any level</div>
     <p class="rp-note">Drag the slider. This is the real hero-select card logic: the ribbon (gold from Level 50), the next-reward chip (it skips Side B — the surprise rule), and the store's live lock lines.</p>
@@ -104,6 +112,7 @@
 
     <div class="rp-sec">Decisions on the table (for Wyatt)</div>
     <div class="rp-wyatt"><ul>
+        <li><b>Your 7/22 notes are IN:</b> Level 10 now sits at a flat 1,000 Favor (~10 games) — levels cost 100 each to Level 6, then 125 each to Level 10 (the one smooth way to land exactly 1,000), growth resuming above. And the number wears its ring: bronze 10 / silver 30 / gold 50, plus platinum 75 and radiant 100 from your question — showcased above, easy to cut.</li>
         <li><b>Side B moved 5 → 10</b> on this branch, per the ladder. Its "surprise" rule is honored: the next-reward chip and this ladder's in-game surfaces never mention it before it unlocks. (This preview page shows it only because it's for you.)</li>
         <li><b>The earned hero stays at "two heroes at Level 5"</b> — it was tied to the Side B constant, so moving Side B would have silently moved it to 10. I decoupled them; retune if you want.</li>
         <li><b>Star economy:</b> ★110 per hero lifetime, ★35 below Level 10 (~15 games). All ten heroes to 10 ≈ ★350 — Mint stays meaningful.</li>
@@ -141,9 +150,9 @@ const REWARDS = [
     { lvl: 50,  kind: 'gild' },
     { lvl: 100, kind: 'mastery' },
 ];
-const xpStep = n => Math.min(75 + 15 * (n - 1), 300);
+const xpStep = n => n <= 5 ? 100 : n <= 9 ? 125 : Math.min(150 + 15 * (n - 10), 300);
 const XP_CUM = (() => { const c = [0]; for (let n = 1; n < 100; n++) c.push(c[n-1] + xpStep(n)); return c; })();
-const gamesAt = lvl => Math.max(1, Math.round(XP_CUM[lvl - 1] / 75));
+const gamesAt = lvl => Math.max(1, Math.round(XP_CUM[lvl - 1] / 100));
 const CHARS = (window.FAVOR_DATA.characters || []).filter(c => !c.earnedOnly);
 let hero = CHARS[0];
 
@@ -212,8 +221,11 @@ function ribbonHtml(fv, h, nsz) {
     let lvl = 1; while (lvl < 100 && fv >= XP_CUM[lvl]) lvl++;
     const max = lvl >= 100, gild = lvl >= 50;
     const pct = max ? 100 : (fv - XP_CUM[lvl-1]) / xpStep(lvl) * 100;
+    const ring = lvl >= 100 ? ' rn-radiant' : lvl >= 75 ? ' rn-plat'
+        : lvl >= 50 ? ' rn-gold' : lvl >= 30 ? ' rn-silver'
+        : lvl >= 10 ? ' rn-bronze' : '';
     return `<div class="rb${max ? ' max' : ''}${gild ? ' gild' : ''}" style="--h:${h}px;--nsz:${nsz}px">
-        <span class="rb-num">${lvl}</span>
+        <span class="rb-num${ring}">${lvl}</span>
         <div class="rb-track"><div class="rb-fill" style="--pct:${pct.toFixed(1)}%"></div></div></div>`;
 }
 function nextReward(lvl) {
@@ -247,6 +259,20 @@ function renderSim() {
         Rare Tables — 🔒 counts heroes at Lv 10 across the roster (3/6/9)`;
 }
 document.getElementById('simRange').oninput = renderSim;
+
+// Ring showcase: one ribbon per material stage.
+document.getElementById('ringRow').innerHTML = [
+    { lvl: 9,  cap: 'below 10 — bare' },
+    { lvl: 10, cap: 'bronze' },
+    { lvl: 30, cap: 'silver' },
+    { lvl: 50, cap: 'gold' },
+    { lvl: 75, cap: 'platinum' },
+    { lvl: 100, cap: 'radiant' },
+].map(r => `
+    <div class="rp-ringcell">
+        <div class="rp-ringrb">${ribbonHtml(XP_CUM[r.lvl - 1], 13, 15)}</div>
+        <div class="rp-sub">${r.cap}</div>
+    </div>`).join('');
 
 // ── Ceremony previews: the real overlay classes, dressed per unlock.
 function ceremony(kind) {

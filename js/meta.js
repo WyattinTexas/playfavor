@@ -518,15 +518,18 @@
     // fv is monotonic and absent-means-zero (Level 1), so there is no
     // backfill and nothing to migrate.
     //
-    // 7/20 curve (docs/FAVOR-UPDATE-JUL20-SPEC.md §3): fast early, slow
-    // late. Wyatt's anchor — "75 favor in a game should level you up" —
-    // fixes step(1)=75; the slope is the tuning dial, the cap keeps
-    // Level 100 reachable (~27.9k lifetime vs ~225k uncapped).
-    //   step(n) = min(75 + 15·(n−1), 300)     // cost of level n → n+1
-    // Side B (Lv 10) sits at 1,215 banked Favor, ≈15 games.
+    // 7/22 curve (Wyatt): "a flat 1,000 Favor is level 10, so essentially
+    // 10 games." Two flat tiers land it EXACTLY (no 9-step arithmetic
+    // series can sum to 1,000): levels cost 100 each to Level 6, 125 each
+    // to Level 10 → Level 10 begins at 1,000 banked Favor. Growth resumes
+    // above 10 (+15 a level from 150, capped 300) so Level 100 stays
+    // reachable (~27.2k lifetime). Levels are DERIVED from fv, so this
+    // retune promotes existing players instantly — the retro latches
+    // fire any ceremonies the promotion crosses.
+    //   step(n) = 100 (n≤5) | 125 (n≤9) | min(150 + 15·(n−10), 300)
     const XP_MAX_LEVEL = 100;
     const SIDEB_LEVEL = 10;   // was 5 — hero-leveling ladder (Wyatt 7/22)
-    const xpStep = (n) => Math.min(75 + 15 * (n - 1), 300);
+    const xpStep = (n) => n <= 5 ? 100 : n <= 9 ? 125 : Math.min(150 + 15 * (n - 10), 300);
     // XP_CUM[L-1] = lifetime Favor at which level L begins (XP_CUM[0]=0).
     const XP_CUM = (() => {
         const c = [0];
@@ -564,8 +567,14 @@
         // Level 50+ re-gilds the ribbon gold on every surface — the Gilt
         // Ladder's public mark (other players see it on the boards).
         const gild = lvl >= GILD_LEVEL;
+        // The number's ring (Wyatt 7/22): a circular border that turns
+        // bronze at 10, silver at 30, gold at 50 — platinum at 75 and a
+        // radiant ring at 100 round out the run.
+        const ring = lvl >= 100 ? ' rn-radiant' : lvl >= 75 ? ' rn-plat'
+            : lvl >= 50 ? ' rn-gold' : lvl >= 30 ? ' rn-silver'
+            : lvl >= 10 ? ' rn-bronze' : '';
         return `<div class="rb${max ? ' max' : ''}${gild ? ' gild' : ''}" style="--h:${h || 11}px;--nsz:${nsz || 12}px">
-            <span class="rb-num">${lvl}</span>
+            <span class="rb-num${ring}">${lvl}</span>
             <div class="rb-track"><div class="rb-fill" style="--pct:${pct.toFixed(1)}%"></div></div>
         </div>`;
     }
