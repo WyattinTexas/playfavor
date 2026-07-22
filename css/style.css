@@ -7830,20 +7830,19 @@ body:has(#howto-overlay.open) .throw-hint {
 /* Crest gallery: hero-crest tiles reuse cp-tile; locked shows Lv n/15. */
 .cp-heroes .cp-tile.locked img { filter: grayscale(0.75) brightness(0.6); }
 
-/* ═══ FREE-PLAY HIGHLIGHT (Wyatt 7/22) — the engine plays this card free (map OR Doctor-B potion waiver) ═══ */
-.hand-card.freeplay { position: relative; }
-.hand-card.freeplay img {
-    outline: 2.5px solid #ff9d3c;
-    outline-offset: -1px;
+/* ═══ FREE-PLAY HIGHLIGHT (Wyatt 7/22) — the engine plays this card free
+   (map OR Doctor-B potion waiver). Identical structure to the playable
+   green: same ring, same soft bloom, same breathe — just orange. ═══ */
+.tv-hand .hand-card.freeplay, .hand-zone .hand-card.freeplay {
+    box-shadow: 0 0 0 2px rgba(255,157,60,0.95), 0 0 18px 4px rgba(255,140,40,0.55);
+    animation: freeplayBreathe 2.2s ease-in-out infinite;
     border-radius: 8px;
-    box-shadow: 0 0 12px 2px rgba(255,157,60,0.65), 0 0 26px rgba(255,157,60,0.3);
-    animation: freeplayPulse 2.2s ease-in-out infinite;
 }
-@keyframes freeplayPulse {
-    0%, 100% { box-shadow: 0 0 12px 2px rgba(255,157,60,0.65), 0 0 26px rgba(255,157,60,0.3); }
-    50%      { box-shadow: 0 0 16px 4px rgba(255,157,60,0.9),  0 0 34px rgba(255,157,60,0.45); }
+@keyframes freeplayBreathe {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(255,157,60,0.95), 0 0 18px 4px rgba(255,140,40,0.55); }
+    50%      { box-shadow: 0 0 0 2px rgba(255,157,60,0.7),  0 0 10px 2px rgba(255,140,40,0.35); }
 }
-@media (prefers-reduced-motion: reduce) { .hand-card.freeplay img { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .hand-card.freeplay { animation: none; } }
 
 /* Desktop hand: the same playable green as the phone — the original rule was
    scoped .tv-hand only, so full-screen web never glowed (operator 7/22). */
