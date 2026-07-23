@@ -1783,7 +1783,7 @@
                     </div>
                 </div>
                 <button class="pf-alm-btn" onclick="window.FALM && FALM.open()" title="Royal Almanac" aria-label="Royal Almanac">
-                    <img src="assets/ui/almanac-book.png" alt="">
+                    <img src="assets/ui/almanac-book.png?v=2" alt="">
                 </button>
                 <div class="pf-purse">
                     <span title="Stars">★ ${p.stars || 0}</span>
