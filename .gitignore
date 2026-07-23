@@ -14,3 +14,7 @@ shell/store/steam-assets/library_check.png
 # Jekyll build ("No such file or directory @ rb_check_realpath_internal"), which
 # silently froze playfavor.net on a stale build for a full day (7/13).
 node_modules/
+
+# Telemetry pulls — training data lives in Firebase; local JSONL exports
+# (tools/telemetry-pull.mjs) are working copies, never committed.
+data/telemetry/

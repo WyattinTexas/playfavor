@@ -45,6 +45,11 @@ async function startGame(page) {
     localStorage.setItem('favor_coach_seen', JSON.stringify(
       ['welcome', 'missions', 'hand', 'skills', 'pass', 'rivals',
        'scorn', 'favor', 'ring', 'melee', 'emblem']));
+    // Audit games must never upload telemetry transcripts — the rig switch
+    // keeps FTEL recording in memory (flows can still assert the payload)
+    // but skips the favor/telemetry/games push. Persists in the shared
+    // profile, which also covers flows that navigate without startGame.
+    localStorage.setItem('favorTelemetryOff', '1');
   });
   await page.goto(URL, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => {
@@ -7768,6 +7773,11 @@ console.log('── Side B: ribbon + badges + chooser + the table rides the B bo
     localStorage.setItem('favor_coach_seen', JSON.stringify(
       ['welcome', 'missions', 'hand', 'skills', 'pass', 'rivals',
        'scorn', 'favor', 'ring', 'melee', 'emblem']));
+    // Audit games must never upload telemetry transcripts — the rig switch
+    // keeps FTEL recording in memory (flows can still assert the payload)
+    // but skips the favor/telemetry/games push. Persists in the shared
+    // profile, which also covers flows that navigate without startGame.
+    localStorage.setItem('favorTelemetryOff', '1');
   });
   await page.goto(URL, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });

@@ -2683,6 +2683,7 @@
         _cancelSign: () => setSignState(null),
         _applyIdentity: applyIdentity,   // rig/verify seam — not a player door
         _nudgeSeal: nudgeSealAfterPurchase,   // rig/verify seam
+        _dbGet: dbGet, _dbPush: dbPush,  // telemetry seam (js/telemetry.js) — NS 'favor'
         askBuyStars, buyStars, starCheckoutUrl, watchForStars,
         starPacks: () => STAR_PACKS,
         setAvatar, myAvatar, avatarDisc, buyTable,
