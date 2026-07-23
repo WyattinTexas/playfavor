@@ -1672,6 +1672,9 @@ function resumeSoloSave() {
         window._gameMode = s.mode || null;
         window._rivalDef = s.rivalDef || null;
         if (s.skirmishSize) window._skirmishSize = s.skirmishSize;
+        // A resumed table records from HERE — the pre-reload decisions are
+        // gone with the old page. Marked so curation can drop partials.
+        if (window.FTEL) FTEL.begin(g, { mode: s.mode || 'queue', seed: null, resumed: true });
         window._uxThrownOnce = true;   // a returning table needs no gesture hint
         const ts = document.getElementById('title-screen');
         ts.classList.add('hidden');
@@ -1812,6 +1815,11 @@ async function buildSoloTable() {
 
     game = new FavorGame(playerCount);
     if (window.FALM) FALM.beginGame();   // fresh table — forfeit any unfinished game's almanac plays
+    // Solo tables run the seeded deal too now — still random per game, but
+    // the transcript records the seed, so any recorded game re-deals
+    // byte-identical through the engine later (telemetry, Hard-AI Phase 1).
+    const rngSeed = Math.floor(Math.random() * 0x7fffffff) || 1;
+    game.setSeed(rngSeed);
     game.loadDecks();
 
     // Bots draw from the heroes that were NOT offered to you — the other
@@ -1940,6 +1948,10 @@ async function buildSoloTable() {
     }
 
     document.getElementById('character-select').classList.remove('active');
+
+    // Seats are wired \u2014 open the game's decision transcript before Act 1
+    // deals a single card (telemetry, Hard-AI Phase 1).
+    if (window.FTEL) FTEL.begin(game, { mode: mode || 'queue', seed: rngSeed });
 
     game.startAct(1);
     addLogEntry('\u2550\u2550\u2550 Act 1 begins \u2550\u2550\u2550');
@@ -2111,6 +2123,9 @@ async function startMpGame({ game: rec, mySeat }) {
     if (window.FMODES) FMODES.attachEmotes();
 
     document.getElementById('character-select').classList.remove('active');
+    // Seats are wired — open the game's decision transcript before Act 1
+    // deals. Every client records; only the host uploads at scoring.
+    if (window.FTEL) FTEL.begin(game, { mode: rec.room ? 'room' : 'queue', seed: rec.seed });
     game.startAct(1);
     addLogEntry('\u2550\u2550\u2550 Act 1 begins \u2550\u2550\u2550');
     showNotification('Act 1 Begins \u2014 Choose wisely.', 'act');
@@ -6764,6 +6779,10 @@ function showScoring() {
     });
     const myHeroId = game.players[0] && game.players[0].character
         ? game.players[0].character.id : null;
+    // The decision transcript flushes here — host-only in MP, this client
+    // otherwise; fire-and-forget, the ceremony never waits on the wire
+    // (telemetry, Hard-AI Phase 1).
+    if (window.FTEL) { try { FTEL.flush(scores, { humans: humansAtTable }); } catch (e) { /* never */ } }
     clearSoloSave();   // the table finished — nothing left to resume
     if (window.FALM) FALM.commitGame();  // finished games alone unlock almanac entries
     if (window.FLB) {

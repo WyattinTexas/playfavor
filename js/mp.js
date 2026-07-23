@@ -149,7 +149,13 @@
     //     seat waits for the owner's pick — so gold and prestige fork the moment
     //     any human lands on that slot. Booted seats fall back to the shared
     //     aiWouldConvert heuristic, identical on every client.
-    const MPV = 21;
+    // 22 (7/23): game telemetry (js/telemetry.js) — every client records the
+    //     table's decision transcript and the HOST uploads it at scoring
+    //     (favor/telemetry/games). Recording is read-only wraps around the
+    //     same engine calls, so play is byte-identical; the bump keeps
+    //     telemetry-aware builds matched (every table has an uploader) and
+    //     room game records now carry `room` for the transcript's mode stamp.
+    const MPV = 22;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.
@@ -865,6 +871,7 @@
             }));
         const gameRec = await buildGameRecord(rec.size || 3, humanRows);
         if (!r) return;
+        gameRec.room = r.code;   // telemetry stamps private tables mode:'room'
         const gid = fdb().ref(`${NS}/games`).push().key;
         try {
             await fdb().ref(`${NS}/games/${gid}`).set(gameRec);
@@ -1329,6 +1336,8 @@
         publish, waitFor, drain, collectThrows, onBroadcast, markBooted,
         leaveGame, gameOver,
         gid: () => (g ? g.gid : null),
+        ver: () => MPV,   // telemetry stamps the protocol its transcript rode
+
         _T: T,   // timers — the audit suite shrinks these
     };
 })();
