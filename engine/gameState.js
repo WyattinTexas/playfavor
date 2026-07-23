@@ -748,6 +748,8 @@ class FavorGame {
 
             // Play the card
             player.playedCards.push(card);
+            // Almanac: local seat 0 only; tools pages load no FALM.
+            if (playerIndex === 0 && window.FALM) window.FALM.recordCard(card);
             this.applyCardEffects(playerIndex, card);
             this.removePendingCard(playerIndex, cardId);
 
@@ -2101,6 +2103,7 @@ class FavorGame {
         if (success) {
             this.applyMissionRewards(playerIndex, mission);
             player.completedMissions.push(mission);
+            if (playerIndex === 0 && window.FALM) window.FALM.recordMission(mission);
         } else {
             player.failedMissions.push(mission);
             this.applyMissionFailure(playerIndex, mission);
@@ -2192,6 +2195,7 @@ class FavorGame {
         player.missions.splice(missionIndex, 1);
         this.applyMissionRewards(playerIndex, mission);
         player.completedMissions.push(mission);
+        if (playerIndex === 0 && window.FALM) window.FALM.recordMission(mission);
         const skills = plan.borrowFrom.map(b => b.skill).join(', ');
         const lenders = [...new Set(plan.borrowFrom.map(b => this.players[b.neighborIndex].name))].join(' & ');
         this.addLog(`${player.name} borrows ${skills} from ${lenders} (−${plan.cost}g) to complete ${mission.name}`);
@@ -2337,6 +2341,7 @@ class FavorGame {
                     resolved.add(mission);
                     const deltas = measure(pi, () => this.applyMissionRewards(pi, mission));
                     player.completedMissions.push(mission);
+                    if (pi === 0 && window.FALM) window.FALM.recordMission(mission);
                     playerResults.push({ mission, success: true, details, deltas });
                     progressed = true;   // its rewards may unlock a sibling
                 });
@@ -2375,6 +2380,7 @@ class FavorGame {
                         });
                         resolved.add(mission);
                         player.completedMissions.push(mission);
+                        if (pi === 0 && window.FALM) window.FALM.recordMission(mission);
                         this.addLog(`${player.name} borrows ${plan.borrowFrom.map(b => b.skill).join(', ')} (−${plan.cost}g) to complete ${mission.name}`);
                         playerResults.push({ mission, success: true, details, borrowed: plan.cost, deltas });
                         return;
