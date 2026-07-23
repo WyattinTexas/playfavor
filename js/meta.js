@@ -538,7 +538,7 @@
     // fire any ceremonies the promotion crosses.
     //   step(n) = 100 (n≤5) | 125 (n≤9) | min(150 + 15·(n−10), 300)
     const XP_MAX_LEVEL = 100;
-    const SIDEB_LEVEL = 10;   // was 5 — hero-leveling ladder (Wyatt 7/22)
+    const SIDEB_LEVEL = 5;    // back to 5 (Wyatt 7/23; was 10 on 7/22, 5 before that)
     const xpStep = (n) => n <= 5 ? 100 : n <= 9 ? 125 : Math.min(150 + 15 * (n - 10), 300);
     // XP_CUM[L-1] = lifetime Favor at which level L begins (XP_CUM[0]=0).
     const XP_CUM = (() => {
@@ -601,10 +601,10 @@
     const HERO_REWARDS = [
         { lvl: 3,   stars: 5 },
         { lvl: 5,   stars: 10 },
+        { lvl: 5,   kind: 'sideb', hidden: true },   // rides with the lvl-5 stars; levelStars only sums star rows
         { lvl: 7,   stars: 10 },
         { lvl: 8,   kind: 'table' },
         { lvl: 9,   stars: 10 },
-        { lvl: 10,  kind: 'sideb', hidden: true },
         { lvl: 12,  stars: 15 },
         { lvl: 15,  kind: 'crest' },
         { lvl: 20,  stars: 20 },
@@ -631,10 +631,13 @@
     function heroCrestUnlocked(charId) {
         return heroLevel(heroFv(charId)) >= CREST_LEVEL;
     }
+    // DECOUPLED from SIDEB_LEVEL (which moved back to 5 on 7/23): the
+    // rare-table pace stays "every 3 heroes at Level 10" unless retuned.
+    const RARE_HERO_LEVEL = 10;
     function heroesAtTen() {
         const chars = (_me || {}).chars || {};
         return Object.values(chars)
-            .filter(c => heroLevel((c || {}).fv || 0) >= SIDEB_LEVEL).length;
+            .filter(c => heroLevel((c || {}).fv || 0) >= RARE_HERO_LEVEL).length;
     }
     // The random order the three rares arrive in is a deterministic
     // per-account shuffle — derived from the uid, never stored, so every
@@ -811,7 +814,7 @@
             const n = heroesAtTen() - (heroesAtTen() % RARE_EVERY);
             await showRewardCelebration(
                 'A Rare Table Answers Your Renown',
-                `${n} heroes at Level ${SIDEB_LEVEL} — a living table joins your collection`,
+                `${n} heroes at Level ${RARE_HERO_LEVEL} — a living table joins your collection`,
                 `<div class="champ-table champ-rare tsw-${id}"></div>`);
         }
     }
