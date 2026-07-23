@@ -6909,6 +6909,41 @@ function showScoring() {
         ? 'The realm bows before its new sovereign.'
         : `You finished ${VS_ORDINAL[place] || (place + 1) + 'th'}.`;
 
+    // ── WHY the standings broke this way ─────────────────────────────
+    // A tie on Total is settled by GOLD (calculateFinalScores' sort), and
+    // the sheet said none of that: two identical 73s, one trophy, no reason
+    // given (Wyatt 7/23, the table's first-ever tie — "I'm a little confused
+    // why I got second… we need to verbally show who the tiebreaker is").
+    // Gold isn't a scoring category, so the one number that decided the game
+    // was the one number NOT on the sheet. Say it in words here, and drop
+    // the coins into the grid under the total so the claim is checkable.
+    const tiedWith = (s) => scores.filter(t => t.finalScore === s.finalScore);
+    const anyTie = scores.some((s, i) => i > 0 && s.finalScore === scores[i - 1].finalScore);
+    const seatName = (s) => (s.playerIndex === 0 ? 'You' : s.name);
+    let tiebreak = '';
+    if (place >= 0 && tiedWith(scores[place]).length > 1) {
+        const ring = tiedWith(scores[place]);
+        const rivals = ring.filter(s => s !== scores[place]).map(seatName);
+        const withWhom = rivals.length > 1
+            ? rivals.slice(0, -1).join(', ') + ' and ' + rivals[rivals.length - 1]
+            : rivals[0];
+        const golds = ring.map(s => `${seatName(s)} ${s.gold}`).join(', ');
+        // The seat that actually decided YOUR place: the one directly above
+        // you in the ring, or — if you took the ring — the one just below.
+        // Comparing against the ring LEADER instead would claim gold settled
+        // a three-way tie whose top two were themselves level on it.
+        const k = ring.indexOf(scores[place]);
+        const decider = k > 0 ? ring[k - 1] : ring[1];
+        // Level on Gold as well? Then the sort's seat order settles it — a
+        // reason no player can act on. Never dress that up as a rule: call
+        // the dead heat what it is.
+        const settled = decider.gold !== ring[k].gold;
+        tiebreak = `<div class="vs-tiebreak"><img src="${PURSE_ICONS.gold}" alt="">
+            <span><b>Tied at ${scores[place].finalScore} with ${withWhom}</b> — ${settled
+                ? `most Gold breaks the tie: ${golds}.`
+                : `and level on Gold too (${ring[k].gold} each): a true dead heat.`}</span></div>`;
+    }
+
     // Rating + Stars deltas, shown BIG. Rating persists via postGameResult
     // (works offline too — the local adapter keeps the same ledgers);
     // per-game Stars appear once the store economy exposes FLB.gameStars.
@@ -6996,11 +7031,21 @@ function showScoring() {
     const totalRi = SHEET_ROWS.length + 1;
     const totalCells = scores.map((s, i) =>
         `<div class="vsg-cell total${s.playerIndex === 0 ? ' me' : ''}${i === 0 ? ' win' : ''}" style="--ri:${totalRi}"><b data-total="${s.finalScore}" data-cd="1150">0</b></div>`).join('');
+    // The tiebreak row sits BELOW the total: it is not part of anyone's
+    // score, it is the reason two equal totals ordered the way they did.
+    // Drawn only when a tie actually needs explaining — a Gold row on every
+    // sheet would read as a scoring category, which it is not.
+    const tieRi = totalRi + 1;
+    const tieRow = anyTie
+        ? `<div class="vsg-label tiebreak" style="--rowC:#b08d3c;--ri:${tieRi}"><img src="${PURSE_ICONS.gold}" alt=""><span>Gold · tiebreak</span></div>`
+          + scores.map(s => `<div class="vsg-cell tiebreak${tiedWith(s).length > 1 ? ' live' : ''}${s.playerIndex === 0 ? ' me' : ''}" style="--rowC:#b08d3c;--ri:${tieRi}">${s.gold}</div>`).join('')
+        : '';
     const grid = `
         <div class="vs-grid" style="--vsgCols:${scores.length}">
             <div class="vsg-corner" style="--ri:0"></div>${heads}
             ${bodyRows}
             <div class="vsg-label total" style="--rowC:#efe6cf;--ri:${totalRi}"><img src="${PURSE_ICONS.favor}" alt=""><span>Total</span></div>${totalCells}
+            ${tieRow}
         </div>`;
 
     content.innerHTML = `
@@ -7009,6 +7054,7 @@ function showScoring() {
             ${youWon ? '<div class="champ-rays"></div>' : ''}
             <div class="vs-headline">${headline}</div>
             <div class="vs-personal">${personal}</div>
+            ${tiebreak}
         </div>
         ${deltas ? `<div class="vs-deltas">${deltas}</div>` : ''}
         <div class="scoring-scroll">${grid}</div>
@@ -7781,9 +7827,20 @@ function showMissionCeremony(missionResults, actNum) {
         // ── A conditional reward that MISSED ─────────────────────────────
         // Recording only the payout meant a gate that failed said nothing at
         // all. Asserting the counterfactual is the whole point of the beat.
+        //
+        // ⚠ A MISSED GATE IS NOT A FINE (Wyatt 7/23: "if you fail Labyrinth
+        // and you don't have the Fortune Teller you are fined 50 Prestige —
+        // it needs to NOT fine you"). The engine has always been right: the
+        // Fortune Teller PAYS +50 when you hold her and does exactly nothing
+        // when you don't. The lie was this chip — red, `bad`, and worded
+        // "50 Prestige lost", which on screen is indistinguishable from a
+        // 50-point penalty. Nobody is ever docked for a card they never had.
+        // Keep the counterfactual (it's what makes a nothing-happened beat
+        // worth watching) but phrase it as the bonus that didn't come, in a
+        // neutral chip.
         const gateChips = (b) => (((b.r.deltas || {}).gates) || [])
             .filter(g => !g.met)
-            .map(g => chip(g.unit, `No ${g.card} — ${g.value} ${cap(g.unit)} lost`, 'bad'))
+            .map(g => chip(g.unit, `No ${g.card} — would have paid +${g.value} ${cap(g.unit)}`, 'flat'))
             .join('');
 
         // Honest payout chips from the engine's measured deltas — plus the
@@ -7862,15 +7919,24 @@ function showMissionCeremony(missionResults, actNum) {
             const took = discardStrip(b);
             const others = othersRow(b);
             let fallback = '';
-            if (!chips && !gates && !took && !others) {
+            if (!chips && !took && !others) {
                 const worth = b.r.mission.favorValue || 0;
                 fallback = b.r.success
                     ? `<span class="mc-chip flat">Completed — no further reward</span>`
-                    : (worth > 0
-                        ? chip('favor', `${worth} Favor forfeit`, 'bad big')
-                        : `<span class="mc-chip flat">Failed — no penalty, the mission is simply lost</span>`);
+                    // A failure whose whole story is a conditional that didn't
+                    // fire cost nothing at all — say that OUT LOUD. A lone
+                    // "would have paid +50" chip still reads like a bill if
+                    // nothing on screen says the bill was never sent, and the
+                    // Favor-forfeit line would just be the fine wearing a
+                    // different hat. (The gate case is The Labyrinth's; every
+                    // real penalty lands in `chips` and skips this branch.)
+                    : (gates
+                        ? `<span class="mc-chip flat">No penalty — the mission is simply lost</span>`
+                        : (worth > 0
+                            ? chip('favor', `${worth} Favor forfeit`, 'bad big')
+                            : `<span class="mc-chip flat">Failed — no penalty, the mission is simply lost</span>`));
             }
-            return reqLine(b) + chips + gates + fallback + took + others;
+            return reqLine(b) + chips + fallback + gates + took + others;
         };
 
         const renderBeat = (b) => {

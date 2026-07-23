@@ -1825,6 +1825,9 @@ console.log('── Endgame legibility: shortfalls, discarded card art, who else
         tookCards: [...document.querySelectorAll('.mc-took-card img')].map(i => i.getAttribute('src')),
         tookNames: [...document.querySelectorAll('.mc-took-card em')].map(e => e.textContent),
         others: [...document.querySelectorAll('.mc-other')].map(o => o.textContent.replace(/\s+/g, ' ').trim()),
+        // A beat may only claim a cost when one was actually paid — the
+        // Labyrinth's missed gate spent a week wearing a red penalty chip.
+        badChips: [...document.querySelectorAll('.mc-chip.bad')].map(c => c.textContent.replace(/\s+/g, ' ').trim()),
       };
     });
   };
@@ -1852,7 +1855,15 @@ console.log('── Endgame legibility: shortfalls, discarded card art, who else
   `, 'beat-labyrinth-empty-fixed.png');
   ok(lab.children > 0, 'a zero-delta failure no longer renders an EMPTY beat');
   ok(/Fortune Teller/.test(lab.text) && /50/.test(lab.text),
-    `the conditional reward that MISSED states what was lost (${lab.text})`);
+    `the conditional reward that MISSED states the counterfactual (${lab.text})`);
+  // ⚠ 7/23 — the counterfactual used to be a RED chip reading "50 Prestige
+  // lost", and Wyatt read it as exactly what it looked like: "you are fined
+  // 50 Prestige". Nothing is deducted; the engine only ever ADDS the 50 when
+  // she's held. A missed gate may never dress itself as a penalty again.
+  ok(lab.badChips.length === 0,
+    `and NOT as a fine — no penalty chip on a failure that cost nothing (${lab.badChips.join(' · ') || 'clean'})`);
+  ok(/would have paid \+50 Prestige/.test(lab.text) && /No penalty/.test(lab.text),
+    `it reads as the bonus that never came, over an explicit no-penalty (${lab.text})`);
   ok(/Short of/.test(lab.req) && /Survival|Knowledge|Mind/.test(lab.req),
     `and the beat says what they were short of (${lab.req.trim()})`);
   await closeBeat();
@@ -3164,7 +3175,10 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
   ok(!win.byLabel.stone && !win.rowLabels.some(l => /stone|gold exchange/i.test(l)),
     'no Philosopher\'s Stone / Gold Exchange row — gold does not convert to Favor');
   ok(win.totals.join(',') === '105,10,5', `totals = favor + prestige − scorn (${win.totals.join(',')})`);
-  ok(win.noGoldCol, 'no gold tiebreaker column');
+  // Gold is NOT a scoring category and must never sit on an ordinary sheet.
+  // Since 7/23 it appears in exactly one case — an actual tie, where it is
+  // the reason for the order — and this rig (105/10/5) is not one.
+  ok(win.noGoldCol, 'no gold tiebreaker row on an UNTIED sheet');
   ok(/^\+\d\.\d\d$/.test(win.ratingDelta),
     `a win gains rating, shown 1.00–7.00 style (${win.ratingDelta})`);
   // The old bound was the K-cap (1096). Under the ladder a fresh 1.00 win
@@ -3242,6 +3256,50 @@ console.log('── Victory screen: win + non-win ceremonies, deltas, phone fit'
   ok(loss.ratingDelta === '+0.01',
     `sub-2.00 last place still gains its token, not a fall (${loss.ratingDelta})`);
   await page.screenshot({ path: join(SHOTS, 'vs-desktop-loss.png') });
+
+  // ── A TIE, and WHY it broke that way (Wyatt 7/23, the table's first) ──
+  // Two 73s, one throne, and a sheet that gave no reason: gold settles a tie
+  // and gold is the one number the sheet never shows. Nothing posts here —
+  // the rigged tie must not reach a leaderboard (the scrub below is belt and
+  // braces, not the guarantee).
+  const tie = await page.evaluate(() => {
+    FLB.postGameResult = () => Promise.resolve(null);
+    game.players.forEach(p => {
+      p.playedCards = []; p.completedMissions = []; p.favorLog = [];
+      p.favor = 0; p.prestige = 0; p.scorn = 0; p.philosopherStone = 0;
+    });
+    game.players[1].name = 'HotshotGG';
+    const target = [73, 73, 11];
+    game.calculateFinalScores().forEach(s => {
+      game.players[s.playerIndex].prestige = target[s.playerIndex] - s.finalScore;
+    });
+    game.players[0].gold = 9; game.players[1].gold = 14; game.players[2].gold = 30;
+    showScoring();
+    const note = document.querySelector('.vs-tiebreak');
+    return {
+      note: note ? note.textContent.replace(/\s+/g, ' ').trim() : '(none)',
+      visible: !!note && !!note.offsetParent,
+      row: [...document.querySelectorAll('.vsg-cell.tiebreak')]
+        .map(c => c.textContent.trim() + (c.classList.contains('live') ? '*' : '')),
+    };
+  });
+  ok(tie.visible && /Tied at 73 with HotshotGG/.test(tie.note) && /most Gold breaks the tie/i.test(tie.note),
+    `a tie names the rival and the rule out loud ("${tie.note}")`);
+  ok(/HotshotGG 14/.test(tie.note) && /You 9/.test(tie.note),
+    'and both purses, so second place can see exactly what beat it');
+  ok(tie.row.join() === '14*,9*,30',
+    `the sheet grows a Gold row under the total, lit only where the tie bit (${tie.row.join(' · ')})`);
+  await sleep(2300);
+  await page.screenshot({ path: join(SHOTS, 'vs-desktop-tie.png') });
+
+  const untied = await page.evaluate(() => {
+    game.players[1].prestige += 4;   // break it
+    showScoring();
+    return { note: !!document.querySelector('.vs-tiebreak'),
+             row: document.querySelectorAll('.vsg-cell.tiebreak').length };
+  });
+  ok(!untied.note && untied.row === 0,
+    `an ordinary game shows neither — Gold is not a scoring row (note ${untied.note}, cells ${untied.row})`);
 
   // ── Firebase hygiene: remove every trace of the audit player.
   // postGameResult's LAST write is the daily best — wait for it so the

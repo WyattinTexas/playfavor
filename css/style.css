@@ -3448,6 +3448,27 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
     margin-top: 7px;
 }
 
+/* The tie explainer — only ever drawn when a tie decided your placement.
+   Gold-lit so it reads as the reason for the standing, not as flavor. */
+.vs-tiebreak {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin-top: 10px;
+    padding: 7px 15px;
+    max-width: 100%;
+    border: 1px solid rgba(201, 168, 76, 0.5);
+    border-radius: 11px;
+    background: linear-gradient(180deg, rgba(60, 40, 14, 0.5), rgba(30, 18, 7, 0.6));
+    font-family: 'EB Garamond', serif;
+    font-size: clamp(13px, 1.9vw, 16px);
+    color: var(--parchment-dark);
+    text-align: left;
+}
+.vs-tiebreak img { width: 22px; height: 22px; flex: 0 0 22px; object-fit: contain; }
+.vs-tiebreak b { color: var(--gold-light); font-weight: 700; }
+
 .vs-deltas {
     display: flex;
     gap: 14px;
@@ -3545,6 +3566,15 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
     font-size: 20px; color: #fff;
 }
 .vsg-cell.total.win { color: #f4dd8f; }
+/* Gold · tiebreak — under the total, dimmed, because it is the reason for
+   the order and never part of the score. The seats a tie actually caught
+   light up; everyone else's coins stay quiet reference. */
+.vsg-label.tiebreak { font-size: 9.5px; letter-spacing: 1.2px; }
+.vsg-cell.tiebreak { font-size: 14px; color: #cdbf9f; opacity: 0.62; }
+.vsg-cell.tiebreak.live {
+    opacity: 1; color: #ffd97a;
+    box-shadow: inset 0 0 0 1px rgba(232, 195, 75, 0.45);
+}
 @keyframes vsgIn {
     from { opacity: 0; transform: translateY(9px); }
     to { opacity: 1; transform: none; }
@@ -5593,6 +5623,10 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     .vs-head { padding: 10px 20px 6px; }
     .vs-headline { font-size: clamp(19px, 4.6vh, 24px); }
     .vs-personal { font-size: 12px; margin-top: 3px; }
+    /* The note costs head height on the 844×390 budget, so it pays rent:
+       small, tight, one line — it still reads before any scroll. */
+    .vs-tiebreak { font-size: 11px; padding: 3px 9px; gap: 5px; margin-top: 4px; border-radius: 8px; }
+    .vs-tiebreak img { width: 15px; height: 15px; flex-basis: 15px; }
     .vs-deltas { gap: 8px; margin: 6px 0 2px; }
     .vs-delta { font-size: 13px; padding: 5px 12px; gap: 6px; }
     .vs-places { gap: 3px; margin-top: 8px; }
