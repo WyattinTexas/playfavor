@@ -98,23 +98,22 @@
     }
 
     // ── Rosters ──────────────────────────────────────────────────────
-    // Medallion art: the rulebook's exemplar card for each type (data/cards.js
-    // header); acts wear their numeral, missions the scroll icon.
-    const EXEMPLAR = {
-        endeavor: 'Pearl Diving', potion: 'Mind Eraser', weapon: 'Blind Faith',
-        artifact: 'Lost North Map', wisdom: 'Fortune Teller', adventure: 'Reunited',
-    };
+    // Medallions: acts wear their numeral, missions the scroll icon, and
+    // each type a wax seal in its FRAME color — the frame IS the type in
+    // FAVOR's own visual language (data/cards.js header spot colors), so
+    // the seal teaches the same association the cards do. An MJ art pass
+    // can replace any seal later: give the tab an `icon` path instead.
     const TYPE_ORDER = ['endeavor', 'potion', 'weapon', 'artifact', 'wisdom', 'adventure'];
     const TABS = [
         { key: 'act1', label: 'Act I', numeral: 'Ⅰ' },
         { key: 'act2', label: 'Act II', numeral: 'Ⅱ' },
         { key: 'act3', label: 'Act III', numeral: 'Ⅲ' },
-        { key: 'endeavor',  label: 'Endeavors' },
-        { key: 'potion',    label: 'Potions' },
-        { key: 'weapon',    label: 'Weapons' },
-        { key: 'artifact',  label: 'Artifacts' },
-        { key: 'wisdom',    label: 'Wisdom' },
-        { key: 'adventure', label: 'Adventures' },
+        { key: 'endeavor',  label: 'Endeavors',  color: '#18598F' },
+        { key: 'potion',    label: 'Potions',    color: '#8BB250' },
+        { key: 'weapon',    label: 'Weapons',    color: '#585858' },
+        { key: 'artifact',  label: 'Artifacts',  color: '#501559' },
+        { key: 'wisdom',    label: 'Wisdom',     color: '#922B6E' },
+        { key: 'adventure', label: 'Adventures', color: '#04674E' },
         { key: 'missions',  label: 'Missions', icon: 'assets/icons/mission.png' },
     ];
 
@@ -144,11 +143,6 @@
         'assets/cards/' + (isMission ? 'missions/' : 'regular/') + entry.filename;
     const BACK_CARD = 'assets/cards/backs/Back Card 1_Brown1.jpg';
     const BACK_MISSION = 'assets/cards/backs/Back Card 2_White1.jpg';
-
-    function exemplarArt(typeKey) {
-        const c = window.FAVOR_DATA.cards.find(x => x.name === EXEMPLAR[typeKey]);
-        return c ? artPath(c, false) : null;
-    }
 
     // ── Gallery ──────────────────────────────────────────────────────
     let curTab = 'act1';
@@ -239,22 +233,22 @@
             if (t.numeral) {
                 art.classList.add('numeral');
                 art.textContent = t.numeral;
+            } else if (t.icon) {
+                const img = document.createElement('img');
+                img.src = t.icon;
+                img.alt = '';
+                img.classList.add('icon');
+                art.appendChild(img);
             } else {
-                const src = t.icon || exemplarArt(t.key);
-                if (src) {
-                    const img = document.createElement('img');
-                    img.src = src;
-                    img.alt = '';
-                    if (t.icon) img.classList.add('icon');
-                    art.appendChild(img);
-                } else {
-                    art.classList.add('numeral');
-                    art.textContent = t.label[0];
-                }
+                art.classList.add('seal');
+                art.style.setProperty('--seal', t.color);
             }
+            const lbl = document.createElement('span');
+            lbl.className = 'alm-tab-lbl';
+            lbl.textContent = t.label;
             const n = document.createElement('span');
             n.className = 'alm-tab-n';
-            btn.append(art, n);
+            btn.append(art, lbl, n);
             btn.onclick = () => { curTab = t.key; renderTab(ov, d); };
             tabs.appendChild(btn);
         });

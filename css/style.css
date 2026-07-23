@@ -7865,7 +7865,7 @@ body:has(#howto-overlay.open) .throw-hint {
 .alm-gallery.open { display: flex; }
 .alm-inner {
     position: relative;
-    width: min(960px, 96vw); max-height: min(90vh, calc(100dvh - 14px));
+    width: min(1080px, 96vw); max-height: min(90vh, calc(100dvh - 14px));
     display: flex; flex-direction: column;
     background: linear-gradient(#241b0f, #14100a);
     border: 2px solid #8a6a1f; border-radius: 10px;
@@ -7883,35 +7883,47 @@ body:has(#howto-overlay.open) .throw-hint {
 }
 .alm-x:hover, .alm-x:focus-visible { color: #f0dfb8; outline: none; }
 .alm-tabs {
-    display: flex; flex-wrap: wrap; gap: 6px;
+    display: flex; flex-wrap: nowrap; gap: 6px;
     padding: 10px 16px; border-bottom: 1px solid #3a2d17;
 }
-/* Tabs are ART, not words (Wyatt 7/23): each is a gold-ringed medallion —
-   type tabs crop the rulebook's exemplar card art, act tabs wear their
-   numeral, missions the scroll icon. The label lives in title/aria. */
+/* One equal-width tab per category, filling the whole row (Wyatt 7/23).
+   Medallion + text: acts wear their numeral, missions the scroll icon,
+   each type a wax seal in its FRAME color — the same blue-means-endeavor
+   language the cards themselves teach. `--seal` carries the type color;
+   an MJ art pass can swap any seal for an image via the tab's `icon`. */
 .alm-tab {
+    flex: 1 1 0; min-width: 0;
     display: flex; flex-direction: column; align-items: center; gap: 3px;
     background: #1c150c; border: 1px solid #4a3a1c; border-radius: 8px;
-    padding: 6px 9px 4px; cursor: pointer;
+    padding: 7px 4px 5px; cursor: pointer;
 }
 .alm-tab-art {
-    width: 42px; height: 42px; border-radius: 50%; overflow: hidden;
+    width: 34px; height: 34px; border-radius: 50%; overflow: hidden;
     display: flex; align-items: center; justify-content: center;
     border: 2px solid #6a5220; background: radial-gradient(#332712, #1a1309);
     box-shadow: inset 0 0 8px rgba(0,0,0,.7), 0 2px 6px rgba(0,0,0,.5);
-}
-.alm-tab-art img {
-    width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%;
-    filter: saturate(.75) brightness(.85);
+    flex: 0 0 auto;
 }
 .alm-tab-art img.icon { width: 62%; height: 62%; object-fit: contain; }
 .alm-tab-art.numeral {
-    font-family: 'Cinzel', serif; font-size: 20px; font-weight: 700;
+    font-family: 'Cinzel', serif; font-size: 17px; font-weight: 700;
     color: #b39a6a; text-shadow: 0 1px 3px rgba(0,0,0,.8);
 }
-.alm-tab .alm-tab-n { font-size: 10px; color: #8a7550; font-variant-numeric: tabular-nums; }
+.alm-tab-art.seal {
+    background: var(--seal);   /* stands alone if color-mix is unsupported */
+    background:
+        radial-gradient(circle at 32% 28%, rgba(255,255,255,.38), rgba(255,255,255,0) 42%),
+        radial-gradient(circle at 50% 60%, var(--seal), color-mix(in srgb, var(--seal) 55%, #000));
+    filter: saturate(.8) brightness(.9);
+}
+.alm-tab-lbl {
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 11px; color: #c3ae86; letter-spacing: .02em;
+}
+.alm-tab .alm-tab-n { font-size: 9.5px; color: #8a7550; font-variant-numeric: tabular-nums; }
 .alm-tab:hover { border-color: #8a6a1f; }
 .alm-tab:hover .alm-tab-art { border-color: #c9a542; }
+.alm-tab:hover .alm-tab-lbl { color: #f0dfb8; }
 .alm-tab.cur {
     background: linear-gradient(#3a2c14, #2a1f0e); border-color: #c9a542;
 }
@@ -7919,8 +7931,9 @@ body:has(#howto-overlay.open) .throw-hint {
     border-color: #f0d78a;
     box-shadow: inset 0 0 8px rgba(0,0,0,.5), 0 0 10px rgba(201,165,66,.55);
 }
-.alm-tab.cur .alm-tab-art img { filter: none; }
+.alm-tab.cur .alm-tab-art.seal { filter: none; }
 .alm-tab.cur .alm-tab-art.numeral { color: #f0dfb8; }
+.alm-tab.cur .alm-tab-lbl { color: #f4e6c8; }
 .alm-tab.cur .alm-tab-n { color: #c9a542; }
 /* Flex-wrap, NOT css grid — same pre-fontload row-track trap the
    achievements grid hit (Overlap.jpg, 7/20). */
@@ -7966,10 +7979,11 @@ body:has(#howto-overlay.open) .throw-hint {
     .alm-title { font-size: 16px; }
     .alm-sub { font-size: 10.5px; }
     .alm-tabs { padding: 5px 10px; gap: 4px; }
-    .alm-tab { padding: 3px 6px 2px; gap: 2px; }
-    .alm-tab-art { width: 28px; height: 28px; }
-    .alm-tab-art.numeral { font-size: 14px; }
-    .alm-tab .alm-tab-n { font-size: 9px; }
+    .alm-tab { padding: 3px 2px 2px; gap: 2px; }
+    .alm-tab-art { width: 22px; height: 22px; border-width: 1.5px; }
+    .alm-tab-art.numeral { font-size: 12px; }
+    .alm-tab-lbl { font-size: 8.5px; }
+    .alm-tab .alm-tab-n { font-size: 8px; }
     .alm-grid { gap: 7px; padding: 10px 10px 20px; }
     .alm-tile { width: 76px; }
     .alm-seal { font-size: 20px; }
