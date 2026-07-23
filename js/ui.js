@@ -1886,6 +1886,7 @@ async function buildSoloTable() {
     }
 
     game = new FavorGame(playerCount);
+    if (window.FALM) FALM.beginGame();   // fresh table — forfeit any unfinished game's almanac plays
     game.loadDecks();
 
     // Bots draw from the heroes that were NOT offered to you — the other
@@ -2144,6 +2145,7 @@ async function startMpGame({ game: rec, mySeat }) {
         showNotification(`The match formed \u2014 ${hc ? hc.name : 'your hero'} answers the call.`, 'act');
     }
     game = new FavorGame(n);
+    if (window.FALM) FALM.beginGame();   // fresh table — forfeit any unfinished game's almanac plays
     game.setSeed(rec.seed);
     game.setDealOffset(mySeat);   // chunk k stays with canonical seat k
     game.loadDecks();
@@ -6811,6 +6813,7 @@ function showScoring() {
     const myHeroId = game.players[0] && game.players[0].character
         ? game.players[0].character.id : null;
     clearSoloSave();   // the table finished — nothing left to resume
+    if (window.FALM) FALM.commitGame();  // finished games alone unlock almanac entries
     if (window.FLB) {
         // The resolved XP (computed INSIDE the posting transaction) paints
         // the victory chip late and raises the Level 5 ceremony — never a

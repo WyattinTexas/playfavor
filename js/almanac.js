@@ -2,24 +2,33 @@
  * FAVOR — Almanac (FALM)
  *
  * The player's lifetime collection book: every card they have PLAYED onto
- * their own board and every mission they have COMPLETED, across all games.
- * Discards never count. Recording happens live at the engine's push moment
- * (not from a post-game snapshot) because a rival can destroy a played
- * Weapon later in the game — "you played it" must survive that.
+ * their own board and every mission they have COMPLETED — but only in games
+ * they FINISHED. Plays land in a PENDING buffer at the engine's push moment
+ * (a rival can destroy a played Weapon later; "you played it" must survive
+ * that), and the buffer commits to the book only when the table reaches
+ * scoring. Quit, restart, or abandon a game and its pending plays die with
+ * it — the next fresh table wipes the buffer. Discards never count.
  *
- * Persistence is local-only for now, one blob per uid:
- *   localStorage['favor_almanac_<uid>'] = {
- *       cards:    { [cardName]:    { n: <times played>,   first: 'YYYY-MM-DD' } },
- *       missions: { [missionName]: { n: <times completed>, first: 'YYYY-MM-DD' } },
- *   }
+ * The buffer PERSISTS in localStorage, not memory: a solo/skirmish table
+ * survives a closed tab via the solo save (ui.js saveSoloCheckpoint), so a
+ * resumed-and-finished game must still commit the plays made before the
+ * reload. Lifecycle owners in ui.js:
+ *   beginGame()  — every FRESH FavorGame construction (solo + mp starts;
+ *                  resumeSoloSave deliberately does NOT call it)
+ *   commitGame() — the scoring path, beside clearSoloSave()
+ *
+ * Storage, one pair per uid:
+ *   favor_almanac_<uid>          = { cards:    { [name]: {n, first} },
+ *                                    missions: { [name]: {n, first} } }
+ *   favor_almanac_pending_<uid>  = { cards: { [name]: n }, missions: {...} }
  * Keyed by NAME, not id — ids are session-minted counters (cid()/mid());
  * the audited card name is the stable identity.
  *
  * Only local seat 0 records. mp.js rotates every client's own human to
  * local index 0, so in multiplayer each client writes only its own book.
  * The tools pages (howto.html, audit pages) load the engine WITHOUT this
- * file — every engine hook is `window.FALM &&` guarded — so tutorial and
- * audit simulations never pollute the book.
+ * file — every engine/ui hook is `window.FALM &&` guarded — so tutorial
+ * and audit simulations never pollute the book.
  */
 (function () {
     'use strict';
@@ -35,61 +44,114 @@
         return u;
     }
     const KEY = () => 'favor_almanac_' + uid();
+    const PENDING_KEY = () => 'favor_almanac_pending_' + uid();
 
+    function loadJson(key, fallback) {
+        try { return JSON.parse(localStorage.getItem(key)) || fallback; }
+        catch (e) { return fallback; }
+    }
+    function saveJson(key, d) {
+        try { localStorage.setItem(key, JSON.stringify(d)); } catch (e) { /* full/blocked: play on */ }
+    }
     function load() {
-        try {
-            const d = JSON.parse(localStorage.getItem(KEY())) || {};
-            d.cards = d.cards || {};
-            d.missions = d.missions || {};
-            return d;
-        } catch (e) { return { cards: {}, missions: {} }; }
+        const d = loadJson(KEY(), {});
+        d.cards = d.cards || {};
+        d.missions = d.missions || {};
+        return d;
     }
-    function save(d) {
-        try { localStorage.setItem(KEY(), JSON.stringify(d)); } catch (e) { /* full/blocked: play on */ }
-    }
+    const loadPending = () => {
+        const p = loadJson(PENDING_KEY(), {});
+        p.cards = p.cards || {};
+        p.missions = p.missions || {};
+        return p;
+    };
     function today() { return new Date().toISOString().slice(0, 10); }
 
+    // ── Game lifecycle ───────────────────────────────────────────────
     function record(bucket, name) {
         if (!name) return;
-        const d = load();
-        const row = d[bucket][name];
-        if (row) row.n += 1;
-        else d[bucket][name] = { n: 1, first: today() };
-        save(d);
+        const p = loadPending();
+        p[bucket][name] = (p[bucket][name] || 0) + 1;
+        saveJson(PENDING_KEY(), p);
     }
-
-    // ── Engine entry points ──────────────────────────────────────────
     function recordCard(card) { record('cards', card && card.name); }
     function recordMission(mission) { record('missions', mission && mission.name); }
 
+    // A fresh table — whatever an unfinished game left behind is forfeit.
+    function beginGame() {
+        try { localStorage.removeItem(PENDING_KEY()); } catch (e) { /* fine */ }
+    }
+
+    // The table reached scoring — the game's plays become permanent.
+    function commitGame() {
+        const p = loadPending();
+        const d = load();
+        ['cards', 'missions'].forEach(bucket => {
+            Object.keys(p[bucket]).forEach(name => {
+                const row = d[bucket][name];
+                if (row) row.n += p[bucket][name];
+                else d[bucket][name] = { n: p[bucket][name], first: today() };
+            });
+        });
+        saveJson(KEY(), d);
+        beginGame();   // buffer spent
+    }
+
     // ── Rosters ──────────────────────────────────────────────────────
+    // Medallion art: the rulebook's exemplar card for each type (data/cards.js
+    // header); acts wear their numeral, missions the scroll icon.
+    const EXEMPLAR = {
+        endeavor: 'Pearl Diving', potion: 'Mind Eraser', weapon: 'Blind Faith',
+        artifact: 'Lost North Map', wisdom: 'Fortune Teller', adventure: 'Reunited',
+    };
+    const TYPE_ORDER = ['endeavor', 'potion', 'weapon', 'artifact', 'wisdom', 'adventure'];
     const TABS = [
+        { key: 'act1', label: 'Act I', numeral: 'Ⅰ' },
+        { key: 'act2', label: 'Act II', numeral: 'Ⅱ' },
+        { key: 'act3', label: 'Act III', numeral: 'Ⅲ' },
         { key: 'endeavor',  label: 'Endeavors' },
         { key: 'potion',    label: 'Potions' },
         { key: 'weapon',    label: 'Weapons' },
         { key: 'artifact',  label: 'Artifacts' },
         { key: 'wisdom',    label: 'Wisdom' },
         { key: 'adventure', label: 'Adventures' },
-        { key: 'missions',  label: 'Missions' },
+        { key: 'missions',  label: 'Missions', icon: 'assets/icons/mission.png' },
     ];
 
-    // Deduped by name (the deck may hold copies), sorted act then name.
+    // Deduped by name (the deck may hold copies). Mission Letters are
+    // excluded everywhere — playing one discards it, so it can never be
+    // "on your board".
     function roster(tabKey) {
-        const src = tabKey === 'missions'
-            ? window.FAVOR_DATA.missions
-            : window.FAVOR_DATA.cards.filter(c => c.type === tabKey);
+        let src;
+        if (tabKey === 'missions') {
+            src = window.FAVOR_DATA.missions;
+        } else if (tabKey.startsWith('act')) {
+            const act = +tabKey.slice(3);
+            src = window.FAVOR_DATA.cards.filter(c =>
+                c.act === act && c.type !== 'mission_letter');
+        } else {
+            src = window.FAVOR_DATA.cards.filter(c => c.type === tabKey);
+        }
         const seen = new Map();
         src.forEach(c => { if (!seen.has(c.name)) seen.set(c.name, c); });
         return [...seen.values()].sort((a, b) =>
-            (a.act - b.act) || a.name.localeCompare(b.name));
+            (a.act - b.act)
+            || (TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type))
+            || a.name.localeCompare(b.name));
     }
+    const bucketFor = (tabKey, d) => tabKey === 'missions' ? d.missions : d.cards;
     const artPath = (entry, isMission) =>
         'assets/cards/' + (isMission ? 'missions/' : 'regular/') + entry.filename;
     const BACK_CARD = 'assets/cards/backs/Back Card 1_Brown1.jpg';
     const BACK_MISSION = 'assets/cards/backs/Back Card 2_White1.jpg';
 
+    function exemplarArt(typeKey) {
+        const c = window.FAVOR_DATA.cards.find(x => x.name === EXEMPLAR[typeKey]);
+        return c ? artPath(c, false) : null;
+    }
+
     // ── Gallery ──────────────────────────────────────────────────────
-    let curTab = 'endeavor';
+    let curTab = 'act1';
 
     function tile(entry, isMission, got) {
         const t = document.createElement('div');
@@ -122,18 +184,18 @@
 
     function renderTab(ov, d) {
         const isMission = curTab === 'missions';
-        const bucket = isMission ? d.missions : d.cards;
-        const list = roster(curTab);
+        const bucket = bucketFor(curTab, d);
         const grid = ov.querySelector('.alm-grid');
         grid.innerHTML = '';
-        list.forEach(entry => grid.appendChild(tile(entry, isMission, bucket[entry.name])));
+        roster(curTab).forEach(entry =>
+            grid.appendChild(tile(entry, isMission, bucket[entry.name])));
         grid.scrollTop = 0;
 
         ov.querySelectorAll('.alm-tab').forEach(btn => {
             const tab = btn.dataset.tab;
             btn.classList.toggle('cur', tab === curTab);
             const r = roster(tab);
-            const b = tab === 'missions' ? d.missions : d.cards;
+            const b = bucketFor(tab, d);
             btn.querySelector('.alm-tab-n').textContent =
                 r.filter(e => b[e.name]).length + '/' + r.length;
         });
@@ -144,7 +206,7 @@
         if (!ov) return;
         const d = load();
 
-        const cardRoster = TABS.slice(0, -1).flatMap(t => roster(t.key));
+        const cardRoster = roster('act1').concat(roster('act2'), roster('act3'));
         const misRoster = roster('missions');
         const cardsGot = cardRoster.filter(e => d.cards[e.name]).length;
         const misGot = misRoster.filter(e => d.missions[e.name]).length;
@@ -169,11 +231,30 @@
             btn.type = 'button';
             btn.className = 'alm-tab';
             btn.dataset.tab = t.key;
-            const lbl = document.createElement('span');
-            lbl.textContent = t.label;
+            btn.title = t.label;
+            btn.setAttribute('aria-label', t.label);
+
+            const art = document.createElement('span');
+            art.className = 'alm-tab-art';
+            if (t.numeral) {
+                art.classList.add('numeral');
+                art.textContent = t.numeral;
+            } else {
+                const src = t.icon || exemplarArt(t.key);
+                if (src) {
+                    const img = document.createElement('img');
+                    img.src = src;
+                    img.alt = '';
+                    if (t.icon) img.classList.add('icon');
+                    art.appendChild(img);
+                } else {
+                    art.classList.add('numeral');
+                    art.textContent = t.label[0];
+                }
+            }
             const n = document.createElement('span');
             n.className = 'alm-tab-n';
-            btn.append(lbl, n);
+            btn.append(art, n);
             btn.onclick = () => { curTab = t.key; renderTab(ov, d); };
             tabs.appendChild(btn);
         });
@@ -189,5 +270,5 @@
         if (ov) ov.classList.remove('open');
     }
 
-    window.FALM = { recordCard, recordMission, open, close };
+    window.FALM = { recordCard, recordMission, beginGame, commitGame, open, close };
 })();

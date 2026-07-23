@@ -7886,17 +7886,41 @@ body:has(#howto-overlay.open) .throw-hint {
     display: flex; flex-wrap: wrap; gap: 6px;
     padding: 10px 16px; border-bottom: 1px solid #3a2d17;
 }
+/* Tabs are ART, not words (Wyatt 7/23): each is a gold-ringed medallion —
+   type tabs crop the rulebook's exemplar card art, act tabs wear their
+   numeral, missions the scroll icon. The label lives in title/aria. */
 .alm-tab {
-    display: flex; align-items: baseline; gap: 6px;
-    background: #1c150c; border: 1px solid #4a3a1c; border-radius: 6px;
-    color: #c3ae86; font-size: 12px; padding: 5px 10px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    background: #1c150c; border: 1px solid #4a3a1c; border-radius: 8px;
+    padding: 6px 9px 4px; cursor: pointer;
+}
+.alm-tab-art {
+    width: 42px; height: 42px; border-radius: 50%; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid #6a5220; background: radial-gradient(#332712, #1a1309);
+    box-shadow: inset 0 0 8px rgba(0,0,0,.7), 0 2px 6px rgba(0,0,0,.5);
+}
+.alm-tab-art img {
+    width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%;
+    filter: saturate(.75) brightness(.85);
+}
+.alm-tab-art img.icon { width: 62%; height: 62%; object-fit: contain; }
+.alm-tab-art.numeral {
+    font-family: 'Cinzel', serif; font-size: 20px; font-weight: 700;
+    color: #b39a6a; text-shadow: 0 1px 3px rgba(0,0,0,.8);
 }
 .alm-tab .alm-tab-n { font-size: 10px; color: #8a7550; font-variant-numeric: tabular-nums; }
-.alm-tab:hover { border-color: #8a6a1f; color: #f0dfb8; }
+.alm-tab:hover { border-color: #8a6a1f; }
+.alm-tab:hover .alm-tab-art { border-color: #c9a542; }
 .alm-tab.cur {
     background: linear-gradient(#3a2c14, #2a1f0e); border-color: #c9a542;
-    color: #f4e6c8;
 }
+.alm-tab.cur .alm-tab-art {
+    border-color: #f0d78a;
+    box-shadow: inset 0 0 8px rgba(0,0,0,.5), 0 0 10px rgba(201,165,66,.55);
+}
+.alm-tab.cur .alm-tab-art img { filter: none; }
+.alm-tab.cur .alm-tab-art.numeral { color: #f0dfb8; }
 .alm-tab.cur .alm-tab-n { color: #c9a542; }
 /* Flex-wrap, NOT css grid — same pre-fontload row-track trap the
    achievements grid hit (Overlap.jpg, 7/20). */
@@ -7941,8 +7965,11 @@ body:has(#howto-overlay.open) .throw-hint {
     .alm-head { padding: 9px 16px 6px; }
     .alm-title { font-size: 16px; }
     .alm-sub { font-size: 10.5px; }
-    .alm-tabs { padding: 6px 10px; gap: 4px; }
-    .alm-tab { font-size: 10.5px; padding: 3px 8px; }
+    .alm-tabs { padding: 5px 10px; gap: 4px; }
+    .alm-tab { padding: 3px 6px 2px; gap: 2px; }
+    .alm-tab-art { width: 28px; height: 28px; }
+    .alm-tab-art.numeral { font-size: 14px; }
+    .alm-tab .alm-tab-n { font-size: 9px; }
     .alm-grid { gap: 7px; padding: 10px 10px 20px; }
     .alm-tile { width: 76px; }
     .alm-seal { font-size: 20px; }
