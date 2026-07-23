@@ -96,6 +96,7 @@
                     name: p.name,
                 };
                 if (p.side === 'b') row.side = 'b';
+                if (p._aiLevel) row.aiLevel = p._aiLevel;   // hard seats mark their rows
                 if (i === 0 && window.FLB) {
                     if (typeof FLB.uid === 'function') row.uid = FLB.uid();
                     const snap = (typeof FLB.snapshot === 'function') ? FLB.snapshot() : null;

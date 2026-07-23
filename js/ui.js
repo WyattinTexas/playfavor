@@ -1909,6 +1909,28 @@ async function buildSoloTable() {
         if (rp && rp.character) rp.gold += rp.character.startingGold || 0;
     }
 
+    // ── Hard seats (Hard-AI program §5d) ── The WANTED rival is always
+    // the sharp brain; a Play Now table guarantees exactly ONE hard
+    // opponent — the highest-rated seated persona, else the first bot
+    // (name and flavor unchanged: silent difficulty). Skirmish stays the
+    // casual tier the community likes.
+    if (mode === 'rival' && window._rivalDef) {
+        const rp = game.players.find(p => p.name === window._rivalDef.name);
+        if (rp) rp._aiLevel = 'hard';
+    } else if (!mode && window._pinEmblemSeed === undefined) {
+        // (_pinEmblemSeed = the audit rigs' deterministic-table seam — a
+        // pinned table keeps the four classic casual bots; hard-seat
+        // coverage lives in the arena and the telemetry probes.)
+        let hardSeat = null;
+        if (seatedPersonas.length) {
+            hardSeat = seatedPersonas.slice().sort((a, b) =>
+                ((b.def.rating || 0) - (a.def.rating || 0)) || (a.seat - b.seat))[0].seat;
+        } else if (playerCount > 1) {
+            hardSeat = 1;
+        }
+        if (hardSeat !== null && game.players[hardSeat]) game.players[hardSeat]._aiLevel = 'hard';
+    }
+
     // ── Rated Emblem start: the highest rating at the table holds it in
     // Act 1. Rated = you (your favor/players row exists) or a seated
     // persona; ties break human-first, then lower seat. Nobody rated →
@@ -2112,6 +2134,9 @@ async function startMpGame({ game: rec, mySeat }) {
             gp._personaUid = r.personaUid;
             gp._personaAI = { key: r.persona, strong: (r.strong || []).slice() };
         }
+        // Hard seats ride the SHARED record (Hard-AI §5d) so every client
+        // simulates the same brain — never a human row, whatever the record says.
+        if (r.aiLevel === 'hard' && !r.human) gp._aiLevel = 'hard';
     }
     game.setEmblemHolder(FMP.localIdx(rec.emblemSeat));
 
@@ -5357,6 +5382,48 @@ async function activateAllCards() {
                 // Remote human — their streamed choice drives our engine
                 // at exactly this point in the order on every client.
                 await mpActivateRemote(pi, card, cardIdx);
+            } else if (pi !== 0 && window.FAI && FAI.isHard(game, pi)) {
+                // HARD seat (js/ai.js): the ring first — a paid slide can
+                // change what the reveal meets — then the EV-chosen action.
+                // Pure + deterministic, so lockstep clients simulate this
+                // seat identically at this same point in the order.
+                if (FAI.preSlide(game, pi) > 0) {
+                    addLogEntry(`${game.players[pi].name} pays gold to slide their ring`);
+                    renderGameState();
+                }
+                const dec = FAI.chooseAction(game, pi, card);
+                if (dec.action === 'mission_letter' && card.type === 'mission_letter'
+                    && game.players[pi].gold >= 1 && game.visibleMissions.length > 0) {
+                    await showCardSpotlight(pi, card, 'play');
+                    const result = game.activateCard(pi, card.id, 'mission_letter');
+                    if (result && result.chooseMission) {
+                        game.chooseMission(pi, FAI.bestMission(game, pi));
+                        addLogEntry(`${game.players[pi].name} uses a Mission Letter`);
+                    }
+                } else if (dec.action === 'play'
+                    && (dec.borrow || game.checkRequirements(pi, card).canPlay)) {
+                    await showCardSpotlight(pi, card, 'play');
+                    // Borrow-&-play rides the same engine road a human's
+                    // chooser takes; a stale plan falls back to the +3g
+                    // discard — identically on every lockstep client.
+                    const played = game.activateCard(pi, card.id, 'play', dec.borrow || []);
+                    if (played && played.success) {
+                        addLogEntry(dec.borrow
+                            ? `${game.players[pi].name} borrows and plays ${card.name}`
+                            : `${game.players[pi].name} plays ${card.name}`);
+                    } else {
+                        game.activateCard(pi, card.id, 'discard');
+                        addLogEntry(`${game.players[pi].name} discards ${card.name}`);
+                    }
+                } else if (dec.action === 'discard_slide' && (dec.dir === -1 || dec.dir === 1)) {
+                    await showCardSpotlight(pi, card, 'discard');
+                    game.activateCard(pi, card.id, 'discard_slide', dec.dir);
+                    addLogEntry(`${game.players[pi].name} discards ${card.name} to slide their ring`);
+                } else {
+                    await showCardSpotlight(pi, card, 'discard');
+                    game.activateCard(pi, card.id, 'discard');
+                    addLogEntry(`${game.players[pi].name} discards ${card.name}`);
+                }
             } else if (pi !== 0) {
                 // AI player
                 const isMissionLetter = card.type === 'mission_letter';
@@ -5540,6 +5607,10 @@ function personaMissionNeeds(playerIndex) {
 // flow through bonusSkills → skills, so feasibility sees them), plus a
 // nudge toward their signature skills.
 function aiBestMission(playerIndex) {
+    // Hard seats pick by two-branch EV — a mission worth LOSING is a
+    // legitimate take (js/ai.js). Booted humans never carry _aiLevel, so
+    // the AFK fallback through here stays the casual brain.
+    if (window.FAI && FAI.isHard(game, playerIndex)) return FAI.bestMission(game, playerIndex);
     const p = game.players[playerIndex];
     const persona = p && p._personaAI;
     let bestIdx = 0;
@@ -5571,6 +5642,13 @@ function aiBestMission(playerIndex) {
 function aiPickCard(playerIndex) {
     const player = game.players[playerIndex];
     if (!player.hand || player.hand.length === 0) return;
+
+    // Hard seats draft by expected final points (js/ai.js) — same
+    // game.pickCard funnel, so telemetry and lockstep see one road.
+    if (window.FAI && FAI.isHard(game, playerIndex)) {
+        FAI.pickCard(game, playerIndex);
+        return;
+    }
 
     // Persona layer: the permanent leaderboard rivals read the table
     // harder — cards feeding a held mission or their signature skills

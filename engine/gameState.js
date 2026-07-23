@@ -969,6 +969,12 @@ class FavorGame {
      * Favor first, then its purse and skills. Pure: reads state, mutates nothing.
      */
     aiFreeSliderPos(playerIndex) {
+        // Hard seats land Chemical X by the same slot evaluator the paid
+        // planner uses (js/ai.js) — casual keeps the old weights.
+        if (window.FAI && window.FAI.isHard(this, playerIndex)) {
+            const pos = window.FAI.freeSliderPos(this, playerIndex);
+            if (Number.isInteger(pos) && pos !== this.players[playerIndex].sliderPosition) return pos;
+        }
         const player = this.players[playerIndex];
         const slots = (player.character && player.character.slots) || [];
         let best = player.sliderPosition;
@@ -1004,6 +1010,11 @@ class FavorGame {
     aiSlotPick(playerIndex, options) {
         const opts = (options && options.length) ? options : this.slotPickOptions(playerIndex);
         if (!opts.length) return null;
+        // Hard seats pick the skill that unlocks the most (js/ai.js).
+        if (window.FAI && window.FAI.isHard(this, playerIndex)) {
+            const pick = window.FAI.slotPick(this, playerIndex, opts);
+            if (pick && opts.includes(pick)) return pick;
+        }
         const p = this.players[playerIndex];
         let best = opts[0];
         opts.forEach(s => {
@@ -1060,6 +1071,11 @@ class FavorGame {
      * 2g/unit, so emptying the purse early is a real handicap. (Veto-able default.)
      */
     aiWouldConvert(player) {
+        // Hard seats judge the trade in expected points (js/ai.js); the
+        // casual heuristic below is byte-identical to before.
+        if (window.FAI && window.FAI.isHard(this, player.index)) {
+            return window.FAI.wouldConvert(this, player.index);
+        }
         if (this.currentAct >= 3) return true;
         if (this.currentAct === 2 && (player.gold || 0) >= 10) return true;
         return false;
@@ -1445,6 +1461,10 @@ class FavorGame {
                         // choice: local shows the picker, remote awaits the
                         // owner's streamed pick. Never auto-decided.
                         player._pendingSlotMission = true;
+                    } else if (window.FAI && window.FAI.isHard(this, player.index)) {
+                        // Hard: branch-EV pick — a mission worth LOSING is
+                        // a legitimate take (js/ai.js).
+                        this.chooseMission(player.index, window.FAI.bestMission(this, player.index));
                     } else {
                         // AI: auto-pick best mission
                         let bestIdx = 0;
@@ -2382,6 +2402,13 @@ class FavorGame {
                     if (!isDue(mission) && humanSeat) return;
                     const { success, details } = this.checkMissionRequirements(pi, mission);
                     if (!success) return;
+                    // A Hard seat never banks a mission whose FAILURE line
+                    // pays better (Alchemic Seige: fail +20 vs success −10).
+                    // Skipped here, it stays unresolved; when due, the pass
+                    // below finds nothing to borrow and loses it on purpose
+                    // — the same failMissionByChoice road a human walks.
+                    if (!humanSeat && window.FAI && window.FAI.isHard(this, pi)
+                        && window.FAI.wantsFailOnPurpose(this, pi, mission)) return;
                     resolved.add(mission);
                     const deltas = measure(pi, () => this.applyMissionRewards(pi, mission));
                     player.completedMissions.push(mission);
@@ -2404,7 +2431,12 @@ class FavorGame {
                     // a chooser (endActPhases pauses the phase, same pattern
                     // as _pendingPenaltyDiscard); the AI borrows only when
                     // the mission's favor clearly beats the gold fee.
-                    const plan = this.missionBorrowPlan(pi, mission);
+                    // Hard seats pick their lenders (fund the TRAILING seat,
+                    // never the leader) and judge the rescue in branch EV;
+                    // casual seats keep the old first-available plan.
+                    const hardSeat = !humanSeat && window.FAI && window.FAI.isHard(this, pi);
+                    const plan = this.missionBorrowPlan(pi, mission,
+                        hardSeat ? window.FAI.preferredLenders(this, pi, mission) : undefined);
                     if (plan && humanSeat) {
                         player._pendingMissionBorrows = player._pendingMissionBorrows || [];
                         player._pendingMissionBorrows.push(mission);
@@ -2414,7 +2446,10 @@ class FavorGame {
                     // worth at least the fee is taken; generic bots still
                     // demand a clear 2× win. Judgment only — no stat cheats.
                     const borrowBar = plan ? plan.cost * (player._personaAI ? 1 : 2) : Infinity;
-                    if (plan && !humanSeat && this.missionFavorEstimate(pi, mission) >= borrowBar) {
+                    const wantsBorrow = hardSeat
+                        ? (plan && window.FAI.borrowWorth(this, pi, mission, plan))
+                        : (plan && this.missionFavorEstimate(pi, mission) >= borrowBar);
+                    if (plan && !humanSeat && wantsBorrow) {
                         const deltas = measure(pi, () => {
                             player.gold -= plan.cost;
                             plan.borrowFrom.forEach(b => {

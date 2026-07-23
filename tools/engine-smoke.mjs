@@ -15,10 +15,14 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const src = (p) => readFileSync(join(root, p), 'utf8');
 
 const window = {};
+// playbook + ai ride along for the Hard-AI §5f acceptance tests — FAI is
+// DORMANT for every other check (no rig sets _aiLevel), which is itself
+// the casual-parity guarantee the arena proves over full games.
 const FavorGame = new Function('window',
   src('data/cards.js') + '\n' + src('data/missions.js') + '\n' +
   src('data/characters.js') + '\n' + src('data/achievements.js') + '\n' +
-  src('engine/gameState.js') + '\nreturn FavorGame;'
+  src('data/playbook.js') + '\n' +
+  src('engine/gameState.js') + '\n' + src('js/ai.js') + '\nreturn FavorGame;'
 )(window);
 
 // Achievements evaluate() is pure — rebuild it here rather than load the whole
@@ -3256,6 +3260,141 @@ console.log('── Side B save shape: side survives a JSON round-trip ──');
   const re = g2.resolveCharacterView(saved.players[0].character, saved.players[0].side);
   ok(re && re.slots === window.FAVOR_DATA.characters.find(c => c.id === 'fiddler').altSlots,
     'rehydrate resolves the B board again');
+}
+
+console.log('── Hard-AI §5f: Wyatt\'s acceptance examples (js/ai.js) ──');
+{
+  const FAI = window.FAI;
+  ok(!!FAI && !!window.FAVOR_PLAYBOOK, 'FAI + playbook aboard the loader');
+
+  // 1 · Heaven's Blade is mostly its conditional +6 — the evaluator must
+  // see the pairing, not the icon count.
+  const g = newGame();
+  g.currentAct = 3;
+  g.players[1]._aiLevel = 'hard';
+  g.players[1].skills.knowledge = 2;   // reachable either way
+  const hb = cardByName("Heaven's Blade"), de = cardByName('Deadeye');
+  const hbWithout = FAI.cardEV(g, 1, hb), deEV = FAI.cardEV(g, 1, de);
+  ok(hbWithout < deEV,
+    `w/o Blind Faith it ranks BELOW Deadeye (${hbWithout.toFixed(1)} < ${deEV.toFixed(1)})`);
+  g.players[1].playedCards.push({ ...cardByName('Blind Faith') });
+  const hbWith = FAI.cardEV(g, 1, hb);
+  ok(hbWith > FAI.cardEV(g, 1, de),
+    `WITH Blind Faith owned it ranks ABOVE (${hbWith.toFixed(1)})`);
+
+  // 2 · Her Lost Father: 3 Scorn only costs 3 points; the Map chain pays.
+  const g2 = newGame();
+  g2.currentAct = 1;
+  g2.players[1]._aiLevel = 'hard';
+  // "Vanilla 2-skill no-reward" — every act-1 two-skill card carries either
+  // a power pair (melee value, not vanilla) or one incidental requirement;
+  // Cooking (Survival+Alchemy, req 1 Knowledge, nothing else) is the
+  // blandest. The seat gets the Knowledge so BOTH cards sit at full
+  // playability — the pick then compares pure evaluator worth.
+  const vanilla = cardByName('Cooking')
+    || window.FAVOR_DATA.cards.find(c => c.act === 1 && (c.skills || []).length === 2
+      && !c.special && !c.grantsMap && !(c.skills || []).includes('power'));
+  g2.players[1].skills.knowledge = Math.max(1, g2.players[1].skills.knowledge || 0);
+  // Three cards — a two-card hand auto-pairs into [picked, leftover].
+  g2.players[1].hand = [{ ...vanilla }, { ...cardByName('Her Lost Father') }, { ...cardByName('First Aid') }];
+  g2.pendingActivations[1] = null;
+  FAI.pickCard(g2, 1);
+  const picked2 = g2.pendingActivations[1];
+  ok(picked2 && !Array.isArray(picked2) && picked2.name === 'Her Lost Father',
+    `Her Lost Father picked over the vanilla 2-skill card (${vanilla.name})`,
+    picked2 && (Array.isArray(picked2) ? 'paired' : picked2.name));
+
+  // 3 · Alchemic Seige (spelling is canon): fail +20 beats success −10 —
+  // the hard seat LOSES IT ON PURPOSE at resolution.
+  const g3 = newGame();
+  g3.currentAct = 3;
+  g3.players.forEach(p => { p.missions = []; });
+  g3.players[1]._aiLevel = 'hard';
+  const as = { ...missionByName('Alchemic Seige') };
+  g3.players[1].missions.push(as);
+  g3.players[1].bonusSkills = { alchemy: 1 };
+  g3.applySlotSkills(g3.players[1]);
+  g3.players[1].philosopherStone = 1;
+  ok(g3.checkMissionRequirements(1, as).success === true, 'rig: requirements MET');
+  const p3 = g3.players[1];
+  const scornB = p3.scorn, prestB = p3.prestige;
+  g3.phase = 'missions';
+  g3.resolveMissions();
+  ok(p3.failedMissions.some(m => m.name === 'Alchemic Seige'),
+    'met and due — and deliberately FAILED');
+  ok(p3.prestige === prestB + 20, `+20 Prestige (${prestB} → ${p3.prestige})`);
+  ok(p3.scorn === scornB, 'the +10 Scorn success line never banks');
+  // …and the same brain still BANKS a mission whose success line pays.
+  const g3b = newGame();
+  g3b.currentAct = 3;
+  g3b.players.forEach(p => { p.missions = []; });
+  g3b.players[1]._aiLevel = 'hard';
+  const rb = { ...missionByName('Royal Ball') };
+  g3b.players[1].missions.push(rb);
+  g3b.players[1].bonusSkills = { charisma: 7 };
+  g3b.applySlotSkills(g3b.players[1]);
+  g3b.phase = 'missions';
+  g3b.resolveMissions();
+  ok(g3b.players[1].completedMissions.some(m => m.name === 'Royal Ball'),
+    'conversely: a paying success line still banks (Royal Ball)');
+
+  // 4 · The canonical slider line: Fisherman, Act 3, Fang's Truce in hand,
+  // gold for the toll — park slot 4 (Survival 8) and PLAY it.
+  const g5 = new FavorGame(3);
+  g5.setSeed(4242);
+  g5.loadDecks();
+  g5.initPlayers([
+    { characterId: 'knight', playerName: 'You' },
+    { characterId: 'fisherman', playerName: 'F' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
+  g5.startAct(3);
+  const f = g5.players[1];
+  f._aiLevel = 'hard';
+  f.gold = 15;
+  f._paidSlideDir = null;
+  const ft = { ...cardByName("Fang's Truce") };
+  f.hand = [ft];
+  g5.pendingActivations = new Array(3).fill(null);
+  g5.phase = 'gameplay';
+  const steps = FAI.preSlide(g5, 1);
+  ok(f.sliderPosition === 4 && steps === 2,
+    `parks slot 4 via two paid slides (pos ${f.sliderPosition}, ${steps} steps, gold ${f.gold})`);
+  g5.pickCard(1, 0);
+  const dec = FAI.chooseAction(g5, 1, ft);
+  ok(dec.action === 'play', `chooses to PLAY Fang's Truce (${dec.action})`);
+  const played = g5.activateCard(1, ft.id, 'play');
+  ok(played && played.success, 'the play lands (req 4 Survival met on the slot)');
+  const surv = f.skills.survival || 0;
+  ok(g5.scoredCardFavor(1, ft) === 2 * surv && surv >= 10,
+    `favor delta = 2 × total Survival (${2 * surv} @ ${surv} Survival)`);
+
+  // 5 · Determinism: the same rigged state answers identically twice —
+  // full-game same-seed log identity is the arena's standing gate
+  // (tools/arena.mjs, 500 games + hash check).
+  const snap = () => {
+    const gg = new FavorGame(3);
+    gg.setSeed(909);
+    gg.loadDecks();
+    gg.initPlayers([
+      { characterId: 'explorer', playerName: 'You' },
+      { characterId: 'duchess', playerName: 'A' },
+      { characterId: 'bandit', playerName: 'B' },
+    ]);
+    gg.startAct(1);
+    gg.players[1]._aiLevel = 'hard';
+    const out = [];
+    FAI.pickCard(gg, 1);
+    const thrown = Array.isArray(gg.pendingActivations[1])
+      ? gg.pendingActivations[1][0] : gg.pendingActivations[1];
+    out.push(thrown.name);
+    out.push(JSON.stringify(FAI.slidePlan(gg, 1)));
+    out.push(JSON.stringify(FAI.chooseAction(gg, 1, thrown)));
+    out.push(FAI.bestMission(gg, 1));
+    return out.join('|');
+  };
+  const one = snap(), two = snap();
+  ok(one === two, `identical decisions from an identical seed (${one.slice(0, 60)}…)`);
 }
 
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);

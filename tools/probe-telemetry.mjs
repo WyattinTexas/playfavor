@@ -22,6 +22,7 @@ const URL = process.argv[3] || 'http://localhost:8891/';
 // --keep leaves the game's telemetry row in place (the production-proof
 // transcript the pull tool round-trips); players/daily residue still scrubs.
 const KEEP = process.argv.includes('--keep');
+const MPV_EXPECT = 23;   // keep in step with js/mp.js
 const DB = 'https://testroom-75200-default-rtdb.firebaseio.com';
 const SHOT_DIR = process.env.TELPROBE_SHOTS || '/tmp';
 
@@ -157,7 +158,7 @@ function assertPayload(p, wantMode, label) {
     ok(!!p, `${label}: payload exists`);
     if (!p) return;
     ok(p.tv === 1 && typeof p.build !== 'undefined', `${label}: tv 1, build ${p.build}`);
-    ok(p.mpv === 22, `${label}: mpv 22`, String(p.mpv));
+    ok(p.mpv === MPV_EXPECT, `${label}: mpv ${MPV_EXPECT}`, String(p.mpv));
     ok(p.mode === wantMode, `${label}: mode '${p.mode}'`, `wanted '${wantMode}'`);
     ok(Array.isArray(p.seats) && p.seats.length === p.size, `${label}: ${p.seats.length}/${p.size} seat rows`);
     ok(p.seats.every(s => s.hero && s.name && typeof s.cs === 'number'), `${label}: every seat has cs/hero/name`);
@@ -171,7 +172,12 @@ function assertPayload(p, wantMode, label) {
     const acts = p.decisions.filter(d => d.t === 'act');
     ok(acts.length >= p.size * 10, `${label}: ${acts.length} activation rows`);
     ok(acts.every(d => d.ctx && typeof d.ctx.gold === 'number'), `${label}: activations carry ctx`);
-    ok(p.decisions.some(d => d.t === 'missions_resolve'), `${label}: missions_resolve present`);
+    // A table can finish with NO missions held (always-discard humans +
+    // one shy bot) — then resolution legitimately logs nothing.
+    const tookAny = p.decisions.some(d => d.t === 'mission_take' || d.t === 'mission_turnin'
+        || d.t === 'mission_borrow' || d.t === 'mission_fail_choice');
+    ok(!tookAny || p.decisions.some(d => d.t === 'missions_resolve'),
+        `${label}: missions_resolve present when missions were held`);
     ok(p.result && p.result.rows.length === p.size
         && p.result.rows.every(r => typeof r.finalScore === 'number'),
         `${label}: result rows with finalScores`);
@@ -215,8 +221,10 @@ if (MODE === 'skirmish' || MODE === 'rival') {
     if (MODE === 'rival') {
         const rSeat = payload.seats.find(s => s.kind === 'rival');
         ok(!!rSeat, `the rival seat is stamped kind:'rival' (${rSeat && rSeat.name})`);
+        ok(rSeat && rSeat.aiLevel === 'hard', 'the WANTED rival runs the HARD brain (§5d)');
     } else {
         ok(payload.seats.filter(s => s.kind === 'bot').length === 2, 'skirmish table: 2 bot seats, no personas');
+        ok(payload.seats.every(s => !s.aiLevel), 'skirmish stays the casual tier — no hard seats (§5d)');
     }
     const rep = await replayMatches(payload);
     ok(rep === true, 'REPLAY: recorded seed re-deals the exact recorded hands', String(rep));
@@ -232,10 +240,15 @@ if (MODE === 'skirmish' || MODE === 'rival') {
     }
     await scrub([uid], fresh[0]);
     await pg.browserContext().close();
-} else if (MODE === 'mp') {
+} else if (MODE === 'mp' || MODE === 'mp-casual') {
     const uidA = stampUid('a'), uidB = stampUid('b');
     const A = await mkPage(uidA, 'Probe A');
     const B = await mkPage(uidB, 'Probe B');
+    // Rooms fill casual by design (§5d) — the verify seam forces one hard
+    // AI seat into the HOST-built record so this probe proves hard-brain
+    // lockstep (both clients simulate FAI identically, hash sentinel quiet).
+    // `mp-casual` skips the seam — the CONTROL arm for desync-rate A/Bs.
+    if (MODE !== 'mp-casual') await A.evaluate(() => { window._forceHardFill = true; });
     await A.evaluate(() => { FMODES.openPrivateRoom(); FMODES.hostRoom(); });
     await A.waitForFunction(() => document.querySelector('#roomOverlay .rm-code'), { timeout: 15000 });
     const code = await A.evaluate(() => document.querySelector('#roomOverlay .rm-code').textContent.trim());
@@ -260,10 +273,50 @@ if (MODE === 'skirmish' || MODE === 'rival') {
     ok(pA && pB && pA.decisions.length === pB.decisions.length,
         `lockstep: both clients recorded ${pA && pA.decisions.length} decisions`,
         `${pA && pA.decisions.length} vs ${pB && pB.decisions.length}`);
-    ok(pA && pB && JSON.stringify(pA.result.rows) === JSON.stringify(pB.result.rows),
-        'lockstep: identical result rows on both clients');
+    // EXACT ties (score + gold) sort by local seat order, which rotates per
+    // client — placement of a dead tie legitimately differs. Compare the
+    // rows themselves, cs-sorted.
+    const byCs = (p) => (p.result.rows || []).slice().sort((x, y) => x.cs - y.cs);
+    const rowsSame = pA && pB && JSON.stringify(byCs(pA)) === JSON.stringify(byCs(pB));
+    ok(rowsSame, 'lockstep: identical result rows on both clients (cs-sorted)');
+    if (!rowsSame && pA && pB) {
+        console.log('    A:', JSON.stringify(pA.result.rows));
+        console.log('    B:', JSON.stringify(pB.result.rows));
+        // Name the FORKING decision. Human PICK rows interleave by wall
+        // clock (each client logs its own throw first) — benign. The
+        // ACTIVATION stream is canonical order, so diff that.
+        const acts = (p) => p.decisions.filter(d => d.t !== 'pick' && d.t !== 'unpick');
+        const da = acts(pA), db = acts(pB);
+        for (let k = 0; k < Math.max(da.length, db.length); k++) {
+            if (JSON.stringify(da[k]) !== JSON.stringify(db[k])) {
+                console.log(`    first non-pick divergence at ${k}:`);
+                for (let j = Math.max(0, k - 2); j <= Math.min(k + 3, Math.max(da.length, db.length) - 1); j++) {
+                    console.log(`      [${j}] A ${JSON.stringify(da[j])}`);
+                    console.log(`      [${j}] B ${JSON.stringify(db[j])}`);
+                }
+                break;
+            }
+        }
+    }
     ok(pA && pA.seats.some(s => s.kind === 'remote') && pA.seats.some(s => s.kind === 'human'),
         'seats stamp human + remote');
+    const hardSeat = pA && pA.seats.find(s => s.aiLevel === 'hard');
+    if (MODE === 'mp-casual') {
+        ok(!hardSeat, 'control arm: no hard seat in the record');
+    } else {
+        ok(!!hardSeat, `the forced hard AI seat rode the shared record (cs ${hardSeat && hardSeat.cs})`);
+    }
+    // kind/uid/elo/name are per-client perspective (each client's own human
+    // is 'human' named 'You') — the SHARED facts must agree.
+    const seatCore = (p) => (p.seats || []).map(s => ({ cs: s.cs, hero: s.hero, aiLevel: s.aiLevel || null }));
+    ok(pB && JSON.stringify(seatCore(pB)) === JSON.stringify(seatCore(pA)),
+        'both clients agree on every seat, hard mark included');
+    if (MODE !== 'mp-casual') {
+        const hardMoved = hardSeat && pA.decisions.some(d => d.cs === hardSeat.cs
+            && (d.t === 'slide' || d.t === 'slide_free' || (d.t === 'act' && d.action === 'discard_slide')));
+        ok(!!hardMoved, 'the hard seat MOVED ITS RING in lockstep MP (slide recorded on both clients)');
+    }
+    ok(!consoleErrs.some(e => /state hash mismatch/.test(e)), 'hash sentinel quiet — no desync');
 
     await new Promise(r => setTimeout(r, 2500));
     const after = await telKeys();

@@ -155,7 +155,14 @@
     //     same engine calls, so play is byte-identical; the bump keeps
     //     telemetry-aware builds matched (every table has an uploader) and
     //     room game records now carry `room` for the transcript's mode stamp.
-    const MPV = 22;
+    // 23 (7/23): the HARD brain (js/ai.js, Hard-AI Phase 2). Queue records
+    //     mark one AI roster row aiLevel:'hard' (highest-rated persona, else
+    //     first bot); every client runs FAI for that seat — it drafts by EV,
+    //     PAYS TO SLIDE at its activation, discard-slides, and can lose a
+    //     mission on purpose. A v22 client would simulate the same seat with
+    //     the casual brain and fork on the first hard decision, so the
+    //     versions must never mix. Rooms stay casual (hardFill false).
+    const MPV = 23;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.
@@ -501,7 +508,7 @@
     // The record itself — the queue's formGame and a room's Start both
     // land here: persona/bot fill by the same odds, the rated Emblem, the
     // rank-1 boon, one seed, MPV. humanRows arrive earliest-first.
-    async function buildGameRecord(size, humanRows) {
+    async function buildGameRecord(size, humanRows, hardFill = true) {
         const roster = humanRows.slice();
 
         // Fill the rest of the table exactly like solo: persona rivals by
@@ -534,6 +541,21 @@
         let ai = 0;
         while (roster.length < size) {
             roster.push({ name: aiNames[ai++ % aiNames.length], hero: null, rating: null });
+        }
+
+        // Hard seat (Hard-AI §5d): a QUEUE table with any AI seat carries
+        // exactly one hard brain — the highest-rated persona, else the
+        // first generic bot. Private rooms pass hardFill false and stay
+        // the casual tier. The flag rides the shared record so every
+        // client simulates the same seat. A rig may force it on for a
+        // lockstep probe via window._forceHardFill (verify seam).
+        if (hardFill || window._forceHardFill) {
+            const aiRows = roster.map((r, i) => ({ r, i })).filter(x => !x.r.human);
+            const personaRows = aiRows.filter(x => x.r.persona);
+            const pick = personaRows.length
+                ? personaRows.sort((a, b) => ((b.r.rating || 0) - (a.r.rating || 0)) || (a.i - b.i))[0]
+                : aiRows[0];
+            if (pick) pick.r.aiLevel = 'hard';
         }
 
         // Emblem: highest rating at the table (humans + personas). Ties →
@@ -869,7 +891,7 @@
                 offer: Array.isArray(e.offer) && e.offer.length ? e.offer : null,
                 rating: e.rating || 0, avatar: e.avatar || null, human: true,
             }));
-        const gameRec = await buildGameRecord(rec.size || 3, humanRows);
+        const gameRec = await buildGameRecord(rec.size || 3, humanRows, false);   // rooms: casual fill (§5d)
         if (!r) return;
         gameRec.room = r.code;   // telemetry stamps private tables mode:'room'
         const gid = fdb().ref(`${NS}/games`).push().key;
