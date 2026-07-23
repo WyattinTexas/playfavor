@@ -8038,14 +8038,6 @@ body:has(#howto-overlay.open) .throw-hint {
     color: #b39a6a; margin-bottom: 8px;
     border-bottom: 1px solid #2c2212; padding-bottom: 4px;
 }
-.set-alm-btn {
-    display: flex; align-items: center; gap: 10px; width: 100%;
-    background: linear-gradient(#3a2c14, #2a1f0e);
-    border: 1px solid #8a6a1f; border-radius: 8px;
-    color: #f0dfb8; font-size: 14px; padding: 10px 14px; cursor: pointer;
-}
-.set-alm-btn:hover { border-color: #c9a542; }
-.set-alm-ico { font-size: 18px; color: #c9a542; }
 .vol-row {
     display: grid; grid-template-columns: 20px 72px 1fr 44px;
     align-items: center; gap: 10px; padding: 5px 0;
@@ -8079,6 +8071,19 @@ body:has(#howto-overlay.open) .throw-hint {
     color: #c3ae86; font-size: 12px; padding: 6px 12px; cursor: pointer;
 }
 .set-upd-btn:hover { border-color: #c9a542; color: #f0dfb8; }
+
+/* Almanac door on the profile's Standing row: the book beside the purse.
+   While the profile (z 10005) is up, the book + its card zoom must stack
+   ABOVE it — scoped with :has so global overlay order stays untouched. */
+.pf-alm-btn { background: none; border: none; padding: 0; cursor: pointer; flex: 0 0 auto; }
+.pf-alm-btn img {
+    width: 48px; display: block;
+    filter: drop-shadow(0 4px 10px rgba(0,0,0,.55));
+    transition: transform .15s ease;
+}
+.pf-alm-btn:hover img, .pf-alm-btn:focus-visible img { transform: scale(1.12) rotate(-3deg); }
+body:has(.profile-panel.active) .alm-gallery { z-index: 10600; }
+body:has(.profile-panel.active) .card-zoom { z-index: 10610; }
 
 /* Settings kill-switch for the playable glow — GREEN only (Wyatt 7/23).
    The orange freeplay glow survives the toggle: free is a certainty the

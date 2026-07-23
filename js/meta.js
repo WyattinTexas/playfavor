@@ -1772,6 +1772,9 @@
                         <b>${wins}</b> W · <b>${games}</b> played${games ? ` · <b>${rate}%</b>` : ''}${(p.bestStreak || 0) > 1 ? ` · best streak <b>${p.bestStreak}</b>` : ''}
                     </div>
                 </div>
+                <button class="pf-alm-btn" onclick="window.FALM && FALM.open()" title="Royal Almanac" aria-label="Royal Almanac">
+                    <img src="assets/ui/almanac-book.png" alt="">
+                </button>
                 <div class="pf-purse">
                     <span title="Stars">★ ${p.stars || 0}</span>
                     <span title="Daily Championships" class="pf-champs">${CROWN_SVG} ${ch.gold || 0}</span>

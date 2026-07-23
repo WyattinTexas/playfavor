@@ -151,14 +151,8 @@
             </div>`;
         const body = ov.querySelector('.set-body');
 
-        // Almanac door
-        const alm = section('Collection');
-        const almBtn = document.createElement('button');
-        almBtn.className = 'set-alm-btn';
-        almBtn.innerHTML = '<span class="set-alm-ico">❦</span><span>Open the Royal Almanac</span>';
-        almBtn.onclick = () => { if (window.FALM) FALM.open(); };
-        alm.appendChild(almBtn);
-        body.appendChild(alm);
+        // (The Almanac door moved to the profile screen's Standing row —
+        // Wyatt 7/23: a book image beside the purse, meta.js openProfile.)
 
         // Volume mixer
         const snd = section('Sound');
