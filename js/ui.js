@@ -438,7 +438,7 @@ function toggleMusic() {
         btn.classList.add('muted');
         musicPlaying = false;
     } else {
-        audio.volume = 0.4;
+        audio.volume = window.FSET ? FSET.musicVolume() : 0.4;
         audio.play().catch(() => {});
         btn.classList.remove('muted');
         musicPlaying = true;
@@ -449,7 +449,7 @@ function toggleMusic() {
 document.addEventListener('click', function initMusic() {
     if (!musicPlaying) {
         const audio = document.getElementById('themeMusic');
-        audio.volume = 0.4;
+        audio.volume = window.FSET ? FSET.musicVolume() : 0.4;
         audio.play().then(() => {
             musicPlaying = true;
             document.getElementById('musicBtn').classList.remove('muted');

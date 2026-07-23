@@ -32,6 +32,8 @@
 
     const canvas = document.getElementById('tsAmbient');
     if (!canvas) return;
+    // Settings kill-switch (FSET "Ambient life") — same hard-off as ?ambient=off.
+    try { if (localStorage.getItem('favor_ambient_off') === '1') return; } catch (e) { /* fine */ }
     // Reduce Motion: REDUCE, don't remove (the old hard return blanked the
     // menu for every iOS device with the accessibility setting on — that's
     // how the TestFlight app "lost" its ambience). Calm mode keeps the

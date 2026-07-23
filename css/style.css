@@ -150,7 +150,7 @@ html, body {
         "play rival lead"
         "play rival store"
         "play rival ach"
-        "play how   alm";
+        "play how   how";
     grid-template-columns: minmax(200px, 300px) minmax(140px, 205px) minmax(140px, 205px);
     grid-template-rows: 1fr auto auto auto auto;
     gap: clamp(8px, 1.8dvh, 16px) clamp(10px, 1.4vw, 18px);
@@ -259,7 +259,6 @@ html, body {
 .ga-lead { grid-area: lead; }
 .ga-store { grid-area: store; }
 .ga-ach { grid-area: ach; }
-.ga-alm { grid-area: alm; }
 .ga-how { grid-area: how; }
 
 /* Footer strip — quiet dev/reference hooks, Wingspan's community line. */
@@ -341,7 +340,7 @@ html, body {
 @media (orientation: portrait), (max-width: 640px) {
     .ts-frame { overflow-y: auto; padding: 20px 6vw; }
     .ts-grid {
-        grid-template-areas: "play play" "skirm host" "rival rival" "lead store" "ach how" "alm alm";
+        grid-template-areas: "play play" "skirm host" "rival rival" "lead store" "ach how";
         grid-template-columns: 1fr 1fr;
         grid-template-rows: auto;
         max-width: 100%;
@@ -7987,4 +7986,111 @@ body:has(#howto-overlay.open) .throw-hint {
     .alm-grid { gap: 7px; padding: 10px 10px 20px; }
     .alm-tile { width: 76px; }
     .alm-seal { font-size: 20px; }
+}
+
+/* ═══ SETTINGS — cog + panel (js/settings.js) ═══
+   z 1970: UNDER the Almanac (1980) so its door stacks the book above the
+   panel, and both stay under .card-zoom (2000). */
+.ts-cog {
+    position: absolute; right: 16px; bottom: 40px; z-index: 6;
+    width: 42px; height: 42px; border-radius: 50%;
+    background: radial-gradient(#2e2311, #1a1309);
+    border: 2px solid #8a6a1f; color: #d8bf8a;
+    font-size: 21px; line-height: 1; cursor: pointer;
+    box-shadow: 0 3px 10px rgba(0,0,0,.55);
+    transition: transform .25s ease, color .15s ease, border-color .15s ease;
+}
+.ts-cog:hover, .ts-cog:focus-visible {
+    color: #f4e6c8; border-color: #c9a542; outline: none;
+    transform: rotate(45deg);
+}
+.set-overlay {
+    position: fixed; inset: 0; z-index: 1970; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(8, 5, 2, 0.82);
+}
+.set-overlay.open { display: flex; }
+.set-inner {
+    width: min(540px, 94vw); max-height: min(88vh, calc(100dvh - 14px));
+    display: flex; flex-direction: column;
+    background: linear-gradient(#241b0f, #14100a);
+    border: 2px solid #8a6a1f; border-radius: 10px;
+    box-shadow: 0 24px 70px rgba(0,0,0,.7);
+}
+.set-head {
+    position: relative; padding: 16px 22px 12px;
+    border-bottom: 1px solid #3a2d17;
+}
+.set-title { font-family: 'Cinzel', serif; font-size: 22px; color: #f0dfb8; }
+.set-x {
+    position: absolute; top: 14px; right: 14px;
+    background: none; border: none; color: #a8926a; font-size: 18px; cursor: pointer;
+}
+.set-x:hover, .set-x:focus-visible { color: #f0dfb8; outline: none; }
+.set-body { padding: 6px 22px 20px; overflow-y: auto; }
+.set-sec { margin-top: 14px; }
+.set-sec-title {
+    font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    color: #b39a6a; margin-bottom: 8px;
+    border-bottom: 1px solid #2c2212; padding-bottom: 4px;
+}
+.set-alm-btn {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    background: linear-gradient(#3a2c14, #2a1f0e);
+    border: 1px solid #8a6a1f; border-radius: 8px;
+    color: #f0dfb8; font-size: 14px; padding: 10px 14px; cursor: pointer;
+}
+.set-alm-btn:hover { border-color: #c9a542; }
+.set-alm-ico { font-size: 18px; color: #c9a542; }
+.vol-row {
+    display: grid; grid-template-columns: 20px 72px 1fr 44px;
+    align-items: center; gap: 10px; padding: 5px 0;
+}
+.vol-row input[type="range"] { width: 100%; accent-color: #c9a542; }
+.vol-row input[type="checkbox"], .set-check input[type="checkbox"] { accent-color: #c9a542; }
+.vol-lbl { font-size: 13px; color: #c3ae86; }
+.vol-pct {
+    font-size: 11.5px; color: #8a7550; text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.vol-row.off .vol-lbl, .vol-row.off .vol-pct { opacity: .45; }
+.vol-row.off input[type="range"] { opacity: .35; }
+.set-row { padding: 5px 0; }
+.set-check {
+    display: flex; align-items: center; gap: 9px;
+    font-size: 13px; color: #c3ae86; cursor: pointer;
+}
+.set-check:hover { color: #f0dfb8; }
+.set-warn {
+    margin: 3px 0 0 29px; font-size: 11px; line-height: 1.35;
+    color: #d9534f;
+}
+.set-build {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 4px 0;
+    font-size: 12px; color: #8a7550; font-variant-numeric: tabular-nums;
+}
+.set-upd-btn {
+    background: #1c150c; border: 1px solid #4a3a1c; border-radius: 6px;
+    color: #c3ae86; font-size: 12px; padding: 6px 12px; cursor: pointer;
+}
+.set-upd-btn:hover { border-color: #c9a542; color: #f0dfb8; }
+
+/* Settings kill-switch for the playable/free glow (green + orange). */
+body.no-play-glow .hand-card.playable,
+body.no-play-glow .hand-card.freeplay {
+    box-shadow: none !important;
+    animation: none !important;
+}
+
+@media (orientation: landscape) and (max-height: 540px) {
+    .ts-cog { right: 10px; bottom: 30px; width: 34px; height: 34px; font-size: 17px; }
+    .set-inner { max-height: calc(100dvh - 10px); }
+    .set-head { padding: 9px 16px 7px; }
+    .set-title { font-size: 16px; }
+    .set-body { padding: 2px 16px 14px; }
+    .set-sec { margin-top: 9px; }
+    .vol-row { padding: 3px 0; }
+    .set-check, .vol-lbl { font-size: 11.5px; }
+    .set-warn { font-size: 10px; }
 }

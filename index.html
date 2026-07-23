@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FAVOR — A Game of Royal Succession</title>
-    <link rel="stylesheet" href="css/style.css?v=20260723110000">
+    <link rel="stylesheet" href="css/style.css?v=20260723120000">
     <!-- Skylar's melee cinematic — loaded AFTER style.css so its .ms-* rules win. -->
     <link rel="stylesheet" href="css/melee.css?v=20260721230034">
     <link rel="icon" type="image/png" href="assets/ui/favicon-serpent.png">
@@ -162,21 +162,18 @@
                 <div class="ts-card ts-sm ga-how" role="button" tabindex="0" onclick="showRules()">
                     <span class="ts-plaque">How to Play</span>
                 </div>
-                <!-- TEMP HOME (Wyatt 7/23): moves into the Settings button later. -->
-                <div class="ts-card ts-sm ga-alm" role="button" tabindex="0" onclick="FALM.open()">
-                    <span class="ts-plaque">Almanac</span>
-                </div>
             </div>
 
             <footer class="ts-footer">
                 <button type="button" class="menu-link mint-link" onclick="FLB.openStore()" title="Star bundles — the Royal Mint">★ Get Stars</button>
-                <label class="prompt-test-toggle" title="Replay the in-game tutorial prompts on your next game">
-                    <input type="checkbox" id="promptTestToggle" onchange="togglePromptTest(this.checked)">
-                    <span>Replay Tips</span>
-                </label>
                 <p class="ts-plate">3–5 Players &bull; 1st Edition</p>
             </footer>
         </div>
+
+        <!-- Settings cog — bottom-right, riding just above the edition plate.
+             Almanac + mixer + gameplay toggles live behind it (js/settings.js).
+             Replay Tips moved off the footer into the panel. -->
+        <button class="ts-cog" id="settingsBtn" onclick="FSET.open()" title="Settings" aria-label="Settings">⚙</button>
     </div>
 
     <!-- ═══ LEADERBOARD (title-screen panel) ═══ -->
@@ -586,6 +583,7 @@
     <div id="promisePicker"></div>
     <div id="achGallery" class="ach-gallery"></div>
     <div id="almGallery" class="alm-gallery"></div>
+    <div id="setOverlay" class="set-overlay"></div>
 
     <!-- ═══ SCORING SCREEN ═══ -->
     <div id="scoring-screen">
@@ -614,13 +612,14 @@
     <script defer src="data/achievements.js?v=20260721230034"></script>
     <script defer src="engine/gameState.js?v=20260723090000"></script>
     <script defer src="js/melee.js?v=20260721230034"></script>
-    <script defer src="js/ui.js?v=20260723110000"></script>
+    <script defer src="js/ui.js?v=20260723120000"></script>
     <script defer src="js/tablefx-pts.js?v=20260721230034"></script>
     <script defer src="js/tablefx.js?v=20260721230034"></script>
     <script defer src="js/ambient.js?v=20260721230034"></script>
     <script defer src="js/meta.js?v=20260722152440"></script>
     <script defer src="js/achievements.js?v=20260722182857"></script>
-    <script defer src="js/almanac.js?v=20260723110000"></script>
+    <script defer src="js/almanac.js?v=20260723120000"></script>
+    <script defer src="js/settings.js?v=20260723120000"></script>
     <script defer src="js/mp.js?v=20260721230034"></script>
     <script defer src="js/modes.js?v=20260721230034"></script>
 </body>
