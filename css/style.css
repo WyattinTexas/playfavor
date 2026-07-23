@@ -8076,9 +8076,11 @@ body:has(#howto-overlay.open) .throw-hint {
 }
 .set-upd-btn:hover { border-color: #c9a542; color: #f0dfb8; }
 
-/* Settings kill-switch for the playable/free glow (green + orange). */
-body.no-play-glow .hand-card.playable,
-body.no-play-glow .hand-card.freeplay {
+/* Settings kill-switch for the playable glow — GREEN only (Wyatt 7/23).
+   The orange freeplay glow survives the toggle: free is a certainty the
+   turn can't take away, so its signal never misleads. (.freeplay REPLACES
+   .playable in the hand renderers, so this selector can't touch it.) */
+body.no-play-glow .hand-card.playable {
     box-shadow: none !important;
     animation: none !important;
 }
