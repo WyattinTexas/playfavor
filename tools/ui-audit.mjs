@@ -501,7 +501,7 @@ console.log('── Phone: HUD — all zones live, chips/rails tap through, pane
     journalStillUp: document.getElementById('missionJournal').classList.contains('active'),
     turnIn: !!document.getElementById('missionTurnIn'),
   }));
-  ok(layered.lb && layered.turnIn, 'journal card opens the browser focused with Turn In');
+  ok(layered.lb && !layered.turnIn, 'journal card opens the browser focused, view-only (no Turn In)');
   ok(layered.journalStillUp, 'journal keeps the stage beneath the browser');
   await page.evaluate(() => closeMissionLB());
   await sleep(300);
@@ -1205,7 +1205,7 @@ console.log('── Mission browser: full set, focus browsing, Life Essence stay
   }));
   ok(mineView.title === 'Your Missions', 'your pip opens YOUR set');
   ok(mineView.cards === 2, `current + completed laid out (${mineView.cards})`);
-  ok(mineView.focusLabel === mine.held && mineView.turnIn, 'held mission focused with Turn In attached');
+  ok(mineView.focusLabel === mine.held && !mineView.turnIn, 'held mission focused, view-only (no Turn In attached)');
   ok(mineView.essence === true, 'browsing leaves the Life Essence blessing intact');
   await page.evaluate(() => mbStep(1));
   await sleep(500);
@@ -1265,14 +1265,20 @@ console.log('── Phone: rail thumb opens the browser, action panel steps asid
   await page.close();
 }
 
-// ═══ DESKTOP: mission turn-in by choice ═══
-console.log('── Desktop: held mission offers Turn In Now, resolves by choice');
+// ═══ DESKTOP: mission turn-in is CHOICE-ONLY now (Wyatt 7/23) ═══
+// The lightbox lost its "Turn In Now" button — a held mission can no longer be
+// cashed mid-act on a whim. Turn-ins happen ONLY at the act boundary, through
+// the attempt/hold chooser. Two halves: (b) the lightbox is view-only, and
+// (a) the chooser reliably surfaces every held in-window mission.
+console.log('── Desktop: mission lightbox is view-only; the act-boundary chooser resolves by choice');
 {
   const page = await browser.newPage();
   page.on('console', m => { if (m.type() === 'error') consoleErrors.push('mission: ' + m.text()); });
   await page.setViewport({ width: 1420, height: 800 });
   await startGame(page);
 
+  // (b) VIEW-ONLY: a held mission opens the browser with NO Turn In / Borrow
+  // action — the anytime cash-in path is gone.
   await page.evaluate(() => {
     const p = game.players[0];
     p.missions = [{ ...FAVOR_DATA.missions.find(m => m.name === 'Wanted: Crazy Lou') }];
@@ -1281,31 +1287,62 @@ console.log('── Desktop: held mission offers Turn In Now, resolves by choice
     openMissionBrowser('mine', 'Wanted: Crazy Lou');
   });
   await sleep(400);
-
-  const unmet = await page.evaluate(() => {
-    const b = document.getElementById('missionTurnIn');
-    return { exists: !!b, text: b ? b.textContent : '', due: !!document.querySelector('.mission-lb-due') };
-  });
-  ok(unmet.exists, 'Turn In button present for held mission');
-  ok(/fail/i.test(unmet.text), 'unmet mission warns it would FAIL');
-  ok(unmet.due, 'due-act note shown for multi-act window');
-  await page.screenshot({ path: join(SHOTS, 'mission-turnin.png') });
-
-  await page.evaluate(() => {
-    closeMissionLB();
-    game.players[0].skills.power = 15;
-    openMissionBrowser('mine', 'Wanted: Crazy Lou');
-  });
-  await sleep(300);
-  const met = await page.evaluate(() => document.getElementById('missionTurnIn').textContent);
-  ok(/requirements met/i.test(met), 'met mission offers success turn-in');
-  await page.evaluate(() => document.getElementById('missionTurnIn').click());
-  await sleep(600);
-  const done = await page.evaluate(() => ({
-    completed: game.players[0].completedMissions.length,
-    held: game.players[0].missions.length,
+  const lb = await page.evaluate(() => ({
+    lbOpen: document.getElementById('missionLB').classList.contains('active'),
+    turnIn: !!document.getElementById('missionTurnIn'),
+    borrow: !!document.getElementById('missionBorrowIn'),
+    actionEmpty: (document.getElementById('missionLBAction').textContent || '').trim() === '',
   }));
-  ok(done.completed === 1 && done.held === 0, 'turn-in completed the mission immediately');
+  ok(lb.lbOpen, 'the mission lightbox opens on a held mission');
+  ok(!lb.turnIn && !lb.borrow && lb.actionEmpty,
+    'lightbox is VIEW-ONLY — no Turn In / Borrow button, the anytime path is gone');
+  await page.screenshot({ path: join(SHOTS, 'mission-lightbox-viewonly.png') });
+  await page.evaluate(() => closeMissionLB());
+  await sleep(200);
+
+  // (a) The act-boundary chooser ALWAYS surfaces a held in-window mission. Crazy
+  // Lou activates Act 1, is due Act 3 — postponable in Act 1. Rig it MET (15
+  // Power) and drive showEarlyMissionChoice: Attempt Now resolves it by choice.
+  const surfaced = await page.evaluate(() => {
+    const p = game.players[0];
+    p.skills.power = 15;
+    game.currentAct = 1;
+    return game.postponableMissions(0).some(m => m.name === 'Wanted: Crazy Lou');
+  });
+  ok(surfaced, 'a held, in-window mission is postponable at the act boundary (the chooser will ask)');
+
+  // Fire-and-forget: showEarlyMissionChoice's promise only settles on a click,
+  // so stash it and read it back AFTER the click (never await it before).
+  await page.evaluate(() => {
+    const m = game.players[0].missions.find(x => x.name === 'Wanted: Crazy Lou');
+    window.__emc = showEarlyMissionChoice(m);
+  });
+  await page.waitForFunction(() =>
+    document.getElementById('promisePicker').classList.contains('active') &&
+    document.getElementById('emAttempt'), { timeout: 8000 });
+  const chooser = await page.evaluate(() => ({
+    attempt: (document.getElementById('emAttempt').textContent || '').trim(),
+    hold: !!document.getElementById('emHold'),
+  }));
+  ok(/attempt now/i.test(chooser.attempt) && chooser.hold,
+    `the attempt/hold chooser offers both doors (${chooser.attempt})`);
+  await page.screenshot({ path: join(SHOTS, 'mission-attempt-chooser.png') });
+
+  // Attempt Now (met, so it's armed on the first click) → the decision returns
+  // true; endActPhases would set _attemptNow, and resolveMissions completes it.
+  await page.evaluate(() => document.getElementById('emAttempt').click());
+  await sleep(250);
+  const outcome = await page.evaluate(async () => {
+    const attempt = await window.__emc;   // already settled by the click above
+    const m = game.players[0].missions.find(x => x.name === 'Wanted: Crazy Lou');
+    if (attempt && m) m._attemptNow = true;   // the caller (endActPhases) does this
+    game.resolveMissions();
+    return { attempt,
+      completed: game.players[0].completedMissions.some(x => x.name === 'Wanted: Crazy Lou'),
+      held: game.players[0].missions.some(x => x.name === 'Wanted: Crazy Lou') };
+  });
+  ok(outcome.attempt === true, 'choosing Attempt Now returns the attempt decision');
+  ok(outcome.completed && !outcome.held, 'resolveMissions completes it by choice — off the books');
   await page.close();
 }
 
@@ -1867,53 +1904,10 @@ console.log('── Endgame legibility: shortfalls, discarded card art, who else
   await page.close();
 }
 
-// ═══ DESKTOP: Turn In Now can borrow too ═══
-console.log('── Desktop: Turn In Now offers Borrow & Complete when a neighbor covers the gap');
-{
-  const page = await browser.newPage();
-  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('borrow-turnin: ' + m.text()); });
-  await page.setViewport({ width: 1420, height: 800 });
-  await startGame(page);
-
-  await page.evaluate(() => {
-    const p = game.players[0];
-    const kCard = FAVOR_DATA.cards.find(c => (c.skills || []).includes('knowledge'));
-    p.missions = [{ ...FAVOR_DATA.missions.find(m => m.name === 'A Day With the Birds') }];
-    p.skills.knowledge = 2;
-    p.gold = 10;
-    // PIN the lender: player 1 holds the only knowledge card on the
-    // table — a random AI having played their own knowledge card once
-    // routed the fee to player 2 and flaked the lender assert.
-    game.players[1].playedCards = [{ ...kCard }];
-    game.players[2].playedCards = [];
-    game.phase = 'gameplay';
-    renderGameState();
-    openMissionBrowser('mine', p.missions[0].name);
-  });
-  await sleep(400);
-
-  const lb = await page.evaluate(() => ({
-    borrow: document.getElementById('missionBorrowIn')?.textContent.trim(),
-    turnIn: document.getElementById('missionTurnIn')?.textContent.trim(),
-  }));
-  ok(/Borrow & Complete \(−2g\)/.test(lb.borrow || ''), `lightbox offers the borrow (${lb.borrow})`);
-  ok(/would FAIL/i.test(lb.turnIn || ''), 'plain turn-in still warns it would fail');
-  await page.screenshot({ path: join(SHOTS, 'mission-borrow-turnin.png') });
-
-  const before = await page.evaluate(() => ({ lender: game.players[1].gold }));
-  await page.evaluate(() => document.getElementById('missionBorrowIn').click());
-  await sleep(500);
-  const after = await page.evaluate(() => ({
-    completed: game.players[0].completedMissions.length,
-    gold: game.players[0].gold,
-    lender: game.players[1].gold,
-    lbClosed: !document.getElementById('missionLB').classList.contains('active'),
-  }));
-  ok(after.completed === 1 && after.gold === 8 && after.lender === before.lender + 2,
-    `turn-in borrow completes and pays the lender (completed ${after.completed}, gold ${after.gold}, lender ${before.lender}→${after.lender})`);
-  ok(after.lbClosed, 'lightbox closes after the borrow');
-  await page.close();
-}
+// The anytime "Turn In Now → Borrow & Complete" lightbox path was RETIRED 7/23
+// (the lightbox is view-only now). The due-date borrow rescue lives on through
+// the act-boundary chooser and is covered by "due mission short a borrowable
+// skill — chooser offers both doors" above; there is nothing anytime to test.
 
 // ═══ SLIDE-RING PICKER: one button, pick a slot on the board itself ═══
 async function slidePickerFlow(mode) {
@@ -2145,7 +2139,7 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
   ok(menu.play && menu.lbBtn && menu.storeBtn, 'menu renders Play Now + Leaderboard + Store');
   ok(menu.seg.join('|') === '3|4|5' && menu.segLit === 1,
     `segmented table picker offers 3/4/5 with one lit (${menu.seg.join(',')})`);
-  ok(menu.howto && menu.promptTest, "How to Play + Prompt Test survive (Skylar's tutorial hooks)");
+  ok(menu.howto, "How to Play survives in the quiet row (Replay-Tips hook moved to Settings 7/23)");
   ok(/Herald Quinn/.test(menu.chip), `profile chip carries the royal name (${menu.chip.split('\n')[0]})`);
   ok(menu.oldDropdownGone, 'player-count dropdown is gone from character select');
 
@@ -3350,7 +3344,7 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
     howto: !!([...document.querySelectorAll('#title-screen .ts-card .ts-plaque')].find(b => /how to play/i.test(b.textContent))),
     promptTest: !!document.getElementById('promptTestToggle'),
   }));
-  ok(menu.store && menu.howto && menu.promptTest, 'menu: Store button beside How to Play + Prompt Test');
+  ok(menu.store && menu.howto, 'menu: Store button beside How to Play (Replay-Tips moved to Settings 7/23)');
 
   // Fresh player: 10 heroes on the shelf, five free, five for sale.
   await page.evaluate(() => FLB.openStore());
@@ -3364,8 +3358,10 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
   }));
   ok(shelf.cards === 10, `all ten heroes on the shelf (${shelf.cards})`);
   ok(shelf.owned === 5, `five free heroes wear Owned (${shelf.owned})`);
-  ok(shelf.forSale.length === 5 && shelf.forSale.every(t => t === '★ 100'),
-    `five store heroes priced ★ 100 (${shelf.forSale.join(', ')})`);
+  ok(shelf.forSale.length === 5 &&
+     shelf.forSale.filter(t => t === '★ 75').length === 2 &&
+     shelf.forSale.filter(t => t === '★ 100').length === 3,
+    `five store heroes: Duchess + Scientist ★ 75, the rest ★ 100 (${shelf.forSale.join(', ')})`);
   ok(/★ 0/.test(shelf.balance), `fresh balance reads ★ 0 (${shelf.balance})`);
   ok(shelf.art, 'every shelf card shows the real character art');
 
@@ -3393,7 +3389,7 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
   ok(insp.active, 'tapping a painting opens the board inspect');
   ok(insp.hd, 'the easel shows the print-res recut (hd/)');
   ok(insp.big && insp.fits, 'board fills the stage and stays on-screen');
-  ok(insp.name === 'Duchess' && /★ 100/.test(insp.buy),
+  ok(insp.name === 'Duchess' && /★ 75/.test(insp.buy),
     `easel carries name + price (${insp.name}, ${insp.buy})`);
   // Rulebook flavor: italic epithet, DIFFICULTY star row, the printed Tip.
   const flavor = await page.evaluate(() => ({
@@ -3424,7 +3420,7 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
     active: document.getElementById('storeInspect').classList.contains('active'),
     buy: ((document.querySelector('#storeInspect .st-buy') || {}).textContent || '').trim(),
   }));
-  ok(restored.active && /★ 100/.test(restored.buy),
+  ok(restored.active && /★ 75/.test(restored.buy),
     `easel survives the re-render, price restored (${restored.buy})`);
 
   // Scrim click closes just the easel — the stall stays open.
@@ -3464,7 +3460,7 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
   await sleep(200);
   const confirmTxt = await page.evaluate(() =>
     (document.querySelector('.st-card[data-char="duchess"] .st-buy') || {}).textContent);
-  ok(/Buy — ★ 100\?/.test(confirmTxt || ''), `tap asks for confirmation (${confirmTxt})`);
+  ok(/Buy — ★ 75\?/.test(confirmTxt || ''), `tap asks for confirmation (${confirmTxt})`);
   // Fire WITHOUT awaiting: confirmBuy's promise includes the celebration,
   // which only a click resolves — awaiting it from evaluate deadlocks the
   // protocol (180s timeout). Braces make the arrow return undefined.
@@ -3490,12 +3486,12 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
       remoteName: remote && remote.name,
     };
   });
-  ok(/★ 150/.test(after.balance), `balance drops to ★ 150 (${after.balance})`);
+  ok(/★ 175/.test(after.balance), `balance drops to ★ 175 (250 − 75 Duchess) (${after.balance})`);
   ok(after.duchessOwnedBadge, 'Duchess card flips to Owned');
   ok(after.mirror.includes('duchess'), `localStorage mirror carries the purchase (${after.mirror})`);
   ok(after.pool.length === 6 && after.pool.includes('duchess'), 'owned pool grows to 6');
-  ok(after.remoteStars === 150 && after.remoteOwned === true,
-    `ledger: stars 150 + owned/duchess true (${after.remoteStars})`);
+  ok(after.remoteStars === 175 && after.remoteOwned === true,
+    `ledger: stars 175 + owned/duchess true (${after.remoteStars})`);
   ok(!!after.remoteName, 'first purchase materialized the player row (lazy join)');
   await page.screenshot({ path: join(SHOTS, 'store-desktop.png') });
 
@@ -3516,11 +3512,11 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
   });
   ok(guards.twice.ok === false, 'double-buy refused (exactly once)');
   ok(guards.poor.ok === false && guards.stars === 50 && !guards.scientistOwned,
-    `50★ can't buy a 100★ hero — no decrement, no ownership (${guards.stars})`);
+    `50★ can't buy the 75★ Scientist — no decrement, no ownership (${guards.stars})`);
 
   // Buying MUST re-open the sticky offer. It's reused for 10 minutes while every
   // id in it stays owned, and a purchase never invalidated it — so the hero you
-  // just paid ★100 for could not be offered to you until the roll expired, while
+  // just paid ★75 for could not be offered to you until the roll expired, while
   // the celebration told you she'd "joined your select pool". (Fixed in
   // FLB.confirmBuy; this is the regression guard.)
   const sticky = await page.evaluate(() => localStorage.getItem('favorOffer'));
@@ -3533,7 +3529,7 @@ console.log('── Store: 10-hero shelf, transaction gating, purchase joins the
     for (let i = 0; i < 20; i++) {
       // The sticky offer pins ONE roll on purpose (no re-rolling by backing out),
       // so clear it per shuffle — what's under test here is that the ROLL itself
-      // can offer her, which is precisely what ★100 is supposed to buy.
+      // can offer her, which is precisely what ★75 is supposed to buy.
       localStorage.removeItem('favorOffer');
       showCharacterSelect();
       _offeredHeroes.forEach(c => {
@@ -3786,7 +3782,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   }));
   ok(gal.px === 48, `the gallery offers all 48 starter portraits (${gal.px})`);
   ok(gal.paid === 11, `and all 11 painted crests (${gal.paid})`);
-  ok(gal.griffinTag === '★100' && gal.outlawTag === '★100' && gal.tulipTag === '★25',
+  ok(gal.griffinTag === '★200' && gal.outlawTag === '★250' && gal.tulipTag === '★25',
     `painted crests wear their prices (griffin ${gal.griffinTag}, outlaw ${gal.outlawTag}, tulip ${gal.tulipTag})`);
   await page.screenshot({ path: join(SHOTS, 'profile-crests.png') });
   await page.evaluate(() => document.querySelector('.cp-pxtile[data-av="px7"]').click());
@@ -3970,7 +3966,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   const shelf = await page.evaluate(() => ({
     cards: document.querySelectorAll('#stCrests .st-crest').length,
     houndOwned: /Owned/.test((document.querySelector('.st-crest[data-crest="hound"]') || {}).textContent || ''),
-    outlawPrice: /★ 100/.test((document.querySelector('.st-crest[data-crest="outlaw"] .st-buy') || {}).textContent || ''),
+    outlawPrice: /★ 250/.test((document.querySelector('.st-crest[data-crest="outlaw"] .st-buy') || {}).textContent || ''),
     paneOn: document.getElementById('stPaneAvatars').classList.contains('on'),
     // The price is an ABSOLUTE rope tag — without position:relative on
     // .st-crest all 11 escape to the pane corner in one stack. Geometry,
@@ -3985,7 +3981,7 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   }));
   ok(shelf.paneOn && shelf.cards === 11, `the Emporium Avatars pane stocks all 11 crests (${shelf.cards})`);
   ok(shelf.houndOwned, 'the shelf knows the hound is already yours');
-  ok(shelf.outlawPrice, 'the outlaw hangs at ★ 100');
+  ok(shelf.outlawPrice, 'the outlaw (Crazy Lou) hangs at ★ 250');
   ok(shelf.tagHangsOnCard, "the price tag hangs on ITS card's corner, not the pane's");
   await page.screenshot({ path: join(SHOTS, 'store-crests.png') });
   await page.evaluate(() => FLB.closeStore());
@@ -5704,6 +5700,45 @@ console.log('── Stat floats: +N rises off the grown stat (desktop rail + pho
   ok(await page.evaluate(() => document.querySelectorAll('.stat-float').length === 0),
     'floats clean themselves up');
 
+  // ── ACCEPTANCE (Wyatt 7/23): Her Lost Father grants +3 Gold, +3 Scorn AND
+  // +1 Prospecting in one play. The RETIRED centered showEffectFloat system
+  // painted both purse "+3"s at the same screen point (50%,45%) — they stacked.
+  // The laned system must place all three clear of one another, scorn red. This
+  // reads real geometry: an occlusion a synthetic click sails straight through.
+  await page.evaluate(() => {
+    const p = game.players[0];
+    p.gold += 3; p.scorn += 3;
+    p.bonusSkills = { ...(p.bonusSkills || {}), prospecting: ((p.bonusSkills || {}).prospecting || 0) + 1 };
+    game.applySlotSkills(p);
+    renderGameState();
+  });
+  await sleep(320);   // all three born (130ms stagger apart), still fully opaque
+  const hlf = await page.evaluate(() => {
+    const fl = [...document.querySelectorAll('.stat-float')].map(f => {
+      const r = f.getBoundingClientRect();
+      return { text: f.textContent, bad: f.classList.contains('bad'),
+               left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+    });
+    let worst = 0;
+    for (let i = 0; i < fl.length; i++) for (let j = i + 1; j < fl.length; j++) {
+      const a = fl[i], b = fl[j];
+      const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+      const oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      if (ox > 0 && oy > 0) worst = Math.max(worst, Math.min(ox, oy));
+    }
+    return { texts: fl.map(f => f.text).sort().join(','),
+             scornBad: !!fl.find(f => f.text === '+3' && f.bad),
+             goldGood: fl.filter(f => f.text === '+3' && !f.bad).length === 1,
+             prosGood: !!fl.find(f => f.text === '+1' && !f.bad),
+             worst: Math.round(worst) };
+  });
+  ok(hlf.texts === '+1,+3,+3', `Her Lost Father floats all three grants (${hlf.texts})`);
+  ok(hlf.worst === 0, `zero overlap between any two floats (worst intrusion ${hlf.worst}px)`);
+  ok(hlf.scornBad && hlf.goldGood && hlf.prosGood,
+    'scorn reads red (bad), gold + prospecting read gold — the mix is unambiguous');
+  await page.screenshot({ path: join(SHOTS, 'stat-float-herlostfather.png') });
+  await sleep(2400);
+
   // The payoff is ONE beat: play a real card through the pipeline and the
   // "+N" floats must be on stage WHILE your card banner shows (they used
   // to fire after it, half-faded by the time the eye arrived).
@@ -5775,6 +5810,74 @@ console.log('── Stat floats: +N rises off the grown stat (desktop rail + pho
   ok(ph.goldDrop, 'gold keeps its seat-chip token drop');
   await phone.screenshot({ path: join(SHOTS, 'stat-float-phone.png') });
   await phone.close();
+}
+
+// ═══ MERCHANT COUNTING HOUSE — Gold→Prestige is a CHOICE (Wyatt 7/23) ═══
+console.log('── Merchant counting house: Gold→Prestige is a CHOICE, and it streams');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('convert: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('convert pageerror: ' + e.message));
+  await page.setViewport({ width: 1440, height: 900 });
+  await startGame(page);
+  await sleep(300);
+
+  // Land the human on the counting house with a full purse. The engine sets the
+  // pause flag — a human seat is NEVER auto-converted (that's the old-bug guard).
+  await page.evaluate(() => {
+    window.CINEMATIC_SPEED = 1;
+    const p = game.players[0];
+    p.character = FAVOR_DATA.characters.find(c => c.id === 'merchant');
+    p.gold = 12; p.prestige = 0; p.sliderPosition = 3;
+    game.applySliderAbilities(p);
+    renderGameState();
+  });
+  const landed = await page.evaluate(() => ({
+    flag: game.players[0]._pendingConvert, gold: game.players[0].gold, prestige: game.players[0].prestige }));
+  ok(landed.flag === 12 && landed.gold === 12 && landed.prestige === 0,
+    `landing ASKS, never auto-converts (flag ${landed.flag}, gold still ${landed.gold})`);
+
+  // The chooser — fired WITHOUT awaiting its click-gated promise (braces make the
+  // arrow return undefined, so the protocol never blocks on the button).
+  await page.evaluate(() => { game.players[0]._pendingConvert = null; showConvertChoice(); });
+  await sleep(350);
+  const prompt = await page.evaluate(() => {
+    const ov = document.getElementById('promisePicker');
+    return { active: ov.classList.contains('active'),
+      title: (ov.querySelector('.pp-title') || {}).textContent || '',
+      doBtn: (ov.querySelector('#convDo') || {}).textContent || '',
+      keepBtn: (ov.querySelector('#convKeep') || {}).textContent || '' };
+  });
+  ok(prompt.active && /Counting House/i.test(prompt.title), `the counting-house prompt opens (${prompt.title})`);
+  ok(/Convert to 12 Prestige/.test(prompt.doBtn) && /Keep 12 Gold/.test(prompt.keepBtn),
+    `both doors, priced to the purse (${prompt.doBtn.trim()} / ${prompt.keepBtn.trim()})`);
+  await page.screenshot({ path: join(SHOTS, 'merchant-convert.png') });
+
+  // Convert: the whole purse moves 1:1, overlay closes.
+  await page.evaluate(() => document.querySelector('#convDo').click());
+  await sleep(200);
+  const conv = await page.evaluate(() => ({
+    gold: game.players[0].gold, prestige: game.players[0].prestige,
+    flag: game.players[0]._pendingConvert,
+    ov: document.getElementById('promisePicker').classList.contains('active') }));
+  ok(conv.gold === 0 && conv.prestige === 12 && conv.flag === null && !conv.ov,
+    `Convert moves 12 Gold → 12 Prestige and closes (${conv.gold}g / ${conv.prestige}pr)`);
+
+  // Keep: land again, decline — the purse survives untouched.
+  await page.evaluate(() => { const p = game.players[0]; p.gold = 7; p.prestige = 12; p._pendingConvert = null; showConvertChoice(); });
+  await sleep(250);
+  await page.evaluate(() => document.querySelector('#convKeep').click());
+  await sleep(200);
+  const kept = await page.evaluate(() => ({ gold: game.players[0].gold, prestige: game.players[0].prestige,
+    ov: document.getElementById('promisePicker').classList.contains('active') }));
+  ok(kept.gold === 7 && kept.prestige === 12 && !kept.ov,
+    `Keep leaves the 7 Gold and mints nothing (${kept.gold}g / ${kept.prestige}pr)`);
+
+  // MP: the choice must STREAM (slot-chooser pattern) or tables fork — the chooser
+  // publishes a 'slot_convert' move that the remote drain awaits.
+  ok(await page.evaluate(() => /mpPub\('slot_convert'/.test(String(showConvertChoice))),
+    `the choice publishes a 'slot_convert' move so peers apply it in stream order`);
+  await page.close();
 }
 
 // ═══ EMBLEM + PERSONAS + RANK-1 BOON — rated start, act pass, choosers ═══
@@ -7678,19 +7781,20 @@ console.log('── Side B: ribbon + badges + chooser + the table rides the B bo
     localStorage.removeItem('favorOffer');
   });
 
-  // The level curve is pure arithmetic — assert it cold. 7/20 ramp:
-  // step(n)=min(75+15(n−1),300) → L2 at 75, L5 (Side B) at 390.
+  // The level curve is pure arithmetic — assert it cold. 7/22 retune
+  // (commit 728f945): xpStep = 100/level through 5, 125 through 9, then ramps —
+  // so L2 begins at 100 Favor and Level 10 (the Side B unlock) at a flat 1,000.
   const lv = await page.evaluate(() => [
-    FLB.heroLevel(0), FLB.heroLevel(74), FLB.heroLevel(75),
-    FLB.heroLevel(389), FLB.heroLevel(390),
-    FLB.heroLevel(10 ** 9), FLB.heroLevelPct(120),
+    FLB.heroLevel(0), FLB.heroLevel(99), FLB.heroLevel(100),
+    FLB.heroLevel(999), FLB.heroLevel(1000),
+    FLB.heroLevel(10 ** 9), FLB.heroLevelPct(150),
   ]);
-  ok(lv[0] === 1 && lv[1] === 1 && lv[2] === 2, `curve anchor: 74→1, 75→2 (${lv.slice(0, 3)})`);
-  ok(lv[3] === 4 && lv[4] === 5, `Side B sits at 390 (389→4, 390→5)`);
+  ok(lv[0] === 1 && lv[1] === 1 && lv[2] === 2, `curve anchor: 99→1, 100→2 (${lv.slice(0, 3)})`);
+  ok(lv[3] === 9 && lv[4] === 10, `Level 10 (Side B) sits at 1,000 Favor (999→9, 1000→10)`);
   ok(lv[5] === 100, 'level caps at 100');
-  ok(Math.abs(lv[6] - 50) < 0.01, `mid-level fill reads 50% at 120 fv (${lv[6]})`);
+  ok(Math.abs(lv[6] - 50) < 0.01, `mid-level fill reads 50% at 150 fv (${lv[6]})`);
 
-  // Rig the Knight to Level 6 — the chooser must appear for him alone.
+  // Rig the Knight to Level 10 (the Side B unlock) — the chooser is his alone.
   await page.evaluate(() => {
     FLB.heroFv = (id) => id === 'knight' ? 1000 : 0;
     FLB.sideBUnlocked = (id) => id === 'knight';
@@ -7722,7 +7826,7 @@ console.log('── Side B: ribbon + badges + chooser + the table rides the B bo
   ok(sel.explorer && sel.explorer.badge === null,
     "Explorer wears NO badge — a locked player must not know Side B exists (7/20 §1)");
   ok(Object.values(sel).every(c => c.ribbon), 'every offered hero wears the ribbon');
-  ok(sel.knight.lvl === '8', `Knight's ribbon reads Level 8 at 1,000 Favor on the new curve (${sel.knight.lvl})`);
+  ok(sel.knight.lvl === '10', `Knight's ribbon reads Level 10 at 1,000 Favor on the 7/22 curve (${sel.knight.lvl})`);
 
   // Tap the Knight — the board goes near-fullscreen (7/20 §2), slots
   // spelled out from DATA; the A/B choice lives here.

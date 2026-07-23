@@ -48,7 +48,17 @@
     // ── Store economy (defaults for Wyatt to veto) ───────────────────
     // Every finished game pays Stars by finish position; Daily Champions
     // (50/25/10 above) stays the nightly jackpot on top of these.
-    const STORE_PRICE = 100;
+    const STORE_PRICE = 100;     // default hero price (Stars)
+    // Per-hero overrides (Wyatt 7/23): the Duchess and the Scientist cost
+    // less than the rest. Everything else falls through to STORE_PRICE. One
+    // source of truth — every buy path (shelf, inspect easel, confirm copy,
+    // txn) reads storePrice(), so a shelf tag can never diverge from what the
+    // transaction actually deducts.
+    const STORE_PRICE_BY_ID = { duchess: 75, scientist: 75 };
+    function storePrice(id) {
+        const p = STORE_PRICE_BY_ID[id];
+        return (p == null) ? STORE_PRICE : p;
+    }
     const FREE_CHAR_COUNT = 5;   // data/characters.js order: first five are free
 
     // The FELLOWSHIP bonus (Wyatt 7/21): playing with real people pays extra —
@@ -1481,15 +1491,15 @@
     const CRESTS = [
         { id: 'tulip',     name: 'The Tulip',          cost: 25 },
         { id: 'hound',     name: 'The Hound',          cost: 25 },
-        { id: 'violin',    name: 'The Violin',         cost: 25 },
-        { id: 'griffin',   name: 'The Griffin',        cost: 100 },
-        { id: 'snowbeast', name: 'The Snow Beast',     cost: 50 },
-        { id: 'serpent',   name: 'The Serpent',        cost: 50 },
-        { id: 'owl',       name: 'The White Owl',      cost: 25 },
-        { id: 'outlaw',    name: 'The Outlaw',         cost: 100 },
         { id: 'star',      name: 'The Falling Star',   cost: 25 },
-        { id: 'fortune',   name: 'The Fortune Teller', cost: 50 },
-        { id: 'wolf',      name: 'The Wolf',           cost: 25 },
+        { id: 'owl',       name: 'Dawn',               cost: 25 },
+        { id: 'wolf',      name: 'Fang',               cost: 50 },
+        { id: 'violin',    name: 'The Fiddle',         cost: 100 },
+        { id: 'snowbeast', name: 'The Snow Beast',     cost: 150 },
+        { id: 'serpent',   name: 'Sussurus',           cost: 150 },
+        { id: 'griffin',   name: 'The Griffin',        cost: 200 },
+        { id: 'outlaw',    name: 'Crazy Lou',          cost: 250 },
+        { id: 'fortune',   name: 'The Fortune Teller', cost: 250 },
     ];
     const PIXEL_CREST_COUNT = 48;
     function crestById(id) { return CRESTS.find(c => c.id === id) || null; }
@@ -1662,7 +1672,7 @@
                 </button>`;
             }).join('')}</div>
             <div class="pf-sec">Hero Crests</div>
-            <div class="cp-note">Earned at Level ${CREST_LEVEL} on each hero's ladder — proof you lived with them.</div>
+            <div class="cp-note">Earned at Level ${CREST_LEVEL} on each hero's level.</div>
             <div class="pf-avatars cp-heroes">${(((window.FAVOR_DATA || {}).characters || []).filter(c => !c.earnedOnly)).map(c => {
                 const hOwned = heroCrestUnlocked(c.id);
                 const hLvl = heroLevel(heroFv(c.id));
@@ -2067,7 +2077,7 @@
         // txn stays the sole authority for the actual purchase.
         try {
             const current = await dbGet(`players/${uid()}`);
-            if (((current && current.stars) || 0) < STORE_PRICE) return { ok: false, why: 'stars' };
+            if (((current && current.stars) || 0) < storePrice(charId)) return { ok: false, why: 'stars' };
             if (current && current.owned && current.owned[charId]) return { ok: false, why: 'owned' };
         } catch (e) {
             return { ok: false, why: 'offline' };
@@ -2084,9 +2094,9 @@
                 return { stars: 0 };
             }
             const stars = p.stars || 0;
-            if (stars < STORE_PRICE) return;            // abort — can't afford
+            if (stars < storePrice(charId)) return;     // abort — can't afford
             if (p.owned && p.owned[charId]) return;     // abort — exactly once
-            return { ...p, stars: stars - STORE_PRICE,
+            return { ...p, stars: stars - storePrice(charId),
                      owned: { ...(p.owned || {}), [charId]: true } };
         });
         if (!res.committed || !res.value || !res.value.owned || !res.value.owned[charId]) {
@@ -2145,12 +2155,12 @@
         if (owned.includes(c.id)) return '<span class="st-owned">Owned</span>';
         if (mode !== 'firebase') {
             // Browse-only offline — see buyCharacter's offline guard.
-            return `<button class="st-buy poor" disabled>★ ${STORE_PRICE}</button>`;
+            return `<button class="st-buy poor" disabled>★ ${storePrice(c.id)}</button>`;
         }
         if (_confirmingBuy === c.id) {
-            return `<button class="st-buy confirm" onclick="event.stopPropagation(); FLB.confirmBuy('${c.id}')">Buy — ★ ${STORE_PRICE}?</button>`;
+            return `<button class="st-buy confirm" onclick="event.stopPropagation(); FLB.confirmBuy('${c.id}')">Buy — ★ ${storePrice(c.id)}?</button>`;
         }
-        return `<button class="st-buy${stars < STORE_PRICE ? ' poor' : ''}" onclick="event.stopPropagation(); FLB.askBuy('${c.id}')">★ ${STORE_PRICE}</button>`;
+        return `<button class="st-buy${stars < storePrice(c.id) ? ' poor' : ''}" onclick="event.stopPropagation(); FLB.askBuy('${c.id}')">★ ${storePrice(c.id)}</button>`;
     }
 
     function renderStore() {
@@ -2225,7 +2235,7 @@
 
     function askBuy(charId) {
         const stars = (_me && _me.stars) || 0;
-        if (stars < STORE_PRICE) {
+        if (stars < storePrice(charId)) {
             // Can't afford — the button says so for a beat (shelf card
             // AND the inspect easel, whichever the tap came from).
             const btns = document.querySelectorAll(

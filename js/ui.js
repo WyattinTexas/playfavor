@@ -278,89 +278,14 @@ function showMiniSpotlight(card, action) {
     });
 }
 
-// ─── EFFECT FLOAT SYSTEM ─────────────────────────────────
-
-function showEffectFloat(text, cssClass, anchorEl) {
-    const speed = window.CINEMATIC_SPEED;
-    const container = document.getElementById('effectFloats');
-    if (!container) return;
-
-    const float = document.createElement('div');
-    float.className = `effect-float ${cssClass}`;
-    float.textContent = text;
-
-    // Position near the anchor element or center screen
-    if (anchorEl) {
-        const rect = anchorEl.getBoundingClientRect();
-        float.style.left = `${rect.left + rect.width / 2}px`;
-        float.style.top = `${rect.top}px`;
-        float.style.transform = 'translateX(-50%)';
-    } else {
-        float.style.left = '50%';
-        float.style.top = '45%';
-        float.style.transform = 'translateX(-50%)';
-    }
-
-    container.appendChild(float);
-
-    setTimeout(() => float.remove(), 1500 * speed);
-}
-
-// ─── STAT CHANGE TRACKING & ANIMATION ────────────────────
-
-let _prevStats = null;
-
-function captureStats() {
-    if (!game) return;
-    const p = game.players[0];
-    _prevStats = {
-        gold: p.gold,
-        prestige: p.prestige,
-        scorn: p.scorn,
-        favor: game.currentFavor(0)   // held favor — jumps when a Favor card lands
-    };
-}
-
-function animateStatChanges() {
-    if (!game || !_prevStats) return;
-    const p = game.players[0];
-    const bar = document.getElementById('bottomStats');
-    if (!bar) return;
-
-    const changes = [
-        { key: 'gold', prev: _prevStats.gold, curr: p.gold, cls: 'gold-change', label: 'Gold' },
-        { key: 'prestige', prev: _prevStats.prestige, curr: p.prestige, cls: 'prestige-change', label: 'Prestige' },
-        { key: 'scorn', prev: _prevStats.scorn, curr: p.scorn, cls: 'scorn-change', label: 'Scorn' },
-        { key: 'favor', prev: _prevStats.favor, curr: game.currentFavor(0), cls: 'favor-change', label: 'Favor' },
-    ];
-
-    changes.forEach(c => {
-        if (c.curr === c.prev) return;
-
-        const diff = c.curr - c.prev;
-        const sign = diff > 0 ? '+' : '';
-        const gainOrLoss = diff > 0 ? 'gain' : 'loss';
-
-        // Find the stat element in the bar
-        const statEls = bar.querySelectorAll('.stat');
-        statEls.forEach(el => {
-            if (el.classList.contains(c.key)) {
-                el.classList.remove('stat-pulse', 'stat-gain', 'stat-loss');
-                void el.offsetWidth; // Force reflow
-                el.classList.add('stat-pulse', `stat-${gainOrLoss}`);
-
-                setTimeout(() => {
-                    el.classList.remove('stat-pulse', 'stat-gain', 'stat-loss');
-                }, 500 * window.CINEMATIC_SPEED);
-            }
-        });
-
-        // Float text
-        showEffectFloat(`${sign}${diff} ${c.label}`, c.cls);
-    });
-
-    _prevStats = null;
-}
+// ─── STAT FLOATS ─────────────────────────────────────────
+// The centered showEffectFloat / captureStats / animateStatChanges system was
+// RETIRED 7/23: it painted every purse change at a fixed screen center (50%,
+// 45%) with no lane, so a card that moved two stats stacked "+3 Gold" and
+// "+3 Scorn" on the exact same pixel — the overlap Wyatt caught. The single
+// laned system below (statFloatFx / tvAnimateDeltas, ~L3800) now owns every
+// "+N" beat: it fans simultaneous grants into distinct lanes and paces the
+// reveal loop with statFloatWait().
 
 // ─── NOTIFICATIONS ────────────────────────────────────────
 
@@ -2349,6 +2274,18 @@ async function mpActivateRemote(pi, card, cardIdx) {
             const res = game.applySlotPick(pi, skill);
             if (res && res.success) addLogEntry(`${p.name} picks +1 ${res.skill} from their board`);
         }
+        if (p._pendingConvert) {
+            p._pendingConvert = null;
+            mpWaitShow(pi, 'at the counting house');
+            const pick = await FMP.waitFor(cs, 'slot_convert');
+            mpWaitHide();
+            // Booted/silent seat: every client falls back to the SAME deterministic
+            // heuristic, so the purse moves identically and lockstep holds.
+            const doConv = pick ? !!pick.convert : game.aiWouldConvert(p);
+            const res = game.applyGoldConvert(pi, doConv);
+            if (res.converted) addLogEntry(`${p.name} converts ${res.converted} Gold into ${res.converted} Prestige`);
+            else addLogEntry(`${p.name} keeps their Gold`);
+        }
     }
     if (slidAny) renderGameState();
 
@@ -2502,6 +2439,20 @@ async function mpActivateRemote(pi, card, cardIdx) {
         const skill = (pick && opts.includes(pick.skill)) ? pick.skill : game.aiSlotPick(pi, opts);
         const res = game.applySlotPick(pi, skill);
         if (res && res.success) addLogEntry(`${p.name} picks +1 ${res.skill} from their board`);
+    }
+    // Merchant counting house for a remote human \u2014 drained after the whole
+    // action chain so it covers every branch that lands their ring on the slot
+    // (a discard-slide, or Chemical X moving it free). A booted/silent seat
+    // falls back to the SAME deterministic heuristic on every client.
+    if (p._pendingConvert) {
+        p._pendingConvert = null;
+        mpWaitShow(pi, 'at the counting house');
+        const pick = await FMP.waitFor(cs, 'slot_convert');
+        mpWaitHide();
+        const doConv = pick ? !!pick.convert : game.aiWouldConvert(p);
+        const res = game.applyGoldConvert(pi, doConv);
+        if (res.converted) addLogEntry(`${p.name} converts ${res.converted} Gold into ${res.converted} Prestige`);
+        else addLogEntry(`${p.name} keeps their Gold`);
     }
 }
 
@@ -3787,8 +3738,12 @@ function statFloatFx(anchor, key, amount, idx) {
     // Purse tokens share one row — fan simultaneous floats out sideways.
     const fan = anchor.closest('.resource-tokens') ? (idx || 0) * 34 : 0;
     const el = document.createElement('div');
-    el.className = `stat-float${key === 'scorn' ? ' bad' : ''}`;
-    el.textContent = `+${amount}`;
+    // "Bad" = the change hurts you: scorn going UP, or a purse total going
+    // DOWN. Gains read gold, the rest read red, and the sign is explicit so a
+    // mixed gain+loss play (e.g. +Gold, −5 for a paid slide) is unambiguous.
+    const bad = key === 'scorn' ? amount > 0 : amount < 0;
+    el.className = `stat-float${bad ? ' bad' : ''}`;
+    el.textContent = amount > 0 ? `+${amount}` : `${amount}`;
     el.style.left = `${baseX + fan}px`;
     el.style.top = `${r.top + r.height / 2}px`;
     el.style.animationDuration = `${1.55 * window.CINEMATIC_SPEED}s`;
@@ -3876,11 +3831,15 @@ function tvAnimateDeltas(state) {
         // narrates those with tvDropToken on your seat chip below.
         if (prev && i === 0) {
             let n = 0;
-            const bump = (key, d) => {
-                if (d > 0) statFloatFx(_statAnchor(key), key, d, n++);
+            // Each fired float takes the NEXT lane (n++), so a card that moves
+            // several stats at once fans them out — never a stack. Purse totals
+            // float on gains AND losses (a paid slide's −5g still reads); skills
+            // float on gains only (the "+N goes up" payoff beat).
+            const bump = (key, d, showLoss) => {
+                if (d > 0 || (showLoss && d < 0)) statFloatFx(_statAnchor(key), key, d, n++);
             };
-            if (!animate) ['gold', 'prestige', 'scorn', 'favor'].forEach(k => bump(k, curr[k] - prev[k]));
-            Object.keys(curr.skills).forEach(k => bump(k, curr.skills[k] - ((prev.skills || {})[k] || 0)));
+            if (!animate) ['gold', 'prestige', 'scorn', 'favor'].forEach(k => bump(k, curr[k] - prev[k], true));
+            Object.keys(curr.skills).forEach(k => bump(k, curr.skills[k] - ((prev.skills || {})[k] || 0), false));
         }
 
         if (prev && animate) {
@@ -4583,88 +4542,23 @@ function _mbApplyFocus() {
     if (!e) return;
     document.getElementById('missionLBLabel').textContent =
         e.m.name + (e.done ? ' — completed' : '');
-    // Turn In / Borrow attach to the focused card, held missions only
-    // (renderMissionLBTurnIn no-ops for realm/completed entries).
+    // The lightbox is view-only — this just clears any stale action row.
+    // Turn-ins live at the act-boundary mission phase now (Wyatt 7/23).
     renderMissionLBTurnIn(e.m.name);
 }
 
-// "Turn In Now" — a held mission may be cashed in during ANY act of its
-// window, the player's call. The button tells the truth (the check is
-// deterministic); failing on purpose asks for a second click.
+// The mission lightbox is VIEW-ONLY (Wyatt 7/23). Turn-ins happen ONLY at the
+// act-boundary mission phase — the attempt/hold chooser (postponableMissions →
+// showEarlyMissionChoice, asked every act a mission is in-window but not yet
+// due) and the due-date borrow chooser own every resolution. The old "Turn In
+// Now" / "Borrow & Complete" buttons let a held mission be cashed mid-act on a
+// whim, out of turn order; that anytime path is gone. The engine's
+// turnInMission / completeMissionWithBorrow stay — the chooser road still calls
+// them. This only clears any stale action row so the lightbox reads as a
+// browser, never an action surface.
 function renderMissionLBTurnIn(name) {
     const holder = document.getElementById('missionLBAction');
-    if (!holder) return;
-    holder.innerHTML = '';
-    if (!game || game.phase !== 'gameplay') return;
-    // Anytime-actions can't ride the round barrier — early turn-ins sit
-    // out of multiplayer v1; missions resolve at their due date instead.
-    if (mpActive()) return;
-    const p = game.players[0];
-    const mi = (p.missions || []).findIndex(m => m.name === name);
-    if (mi < 0) return;
-
-    const mission = p.missions[mi];
-    const due = game.missionDueAct(mission);
-    // PURE probe — the old checkMissionRequirements call CONSUMED a held
-    // Life Essence just to label this button; browsing N missions would
-    // have burned it N times over. Only the real turn-in may consume.
-    const { success } = game.probeMissionRequirements(0, mission);
-    const dueNote = due > game.currentAct
-        ? `<div class="mission-lb-due">Due at the end of Act ${due} — turn in any time before</div>` : '';
-    // Short only on borrowable skills? Turning in now can borrow them too —
-    // same 2g-per-unit deal the borrow chooser offers at the due date.
-    const plan = success ? null : game.missionBorrowPlan(0, mission);
-    holder.innerHTML = `${dueNote}
-        ${plan ? `<button class="btn-royal primary" id="missionBorrowIn">
-            <span>Borrow & Complete (−${plan.cost}g)</span>
-        </button>` : ''}
-        <button class="btn-royal${success ? ' primary' : ''}" id="missionTurnIn">
-            <span>${success ? '✓ Turn In Now — requirements met' : 'Turn In Now (you would FAIL)'}</span>
-        </button>`;
-    const borrowBtn = holder.querySelector('#missionBorrowIn');
-    if (borrowBtn) {
-        borrowBtn.onclick = (e) => {
-            e.stopPropagation();
-            closeMissionLB();
-            // An early borrow-and-complete used to toast and vanish; it now
-            // plays the same ceremony beat as every other resolution, and the
-            // lender's payment shows up in the beat's "Also affected" line.
-            missionBeat(0, mi, () => game.completeMissionWithBorrow(0, mi)).then(res => {
-                if (res && res.success) {
-                    addLogEntry(`You borrow skills (−${res.cost}g) and complete ${name}`);
-                } else {
-                    showNotification((res && res.error) || 'Borrow fell through', 'error');
-                }
-                renderGameState();
-            });
-        };
-    }
-    const btn = holder.querySelector('#missionTurnIn');
-    let armed = success; // failing on purpose takes two clicks
-    btn.onclick = (e) => {
-        e.stopPropagation();
-        if (!armed) {
-            armed = true;
-            btn.querySelector('span').textContent = 'Click again to fail it — penalties apply';
-            return;
-        }
-        closeMissionLB();
-        // A deliberate early turn-in — win or lose — is a real resolution and
-        // gets a real beat. Failing on purpose is a legitimate play, and its
-        // penalties (Scorn, forced discards, a Fortune Teller that wasn't
-        // there) were previously summarised as a one-line toast.
-        missionBeat(0, mi, () => game.turnInMission(0, mi)).then(res => {
-            addLogEntry(`You turn in ${name} — ${res && res.success ? 'success!' : 'failed'}`);
-            // Crazy Lou-style penalties: the discard picker follows the beat,
-            // so the player sees WHY they are being asked to discard.
-            const pend = game.players[0]._pendingPenaltyDiscard || 0;
-            if (pend) {
-                game.players[0]._pendingPenaltyDiscard = 0;
-                showPenaltyDiscardPicker(pend).then(() => renderGameState());
-            }
-            renderGameState();
-        });
-    };
+    if (holder) holder.innerHTML = '';
 }
 
 function closeMissionLB() {
@@ -5346,6 +5240,14 @@ async function payToSlide(direction) {
             renderBoardOvSlots();
         }
 
+        // Merchant slot: convert Gold → Prestige? Your call (Wyatt 7/23).
+        if (player._pendingConvert) {
+            player._pendingConvert = null;
+            await showConvertChoice();
+            renderGameState();
+            renderBoardOvSlots();
+        }
+
         // The slide can change what the revealed card needs — refresh the
         // chooser so Play/Need and the purse line tell the truth.
         if (window._cardChoiceRerender) window._cardChoiceRerender();
@@ -5366,9 +5268,6 @@ async function activateAllCards() {
 
         for (let cardIdx = 0; cardIdx < cards.length; cardIdx++) {
             const card = cards[cardIdx];
-
-            // Capture player 0's stats before activation for delta animation
-            if (pi === 0) captureStats();
 
             if (pi === 0) {
                 // YOUR reveal: the thrown card comes face up and you choose
@@ -5430,6 +5329,15 @@ async function activateAllCards() {
                 await showSlotSkillPicker();
             }
 
+            // Merchant counting house: the Gold→Prestige offer, drained wherever
+            // your ring lands on the slot — a discard-slide, the final-card
+            // chooser, or Chemical X moving it free (Wyatt 7/23).
+            if (pi === 0 && game.players[0]._pendingConvert) {
+                game.players[0]._pendingConvert = null;
+                renderGameState();
+                await showConvertChoice();
+            }
+
             if (pi !== 0 && game.players[pi]._remoteHuman) {
                 // Remote human — their streamed choice drives our engine
                 // at exactly this point in the order on every client.
@@ -5468,9 +5376,9 @@ async function activateAllCards() {
                 }
             }
 
-            // Animate stat changes after each card resolves
+            // The "+N" payoff floats fire from renderGameState → tvAnimateDeltas,
+            // laned so simultaneous grants never stack (Wyatt 7/23).
             renderGameState();
-            animateStatChanges();
 
             // YOUR payoff gets its beat: if "+N" floats just fired off your
             // stats, let them land before the next player's spotlight takes
@@ -6636,6 +6544,50 @@ function showChemXPicker() {
 // whichever skill you had least of, and the grant didn't even survive the next
 // skill recalc. Publishes 'slot_pick' so a multiplayer table applies YOUR pick,
 // in stream order, on every client. Resolves when the grant has landed.
+// The Merchant's counting house (Wyatt 7/23): landing OFFERS the 1:1
+// Gold→Prestige trade — "the key word is may". The local human sees this
+// prompt; the choice publishes a 'slot_convert' move so every table applies the
+// same engine call in stream order (MPV 21). game.applyGoldConvert is the ONE
+// mutation point; the amount is read live off the purse, not the pause flag.
+function showConvertChoice() {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        const player = game.players[0];
+        const gold = player.gold || 0;
+        if (!ov || gold <= 0) { player._pendingConvert = null; resolve(); return; }
+
+        const decide = (doConvert) => {
+            // Publish BEFORE mutating: peers apply the identical choice through
+            // the same engine call, in stream order (no-op solo).
+            mpPub('slot_convert', { convert: doConvert });
+            const res = game.applyGoldConvert(0, doConvert);
+            if (res.converted) {
+                addLogEntry(`You convert ${res.converted} Gold into ${res.converted} Prestige`);
+                showNotification(`+${res.converted} Prestige from the counting house`, 'play');
+            } else {
+                addLogEntry('You keep your Gold');
+            }
+            ov.classList.remove('active');
+            ov.innerHTML = '';
+            renderGameState();
+            resolve();
+        };
+
+        ov.innerHTML = `
+            <div class="pp-inner">
+                <div class="pp-title">The Merchant's Counting House</div>
+                <div class="pp-sub">Convert your <b>${gold} Gold</b> into <b>${gold} Prestige</b>? You <i>may</i> — or keep your purse for slides and borrows.</div>
+                <div class="pp-actions">
+                    <button class="btn-royal primary" id="convDo"><span>Convert to ${gold} Prestige</span></button>
+                    <button class="btn-royal" id="convKeep"><span>Keep ${gold} Gold</span></button>
+                </div>
+            </div>`;
+        ov.querySelector('#convDo').onclick = () => decide(true);
+        ov.querySelector('#convKeep').onclick = () => decide(false);
+        ov.classList.add('active');
+    });
+}
+
 function showSlotSkillPicker() {
     return new Promise((resolve) => {
         const ov = document.getElementById('promisePicker');
@@ -7779,6 +7731,14 @@ function showMissionCeremony(missionResults, actNum) {
                     chips.push(chip(sk, `+${n} ${cap(sk)}`, 'good')));
             }
             if (b.r.success && m.grantsMap) chips.push(chip('maps', `${m.grantsMap} Map`, 'good'));
+            // Duplicate specials move no MEASURED resource, but a copied card is a
+            // real reward (and a potion copy fires its effect again). Without this
+            // the beat read "Completed — no further reward" over a mission whose
+            // card literally says "duplicate the chosen card" (Wyatt/Skylar 7/23).
+            if (b.r.success && m.successSpecial === 'duplicate_artifact')
+                chips.push(chip('mission', 'Artifact duplicated', 'good'));
+            if (b.r.success && m.successSpecial === 'duplicate_potion')
+                chips.push(chip('mission', 'Potion duplicated — it fires again', 'good'));
             if (b.r.borrowed) chips.push(chip('gold', `Borrowed help −${b.r.borrowed}g`, 'bad'));
             if (goldGain < 0) chips.push(chip('gold', `−${-goldGain} Gold`, 'bad'));
             if (d.favor < 0) chips.push(chip('favor', `−${-d.favor} Favor`, 'bad'));

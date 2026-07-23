@@ -141,7 +141,15 @@
     //     slide. Same window: Chemical Y candidates + doubling now run on
     //     scoredCardFavor (printed + formula) — a v19 AI would double a
     //     different card from the identical state.
-    const MPV = 20;
+    // 21 (7/23): the Merchant counting house (convert_gold_to_prestige) is now
+    //     a CHOICE — "the key word is may". A human seat publishes a
+    //     'slot_convert' move { convert } at the landing; every peer applies the
+    //     same game.applyGoldConvert in stream order. A v20 seat auto-converts
+    //     ALL gold to prestige on landing (its old engine path) while a v21
+    //     seat waits for the owner's pick — so gold and prestige fork the moment
+    //     any human lands on that slot. Booted seats fall back to the shared
+    //     aiWouldConvert heuristic, identical on every client.
+    const MPV = 21;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

@@ -154,7 +154,7 @@ function missionItem(m) {
     const rows = [
         ['Act / Round', `${m.act} / activates R${m.activationRound ?? '—'}`],
         ['Success req', req.filter(x => x !== '—').join(' + ') || '—'],
-        ['Success reward', obj(m.successRewards) + (m.favorValue ? ` · ${m.favorValue} Favor` : '')],
+        ['Success reward', obj(m.successRewards) + (m.favorValue ? ` · ${m.favorValue} Favor` : '') + (m.successSpecial ? ` · ${m.successSpecial}` : '')],
         ['Failure', obj(m.failurePenalties) + (m.failSpecial ? ` · ${m.failSpecial}` : '')],
         ['Grants map', m.grantsMap || '—'],
     ];
@@ -250,7 +250,7 @@ const SPECIALS = [
  { k:'steal_2_gold_each', ctx:'slot', what:"Take up to 2 Gold from each rival. Fires on every landing." },
  { k:'give_1_gold_each', ctx:'slot', what:"Give 1 Gold to each rival, from your purse. Every landing.", note:"No zero-floor — a broke player's Gold can go NEGATIVE here. Worth a guard." },
  { k:'all_others_1_scorn', ctx:'slot', what:"+1 Scorn to each rival. Every landing." },
- { k:'convert_gold_to_prestige', ctx:'slot', what:"ALL your Gold becomes Prestige, 1:1. Every landing." },
+ { k:'convert_gold_to_prestige', ctx:'slot', what:"OFFER (Wyatt 7/23, “the key word is may”): a human seat is asked Convert / Keep on landing — all Gold → Prestige 1:1, or keep the purse. Streams as 'slot_convert' in MP; AI converts late/when flush.", note:"Was an unconditional auto-convert of all Gold." },
  { k:'philosopher_stone', ctx:'slot', what:"+1 Philosopher's Stone — this slot pays once per GAME." },
  { k:'philosopher_stone_x2', ctx:'slot', what:"+2 Philosopher's Stones — once per game." },
  { k:'minds_eye', ctx:'slot', what:"Ongoing +1 Knowledge WHILE the ring stands here (leaves when you slide away)." },

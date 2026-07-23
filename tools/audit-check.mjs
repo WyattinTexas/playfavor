@@ -150,6 +150,21 @@ for (const m of MISSIONS) {
   const { reqs, rew, fail } = parsed;
   const label = `${m.name} [mission]`;
 
+  // Window invariant (Wyatt 7/23): activationRound = the FIRST act the mission
+  // can be turned in (the MIN of its printed window); the engine parses the MAX
+  // as its due/forced act at runtime (missionDueAct). If activationRound drifts
+  // ABOVE the window's first act, postponableMissions() skips it there and the
+  // act-boundary attempt/hold chooser never appears — exactly how The Minister's
+  // Plan (window "Act 2 OR Act 1") shipped with activationRound 2 and was never
+  // asked in Act 1. Same head-split as the engine so the two can never disagree.
+  const head = (m.audit || '').split(/Success Reward/i)[0];
+  const winActs = [...head.matchAll(/Act\s*(\d)/gi)].map(x => parseInt(x[1], 10));
+  if (winActs.length) {
+    const firstAct = Math.min(...winActs);
+    if ((m.activationRound || 0) !== firstAct)
+      flag(label, `activationRound ${m.activationRound} but window's first act is ${firstAct} (audit window Act ${[...new Set(winActs)].sort().join(' OR Act ')})`);
+  }
+
   const dataReq = counts(m.requirements);
   const dataReqSkills = Object.fromEntries(Object.entries(dataReq).filter(([k]) => SKILLS.includes(k)));
   if (!eqCounts(reqs.skills, dataReqSkills))

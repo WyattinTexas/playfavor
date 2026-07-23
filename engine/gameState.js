@@ -1052,6 +1052,40 @@ class FavorGame {
         return { success: true, skill: chosen };
     }
 
+    /**
+     * Would an AI seat take the Merchant's Gold→Prestige trade? Pure. Prestige
+     * is banked score; Gold is spending power that, unspent, is worth nothing at
+     * the end. So convert only when the purse won't be missed: the endgame, or a
+     * genuinely flush mid-game. Never in Act 1 — slides cost 5g/space and borrows
+     * 2g/unit, so emptying the purse early is a real handicap. (Veto-able default.)
+     */
+    aiWouldConvert(player) {
+        if (this.currentAct >= 3) return true;
+        if (this.currentAct === 2 && (player.gold || 0) >= 10) return true;
+        return false;
+    }
+
+    /**
+     * Merchant counting house: turn ALL held Gold into an equal pile of Prestige
+     * — or keep it. THE single mutation point (the local prompt, a remote seat's
+     * streamed move, and the AI heuristic all land here), so every client moves
+     * the purse identically in stream order. Clears the pause flag either way.
+     * Re-reads gold at apply time (the stored flag is only the prompt's label).
+     */
+    applyGoldConvert(playerIndex, doConvert) {
+        const player = this.players[playerIndex];
+        player._pendingConvert = null;
+        const gold = player.gold || 0;
+        if (doConvert && gold > 0) {
+            player.prestige += gold;
+            player.gold = 0;
+            this.addLog(`${player.name} converts ${gold} Gold into ${gold} Prestige`);
+            return { success: true, converted: gold };
+        }
+        this.addLog(`${player.name} keeps their Gold`);
+        return { success: true, converted: 0 };
+    }
+
     applySlotSkills(player) {
         const char = player.character;
         if (!char || !char.slots) return;
@@ -1315,11 +1349,21 @@ class FavorGame {
                 break;
 
             case 'convert_gold_to_prestige':
+                // "The key word is MAY" (Wyatt 7/23): landing on the Merchant's
+                // counting house OFFERS the 1:1 trade, it doesn't force it.
                 if (player.gold > 0) {
-                    const converted = player.gold;
-                    player.prestige += converted;
-                    player.gold = 0;
-                    this.addLog(`${player.name} converts ${converted} Gold into ${converted} Prestige`);
+                    if (player.index === 0 || player._remoteHuman) {
+                        // A human seat (local OR remote) is ASKED, never auto-
+                        // converted. The flag pauses for a Convert/Keep choice —
+                        // local shows the prompt, a remote seat awaits the owner's
+                        // streamed pick — and applyGoldConvert() is the ONE place
+                        // the purse moves, so every client mutates identically.
+                        player._pendingConvert = player.gold;
+                    } else if (this.aiWouldConvert(player)) {
+                        this.applyGoldConvert(player.index, true);
+                    } else {
+                        this.addLog(`${player.name} keeps their Gold`);
+                    }
                 }
                 break;
 
