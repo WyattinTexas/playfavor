@@ -7993,13 +7993,16 @@ body:has(#howto-overlay.open) .throw-hint {
    panel, and both stay under .card-zoom (2000). */
 .ts-cog {
     position: absolute; right: 16px; bottom: 40px; z-index: 6;
-    width: 42px; height: 42px; border-radius: 50%;
+    width: 42px; height: 42px; border-radius: 50%; padding: 0;
+    display: flex; align-items: center; justify-content: center;
     background: radial-gradient(#2e2311, #1a1309);
     border: 2px solid #8a6a1f; color: #d8bf8a;
-    font-size: 21px; line-height: 1; cursor: pointer;
+    font-size: 27px; line-height: 1; cursor: pointer;
     box-shadow: 0 3px 10px rgba(0,0,0,.55);
     transition: transform .25s ease, color .15s ease, border-color .15s ease;
 }
+/* The ⚙ glyph carries baseline lean in most fonts — nudge to optical center. */
+.ts-cog span { display: block; transform: translateY(-1px); }
 .ts-cog:hover, .ts-cog:focus-visible {
     color: #f4e6c8; border-color: #c9a542; outline: none;
     transform: rotate(45deg);
@@ -8086,7 +8089,7 @@ body.no-play-glow .hand-card.playable {
 }
 
 @media (orientation: landscape) and (max-height: 540px) {
-    .ts-cog { right: 10px; bottom: 30px; width: 34px; height: 34px; font-size: 17px; }
+    .ts-cog { right: 10px; bottom: 30px; width: 34px; height: 34px; font-size: 21px; }
     .set-inner { max-height: calc(100dvh - 10px); }
     .set-head { padding: 9px 16px 7px; }
     .set-title { font-size: 16px; }
