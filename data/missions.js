@@ -21,7 +21,13 @@ window.FAVOR_DATA.missions = [
     // Art-verified 7/9: reward shields are Philosopher's Stone + Mind's Eye
     // (transcription said Prospecting + Mind's Eye).
     { id: mid(), name: "The Minister's Plan", reqGold: 15, grantsMap: "Facing the River Fiend", audit: "Success Req: 15 Gold & 1 Prospecting, Act 2 OR Act 1 Success Reward: 1 Philosopher's Stone, 1 Mind's Eye, Facing the River Fiend Map Failure Reward: 5 Gold & 5 Scorn", filename: "Act 1_The Minister_s Plan Card.jpg",
-      act: 1, activationRound: 2, favorValue: 0,
+      // Window = Act 1 OR Act 2 (audit "Act 2 OR Act 1"): activationRound is the
+      // EARLIEST act it can be turned in (the min of the window), dueAct the last.
+      // It was 2 here — a typo that made postponableMissions() skip it in Act 1,
+      // so the attempt/hold chooser never appeared until it was already forced at
+      // Act 2 (Wyatt 7/23). Every other mission already sets activationRound = the
+      // window's first act; audit-check now guards this invariant.
+      act: 1, activationRound: 1, favorValue: 0,
       requirements: ["prospecting"],
       successRewards: { mindsEye: 1, philosopherStone: 1 },
       failurePenalties: { scorn: 5, gold: 5 },

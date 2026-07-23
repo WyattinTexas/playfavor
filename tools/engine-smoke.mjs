@@ -464,6 +464,123 @@ console.log("── Wyatt's game: Hunting + Mining Guild + Her Lost Father passe
   ok(chk.success === true, "Cameron's Expedition (4 SUR + 1 CHA + 1 PRO) PASSES", JSON.stringify(chk.details.missing));
 }
 
+console.log('── Merchant counting house: convert Gold→Prestige is a CHOICE (Wyatt 7/23)');
+{
+  const merchant = window.FAVOR_DATA.characters.find(c => c.id === 'merchant');
+  // Data: the Side A slot (idx 3) AND the Guildmaster Side B slot (idx 4) both
+  // carry the special — one engine case must cover both boards.
+  ok(merchant.slots[3].special === 'convert_gold_to_prestige',
+     'Side A slot 4 (idx 3) is the counting house');
+  ok(merchant.altSlots[4].special === 'convert_gold_to_prestige',
+     'Side B slot 5 (idx 4) is the counting house too');
+
+  // A HUMAN seat lands: asked, NEVER auto-converted (the old bug).
+  const g = newGame();
+  const p = g.players[0];
+  p.character = merchant;
+  p.gold = 8; p.prestige = 0; p.sliderPosition = 3;
+  g.applySliderAbilities(p);
+  ok(p._pendingConvert === 8 && p.gold === 8 && p.prestige === 0,
+     `human is ASKED (flag ${p._pendingConvert}), gold untouched until they choose`);
+
+  // Convert: the whole purse moves 1:1, the flag clears.
+  const conv = g.applyGoldConvert(0, true);
+  ok(conv.converted === 8 && p.gold === 0 && p.prestige === 8 && p._pendingConvert === null,
+     `Convert moves 8 Gold → 8 Prestige (${p.gold}g / ${p.prestige}pr)`);
+
+  // Keep: land again, decline — gold stays, nothing minted.
+  p.gold = 6; p.prestige = 8; p.sliderPosition = 3;
+  g.applySliderAbilities(p);
+  const keep = g.applyGoldConvert(0, false);
+  ok(keep.converted === 0 && p.gold === 6 && p.prestige === 8 && p._pendingConvert === null,
+     `Keep leaves 6 Gold and mints nothing (${p.gold}g / ${p.prestige}pr)`);
+
+  // AI seat: the heuristic decides ON landing — no flag, no chooser.
+  const ai = g.players[1];
+  ai.character = merchant;
+  const aiLand = (act, gold) => {
+    ai.gold = gold; ai.prestige = 0; ai.sliderPosition = 3; ai._pendingConvert = null;
+    g.currentAct = act;
+    g.applySliderAbilities(ai);
+    return { flag: ai._pendingConvert, gold: ai.gold, prestige: ai.prestige };
+  };
+  const a1 = aiLand(1, 8);
+  ok(a1.flag == null && a1.gold === 8 && a1.prestige === 0,
+     `AI in Act 1 KEEPS its purse — slides/borrows need it (${a1.gold}g)`);
+  const a3 = aiLand(3, 8);
+  ok(a3.flag == null && a3.gold === 0 && a3.prestige === 8,
+     `AI in Act 3 converts — endgame gold is dead weight (${a3.prestige}pr)`);
+  const a2flush = aiLand(2, 10);
+  ok(a2flush.gold === 0 && a2flush.prestige === 10,
+     `AI in Act 2 converts when flush ≥10g (${a2flush.prestige}pr)`);
+  const a2lean = aiLand(2, 6);
+  ok(a2lean.gold === 6 && a2lean.prestige === 0,
+     `AI in Act 2 keeps a lean purse <10g (${a2lean.gold}g)`);
+
+  // aiWouldConvert is pure — mutates nothing.
+  const before = { gold: p.gold, prestige: p.prestige };
+  g.currentAct = 1;
+  const pureCall = g.aiWouldConvert(p);
+  ok(pureCall === false && p.gold === before.gold && p.prestige === before.prestige,
+     'aiWouldConvert is a pure read (Act 1 → false, no mutation)');
+}
+
+console.log('── Six audited missions: each pays end-to-end, favor booked ONCE (Wyatt/Skylar 7/23)');
+{
+  const logSum = (p) => (p.favorLog || []).reduce((a, e) => a + e.amount, 0);
+  const mEntries = (p, name) => (p.favorLog || []).filter(e => e.src === 'mission' && e.label === name && e.formula);
+
+  // favor_per_* = SCALING favor: it must pay at resolution AND be booked exactly
+  // once — never re-added at final scoring (currentFavor reads the ledger total).
+  let g = newGame(); let p = g.players[0];
+  p.skills.prospecting = 2; p.skills.knowledge = 6; p.favor = 5; p.favorLog = [{ amount: 5, src: 'card', label: 'seed' }];
+  p.missions = [{ ...missionByName('Trust of the Elders') }];
+  ok(g.turnInMission(0, 0).success, 'Trust of the Elders completes (5 Favor + 2 Prospecting)');
+  ok(p.skills.knowledge === 7, "  +1 Knowledge reward lands before the formula (6 → 7)");
+  const te = mEntries(p, 'Trust of the Elders');
+  ok(te.length === 1 && te[0].amount === 7, `  favor_per_knowledge_x1 = 7, booked once (${te.map(x=>x.amount)})`);
+  ok(p.favor === logSum(p) && g.currentFavor(0) === p.favor, '  no double-count: scoring reads the ledger, adds nothing again');
+
+  g = newGame(); p = g.players[0];
+  p.skills.knowledge = 4; p.skills.prospecting = 3; p.bonusMindsEye = 2;
+  p.playedCards = [{ id: 'hd', name: 'A Hidden Door', grantsMap: 'x', type: 'adventure', skills: [], favor: 0 }];
+  p.missions = [{ ...missionByName('The Shadow Guide') }];
+  ok(g.turnInMission(0, 0).success, "The Shadow Guide completes (4 Kno + 3 Pro + 1 Mind's Eye + map)");
+  const sg = mEntries(p, 'The Shadow Guide');
+  ok(sg.length === 1 && sg[0].amount === 10 && p.favor === logSum(p), `  favor_per_minds_eye_x5 = 10, booked once (${sg.map(x=>x.amount)})`);
+
+  g = newGame(); p = g.players[0];
+  p.skills.survival = 4; p.skills.power = 12; p.philosopherStone = 3;
+  p.missions = [{ ...missionByName('King of the Sky') }];
+  ok(g.turnInMission(0, 0).success, 'King of the Sky completes (4 Survival + 12 Power)');
+  const ks = mEntries(p, 'King of the Sky');
+  ok(ks.length === 1 && ks[0].amount === 30 && g.currentFavor(0) === p.favor, `  favor_per_philstone_x10 = 30, booked once (${ks.map(x=>x.amount)})`);
+
+  g = newGame(); p = g.players[0];
+  p.philosopherStone = 3; p.scorn = 12; p.prestige = 5;
+  p.missions = [{ ...missionByName('Quest for the Stones') }];
+  ok(g.turnInMission(0, 0).success, 'Quest for the Stones completes (3 Philosopher\'s Stone)');
+  ok(p.prestige === 17 && p.scorn === 0, `  scorn_to_prestige_all: ALL 12 Scorn → Prestige (5 → 17, 0 scorn)`);
+
+  g = newGame(); p = g.players[0];
+  p.skills.alchemy = 4; p.skills.prospecting = 6;
+  p.playedCards = [{ id: 'art1', name: 'Heirloom', type: 'artifact', skills: ['knowledge'], favor: 0 }];
+  p.missions = [{ ...missionByName('Passing the Mirror Gate') }];
+  const kB = p.skills.knowledge || 0;
+  ok(g.turnInMission(0, 0).success, 'Passing the Mirror Gate completes (4 Alchemy + 6 Prospecting)');
+  ok(p.playedCards.filter(c => c.type === 'artifact').length === 2 && p.playedCards.some(c => /_dup/.test(c.id)),
+     '  duplicate_artifact: a copy persists on the field');
+  ok((p.skills.knowledge || 0) === kB + 1, "  the copy's skill applies immediately (+1 Knowledge)");
+
+  g = newGame(); p = g.players[0];
+  p.skills.alchemy = 8; p.skills.prospecting = 4; p.scorn = 8; p.prestige = 0;
+  p.playedCards = [{ id: 'pot1', name: 'Mind Warper', type: 'potion', special: 'scorn_to_prestige', skills: [], favor: 0 }];
+  p.missions = [{ ...missionByName('Wild Experiments') }];
+  ok(g.turnInMission(0, 0).success, 'Wild Experiments completes (8 Alchemy + 4 Prospecting)');
+  ok(p.playedCards.filter(c => c.type === 'potion').length === 2 && p.prestige === 8 && p.scorn === 0,
+     '  duplicate_potion FIRES again — Mind Warper turns 8 Scorn into Prestige');
+}
+
 console.log('── Mission phase: a failure discard cannot sabotage a sibling mission');
 {
   const g = newGame();
