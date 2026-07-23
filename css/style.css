@@ -7992,8 +7992,9 @@ body:has(#howto-overlay.open) .throw-hint {
    z 1970: UNDER the Almanac (1980) so its door stacks the book above the
    panel, and both stay under .card-zoom (2000). */
 .ts-cog {
-    position: absolute; right: 16px; bottom: 40px; z-index: 6;
-    width: 42px; height: 42px; border-radius: 50%; padding: 0;
+    /* Top-left, tucked right below the music note (fixed 20/20, 44px). */
+    position: absolute; left: 20px; top: 74px; z-index: 6;
+    width: 44px; height: 44px; border-radius: 50%; padding: 0;
     display: flex; align-items: center; justify-content: center;
     background: radial-gradient(#2e2311, #1a1309);
     border: 2px solid #8a6a1f; color: #d8bf8a;
@@ -8089,7 +8090,9 @@ body.no-play-glow .hand-card.playable {
 }
 
 @media (orientation: landscape) and (max-height: 540px) {
-    .ts-cog { right: 10px; bottom: 30px; width: 34px; height: 34px; font-size: 21px; }
+    /* Phones hide the music note — the cog takes its corner, tucked
+       tight so it clears the title lockup's F. */
+    .ts-cog { left: 6px; top: 6px; width: 32px; height: 32px; font-size: 19px; }
     .set-inner { max-height: calc(100dvh - 10px); }
     .set-head { padding: 9px 16px 7px; }
     .set-title { font-size: 16px; }
