@@ -180,7 +180,15 @@
     //     completes. And 'mission_borrow' now streams CANONICAL lender
     //     seats (the card-borrow path always did; this path sent LOCAL
     //     indices, so a rotated peer paid the fee to the wrong purse).
-    const MPV = 26;
+    // 27 (7/24): four table-truth fixes. Gold-cost missions now PAY their
+    //     reqGold on completion; slot Philosopher's Stones are POSITIONAL
+    //     (count only while the ring stands there — the once-per-game
+    //     grant is gone); Mirror Gate / Wild Experiments winners CHOOSE
+    //     their duplicate (new 'dup_pick' move; AI/booted seats use the
+    //     shared argmax) and the copy's id is a per-player sequence, not
+    //     Date.now() (which minted a different id on every client and fed
+    //     mpStateHash). All four change resolution state vs v26.
+    const MPV = 27;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

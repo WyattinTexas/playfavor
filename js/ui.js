@@ -2596,6 +2596,24 @@ async function mpEndActStages(borrowsPendingLocal) {
             }
         }
     }
+    // Duplicates — Mirror Gate / Wild Experiments winners choose their
+    // copy, in canonical order; a booted seat falls to the shared argmax.
+    for (let cs = 0; cs < n; cs++) {
+        const li = FMP.localIdx(cs);
+        const p = game.players[li];
+        if (!p._pendingDuplicatePick) continue;
+        if (li === 0) {
+            await showDuplicatePicker();             // publishes inside
+        } else {
+            mpWaitShow(li, 'choosing a card to duplicate');
+            const mv = p._remoteHuman ? await FMP.waitFor(cs, 'dup_pick') : null;
+            mpWaitHide();
+            const res = game.applyDuplicatePick(li, mv ? mv.cardId : null);
+            if (res && res.success) addLogEntry(`${p.name} duplicates ${res.source.name}`);
+        }
+        renderGameState();
+    }
+
     // Penalty discards \u2014 the failed owners pick which cards to give up.
     for (let cs = 0; cs < n; cs++) {
         const li = FMP.localIdx(cs);
@@ -2975,15 +2993,15 @@ function buildStatsPanelHtml(playerIndex, state) {
 
     // Special abilities: Philosopher's Stone & Mind's Eye -- the engine
     // count (cards + slot + mission rewards), shown as the digit it is.
-    const hasPhilosopher = gp.philosopherStone && gp.philosopherStone > 0;
+    const stoneCount = game.getStoneCount(playerIndex);
     const mindsEyeCount = game.getMindsEyeCount(playerIndex);
 
-    if (hasPhilosopher) {
+    if (stoneCount > 0) {
         skillsHtml += `
-            <div class="skill-row special-ability" title="Philosopher's Stone — converts your Gold to Favor at game end (×${gp.philosopherStone} per Gold)">
+            <div class="skill-row special-ability" title="Philosopher's Stone — a requirement token; a board slot's stone counts only while your ring stands there">
                 <span class="skill-icon">${SKILL_ICONS.philosopher}</span>
                 <span class="skill-label phil-label">Philosopher's Stone</span>
-                <span class="skill-value has-skill">${gp.philosopherStone}</span>
+                <span class="skill-value has-skill">${stoneCount}</span>
             </div>`;
     }
     if (mindsEyeCount > 0) {
@@ -3035,10 +3053,11 @@ function buildStatChipsHtml(playerIndex, state) {
                     <span class="flex-pair">${SKILL_ICONS[a]}${SKILL_ICONS[b]}</span><b>${n > 1 ? '×' + n : '✦'}</b></span>`;
     });
 
-    if (gp.philosopherStone && gp.philosopherStone > 0) {
+    const tvStones = game.getStoneCount(playerIndex);
+    if (tvStones > 0) {
         h += `<span class="tv-skill-chip special"
-                    onclick="tvChipTip(event, 'Philosopher\\'s Stone ×${gp.philosopherStone} — converts Gold to Favor at game end')">
-                    ${SKILL_ICONS.philosopher}<b>${gp.philosopherStone}</b></span>`;
+                    onclick="tvChipTip(event, 'Philosopher\\'s Stone \u00d7${tvStones} \u2014 requirement token; slot stones count while parked there')">
+                    ${SKILL_ICONS.philosopher}<b>${tvStones}</b></span>`;
     }
     const mindsEye = game.getMindsEyeCount(playerIndex);
     if (mindsEye > 0) {
@@ -3421,14 +3440,14 @@ function renderTvSkills(state) {
         rows++;
     });
 
-    const hasPhil = gp.philosopherStone && gp.philosopherStone > 0;
+    const myStones = game.getStoneCount(0);
     // Engine count (cards + slot + mission rewards) — the digit Wyatt
     // asked for; the old ✓ also missed slot-granted Mind's Eyes entirely.
     const mindsEye = game.getMindsEyeCount(0);
-    if (hasPhil) {
+    if (myStones > 0) {
         h += `<span class="tv-skill-chip special"
-                    onclick="tvChipTip(event, 'Philosopher\\'s Stone ×${gp.philosopherStone} — converts Gold to Favor at game end')">
-                    ${SKILL_ICONS.philosopher}<b>${gp.philosopherStone}</b></span>`;
+                    onclick="tvChipTip(event, 'Philosopher\\'s Stone \u00d7${myStones} \u2014 requirement token; slot stones count while parked there')">
+                    ${SKILL_ICONS.philosopher}<b>${myStones}</b></span>`;
         rows++;
     }
     if (mindsEye > 0) {
@@ -3544,6 +3563,11 @@ function renderTvStage(state) {
     const el = document.getElementById('tvStage');
     if (!el) return;
     const cards = state.players[0].playedCards || [];
+    // 5+ families: thinner piles and a left-anchored scrollable strip — a
+    // fixed centered row slid the tail pile under the board thumb, where
+    // it could never be tapped (Wyatt 7/23).
+    const fams = new Set(cards.map(getCardTypeGroup)).size;
+    el.classList.toggle('dense', fams >= 5);
     el.innerHTML = cards.length
         ? buildSkillStacks(cards)
         : '<div class="tv-stage-empty">Cards you play gather here</div>';
@@ -5818,6 +5842,13 @@ async function endActPhases() {
     // PENALTY DISCARD — a failed mission says "Discard N Cards": the player
     // picks which (physical-game agency), not the engine. Read AFTER the
     // borrow choosers so declined missions' penalties are included.
+    // DUPLICATES — read LIVE (not precaptured): a borrow-completed Mirror
+    // Gate sets the flag inside the borrow chooser above.
+    const afterDuplicate = () => {
+        if (mpActive()) return Promise.resolve();   // handled in the stage loop
+        return game.players[0]._pendingDuplicatePick
+            ? showDuplicatePicker() : Promise.resolve();
+    };
     const afterPenalty = () => {
         if (mpActive()) return Promise.resolve();   // handled in the stage loop
         const penaltyPending = game.players[0]._pendingPenaltyDiscard || 0;
@@ -5834,7 +5865,7 @@ async function endActPhases() {
     showMissionCeremony(missionResults, actNum)
         .then(() => showMissionDrawBeat())
         .then(() => renderGameState())
-        .then(afterBorrows).then(afterPenalty).then(afterPromise)
+        .then(afterBorrows).then(afterDuplicate).then(afterPenalty).then(afterPromise)
         // A mission FAILED by declining its borrow (Let it Fail) records its
         // draws HERE, after the first beat already ran — surface them now so a
         // Midnight-Crash Act-3 mission is never handed out in silence (Wyatt 7/17).
@@ -6512,6 +6543,66 @@ async function drainWeaponDiscards() {
 // ═══ A PROMISE — choose any number of played cards to sacrifice ═══════
 // Faithful to the card: "Discard at least 1 Card, gain 8 Prestige for
 // each discarded Card." The player taps cards to mark them, then confirms.
+// ═══ DUPLICATE PICKER — Passing the Mirror Gate / Wild Experiments:
+// "Choose one Artifact/Potion you own" — the CHOICE is the player's
+// (Wyatt 7/23: the engine used to pick for you). Publishes in MP so every
+// client applies the same copy through game.applyDuplicatePick.
+function showDuplicatePicker() {
+    return new Promise((resolve) => {
+        const ov = document.getElementById('promisePicker');
+        const fam = game.players[0]._pendingDuplicatePick;
+        const pool = fam ? game.players[0].playedCards.filter(c => c.type === fam) : [];
+        if (!ov || !pool.length) {
+            game.players[0]._pendingDuplicatePick = null;
+            mpPub('dup_pick', { cardId: null });
+            resolve();
+            return;
+        }
+        // dataset values are STRINGS and card ids are numbers — keep the
+        // selection as a string key and hand the TYPED id to the engine,
+        // or the strict compare silently falls back to the AI's pick.
+        let chosen = pool.length === 1 ? String(pool[0].id) : null;
+        const byKey = () => pool.find(c => String(c.id) === chosen);
+        const famName = fam === 'artifact' ? 'Artifact' : 'Potion';
+        const render = () => {
+            const cards = pool.map(c => `
+                <div class="pp-card${String(c.id) === chosen ? ' chosen' : ''}" data-cid="${c.id}">
+                    <img src="assets/cards/regular/${c.filename}" alt="${c.name}">
+                </div>`).join('');
+            ov.innerHTML = `
+                <div class="pp-inner">
+                    <div class="pp-title">Duplicate ${fam === 'artifact' ? 'an Artifact' : 'a Potion'}</div>
+                    <div class="pp-sub">The mission duplicates <b>one ${famName} you own</b> for the rest of the game${fam === 'potion' ? ' — and it fires again now' : ''}. Choose which.</div>
+                    <div class="pp-cards">${cards}</div>
+                    <div class="pp-actions">
+                        <button class="btn-royal primary" id="dupConfirm" ${chosen ? '' : 'disabled style="opacity:.35"'}>
+                            <span>${chosen ? `Duplicate ${(byKey() || {}).name}` : `Choose a ${famName}`}</span>
+                        </button>
+                    </div>
+                </div>`;
+            ov.querySelectorAll('.pp-card').forEach(el => {
+                el.onclick = () => { chosen = el.dataset.cid; render(); };
+            });
+            ov.querySelector('#dupConfirm').onclick = () => {
+                const pick = byKey();
+                if (!pick) return;
+                // Card ids match on every client — the TYPED id streams.
+                mpPub('dup_pick', { cardId: pick.id });
+                const res = game.applyDuplicatePick(0, pick.id);
+                ov.classList.remove('active');
+                if (res && res.success) {
+                    showNotification(`${res.source.name} duplicated!`, 'mission');
+                    addLogEntry(`You duplicate ${res.source.name}`);
+                }
+                renderGameState();
+                resolve();
+            };
+        };
+        render();
+        ov.classList.add('active');
+    });
+}
+
 function showPromiseDiscardPicker() {
     return new Promise((resolve) => {
         const ov = document.getElementById('promisePicker');

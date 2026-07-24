@@ -4965,12 +4965,27 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
         gap: 10px;
         z-index: 2;
         --tvStackCardH: clamp(64px, 24dvh, 96px);
+        /* Many piles must never slide under the board thumb — the strip
+           scrolls instead (Wyatt 7/23: every pile observable, tappable). */
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .tv-stage::-webkit-scrollbar { display: none; }
+    /* 5+ families: thinner cards, left-anchored so the scroll start is
+       always reachable (a centered overflow clips its own head). */
+    .tv-stage.dense {
+        --tvStackCardH: clamp(56px, 19dvh, 80px);
+        justify-content: flex-start;
+        gap: 8px;
     }
     .tv-stack {
         display: flex;
         flex-direction: column;
         align-items: center;
         position: relative;
+        flex: none;
     }
     .tv-stack-card {
         width: calc(var(--tvStackCardH) * 0.666);

@@ -572,8 +572,11 @@ console.log('── Six audited missions: each pays end-to-end, favor booked ONC
   p.missions = [{ ...missionByName('Passing the Mirror Gate') }];
   const kB = p.skills.knowledge || 0;
   ok(g.turnInMission(0, 0).success, 'Passing the Mirror Gate completes (4 Alchemy + 6 Prospecting)');
+  // 7/24: the human seat CHOOSES the copy — the proof exercises the pick.
+  ok(p._pendingDuplicatePick === 'artifact', '  the choice pauses for the player');
+  g.applyDuplicatePick(0, 'art1');
   ok(p.playedCards.filter(c => c.type === 'artifact').length === 2 && p.playedCards.some(c => /_dup/.test(c.id)),
-     '  duplicate_artifact: a copy persists on the field');
+     '  duplicate_artifact: the CHOSEN copy persists on the field');
   ok((p.skills.knowledge || 0) === kB + 1, "  the copy's skill applies immediately (+1 Knowledge)");
 
   g = newGame(); p = g.players[0];
@@ -581,6 +584,7 @@ console.log('── Six audited missions: each pays end-to-end, favor booked ONC
   p.playedCards = [{ id: 'pot1', name: 'Mind Warper', type: 'potion', special: 'scorn_to_prestige', skills: [], favor: 0 }];
   p.missions = [{ ...missionByName('Wild Experiments') }];
   ok(g.turnInMission(0, 0).success, 'Wild Experiments completes (8 Alchemy + 4 Prospecting)');
+  g.applyDuplicatePick(0, 'pot1');   // 7/24: the player picks; the copy still fires
   ok(p.playedCards.filter(c => c.type === 'potion').length === 2 && p.prestige === 8 && p.scorn === 0,
      '  duplicate_potion FIRES again — Mind Warper turns 8 Scorn into Prestige');
 }
@@ -2308,17 +2312,20 @@ console.log('\n— Philosopher\'s Stones STACK (Wyatt 7/18: "we had 3 and it reg
 
   // Slot grants pay ONCE per game — slot events re-fire on every landing,
   // and a stacking tally must not be farmable by sliding over the slot.
+  // 7/24: slot stones are POSITIONAL — a landing grants NOTHING permanent
+  // (there is no farm left to gate); the count reads off the current slot.
   const g2 = newGame();
   const p2 = g2.players[0];
   g2.resolveSlotSpecial(p2, 'philosopher_stone', {});
-  g2.resolveSlotSpecial(p2, 'philosopher_stone', {});
   g2.resolveSlotSpecial(p2, 'philosopher_stone_x2', {});
-  g2.resolveSlotSpecial(p2, 'philosopher_stone_x2', {});
-  ok(p2.philosopherStone === 3, `slot stone grants pay once each: 1+2 (got ${p2.philosopherStone})`);
+  ok((p2.philosopherStone || 0) === 0,
+    `slot landings leave the permanent tally alone (got ${p2.philosopherStone || 0})`);
 
-  // Slot + card sources sum into one tally.
+  // Slot + card sources still SUM — through the positional read.
+  p2.character = { slots: [{ special: 'philosopher_stone_x2' }] };
+  p2.sliderPosition = 0;
   g2.applyCardEffects(0, { ...cardByName('Philosopher\'s Scepter'), id: 'st9' });
-  ok(p2.philosopherStone === 4, `slot and card stones sum (got ${p2.philosopherStone})`);
+  ok(g2.getStoneCount(0) === 3, `slot (2, while parked) + card (1) stones sum (got ${g2.getStoneCount(0)})`);
 }
 
 console.log('\n— The resolution ledger: WHICH cards, WHO else, and gates that MISSED —');
@@ -2408,24 +2415,27 @@ console.log('\n— Family Ring scores what the CARD says (Wyatt 7/18) —');
   ok(sc.artFavor === 6, `Family Ring's 6 Favor lands in the Artifacts cell (${sc.artFavor})`);
 }
 
-console.log('\n— grantSlotStones survives a JSON round-trip —');
+console.log('\n— Slot stones are POSITIONAL: nothing to grant, farm, or serialize —');
 {
-  // The once-per-game gate was a Set. A Set JSON-encodes to {} — so the first
-  // save/resume or MP sync would silently reset it and slot stones would
-  // re-grant on every landing: runaway inflation, and exactly the sliding
-  // farm the gate exists to prevent.
-  const g = newGame();
+  // 7/24 (Wyatt): the once-per-game grant gate is GONE — a slot's stone
+  // belongs to whoever stands on it, read live by getStoneCount exactly
+  // like slot Mind's Eyes. No landing grant means no farm to prevent and
+  // no per-game gate to survive a save: the count derives from position.
+  const g = new FavorGame(3);
+  g.loadDecks();
+  g.initPlayers([
+    { characterId: 'fisherman', playerName: 'You' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
   const p = g.players[0];
-  g.grantSlotStones(p, 'philosopher_stone', 1);
-  ok(p.philosopherStone === 1, `the first landing grants (${p.philosopherStone})`);
-  ok(g.grantSlotStones(p, 'philosopher_stone', 1) === false,
-    'a second landing on the same slot pays nothing');
-
-  const revived = JSON.parse(JSON.stringify({ _slotStoneGranted: p._slotStoneGranted, philosopherStone: p.philosopherStone }));
-  ok(g.grantSlotStones(revived, 'philosopher_stone', 1) === false,
-    'and STILL pays nothing after a JSON round-trip (a Set would have reset here)');
-  ok(revived.philosopherStone === 1,
-    `no re-grant across serialization (${revived.philosopherStone})`);
+  p.sliderPosition = 0;                        // the stone slot
+  ok(g.getStoneCount(0) === 1, `standing on the slot: one stone (${g.getStoneCount(0)})`);
+  ok((p.philosopherStone || 0) === 0, 'the permanent counter never moved');
+  const revived = JSON.parse(JSON.stringify({ sliderPosition: p.sliderPosition, philosopherStone: p.philosopherStone || 0 }));
+  p.sliderPosition = revived.sliderPosition;
+  p.philosopherStone = revived.philosopherStone;
+  ok(g.getStoneCount(0) === 1, 'a JSON round-trip changes nothing — position IS the state');
 }
 
 console.log('\n— Mission skill grants chain, in ANY order (Wyatt 7/18) —');
@@ -3343,6 +3353,96 @@ console.log('── 7/23 mission math: Water Temple pays ONCE, formulas count fl
     + (g4.players[0].skills.prospecting || 0);
   ok(g4.dynamicCardFavor(0, gvk) === base + 1,
     `Great Vault Key counts the charisma|prospecting unit ONCE (${g4.dynamicCardFavor(0, gvk)} = ${base}+1)`);
+}
+
+console.log('── 7/24: gold missions PAY · slot stones are POSITIONAL · you choose the duplicate ──');
+{
+  // 1 · The Minister's Plan holds Gold ×15 — completing it now SPENDS it.
+  const g = newGame();
+  g.currentAct = 2;   // the Plan's DUE act (window: Act 2 or Act 1)
+  g.players.forEach(p => { p.missions = []; });
+  const mp = { ...missionByName("The Minister's Plan") };
+  g.players[0].missions.push(mp);
+  g.players[0].bonusSkills = { prospecting: 1 };
+  g.applySlotSkills(g.players[0]);
+  g.players[0].gold = 20;
+  g.phase = 'missions';
+  g.resolveMissions();
+  ok(g.players[0].completedMissions.some(m => m.name === "The Minister's Plan"), 'gold mission banks');
+  ok(g.players[0].gold === 5, `…and PAYS its 15 Gold (20 → ${g.players[0].gold})`);
+  // …while a FAILED gold mission charges nothing.
+  const g2 = newGame();
+  g2.currentAct = 2;
+  g2.players.forEach(p => { p.missions = []; });
+  g2.players[0].missions.push({ ...missionByName("The Minister's Plan") });
+  g2.players[0].gold = 3;   // can't meet the 15-gold requirement
+  g2.phase = 'missions';
+  g2.resolveMissions();
+  // Failure charges NO reqGold — the only movement is the Plan's printed
+  // failure consolation (+5 Gold to the loser), never a −15.
+  ok(g2.players[0].failedMissions.some(m => m.name === "The Minister's Plan")
+    && g2.players[0].gold === 8, `a failed gold mission is never charged (3 +5 consolation = ${g2.players[0].gold})`);
+
+  // 2 · Slot stones are POSITIONAL — Fisherman slot 0 offers one WHILE
+  // parked; slide off and it stays behind; cards stay permanent.
+  const g3 = new FavorGame(3);
+  g3.loadDecks();
+  g3.initPlayers([
+    { characterId: 'fisherman', playerName: 'You' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
+  g3.phase = 'gameplay';
+  g3.currentAct = 1;
+  const f = g3.players[0];
+  f.gold = 30;
+  ok(g3.getStoneCount(0) === 0, 'center slot: no stone');
+  g3.moveSlider(0, -1); g3.moveSlider(0, -1);       // park slot 0
+  ok(f.sliderPosition === 0 && g3.getStoneCount(0) === 1,
+    `parked on slot 0: ONE stone (${g3.getStoneCount(0)})`);
+  f._paidSlideDir = null;
+  g3.moveSlider(0, 1);                               // slide off
+  ok(g3.getStoneCount(0) === 0, `slid off: the slot keeps its stone (${g3.getStoneCount(0)})`);
+  f._paidSlideDir = null;
+  g3.moveSlider(0, -1);                              // park again
+  ok(g3.getStoneCount(0) === 1, 're-parking is still ONE — no farming, no banking');
+  f.philosopherStone = (f.philosopherStone || 0) + 1;   // a stone CARD
+  f._paidSlideDir = null;
+  g3.moveSlider(0, 1);
+  ok(g3.getStoneCount(0) === 1, 'a card-granted stone survives the slide');
+
+  // 3 · The Mirror Gate duplicate is the PLAYER's choice.
+  const g4 = newGame();
+  g4.currentAct = 3;
+  g4.players.forEach(p => { p.missions = []; });
+  const pmg = { ...missionByName('Passing the Mirror Gate') };
+  g4.players[0].missions.push(pmg);
+  g4.players[0].bonusSkills = { alchemy: 4, prospecting: 6 };
+  g4.applySlotSkills(g4.players[0]);
+  const artA = { id: 7001, name: 'ArtA', type: 'artifact', skills: ['knowledge'], favor: 2, filename: 'x.jpg' };
+  const artB = { id: 7002, name: 'ArtB', type: 'artifact', skills: [], favor: 9, filename: 'y.jpg' };
+  g4.players[0].playedCards.push(artA, artB);
+  g4.phase = 'missions';
+  g4.resolveMissions();
+  ok(g4.players[0]._pendingDuplicatePick === 'artifact',
+    'human seat PAUSES on the choice — nothing auto-duplicated');
+  ok(!g4.players[0].playedCards.some(c => String(c.id).includes('_dup')), 'no copy yet');
+  const res = g4.applyDuplicatePick(0, 7001);        // the HUMAN picks the weaker one
+  ok(res.success && res.source.name === 'ArtA', 'the chosen card is the one duplicated');
+  ok(g4.players[0].playedCards.some(c => c.id === '7001_dup1'),
+    'the copy id is a per-player SEQUENCE (7001_dup1), never a clock');
+  // …an AI seat resolves inline with the shared argmax (highest favor).
+  const g5 = newGame();
+  g5.currentAct = 3;
+  g5.players.forEach(p => { p.missions = []; });
+  g5.players[1].missions.push({ ...missionByName('Passing the Mirror Gate') });
+  g5.players[1].bonusSkills = { alchemy: 4, prospecting: 6 };
+  g5.applySlotSkills(g5.players[1]);
+  g5.players[1].playedCards.push({ ...artA }, { ...artB });
+  g5.phase = 'missions';
+  g5.resolveMissions();
+  ok(g5.players[1].playedCards.filter(c => c.name === 'ArtB').length === 2,
+    'AI seat duplicates its highest-favor artifact inline');
 }
 
 console.log('── 7/23 night: map pair pays PRESTIGE · Trade Route lends across ──');

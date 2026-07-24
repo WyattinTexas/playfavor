@@ -395,7 +395,7 @@
         favor_per_charisma_x2: (g, pi) => 2 * g.formulaSkillCount(pi, ['charisma']),
         favor_per_knowledge_x1: (g, pi) => g.formulaSkillCount(pi, ['knowledge']),
         favor_per_minds_eye_x5: (g, pi) => 5 * g.getMindsEyeCount(pi),
-        favor_per_philstone_x10: (g, pi) => 10 * (g.players[pi].philosopherStone || 0),
+        favor_per_philstone_x10: (g, pi) => 10 * g.getStoneCount(pi),
         philosopher_stone_x2_grant: () => 2 * (PB().stoneValue || 3.5),
         remove_20_scorn: (g, pi) => Math.min(20, (g.players[pi].scorn || 0) + 3),
         scorn_to_prestige_all: (g, pi) => 2 * (g.players[pi].scorn || 0)
@@ -514,7 +514,7 @@
                 + (m.requirements || []).filter(r => r === 'minds_eye').length
                     * (g.getMindsEyeCount(pi) ? 0 : 1)
                 + (m.requirements || []).filter(r => r === 'philosopher_stone').length
-                    * ((g.players[pi].philosopherStone || 0) ? 0 : 1);
+                    * (g.getStoneCount(pi) ? 0 : 1);
             // Optimism fades as the act's rounds run out — early on, the
             // deck still owes this seat cards.
             const lin = shortUnits === 0 ? 1

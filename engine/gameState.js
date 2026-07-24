@@ -481,7 +481,7 @@ class FavorGame {
                     const have = this.getMindsEyeCount(playerIndex);
                     for (let i = 0; i < needed - have; i++) missingSpecial.push("Mind's Eye");
                 } else if (req === 'philosopher_stone') {
-                    const have = player.philosopherStone || 0;
+                    const have = this.getStoneCount(playerIndex);
                     for (let i = 0; i < needed - have; i++) missingSpecial.push("Philosopher's Stone");
                 } else {
                     skillReqs[req] = needed;
@@ -549,6 +549,26 @@ class FavorGame {
     /**
      * Count Mind's Eye sources a player holds (played cards + character slot specials).
      */
+    /**
+     * Philosopher's Stones as the RULES see them: permanent tokens (stone
+     * cards, mission rewards, the Magician's board pick) PLUS the current
+     * slot's offer — POSITIONAL, exactly like getMindsEyeCount's slot eyes.
+     * Slide off the slot and its stone stays behind (Wyatt 7/23: parking on
+     * slot 0 must not bank the stone for good — the old once-per-game grant
+     * did, and the panel showed 2 where the table held 1).
+     */
+    getStoneCount(playerIndex) {
+        const player = this.players[playerIndex];
+        let count = player.philosopherStone || 0;
+        const char = player.character;
+        const slot = char && char.slots ? char.slots[player.sliderPosition] : null;
+        if (slot && slot.special) {
+            if (slot.special === 'philosopher_stone' || slot.special === 'minds_eye_and_philosopher') count += 1;
+            if (slot.special === 'philosopher_stone_x2') count += 2;
+        }
+        return count;
+    }
+
     getMindsEyeCount(playerIndex) {
         const player = this.players[playerIndex];
         let count = 0;
@@ -1297,28 +1317,6 @@ class FavorGame {
     }
 
     /**
-     * Grant N Philosopher's Stones from a character-board slot, once per
-     * game per slot special. Slot events re-fire on every landing (see
-     * applySlotBonus) and the stone tally now STACKS, so without this gate
-     * a player could farm stones by sliding back and forth over the slot.
-     * No board carries the same stone special twice, so keying by special
-     * name is unambiguous. Returns true if the grant paid out.
-     */
-    grantSlotStones(player, key, n) {
-        // ⚠ A PLAIN OBJECT, deliberately, not a Set: a Set does not survive a
-        // JSON round-trip. Nothing serializes players today, but the moment
-        // save/resume or MP sync JSON-encodes them the gate would silently
-        // reset and slot stones would re-grant on every landing -- runaway
-        // inflation, and the sliding-back-and-forth farm this gate exists to
-        // stop. An object survives the trip.
-        if (!player._slotStoneGranted) player._slotStoneGranted = {};
-        if (player._slotStoneGranted[key]) return false;
-        player._slotStoneGranted[key] = true;
-        player.philosopherStone = (player.philosopherStone || 0) + n;
-        return true;
-    }
-
-    /**
      * Resolve one-time special effects from character board slots.
      */
     resolveSlotSpecial(player, special, slot) {
@@ -1384,16 +1382,17 @@ class FavorGame {
                 break;
 
             case 'philosopher_stone':
-                // Stones STACK (3 stone cards = 3 stones, Wyatt 7/18), so the
-                // old Math.max idempotency no longer guards slot re-fires.
-                // Each slot's stone grant pays once per game instead.
-                if (this.grantSlotStones(player, 'philosopher_stone', 1)) {
+                // POSITIONAL (Wyatt 7/23): the slot's stone is yours only
+                // while the ring stands here — getStoneCount reads it off
+                // the current slot, exactly like slot Mind's Eyes. Nothing
+                // to grant on landing; the log still narrates the offer.
+                if (player.sliderPosition >= 0) {
                     this.addLog(`${player.name} gains Philosopher's Stone (1:1 gold\u2192favor)`);
                 }
                 break;
 
             case 'philosopher_stone_x2':
-                if (this.grantSlotStones(player, 'philosopher_stone_x2', 2)) {
+                if (player.sliderPosition >= 0) {
                     this.addLog(`${player.name} gains 2\u00D7 Philosopher's Stone (2:1 gold\u2192favor)`);
                 }
                 break;
@@ -1437,8 +1436,8 @@ class FavorGame {
                 break;
 
             case 'minds_eye_and_philosopher':
-                // Mind's Eye (+1 knowledge ongoing) + Philosopher's Stone (1:1)
-                if (this.grantSlotStones(player, 'minds_eye_and_philosopher', 1)) {
+                // Mind's Eye + Philosopher's Stone — both POSITIONAL reads.
+                if (player.sliderPosition >= 0) {
                     this.addLog(`${player.name} gains Mind's Eye + Philosopher's Stone from character board`);
                 }
                 break;
@@ -2135,7 +2134,7 @@ class FavorGame {
             case 'favor_per_charisma_x2':   favor += 2 * this.formulaSkillCount(playerIndex, ['charisma']); break;
             case 'favor_per_knowledge_x1':  favor += this.formulaSkillCount(playerIndex, ['knowledge']); break;
             case 'favor_per_minds_eye_x5':  favor += 5 * this.getMindsEyeCount(playerIndex); break;
-            case 'favor_per_philstone_x10': favor += 10 * (p.philosopherStone || 0); break;
+            case 'favor_per_philstone_x10': favor += 10 * this.getStoneCount(playerIndex); break;
         }
         return favor;
     }
@@ -2197,7 +2196,7 @@ class FavorGame {
             if (req === 'minds_eye') {
                 if (this.getMindsEyeCount(playerIndex) < n) return null;
             } else if (req === 'philosopher_stone') {
-                if ((player.philosopherStone || 0) < n) return null;
+                if (this.getStoneCount(playerIndex) < n) return null;
             } else {
                 skillReqs[req] = n;
             }
@@ -2545,7 +2544,7 @@ class FavorGame {
                     met = false;
                 }
             } else if (req === 'philosopher_stone') {
-                if ((player.philosopherStone || 0) < n) {
+                if (this.getStoneCount(playerIndex) < n) {
                     missing.push(n > 1 ? `${req} ×${n}` : req);
                     met = false;
                 }
@@ -2594,6 +2593,14 @@ class FavorGame {
 
     applyMissionRewards(playerIndex, mission) {
         const player = this.players[playerIndex];
+        // A mission's Gold requirement is a COST, paid on completion (Wyatt
+        // 7/23: "you can pass them and then keep the money" — no more).
+        // Solvency was checked upstream, so the purse covers it; a FAILED
+        // mission charges nothing — you kept the gold and lost the mission.
+        if (mission.reqGold) {
+            player.gold = Math.max(0, (player.gold || 0) - mission.reqGold);
+            this.addLog(`${player.name} pays ${mission.reqGold} Gold to complete ${mission.name}`);
+        }
         const s = mission.successRewards || {};
         if (s.favor) {
             this.awardFavor(playerIndex, s.favor, 'mission', mission.name,
@@ -2683,31 +2690,72 @@ class FavorGame {
                 // King of the Sky — the one printed mechanic that pays FOR
                 // stones. Stones themselves are a requirement resource, never
                 // a scoring multiplier (see calculateFinalScores).
-                payMission(10 * (player.philosopherStone || 0), "10 per Philosopher's Stone");
+                payMission(10 * this.getStoneCount(playerIndex), "10 per Philosopher's Stone");
                 break;
-            case 'duplicate_artifact': {
-                const arts = player.playedCards.filter(c => c.type === 'artifact');
-                const pick = arts[arts.length - 1];
-                if (pick) {
-                    const copy = { ...pick, id: `${pick.id}_dup${Date.now() % 100000}` };
-                    player.playedCards.push(copy);
-                    (copy.skills || []).forEach(sk => { player.skills[sk] = (player.skills[sk] || 0) + 1; });
-                    this.addLog(`${player.name} duplicates ${pick.name}`);
-                }
-                break;
-            }
+            case 'duplicate_artifact':
             case 'duplicate_potion': {
-                const pots = player.playedCards.filter(c => c.type === 'potion');
-                const pick = pots[pots.length - 1];
-                if (pick) {
-                    const copy = { ...pick, id: `${pick.id}_dup${Date.now() % 100000}` };
-                    player.playedCards.push(copy);
-                    if (copy.special) this.resolveSpecial(playerIndex, copy); // potions fire instantly
-                    this.addLog(`${player.name} duplicates ${pick.name} — it fires again!`);
+                // "Choose one Artifact/Potion you own" — the CHOICE is the
+                // player's (Wyatt 7/23: the Mirror Gate picked for him).
+                // Human seats pause on a flag (chooser/stream resolves it,
+                // the endActPhases pattern); AI applies the shared argmax.
+                const fam = mission.successSpecial === 'duplicate_artifact' ? 'artifact' : 'potion';
+                if (!player.playedCards.some(c => c.type === fam)) {
+                    this.addLog(`${player.name} has no ${fam} to duplicate`);
+                    break;
+                }
+                player._pendingDuplicatePick = fam;
+                if (!(playerIndex === 0 || player._remoteHuman)) {
+                    this.applyDuplicatePick(playerIndex, this.aiDuplicatePick(playerIndex, fam));
                 }
                 break;
             }
         }
+    }
+
+    /**
+     * The AI's duplicate — and the fallback EVERY client computes for a
+     * booted/silent seat: the family's most valuable card by scoring
+     * favor, stable index-order tie-break. Pure: reads state only.
+     */
+    aiDuplicatePick(playerIndex, fam) {
+        const pool = this.players[playerIndex].playedCards.filter(c => c.type === fam);
+        let best = null, bestV = -Infinity;
+        pool.forEach(c => {
+            const v = this.scoredCardFavor(playerIndex, c);
+            if (v > bestV) { bestV = v; best = c; }
+        });
+        return best ? best.id : null;
+    }
+
+    /**
+     * Duplicate the chosen card — THE single mutation point (local picker,
+     * remote stream, AI heuristic all land here, in stream order on every
+     * client). An unknown/absent id falls back to the deterministic AI
+     * pick. The copy's id is a per-player SEQUENCE, never a clock — the
+     * old `Date.now()` suffix minted a different id on every lockstep
+     * client, and playedCards ids feed mpStateHash.
+     */
+    applyDuplicatePick(playerIndex, cardId) {
+        const player = this.players[playerIndex];
+        const fam = player._pendingDuplicatePick;
+        player._pendingDuplicatePick = null;
+        if (!fam) return { success: false, error: 'No duplicate pending' };
+        const family = player.playedCards.filter(c => c.type === fam);
+        if (!family.length) return { success: false, error: 'Nothing to duplicate' };
+        const pick = family.find(c => c.id === cardId)
+            || family.find(c => c.id === this.aiDuplicatePick(playerIndex, fam));
+        if (!pick) return { success: false, error: 'Nothing to duplicate' };
+        player._dupSeq = (player._dupSeq || 0) + 1;
+        const copy = { ...pick, id: `${pick.id}_dup${player._dupSeq}` };
+        player.playedCards.push(copy);
+        if (pick.type === 'potion') {
+            if (copy.special) this.resolveSpecial(playerIndex, copy); // potions fire instantly
+            this.addLog(`${player.name} duplicates ${pick.name} — it fires again!`);
+        } else {
+            (copy.skills || []).forEach(sk => { player.skills[sk] = (player.skills[sk] || 0) + 1; });
+            this.addLog(`${player.name} duplicates ${pick.name}`);
+        }
+        return { success: true, card: copy, source: pick };
     }
 
     /**

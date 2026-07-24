@@ -239,6 +239,13 @@
             });
         });
 
+        wrap('applyDuplicatePick', null, (g, a, out) => {
+            if (out && out.success) note({
+                t: 'dup_pick', cs: csOf(a[0]), act: g.currentAct,
+                card: out.source && out.source.name,
+            });
+        });
+
         wrap('failMissionByChoice', null, (g, a, out) => {
             if (out && out.mission) note({
                 t: 'mission_fail_choice', cs: csOf(a[0]), act: g.currentAct,
