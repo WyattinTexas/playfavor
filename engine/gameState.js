@@ -1971,13 +1971,14 @@ class FavorGame {
             // Only grant once — check if we already awarded it
             if (!player.mapBonusAwarded) {
                 player.mapBonusAwarded = true;
-                // AUDIT FIX 2026-07-14: pays 20, not 15. The Lost South Map prints
-                // a blue 20 beside its "2/2" plaque, and its own audit text says
-                // "If you have the Lost North Map 20 additional Favor". The engine
-                // was the only voice saying 15 — and no checker looked at combos.
-                this.awardFavor(playerIndex, 20, 'card', 'Both Map halves found',
-                    { type: card.type, file: card.filename });
-                this.addLog(`${player.name} completes the Map! Both halves found: +20 Favor!`);
+                // 7/14 fixed the AMOUNT (20, not 15); 7/23 Wyatt fixed the
+                // CURRENCY — the pair pays 20 PRESTIGE, not Favor (his art
+                // read; the old audit transcription said Favor and was
+                // wrong). Paid the moment the second half lands, so it
+                // rides the Prestige row — the Artifacts drill carries an
+                // explanatory note instead of a favor row.
+                player.prestige += 20;
+                this.addLog(`${player.name} completes the Map! Both halves found: +20 Prestige!`);
             }
         }
     }

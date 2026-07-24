@@ -2569,7 +2569,10 @@ async function mpEndActStages(borrowsPendingLocal) {
                     // a different one here would fork the tables. A booted seat
                     // sends nothing, and every client then falls back to the
                     // same deterministic first-available plan.
-                    const chosen = (mv && Array.isArray(mv.borrowFrom)) ? mv.borrowFrom : null;
+                    const chosen = (mv && Array.isArray(mv.borrowFrom))
+                        ? mv.borrowFrom.map(b => ({ skill: b.skill,
+                            neighborIndex: FMP.localIdx(b.lender) }))
+                        : null;
                     const res = game.completeMissionWithBorrow(li, idx, chosen);
                     // The borrow could not close the gap after all. That is a
                     // real failure with real consequences — give it the same
@@ -5857,8 +5860,14 @@ function showBorrowChooser(card) {
         const p0 = game.players[0];
         const curSlot = p0.character && p0.character.slots ? p0.character.slots[p0.sliderPosition] : null;
         const anyLender = curSlot && curSlot.special === 'borrow_any_player';
+        // A fielded Trade Route (Great North Connection / Market Trade
+        // Exchange) opens the WHOLE table for its four skills — the engine
+        // already lends across; the chooser used to hide every seat that
+        // wasn't a neighbor (Wyatt 7/23, the Mirror Gate borrow).
+        const tradeRoute = (p0.playedCards || []).some(c => c.special === 'trade_route');
         const leftPi = (n - 1) % n, rightPi = 1 % n;
-        const seats = anyLender
+        const wide = anyLender || tradeRoute;
+        const seats = wide
             ? [...Array(n).keys()].filter(i => i !== 0)
             : [...new Set([leftPi, rightPi])];
 
@@ -5873,7 +5882,7 @@ function showBorrowChooser(card) {
         const totalCost = missingSkills.length * 2;
 
         const seatTag = pi => {
-            if (anyLender) return '';
+            if (wide) return '';
             if (pi === leftPi) return '<span class="bw-tag">◀ Left Neighbor</span>';
             if (pi === rightPi) return '<span class="bw-tag">Right Neighbor ▶</span>';
             return '';
@@ -5921,7 +5930,7 @@ function showBorrowChooser(card) {
                     <div class="pp-title">Borrow &amp; Play</div>
                     <div class="pp-sub"><b>${card.name}</b> needs <b>${needTxt}</b> —
                         ${single ? 'tap the neighbor who lends it' : 'pick a lender for each skill'}.
-                        The fee is paid <b>to them</b>${anyLender ? ' · your Merchant slot lets anyone lend' : ''}.</div>
+                        The fee is paid <b>to them</b>${anyLender ? ' · your Merchant slot lets anyone lend' : tradeRoute ? ' · your Trade Route lets anyone lend' : ''}.</div>
                     <div class="bw-scroll">${sectionHtml}</div>
                     <div class="pp-actions">
                         ${single ? '' : `<button class="btn-royal primary" id="bwConfirm" ${ready ? '' : 'disabled style="opacity:.35"'}><span>Borrow &amp; Play (−${totalCost}g)</span></button>`}
@@ -6172,8 +6181,13 @@ function showMissionBorrowChooser(mission) {
         const p0 = game.players[0];
         const curSlot = p0.character && p0.character.slots ? p0.character.slots[p0.sliderPosition] : null;
         const anyLender = curSlot && curSlot.special === 'borrow_any_player';
+        // Trade Route on the field opens the whole table for its four
+        // skills — the engine already planned across it; the chooser used
+        // to render only the neighbors (Wyatt 7/23, the Mirror Gate).
+        const tradeRoute = (p0.playedCards || []).some(c => c.special === 'trade_route');
         const leftPi = (n - 1) % n, rightPi = 1 % n;
-        const seats = anyLender
+        const wide = anyLender || tradeRoute;
+        const seats = wide
             ? [...Array(n).keys()].filter(i => i !== 0)
             : [...new Set([leftPi, rightPi])];
 
@@ -6189,7 +6203,7 @@ function showMissionBorrowChooser(mission) {
             .map(([sk, u]) => `${cap(sk)}${u > 1 ? ' ×' + u : ''}`).join(', ');
 
         const seatTag = (pi) => {
-            if (anyLender) return '';
+            if (wide) return '';
             if (pi === leftPi) return '<span class="bw-tag">◀ Left Neighbor</span>';
             if (pi === rightPi) return '<span class="bw-tag">Right Neighbor ▶</span>';
             return '';
@@ -6200,9 +6214,16 @@ function showMissionBorrowChooser(mission) {
             const idx = game.players[0].missions.indexOf(mission);
             // Stream the LENDERS too, not just yes/no — a peer that re-picked
             // the first neighbor itself would pay a different purse and fork.
+            // Lenders stream as CANONICAL seats — every client's local
+            // numbering differs, and a raw index pays a different purse on a
+            // rotated table (the card Borrow & Play path always translated;
+            // this path forgot).
             mpPub('mission_borrow', {
                 accept: !!chosen, missionName: mission.name,
-                borrowFrom: chosen || null,
+                borrowFrom: chosen
+                    ? chosen.map(b => ({ skill: b.skill,
+                        lender: (window.FMP && FMP.active()) ? FMP.canonSeat(b.neighborIndex) : b.neighborIndex }))
+                    : null,
             });
             if (!chosen) {
                 addLogEntry(`You let ${mission.name} fail`);
@@ -6264,7 +6285,7 @@ function showMissionBorrowChooser(mission) {
                         <div class="mb-choose">
                             <div class="pp-sub">You're short <b>${shortTxt}</b> —
                                 ${single ? 'tap the neighbor who lends it' : 'pick a lender for each skill'}.
-                                The fee is paid <b>to them</b>${anyLender ? ' · your Merchant slot lets anyone lend' : ''}.
+                                The fee is paid <b>to them</b>${anyLender ? ' · your Merchant slot lets anyone lend' : tradeRoute ? ' · your Trade Route lets anyone lend' : ''}.
                                 Letting it fail is a real play.</div>
                             <div class="bw-scroll">${sectionHtml}</div>
                             <div class="pp-actions">
@@ -7220,6 +7241,12 @@ function showScoreBreakdown(pi, cat) {
                 label: e.label, val: e.amount });
             total += e.amount;
         });
+        // The map pair pays 20 PRESTIGE (Wyatt 7/23) — it rides the Prestige
+        // row, but the story belongs here with the maps, so the panel says
+        // so without adding a favor row that would break the sum.
+        if (cat === 'artifact' && gp.mapBonusAwarded) {
+            notes.push('Both Map halves found — +20 Prestige (counted in the Prestige row).');
+        }
         if (!items.length) {
             notes.push(cat === 'adventure' ? 'No Adventure cards played.'
                 : 'No Artifacts played.');

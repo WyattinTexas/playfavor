@@ -175,7 +175,12 @@
     //     the missions were acquired (Golden Fiddle banked before A Day
     //     With the Birds paid 6 instead of 12 from identical state — and a
     //     v24 client still resolves in acquisition order, so tables fork).
-    const MPV = 25;
+    // 26 (7/23): the Lost North+South pair pays 20 PRESTIGE, not Favor
+    //     (Wyatt's art read) — purses fork against v25 the moment a pair
+    //     completes. And 'mission_borrow' now streams CANONICAL lender
+    //     seats (the card-borrow path always did; this path sent LOCAL
+    //     indices, so a rotated peer paid the fee to the wrong purse).
+    const MPV = 26;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

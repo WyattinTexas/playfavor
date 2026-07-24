@@ -1945,19 +1945,19 @@ console.log('── Art v7: Generous Donations, Lost South Map, and the map-pair
   playCard(g, 0, 'Lost North Map');
   const mid = p.favor || 0;
   ok(mid === 0, 'one half alone pays no pair bonus', String(mid));
+  const prestMid = p.prestige;
   playCard(g, 0, 'Lost South Map');
-  const after = p.favor || 0;
-  ok(after - mid === 20,
-    `completing the pair pays a 20 Favor bonus, not 15 (+${after - mid})`);
+  // 7/23 (Wyatt's art read): the pair bonus is 20 PRESTIGE, not Favor —
+  // the 7/14 fix corrected the amount, this one corrects the currency.
+  ok((p.favor || 0) === mid && p.prestige - prestMid === 20,
+    `completing the pair pays +20 PRESTIGE, no favor (+${p.prestige - prestMid}℗, +${(p.favor || 0) - mid}f)`);
   ok(p.mapBonusAwarded === true, 'and the bonus is marked so it can never pay twice');
   // ...and both cards' printed 5 Favor still reaches the score sheet — under
-  // ARTIFACTS. Both maps wear the dark-purple artifact frame, and Lost North
-  // Map is the rulebook's own artifact exemplar (p.11); they were typed
-  // 'adventure' until the 7/19 retype. The pair bonus is a card-sourced
-  // ledger entry and books to the same family, so the cell is 5 + 5 + 20.
+  // ARTIFACTS (dark-purple artifact frames, the rulebook's own exemplar).
+  // The pair's 20 now rides the PRESTIGE row, so the cell is 5 + 5.
   const sheet = g.calculateFinalScores().find(x => x.playerIndex === 0);
-  ok(sheet.artFavor === 30,
-    `both halves' printed 5 Favor and the 20 pair bonus all score under Artifacts (${sheet.artFavor})`);
+  ok(sheet.artFavor === 10,
+    `both halves' printed 5 Favor score under Artifacts (${sheet.artFavor}); the pair's 20 rides Prestige`);
   ok(sheet.advFavor === 0, `and nothing leaks into Adventures (${sheet.advFavor})`);
 }
 
@@ -3343,6 +3343,52 @@ console.log('── 7/23 mission math: Water Temple pays ONCE, formulas count fl
     + (g4.players[0].skills.prospecting || 0);
   ok(g4.dynamicCardFavor(0, gvk) === base + 1,
     `Great Vault Key counts the charisma|prospecting unit ONCE (${g4.dynamicCardFavor(0, gvk)} = ${base}+1)`);
+}
+
+console.log('── 7/23 night: map pair pays PRESTIGE · Trade Route lends across ──');
+{
+  // Lost North + Lost South: +20 PRESTIGE once — never favor, never twice.
+  const g = newGame();
+  const p = g.players[0];
+  p.gold = 20;
+  p.bonusSkills = { survival: 3, prospecting: 3, charisma: 1 };
+  p.bonusMindsEye = 1;
+  g.applySlotSkills(p);
+  const prestB = p.prestige, favB = g.currentFavor(0);
+  const r1 = playCard(g, 0, 'Lost North Map');
+  ok(r1 && r1.success && p.prestige === prestB, 'one half alone pays nothing extra');
+  const r2 = playCard(g, 0, 'Lost South Map');
+  ok(r2 && r2.success, 'both halves land');
+  ok(p.prestige === prestB + 20, `both halves: +20 PRESTIGE (${prestB} → ${p.prestige})`);
+  ok(g.currentFavor(0) - favB === 10, `favor moved only by the maps' printed 5+5 (${g.currentFavor(0) - favB})`);
+  ok(!(p.favorLog || []).some(e => /Both Map halves/.test(e.label || '')),
+    'no favor-ledger row for the pair (it is prestige now)');
+  ok(p.mapBonusAwarded === true, 'pair flag set — the bonus can never double');
+
+  // Great North Connection: the ACROSS player lends its four skills in a
+  // 4-player circle — the plan the chooser renders must include seat 2.
+  const g4 = new FavorGame(4);
+  g4.loadDecks();
+  g4.initPlayers([
+    { characterId: 'knight', playerName: 'You' },
+    { characterId: 'bandit', playerName: 'L' },
+    { characterId: 'merchant', playerName: 'Across' },
+    { characterId: 'duchess', playerName: 'R' },
+  ]);
+  g4.phase = 'gameplay';
+  g4.currentAct = 3;
+  g4.players[0].playedCards.push({ ...cardByName('Great North Connection') });
+  g4.players[2].playedCards.push({ id: 9910, name: 'ProSource', skills: ['prospecting'] });
+  const b = g4.getBorrowableSkills(0);
+  ok((b.prospecting || []).includes(2), 'Trade Route: the across seat lends Prospecting');
+  const pmg = { ...missionByName('Passing the Mirror Gate') };
+  g4.players[0].missions = [pmg];
+  g4.players[0].bonusSkills = { alchemy: 4, prospecting: 2 };
+  g4.applySlotSkills(g4.players[0]);
+  g4.players[0].gold = 20;
+  const plan = g4.missionBorrowPlan(0, pmg);
+  ok(!!plan && plan.borrowFrom.every(x => x.neighborIndex === 2),
+    `the Mirror Gate borrow plan reaches ACROSS (${plan && plan.borrowFrom.map(x => x.neighborIndex).join(',')})`);
 }
 
 console.log('── Hard-AI §5f: Wyatt\'s acceptance examples (js/ai.js) ──');

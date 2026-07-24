@@ -352,7 +352,7 @@ window.FAVOR_DATA.cards = [
   // The art shipped in the game already had neither. ⚠ This leaves the South
   // half far cheaper than the North (which really does keep 3 Survival + 3
   // Prospecting) — flagged to Wyatt as possibly-unintended asymmetry.
-  { id: cid(), name: "Lost South Map", reqMaps: ["Cameron's Expedition", "Tunnel of Trinkets"], audit: "5 Favor & If you have the Lost North Map 20 additional Favor, Req: 1 Survival & 1 Charisma & 1 Mind's Eye OR Cameron's Expedition Map OR Tunnel of Trinkets Map, Act 2", filename: "Lost South Map.jpg", act: 2, type: "artifact",
+  { id: cid(), name: "Lost South Map", reqMaps: ["Cameron's Expedition", "Tunnel of Trinkets"], audit: "5 Favor & If you have the Lost North Map 20 additional Prestige, Req: 1 Survival & 1 Charisma & 1 Mind's Eye OR Cameron's Expedition Map OR Tunnel of Trinkets Map, Act 2", filename: "Lost South Map.jpg", act: 2, type: "artifact",
     cost: null, skills: [], requirements: ["survival", "charisma", "minds_eye"], rewards: {}, favor: 5,
     combo: "2/2", special: "map" },
 
