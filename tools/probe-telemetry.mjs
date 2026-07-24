@@ -22,7 +22,14 @@ const URL = process.argv[3] || 'http://localhost:8891/';
 // --keep leaves the game's telemetry row in place (the production-proof
 // transcript the pull tool round-trips); players/daily residue still scrubs.
 const KEEP = process.argv.includes('--keep');
-const MPV_EXPECT = 23;   // keep in step with js/mp.js
+// Read the protocol version off the source of truth — a hardcoded copy
+// went stale within hours on 7/23 (MPV moved 23→27 in one evening).
+const { readFileSync } = await import('node:fs');
+const { fileURLToPath } = await import('node:url');   // the probe's URL const shadows the global
+const { dirname, join } = await import('node:path');
+const MPV_EXPECT = Number((readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'js', 'mp.js'), 'utf8')
+    .match(/const MPV = (\d+)/) || [])[1]) || 0;
 const DB = 'https://testroom-75200-default-rtdb.firebaseio.com';
 const SHOT_DIR = process.env.TELPROBE_SHOTS || '/tmp';
 
@@ -200,11 +207,14 @@ const stampUid = (tag) => `uaudit-tel${tag}${Math.random().toString(36).slice(2,
 console.log(`\nTELEMETRY PROBE — ${MODE} @ ${URL}`);
 const before = await telKeys();
 
-if (MODE === 'skirmish' || MODE === 'rival') {
+if (MODE === 'skirmish' || MODE === 'skirmish-hard' || MODE === 'rival') {
     const uid = stampUid(MODE[0]);
     const pg = await mkPage(uid, 'Tel Probe');
     if (MODE === 'skirmish') {
         await pg.evaluate(() => { FMODES.openSkirmish(); FMODES.beginSkirmish(3); });
+    } else if (MODE === 'skirmish-hard') {
+        // The door's Hard toggle — every bot runs the sharp brain.
+        await pg.evaluate(() => { FMODES.openSkirmish(); FMODES.skirmishDiff(true); FMODES.beginSkirmish(3); });
     } else {
         await pg.evaluate(() => { FMODES.openDailyRival(); FMODES.beginRivalGame(); });
     }
@@ -222,9 +232,13 @@ if (MODE === 'skirmish' || MODE === 'rival') {
         const rSeat = payload.seats.find(s => s.kind === 'rival');
         ok(!!rSeat, `the rival seat is stamped kind:'rival' (${rSeat && rSeat.name})`);
         ok(rSeat && rSeat.aiLevel === 'hard', 'the WANTED rival runs the HARD brain (§5d)');
+    } else if (MODE === 'skirmish-hard') {
+        ok(payload.seats.filter(s => s.kind === 'bot').length === 2, 'skirmish table: 2 bot seats');
+        ok(payload.seats.filter(s => s.kind === 'bot').every(s => s.aiLevel === 'hard'),
+            'HARD skirmish: every bot runs the sharp brain (7/24 door toggle)');
     } else {
         ok(payload.seats.filter(s => s.kind === 'bot').length === 2, 'skirmish table: 2 bot seats, no personas');
-        ok(payload.seats.every(s => !s.aiLevel), 'skirmish stays the casual tier — no hard seats (§5d)');
+        ok(payload.seats.every(s => !s.aiLevel), 'default skirmish stays the casual tier — no hard seats');
     }
     const rep = await replayMatches(payload);
     ok(rep === true, 'REPLAY: recorded seed re-deals the exact recorded hands', String(rep));

@@ -1917,6 +1917,11 @@ async function buildSoloTable() {
     if (mode === 'rival' && window._rivalDef) {
         const rp = game.players.find(p => p.name === window._rivalDef.name);
         if (rp) rp._aiLevel = 'hard';
+    } else if (mode === 'skirmish' && window._skirmishHard) {
+        // Skirmish HARD (Wyatt 7/24): the door's explicit choice — EVERY
+        // bot runs the sharp brain. The default door stays the casual
+        // tier the community likes; audit rigs never set the flag.
+        game.players.forEach((p, i) => { if (i !== 0) p._aiLevel = 'hard'; });
     } else if (!mode && window._pinEmblemSeed === undefined) {
         // (_pinEmblemSeed = the audit rigs' deterministic-table seam — a
         // pinned table keeps the four classic casual bots; hard-seat

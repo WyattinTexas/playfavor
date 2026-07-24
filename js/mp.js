@@ -577,11 +577,16 @@
         // lockstep probe via window._forceHardFill (verify seam).
         if (hardFill || window._forceHardFill) {
             const aiRows = roster.map((r, i) => ({ r, i })).filter(x => !x.r.human);
-            const personaRows = aiRows.filter(x => x.r.persona);
-            const pick = personaRows.length
-                ? personaRows.sort((a, b) => ((b.r.rating || 0) - (a.r.rating || 0)) || (a.i - b.i))[0]
-                : aiRows[0];
-            if (pick) pick.r.aiLevel = 'hard';
+            if (hardFill === 'all') {
+                // A hard ROOM (host's explicit toggle): the whole fill sharpens.
+                aiRows.forEach(x => { x.r.aiLevel = 'hard'; });
+            } else {
+                const personaRows = aiRows.filter(x => x.r.persona);
+                const pick = personaRows.length
+                    ? personaRows.sort((a, b) => ((b.r.rating || 0) - (a.r.rating || 0)) || (a.i - b.i))[0]
+                    : aiRows[0];
+                if (pick) pick.r.aiLevel = 'hard';
+            }
         }
 
         // Emblem: highest rating at the table (humans + personas). Ties →
@@ -903,6 +908,16 @@
         try { roomRef(r.code).child('size').set(n); } catch (e) {}
     }
 
+    // Host toggle (Wyatt 7/24): the room's AI fill runs the HARD brain.
+    // Rides the room record so every lobby shows it; the game record's
+    // roster rows carry the per-seat aiLevel every client already applies
+    // (since v23), so no protocol change — and rooms refuse mixed MPVs
+    // anyway. Default stays the casual tier.
+    function roomSetHard(v) {
+        if (!r || !r.host) return;
+        try { roomRef(r.code).child('hard').set(!!v); } catch (e) {}
+    }
+
     async function roomStart() {
         if (!r || !r.host || r.adopted || r.starting) return;
         r.starting = true;
@@ -917,7 +932,10 @@
                 offer: Array.isArray(e.offer) && e.offer.length ? e.offer : null,
                 rating: e.rating || 0, avatar: e.avatar || null, human: true,
             }));
-        const gameRec = await buildGameRecord(rec.size || 3, humanRows, false);   // rooms: casual fill (§5d)
+        // Rooms fill casual unless the host flipped the HARD toggle — then
+        // EVERY AI seat runs the sharp brain (an explicit choice, unlike
+        // the queue's silent single hard seat).
+        const gameRec = await buildGameRecord(rec.size || 3, humanRows, rec.hard ? 'all' : false);
         if (!r) return;
         gameRec.room = r.code;   // telemetry stamps private tables mode:'room'
         const gid = fdb().ref(`${NS}/games`).push().key;
@@ -1379,7 +1397,7 @@
         accept, decline: () => declineProposal('declined'), publishPick,
         queuePhase: () => (q ? q.state : null),
         queueStartedAt: () => (q ? q.startedAt : 0),
-        hostRoom, joinRoom, leaveRoom, roomSetSize, roomStart,
+        hostRoom, joinRoom, leaveRoom, roomSetSize, roomSetHard, roomStart,
         active, mySeat, isHost, record, localIdx, canonSeat,
         publish, waitFor, drain, collectThrows, onBroadcast, markBooted,
         leaveGame, gameOver,

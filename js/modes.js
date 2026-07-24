@@ -45,12 +45,29 @@
     // ── SKIRMISH ─────────────────────────────────────────────────────
     // First question: how big a table? (Wyatt 7/16 — the size is part of
     // what kind of game a skirmish IS, not a menu-wide setting.)
+    // The door's difficulty pick (Wyatt 7/24): Casual = the classic table
+    // brains the community likes; Hard = EVERY bot runs the sharp brain
+    // (js/ai.js) — an explicit choice, so no silent-difficulty rule here.
+    let _skHard = false;
+
     function openSkirmish() {
+        _skHard = false;
+        renderSkirmishPick();
+    }
+
+    function renderSkirmishPick() {
         const ov = $('skirmishPick');
         ov.innerHTML = `
             <div class="ri-inner" onclick="event.stopPropagation()">
                 <div class="ri-title">Skirmish</div>
-                <div class="ri-stakes">A friendly clash against the court's own — play any hero you own.</div>
+                <div class="ri-stakes">${_skHard
+                    ? 'The court sends its sharpest — every rival plays the hard game.'
+                    : "A friendly clash against the court's own — play any hero you own."}</div>
+                <div class="rm-size queue-seg sk-diff" title="How sharp the court plays">
+                    <span class="queue-label">CPU</span>
+                    <button type="button" class="${_skHard ? '' : 'on'}" onclick="FMODES.skirmishDiff(false)">Casual</button>
+                    <button type="button" class="${_skHard ? 'on' : ''}" onclick="FMODES.skirmishDiff(true)">Hard</button>
+                </div>
                 <div class="sk-sizes">
                     ${[3, 4, 5].map(n => `
                         <button type="button" class="sk-size" onclick="FMODES.beginSkirmish(${n})">
@@ -63,6 +80,11 @@
         ov.onclick = () => closeSkirmishPick();
     }
 
+    function skirmishDiff(hard) {
+        _skHard = !!hard;
+        renderSkirmishPick();
+    }
+
     function closeSkirmishPick() {
         $('skirmishPick').classList.remove('active');
     }
@@ -71,6 +93,7 @@
         closeSkirmishPick();
         window._gameMode = 'skirmish';
         window._skirmishSize = [3, 4, 5].includes(n) ? n : 3;
+        window._skirmishHard = _skHard;
         titleToSelect(ownedChars());
     }
 
@@ -329,6 +352,13 @@
                     <span class="queue-label">Players</span>
                     ${sizeBtn(3)}${sizeBtn(4)}${sizeBtn(5)}
                 </div>
+                <div class="rm-size queue-seg" title="How sharp the AI seats play — the host decides">
+                    <span class="queue-label">CPU</span>
+                    <button type="button" class="${rec.hard ? '' : 'on'}"
+                            ${host ? 'onclick="FMODES.roomSetHard(false)"' : 'disabled'}>Casual</button>
+                    <button type="button" class="${rec.hard ? 'on' : ''}"
+                            ${host ? 'onclick="FMODES.roomSetHard(true)"' : 'disabled'}>Hard</button>
+                </div>
                 <div class="rm-list">
                     ${seats.map(([u, s]) => `
                         <div class="rm-row${u === rec.hostUid ? ' host' : ''}">
@@ -338,7 +368,7 @@
                     ${Array.from({ length: fill }, () => `
                         <div class="rm-row open"><span class="rm-crown"></span><span class="rm-name">Open seat</span></div>`).join('')}
                 </div>
-                <div class="rm-note">Open seats play as AI.</div>
+                <div class="rm-note">Open seats play as AI${rec.hard ? ' — the court’s sharpest' : ''}.</div>
                 <div class="rm-note">Scores count here — rating, hero XP, and Daily Champions.</div>
                 <div class="rm-note">Fellowship bonus: +${(window.FLB && FLB.fellowshipStars) || 5}★ for each fellow human at the table, win or lose.</div>
                 <div class="rm-status">${host ? '' : 'Waiting for the host to start…'}</div>
@@ -350,6 +380,7 @@
     }
 
     function roomSetSize(n) { FMP.roomSetSize(n); }
+    function roomSetHard(v) { FMP.roomSetHard(v); }
 
     function startRoomGame() {
         if (!room || !room.host) return;
@@ -440,7 +471,8 @@
         openDailyRival, closeRivalIntro, beginRivalGame,
         rivalOfDay, rivalStars, rivalGameOver, renderRivalPlaque,
         openPrivateRoom, closePrivateRoom, hostRoom, joinRoom,
-        roomSetSize, startRoomGame,
+        roomSetSize, roomSetHard, startRoomGame,
+        skirmishDiff,
         attachEmotes, detachEmotes, toggleEmoteTray, emote,
         EMOTES,
     };
