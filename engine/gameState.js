@@ -2392,10 +2392,23 @@ class FavorGame {
             // attempted mission then walks exactly the same road as a due one).
             const isDue = (m) => this.missionDueAct(m) <= this.currentAct || m._attemptNow === true;
 
+            // PAY ORDER (Wyatt 7/23, the second Golden Fiddle bug): within
+            // one resolution phase, missions that GRANT skills must land
+            // before missions whose formula COUNTS skills — his table
+            // banked the Fiddle before A Day With the Birds' +3 Charisma
+            // because he'd TAKEN it first, and the identical missions paid
+            // 6 or 12 by acquisition order alone. A physical player banks
+            // in the best order; the stable partition below gives every
+            // seat that order deterministically (lockstep-identical), and
+            // the fixed-point sweep still lets ANY mission's grants unlock
+            // requirement chains across passes.
+            const paysFormula = (m) => String(m.successSpecial || '').indexOf('favor_per_') === 0;
+            const inPayOrder = (arr) => [...arr.filter(m => !paysFormula(m)), ...arr.filter(paysFormula)];
+
             let progressed = true;
             while (progressed) {
                 progressed = false;
-                player.missions.forEach((mission) => {
+                inPayOrder(player.missions).forEach((mission) => {
                     if (resolved.has(mission) || !inWindow(mission)) return;
                     // Not due and not attempted: a HUMAN seat decides this at
                     // the act boundary, never automatically. Only a true AI
@@ -2422,7 +2435,7 @@ class FavorGame {
 
             // Fixed point reached — nothing else can be met on skills alone.
             // ONLY NOW may a due mission borrow or fail.
-            player.missions.forEach((mission, mi) => {
+            inPayOrder(player.missions).forEach((mission, mi) => {
                 if (resolved.has(mission) || !inWindow(mission) || !isDue(mission)) return;
                 // Re-read the shortfall against the FINAL state, so a beat
                 // reports what they were actually short of at the end.

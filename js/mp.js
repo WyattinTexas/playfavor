@@ -169,7 +169,13 @@
     //     Truce, Family Ring, Great Vault Key) now count flex "OR" units
     //     via formulaSkillCount — a v23 client resolves different stones
     //     and different favor from the identical state.
-    const MPV = 24;
+    // 25 (7/23): resolution PAY ORDER — within a seat's mission phase,
+    //     skill-GRANTING missions land before favor_per_* formula missions
+    //     (stable partition), so the payout no longer depends on the order
+    //     the missions were acquired (Golden Fiddle banked before A Day
+    //     With the Birds paid 6 instead of 12 from identical state — and a
+    //     v24 client still resolves in acquisition order, so tables fork).
+    const MPV = 25;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

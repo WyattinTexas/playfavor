@@ -3305,6 +3305,24 @@ console.log('── 7/23 mission math: Water Temple pays ONCE, formulas count fl
   ok(paid === 2 * cha && cha >= 5,
     `pays 2 × flex-inclusive Charisma (${paid} @ ${cha} — fixed 3 + 2 flex + slot)`);
 
+  // PAY ORDER: a skill-granting mission banked in the same phase counts
+  // into a formula mission's payout regardless of acquisition order —
+  // Wyatt's table paid 6 or 12 on identical state by take-order alone.
+  for (const order of [['A Day With the Birds', 'Golden Fiddle'],
+                       ['Golden Fiddle', 'A Day With the Birds']]) {
+    const go = newGame();
+    go.currentAct = 1;
+    go.players.forEach(p => { p.missions = []; });
+    go.players[0].missions = order.map(n => ({ ...missionByName(n) }));
+    go.players[0].bonusSkills = { survival: 3, knowledge: 3, charisma: 3 };
+    go.applySlotSkills(go.players[0]);
+    const fb = go.currentFavor(0);
+    go.phase = 'missions';
+    go.resolveMissions();
+    ok(go.currentFavor(0) - fb === 2 * go.players[0].skills.charisma,
+      `pay order ${order[0].slice(0, 9)}-first: Fiddle counts Birds' grant (paid ${go.currentFavor(0) - fb})`);
+  }
+
   // The card-side siblings read the same flex-aware count…
   const g3 = newGame();
   g3.players[0].bonusSkills = { survival: 4 };
