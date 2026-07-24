@@ -2129,8 +2129,10 @@ class FavorGame {
         const p = this.players[playerIndex];
         let favor = mission.favorValue || 0;
         switch (mission.successSpecial) {
-            case 'favor_per_charisma_x2':   favor += 2 * (p.skills.charisma || 0); break;
-            case 'favor_per_knowledge_x1':  favor += (p.skills.knowledge || 0); break;
+            // Estimates read the same flex-aware count the payer uses —
+            // an AI weighing this mission must see the number it will get.
+            case 'favor_per_charisma_x2':   favor += 2 * this.formulaSkillCount(playerIndex, ['charisma']); break;
+            case 'favor_per_knowledge_x1':  favor += this.formulaSkillCount(playerIndex, ['knowledge']); break;
             case 'favor_per_minds_eye_x5':  favor += 5 * this.getMindsEyeCount(playerIndex); break;
             case 'favor_per_philstone_x10': favor += 10 * (p.philosopherStone || 0); break;
         }
@@ -2607,6 +2609,26 @@ class FavorGame {
         this.addLog(`${player.name} completes mission: ${mission.name}`);
     }
 
+    /**
+     * A skill as a FORMULA counts it: the fixed tally plus every flex
+     * ("OR") unit that can stand as one of the named skills. Flex units
+     * live OUTSIDE player.skills (so displayed totals never wander), which
+     * is exactly why "2 Favor for Each Charisma" paid Wyatt 6 on a table
+     * showing 12 (7/23) — the Mining-Guild class of card never counted.
+     * One flex unit counts ONCE, even when a formula names both of its
+     * skills (Great Vault Key sums survival+charisma+prospecting; a
+     * charisma|prospecting card is still one unit on the table).
+     */
+    formulaSkillCount(playerIndex, skillNames) {
+        const p = this.players[playerIndex];
+        let n = 0;
+        skillNames.forEach(s => { n += p.skills[s] || 0; });
+        (p.flexSkills || []).forEach(pair => {
+            if (pair.some(s => skillNames.includes(s))) n += 1;
+        });
+        return n;
+    }
+
     resolveMissionSuccessSpecial(playerIndex, mission) {
         const player = this.players[playerIndex];
         // Scaled mission payouts are MISSION favor. They used to land in the
@@ -2620,10 +2642,10 @@ class FavorGame {
         };
         switch (mission.successSpecial) {
             case 'favor_per_charisma_x2':
-                payMission(2 * (player.skills.charisma || 0), '2 per Charisma');
+                payMission(2 * this.formulaSkillCount(playerIndex, ['charisma']), '2 per Charisma');
                 break;
             case 'favor_per_knowledge_x1':
-                payMission(player.skills.knowledge || 0, '1 per Knowledge');
+                payMission(this.formulaSkillCount(playerIndex, ['knowledge']), '1 per Knowledge');
                 break;
             case 'favor_per_minds_eye_x5':
                 payMission(5 * this.getMindsEyeCount(playerIndex), "5 per Mind's Eye");
@@ -3209,16 +3231,20 @@ class FavorGame {
         const n = this.playerCount;
         switch (card.special) {
             case 'favor_per_survival_x2':
-                return 2 * (p.skills.survival || 0);
+                // formulaSkillCount, not the raw tally — a flex ("OR") card
+                // that can stand as Survival counts here, exactly as it
+                // would on the physical table (7/23, the Golden Fiddle bug's
+                // card-side siblings).
+                return 2 * this.formulaSkillCount(playerIndex, ['survival']);
             case 'favor_per_quest_x5':
                 return 5 * (p.completedMissions || []).length;
             case 'favor_per_knowledge_x2':
                 // Family Ring, exactly as printed: "Favor equal to your total
-                // Knowledge x2". Reads the plain skill tally, matching its
-                // siblings favor_per_knowledge_x1 and favor_per_survival_x2.
-                return 2 * (p.skills.knowledge || 0);
+                // Knowledge x2" — through the same flex-aware formula read.
+                return 2 * this.formulaSkillCount(playerIndex, ['knowledge']);
             case 'favor_per_sur_cha_pro':
-                return (p.skills.survival || 0) + (p.skills.charisma || 0) + (p.skills.prospecting || 0);
+                // One flex unit counts ONCE across the three named skills.
+                return this.formulaSkillCount(playerIndex, ['survival', 'charisma', 'prospecting']);
             case 'favor_per_artifact_x8':
                 // Sacred Chest, exactly as printed: "8 Favor for each Artifact
                 // Card you have" — the purple oval in its Favor medallion is

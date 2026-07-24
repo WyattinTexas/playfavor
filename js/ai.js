@@ -390,8 +390,10 @@
             .map(c => keepValue(g, pi, c)).sort((a, b) => a - b);
 
     const MISSION_SS_EV = {
-        favor_per_charisma_x2: (g, pi) => 2 * (g.players[pi].skills.charisma || 0),
-        favor_per_knowledge_x1: (g, pi) => (g.players[pi].skills.knowledge || 0),
+        // Flex-aware, mirroring the engine's payer (formulaSkillCount) —
+        // the brain must weigh the number the mission will actually pay.
+        favor_per_charisma_x2: (g, pi) => 2 * g.formulaSkillCount(pi, ['charisma']),
+        favor_per_knowledge_x1: (g, pi) => g.formulaSkillCount(pi, ['knowledge']),
         favor_per_minds_eye_x5: (g, pi) => 5 * g.getMindsEyeCount(pi),
         favor_per_philstone_x10: (g, pi) => 10 * (g.players[pi].philosopherStone || 0),
         philosopher_stone_x2_grant: () => 2 * (PB().stoneValue || 3.5),

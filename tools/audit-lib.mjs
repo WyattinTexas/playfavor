@@ -47,7 +47,9 @@ export const MISSION_SUCCESS_SPECIALS = {
   'Golden Fiddle': 'favor_per_charisma_x2',
   'Trust of the Elders': 'favor_per_knowledge_x1',
   'The Shadow Guide': 'favor_per_minds_eye_x5',   // art: blue ×5 eye medallion on the REWARD side
-  'Water Temple': 'philosopher_stone_x2_grant',
+  // Water Temple: NO successSpecial — its printed "2 Philosopher's Stones"
+  // is the successRewards row; a philosopher_stone_x2_grant special here
+  // double-paid it to 4 (Wyatt's table, 7/23).
   'Quest for the Stones': 'scorn_to_prestige_all',
   'Mercy': 'remove_20_scorn',
   'Passing the Mirror Gate': 'duplicate_artifact',

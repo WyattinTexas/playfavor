@@ -3262,6 +3262,71 @@ console.log('── Side B save shape: side survives a JSON round-trip ──');
     'rehydrate resolves the B board again');
 }
 
+console.log('── 7/23 mission math: Water Temple pays ONCE, formulas count flex ──');
+{
+  // Water Temple's printed "2 Philosopher's Stones" was double-encoded and
+  // paid 4 (Wyatt's table, 7/23). The reward row alone pays now.
+  const g = newGame();
+  g.currentAct = 3;
+  g.players.forEach(p => { p.missions = []; });
+  const wt = { ...missionByName('Water Temple') };
+  ok(!wt.successSpecial, 'Water Temple data carries NO duplicate successSpecial');
+  g.players[0].missions.push(wt);
+  g.players[0].bonusSkills = { survival: 10 };
+  g.players[0].bonusMindsEye = 1;
+  g.applySlotSkills(g.players[0]);
+  const stonesBefore = g.players[0].philosopherStone || 0;
+  g.phase = 'missions';
+  g.resolveMissions();
+  ok(g.players[0].completedMissions.some(m => m.name === 'Water Temple'), 'Water Temple banks');
+  ok((g.players[0].philosopherStone || 0) === stonesBefore + 2,
+    `exactly +2 Philosopher's Stones (${stonesBefore} → ${g.players[0].philosopherStone})`);
+
+  // Golden Fiddle: "2 Favor for Each Charisma you have" — a flex OR-card
+  // that can stand as Charisma counts, exactly as at the physical table.
+  const g2 = newGame();
+  g2.currentAct = 1;
+  g2.players.forEach(p => { p.missions = []; });
+  const gf = { ...missionByName('Golden Fiddle') };
+  g2.players[0].missions.push(gf);
+  g2.players[0].bonusSkills = { survival: 3, knowledge: 1, charisma: 3 };
+  g2.applySlotSkills(g2.players[0]);
+  // two Mining-Guild-class flex units on the field
+  g2.players[0].playedCards.push(
+    { id: 9901, name: 'FlexA', skills: [], special: 'charisma_or_prospecting' },
+    { id: 9902, name: 'FlexB', skills: [], special: 'charisma_or_prospecting' });
+  g2.applySlotSkills(g2.players[0]);
+  const favBefore = g2.currentFavor(0);
+  g2.phase = 'missions';
+  g2.resolveMissions();
+  const paid = g2.currentFavor(0) - favBefore;
+  const cha = g2.formulaSkillCount(0, ['charisma']);
+  ok(g2.players[0].completedMissions.some(m => m.name === 'Golden Fiddle'), 'Golden Fiddle banks');
+  ok(paid === 2 * cha && cha >= 5,
+    `pays 2 × flex-inclusive Charisma (${paid} @ ${cha} — fixed 3 + 2 flex + slot)`);
+
+  // The card-side siblings read the same flex-aware count…
+  const g3 = newGame();
+  g3.players[0].bonusSkills = { survival: 4 };
+  g3.applySlotSkills(g3.players[0]);
+  g3.players[0].playedCards.push({ id: 9903, name: 'FlexC', skills: [], special: 'alchemy_or_survival' });
+  g3.applySlotSkills(g3.players[0]);
+  const ft = cardByName("Fang's Truce");
+  ok(g3.scoredCardFavor(0, ft) === 2 * g3.formulaSkillCount(0, ['survival']),
+    `Fang's Truce counts a Survival-capable flex unit (${g3.scoredCardFavor(0, ft)})`);
+  // …and a single flex unit counts ONCE across a multi-skill formula.
+  const gvk = cardByName('Great Vault Key');
+  const g4 = newGame();
+  g4.players[0].bonusSkills = { survival: 1, charisma: 1, prospecting: 1 };
+  g4.applySlotSkills(g4.players[0]);
+  g4.players[0].playedCards.push({ id: 9904, name: 'FlexD', skills: [], special: 'charisma_or_prospecting' });
+  g4.applySlotSkills(g4.players[0]);
+  const base = (g4.players[0].skills.survival || 0) + (g4.players[0].skills.charisma || 0)
+    + (g4.players[0].skills.prospecting || 0);
+  ok(g4.dynamicCardFavor(0, gvk) === base + 1,
+    `Great Vault Key counts the charisma|prospecting unit ONCE (${g4.dynamicCardFavor(0, gvk)} = ${base}+1)`);
+}
+
 console.log('── Hard-AI §5f: Wyatt\'s acceptance examples (js/ai.js) ──');
 {
   const FAI = window.FAI;

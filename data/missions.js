@@ -255,7 +255,11 @@ window.FAVOR_DATA.missions = [
       successRewards: {},
       failurePenalties: { scorn: 5 } },
 
-    { id: mid(), name: "Water Temple", successSpecial: "philosopher_stone_x2_grant", placeholderName: "Solving the Forest Puzzle", audit: "Success Req: 10 Survival, 1 Mind's Eye, Act 3 Success Reward: 15 Favor & 2 Philosopher's Stones Failure Reward: 5 Scorn", filename: "Act 3_Solving the Forest Puzzle Card.jpg",
+    // ⚠ 7/23 (Wyatt's table): the printed "2 Philosopher's Stones" was
+    // encoded TWICE — successRewards.philosopherStone AND a
+    // philosopher_stone_x2_grant successSpecial — so the mission paid 4.
+    // The structured reward row is the one encoding; the special is gone.
+    { id: mid(), name: "Water Temple", placeholderName: "Solving the Forest Puzzle", audit: "Success Req: 10 Survival, 1 Mind's Eye, Act 3 Success Reward: 15 Favor & 2 Philosopher's Stones Failure Reward: 5 Scorn", filename: "Act 3_Solving the Forest Puzzle Card.jpg",
       act: 3, activationRound: 3, favorValue: 15,
       requirements: ["survival", "survival", "survival", "survival", "survival", "survival", "survival", "survival", "survival", "survival", "minds_eye"],
       successRewards: { philosopherStone: 2 },

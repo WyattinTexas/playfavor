@@ -162,7 +162,14 @@
     //     mission on purpose. A v22 client would simulate the same seat with
     //     the casual brain and fork on the first hard decision, so the
     //     versions must never mix. Rooms stay casual (hardFill false).
-    const MPV = 23;
+    // 24 (7/23): two mission-math fixes from Wyatt's table. Water Temple
+    //     paid its printed 2 Philosopher's Stones TWICE (successRewards +
+    //     a duplicate successSpecial — the special is gone from the data);
+    //     and favor_per_* formulas (Golden Fiddle's 2-per-Charisma, Fang's
+    //     Truce, Family Ring, Great Vault Key) now count flex "OR" units
+    //     via formulaSkillCount — a v23 client resolves different stones
+    //     and different favor from the identical state.
+    const MPV = 24;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.
