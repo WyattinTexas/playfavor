@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The iOS shell's parchment-dark: window/launch AND webview #1D1106 -->
+    <color name="launchBg">#1D1106</color>
+    <color name="shellBg">#1D1106</color>
+</resources>

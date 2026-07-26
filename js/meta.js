@@ -1212,7 +1212,8 @@
     // seal survives underneath as the internal token — signing in on a new
     // device simply claimSeal()s the mapped uid. Platform picks the ONE
     // offered door: Apple in the iOS shell, Steam identity in the Steam
-    // shell (stub until the Steam build is testable), Google on the web.
+    // shell (stub until the Steam build is testable), Google on the web
+    // (stubbed in the Android shell — Google OAuth refuses WebViews).
     //
     // CONFLICT RULE (deliberate): an identity already linked to another
     // court NEVER re-links — the device SWITCHES to the linked court after
@@ -1221,6 +1222,7 @@
     // politely. First link wins; nothing merges; nothing silently moves.
     const SHELL_IOS = /FavorShell-iOS/.test(navigator.userAgent);
     const SHELL_STEAM = /FavorShell-Steam/.test(navigator.userAgent);
+    const SHELL_ANDROID = /FavorShell-Android/.test(navigator.userAgent);
     // "FAVOR Web" client on the testroom-75200 project (created 7/20).
     // Origins: playfavor.net, www.playfavor.net, localhost:8891 (the rig).
     const GOOGLE_CLIENT_ID = window.__FAVOR_GOOGLE_CLIENT
@@ -1419,6 +1421,11 @@
                 : '<div class="pf-note">Account linking arrives with the next FAVOR update.</div>';
         } else if (SIGN_PROVIDER === 'steam') {
             door = '<div class="pf-note">Steam sign-in arrives with the Steam release.</div>';
+        } else if (SHELL_ANDROID) {
+            // Google's OAuth refuses embedded WebViews (disallowed_useragent),
+            // so the Android shell gets an honest note instead of a dead GIS
+            // button — the same one-door-per-platform law the shells follow.
+            door = '<div class="pf-note">Account linking arrives with a coming FAVOR update.</div>';
         } else {
             door = gisAvailable()
                 ? '<div class="pf-gsi-host" id="pfGsi"></div>'
@@ -2372,12 +2379,12 @@
     const PAYPAL_BUSINESS = 'gablewyatt@gmail.com';
     const IPN_NOTIFY_URL = 'https://nationgame.live/api/favor/paypal/ipn';
 
-    // The iOS shell (WKWebView, UA carries "FavorShell-iOS") must not show
-    // an external purchase rail — Apple 3.1.1. The Mint simply doesn't
-    // exist there (nor in the Steam shell — Valve routes MTX through its
-    // own wallet); Stars still arrive from play, daily crowns, and any
-    // purchase made on the web (same favorUid account).
-    const IOS_SHELL = /FavorShell-(iOS|Steam)/.test(navigator.userAgent);
+    // The app shells (UA carries "FavorShell-iOS" / "-Steam" / "-Android")
+    // must not show an external purchase rail — Apple 3.1.1, Valve's wallet
+    // rules, and Google Play's payments policy all forbid the same thing.
+    // The Mint simply doesn't exist there; Stars still arrive from play,
+    // daily crowns, and any purchase made on the web (same favorUid account).
+    const IOS_SHELL = /FavorShell-(iOS|Steam|Android)/.test(navigator.userAgent);
 
     let _confirmingPack = null;
     let _starsWatch = null;    // { baseline } while a PayPal tab may be paying

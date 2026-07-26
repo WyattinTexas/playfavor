@@ -8407,6 +8407,55 @@ console.log('── Court Seal: preview names the row; claim takes the seat');
   await page.close();
 }
 
+// ═══ ANDROID SHELL GATE: the Play build must never show the PayPal Mint ═══
+// The Android shell's UA carries "FavorShell-Android" (shell/android/); the
+// widened IOS_SHELL regex must hide every purchase rail for it exactly as it
+// does for iOS and Steam — an unmodified WebView would ship a PayPal Stars
+// rail inside a Google Play app (Play payments policy, the same teeth as
+// Apple 3.1.1). Asserted here so the gate can never silently narrow again.
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('droid-shell: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('droid-shell pageerror: ' + e.message));
+  console.log('\n── Android shell gate (FavorShell-Android UA) ──');
+  await page.setViewport({ width: 960, height: 540, deviceScaleFactor: 2 });
+  await page.setUserAgent(await browser.userAgent() + ' FavorShell-Android/1.0');
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await page.evaluate(() => { FLB.openStore(); });
+  await page.waitForFunction(() => document.querySelectorAll('.st-card').length >= 1, { timeout: 10000 });
+  const gate = await page.evaluate(() => {
+    const disp = sel => { const el = document.querySelector(sel); return el ? getComputedStyle(el).display : 'absent'; };
+    return {
+      bodyClass: document.body.classList.contains('ios-shell'),
+      mintLink: disp('.mint-link'),
+      starsBtn: disp('.st-stars-btn'),
+      mintPanel: disp('#mintPanel'),
+      packs: (document.getElementById('storePacks') || { innerHTML: '' }).innerHTML,
+    };
+  });
+  ok(gate.bodyClass, 'FavorShell-Android UA gets the ios-shell body class');
+  ok(gate.mintLink === 'none', `menu ★ Get Stars link is hidden (${gate.mintLink})`);
+  ok(gate.starsBtn === 'none', `store ★ Purchase Stars button is hidden (${gate.starsBtn})`);
+  ok(gate.mintPanel === 'none', `the Royal Mint easel is hidden (${gate.mintPanel})`);
+  ok(gate.packs === '', 'no PayPal packs are rendered into #storePacks');
+  await sleep(400);
+  await page.screenshot({ path: join(SHOTS, 'droid-shell-store.png') });
+  // The sign-in door: an honest note, never a dead GIS button (Google's
+  // OAuth refuses embedded WebViews with disallowed_useragent).
+  const door = await page.evaluate(() => {
+    FLB.closeStore();
+    FLB.openProfile();
+    const sec = document.getElementById('pfSignin');
+    return { html: sec ? sec.innerHTML : 'absent', gsi: !!document.getElementById('pfGsi') };
+  });
+  ok(/Account linking arrives/.test(door.html), 'Android door shows the honest update note');
+  ok(!door.gsi, 'no GIS button is mounted under a FavorShell-Android UA');
+  await sleep(300);
+  await page.screenshot({ path: join(SHOTS, 'droid-shell-door.png') });
+  await page.close();
+}
+
 // ═══ FINAL INTEGRITY GATE: no audit run may leave a mark on a REAL row ═══
 // Personas post daily scores as of 7/18, which opens a contamination path
 // that did not exist before: an audit game that seated a real persona would
