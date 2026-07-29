@@ -70,6 +70,13 @@
     // ── Game lifecycle ───────────────────────────────────────────────
     function record(bucket, name) {
         if (!name) return;
+        // The How-to-Play game is scripted — rigged hands, a pinned mission,
+        // a fixed seed — so nothing played there is a discovery worth keeping
+        // (Wyatt 7/29). commitGame() is already TUT_PAGE-guarded, and a real
+        // game's beginGame() would clear this buffer anyway, but refusing at
+        // the SOURCE means the tutorial's plays can never reach the Almanac
+        // through some future ordering we didn't think of.
+        if (window.TUT_PAGE) return;
         const p = loadPending();
         p[bucket][name] = (p[bucket][name] || 0) + 1;
         saveJson(PENDING_KEY(), p);

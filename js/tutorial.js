@@ -394,7 +394,17 @@
                 <div class="tut-choices"></div>
                 <div class="tut-count"></div>
             </div>
-            <button id="tutSkip" title="Leave the tutorial">Skip tutorial ✕</button>`;
+            <button id="tutSkip" title="Leave the tutorial">Skip tutorial ✕</button>
+            <div id="tutLeave">
+                <div class="tut-leave-card">
+                    <div class="tut-kicker">How to Play</div>
+                    <div class="tut-title">Leave the Tutorial?</div>
+                    <div class="tut-text">You can start it again any time from
+                        <b>How to Play</b> on the menu.</div>
+                    <button class="btn-royal primary tut-leave-go"><span>Back to Menu</span></button>
+                    <button class="btn-royal tut-leave-stay"><span>Keep Playing</span></button>
+                </div>
+            </div>`;
         document.body.appendChild(root);
         hole = root.querySelector('#tutHole');
         bubble = root.querySelector('#tutBubble');
@@ -408,6 +418,12 @@
         };
         // Skip-anytime — persistent, works in every step (shielded or watch).
         root.querySelector('#tutSkip').onclick = skip;
+        const leave = root.querySelector('#tutLeave');
+        leave.querySelector('.tut-leave-go').onclick = leaveToMenu;
+        leave.querySelector('.tut-leave-stay').onclick = () => leave.classList.remove('show');
+        // Tapping the backdrop is a cancel — the same read as every other
+        // dismissable overlay in the game.
+        leave.onclick = (e) => { if (e.target === leave) leave.classList.remove('show'); };
         const onViewportChange = () => { insetCache = null; bubbleFixed = false; layout(); };
         window.addEventListener('resize', onViewportChange);
         window.addEventListener('orientationchange', onViewportChange);
@@ -415,12 +431,27 @@
 
     // Leave the guided game for the real menu. On the standalone How-to page
     // (tools/howto.html = index.html + this driver) that lands on the title.
+    // Skip → back to the menu, behind an in-page confirmation.
+    //
+    // This used to call window.confirm(), and inside the iOS shell that button
+    // did NOTHING (Wyatt 7/29). A WKWebView only shows JS dialogs if its
+    // WKUIDelegate implements the dialog panels, and GameViewController — which
+    // declares WKUIDelegate — implements none; confirm() then returns false
+    // instantly, so skip() bailed on its own guard clause. A native dialog was
+    // the wrong instrument regardless: the tutorial owns a perfectly good
+    // bubble, and an OS alert in the middle of a medieval table is jarring.
     function skip() {
         if (!active) return;
-        if (!window.confirm('Leave the tutorial and go to the menu?')) return;
+        const panel = root && root.querySelector('#tutLeave');
+        if (!panel) { leaveToMenu(); return; }   // no panel built — just go
+        panel.classList.add('show');
+    }
+    function leaveToMenu() {
         active = false;
         if (tick) clearInterval(tick);
+        stopCardTracking();
         try { window.CINEMATIC_SPEED = 1.0; } catch (e) {}
+        removeThrowGuard();
         location.assign('index.html');
     }
 
