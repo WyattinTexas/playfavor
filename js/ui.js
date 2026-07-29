@@ -1043,7 +1043,17 @@ const HOWTO_CARDS = [
 
 let howtoIndex = 0;
 
-function showRules() { openHowto(); }
+// The title's "How to Play" now opens the GUIDED GAME — a real, scripted table
+// you play through, not a deck of cards to read. It runs on this same page under
+// ?tutorial=1 (see the flags at the top of index.html), which is why this is a
+// navigation rather than an overlay: TUT_PAGE has to be set before the scripts
+// boot, or the guided game would post its authored result to the leaderboard.
+function showRules() { location.assign('index.html?tutorial=1'); }
+
+// The original card deck lives on as the RULES reference, reachable from
+// Settings (Wyatt 7/29). Nothing about it changed — it is simply no longer what
+// "How to Play" means.
+function openRulesDeck() { openHowto(); }
 
 function openHowto() {
     howtoIndex = 0;
@@ -5424,7 +5434,10 @@ async function activateAllCards() {
                     renderGameState();
                 }
                 const dec = FAI.chooseAction(game, pi, card);
-                if (dec.action === 'mission_letter' && card.type === 'mission_letter'
+                // In the How-to-Play tutorial rivals NEVER claim a mission — that
+                // kept snatching the scripted mission the player needs (Wyatt).
+                // A guaranteed-false condition makes them discard the letter here.
+                if (!window.TUT_ACTIVE && dec.action === 'mission_letter' && card.type === 'mission_letter'
                     && game.players[pi].gold >= 1 && game.visibleMissions.length > 0) {
                     await showCardSpotlight(pi, card, 'play');
                     const result = game.activateCard(pi, card.id, 'mission_letter');
@@ -5461,8 +5474,10 @@ async function activateAllCards() {
                 const isMissionLetter = card.type === 'mission_letter';
 
                 if (isMissionLetter) {
-                    // AI mission letter: use it if they have gold and missions available, else discard
-                    if (game.players[pi].gold >= 1 && game.visibleMissions.length > 0) {
+                    // AI mission letter: use it if they have gold and missions available, else
+                    // discard. In the tutorial rivals never claim a mission (TUT_ACTIVE) so the
+                    // scripted mission the player needs is always still in the pool (Wyatt).
+                    if (!window.TUT_ACTIVE && game.players[pi].gold >= 1 && game.visibleMissions.length > 0) {
                         await showCardSpotlight(pi, card, 'play');
                         const result = game.activateCard(pi, card.id, 'mission_letter');
                         if (result && result.chooseMission) {
@@ -6977,10 +6992,20 @@ function showScoring() {
     // The decision transcript flushes here — host-only in MP, this client
     // otherwise; fire-and-forget, the ceremony never waits on the wire
     // (telemetry, Hard-AI Phase 1).
-    if (window.FTEL) { try { FTEL.flush(scores, { humans: humansAtTable }); } catch (e) { /* never */ } }
+    // The How-to-Play game is SCRIPTED: a fixed seed, rigged hands, a mission
+    // pinned into the pool and rivals barred from claiming it. Its result is
+    // authored, not earned, so it must never touch the player's real record —
+    // no leaderboard post, no rating or XP, no achievements, no almanac
+    // unlocks, no telemetry, no Stars. Guarded on TUT_PAGE (the How-to-Play
+    // harness) rather than TUT_ACTIVE, because leaving the guide part-way
+    // through still leaves you playing that same rigged table.
+    // This is why a "You placed 3rd on the Daily Board" message started popping
+    // up over the tutorial: guided runs had been posting genuine results.
+    const recordThisGame = !window.TUT_PAGE;
+    if (window.FTEL && recordThisGame) { try { FTEL.flush(scores, { humans: humansAtTable }); } catch (e) { /* never */ } }
     clearSoloSave();   // the table finished — nothing left to resume
-    if (window.FALM) FALM.commitGame();  // finished games alone unlock almanac entries
-    if (window.FLB) {
+    if (window.FALM && recordThisGame) FALM.commitGame();  // finished games alone unlock almanac entries
+    if (window.FLB && recordThisGame) {
         // The resolved XP (computed INSIDE the posting transaction) paints
         // the victory chip late and raises the Level 5 ceremony — never a
         // re-read of the row, so it can neither miss nor double-fire.
@@ -6991,14 +7016,14 @@ function showScoring() {
     }
     // WANTED: finishing ahead of today's named rival pays Stars once
     // per window (modes.js owns the claim and the once-a-day gate).
-    if (window.FMODES) FMODES.rivalGameOver(scores);
+    if (window.FMODES && recordThisGame) FMODES.rivalGameOver(scores);
     if (mpActive()) FMP.gameOver();   // host tidies the record; everyone detaches
 
     // Achievements: hero victories, single-game feats, The Master. Runs AFTER
     // postGameResult so the row exists on a first-ever game (lazy join), and is
     // deliberately un-awaited — a slow grant must never hold up the victory
     // screen. It celebrates itself when it lands.
-    if (window.FACH && window.FLB) {
+    if (window.FACH && window.FLB && recordThisGame) {
         const meFirst = scores.length && scores[0].name === 'You';
         const snap = FACH.seatSnapshot(game, meFirst);
         // ⚠ Was `Promise.resolve(FLB.postGameResult)` — which resolves
@@ -8231,17 +8256,24 @@ function showMissionDrawBeat() {
 // the results, the portraits and the engine's power arithmetic, and await
 // the promise so the act flow waits for the moment. Unattended it advances
 // on its own (per-fighter fallback + autoClose), so MP never stalls on a seat.
-function showMeleeSplash(results, actNum) {
+async function showMeleeSplash(results, actNum) {
     const el = document.getElementById('meleeSplash');
     if (!el || !results || !results.length || typeof playMeleeCinematic !== 'function') {
         return Promise.resolve();
+    }
+    // Tutorial: hold the cinematic until the player has READ the Melee prompt and
+    // hit Next (window.__tutMeleeGate resolves then). Never blocks the real game.
+    if (window.TUT_ACTIVE && typeof window.__tutMeleeGate === 'function') {
+        try { await window.__tutMeleeGate(); } catch (e) {}
     }
     return playMeleeCinematic(el, results, actNum, {
         speed: window.CINEMATIC_SPEED || 1,
         // Auto-play the whole melee at a calm, thematic pace — never wait on a
         // tap at each fighter (Wyatt 7/17). Continue still lets you skip ahead.
+        // EXCEPT in the How-to-Play tutorial, which owns pacing: there the
+        // result must WAIT for a tap so the Melee can be narrated, not vanish.
         forgeHoldMs: 3600,
-        autoCloseMs: 5200,
+        autoCloseMs: window.TUT_ACTIVE ? 0 : 5200,
         powerIcon: 'assets/icons/power.png',
         portraitFor: (pi) => {
             const p = (pi != null && game.players[pi]) ? game.players[pi] : null;

@@ -3,30 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <base href="../">
     <title>FAVOR — A Game of Royal Succession</title>
-    <link rel="stylesheet" href="css/style.css?v=20260729154325">
+    <link rel="stylesheet" href="css/style.css?v=20260724130205">
     <!-- Skylar's melee cinematic — loaded AFTER style.css so its .ms-* rules win. -->
-    <link rel="stylesheet" href="css/melee.css?v=20260729154325">
-    <!-- How to Play — the guided game's shield, spotlight and prompt. -->
-    <link rel="stylesheet" href="css/tutorial.css?v=20260729154325">
+    <link rel="stylesheet" href="css/melee.css?v=20260724130205">
+    <!-- How to Play v3 guided-game shield/bubble -->
+    <link rel="stylesheet" href="css/tutorial.css?v=howto3">
     <link rel="icon" type="image/png" href="assets/ui/favicon-serpent.png">
     <link rel="apple-touch-icon" href="assets/ui/favicon-serpent.png">
 </head>
 <body>
 
-    <!-- HOW TO PLAY — the guided game runs on THIS page under ?tutorial=1, so
-         there is no cloned tutorial page to keep in sync with this one.
-         These flags MUST be set here, before the deferred scripts: the meta
-         layer boots on load, long before tutorial.js starts, and TUT_PAGE is
-         what stops the scripted game posting results to the real leaderboard
-         and suppresses reward popups the tutorial shield would trap. -->
-    <script>
-    if (/[?&]tutorial=1/.test(location.search)) {
-        window.TUT_PAGE = true;            // scripted table: never recorded, no celebrations
-        window.TUTORIAL_AUTOSTART = true;  // tutorial.js starts itself on load
-        window._mpSkipQueue = true;        // no multiplayer queue behind a solo lesson
-    }
-    </script>
+    <!-- HOW TO PLAY v3 harness — this page IS index.html + the tutorial driver.
+         Re-sync the DOM/scripts from index.html whenever index.html changes. -->
+    <script>window._mpSkipQueue = true; window.TUTORIAL_AUTOSTART = true;</script>
 
     <div id="buildVersion" style="position:fixed;bottom:2px;right:6px;z-index:99999;font:600 8px monospace;color:#e8caa0;opacity:.35;pointer-events:none"></div>
     <script>
@@ -622,26 +613,87 @@
          falls back to local standings if these can't reach the project) -->
     <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script defer src="data/cards.js?v=20260729154325"></script>
-    <script defer src="data/missions.js?v=20260729154325"></script>
-    <script defer src="data/characters.js?v=20260729154325"></script>
-    <script defer src="data/achievements.js?v=20260729154325"></script>
-    <script defer src="data/playbook.js?v=20260729154325"></script>
-    <script defer src="engine/gameState.js?v=20260729154325"></script>
-    <script defer src="js/ai.js?v=20260729154325"></script>
-    <script defer src="js/telemetry.js?v=20260729154325"></script>
-    <script defer src="js/melee.js?v=20260729154325"></script>
-    <script defer src="js/ui.js?v=20260729154325"></script>
-    <script defer src="js/tablefx-pts.js?v=20260729154325"></script>
-    <script defer src="js/tablefx.js?v=20260729154325"></script>
-    <script defer src="js/ambient.js?v=20260729154325"></script>
-    <script defer src="js/meta.js?v=20260729154325"></script>
-    <script defer src="js/achievements.js?v=20260729154325"></script>
-    <script defer src="js/almanac.js?v=20260729154325"></script>
-    <script defer src="js/settings.js?v=20260729154325"></script>
-    <script defer src="js/mp.js?v=20260729154325"></script>
-    <script defer src="js/modes.js?v=20260729154325"></script>
-    <!-- The guided How to Play. Inert unless ?tutorial=1 is on the URL. -->
-    <script defer src="js/tutorial.js?v=20260729154325"></script>
+    <script defer src="data/cards.js?v=20260724130205"></script>
+    <script defer src="data/missions.js?v=20260724130205"></script>
+    <script defer src="data/characters.js?v=20260724130205"></script>
+    <script defer src="data/achievements.js?v=20260724130205"></script>
+    <script defer src="data/playbook.js?v=20260724130205"></script>
+    <script defer src="engine/gameState.js?v=20260724130205"></script>
+    <script defer src="js/ai.js?v=20260724130205"></script>
+    <script defer src="js/telemetry.js?v=20260724130205"></script>
+    <script defer src="js/melee.js?v=20260724130205"></script>
+    <script defer src="js/ui.js?v=20260724130205"></script>
+    <script defer src="js/tablefx-pts.js?v=20260724130205"></script>
+    <script defer src="js/tablefx.js?v=20260724130205"></script>
+    <script defer src="js/ambient.js?v=20260724130205"></script>
+    <script defer src="js/meta.js?v=20260724130205"></script>
+    <script defer src="js/achievements.js?v=20260724130205"></script>
+    <script defer src="js/almanac.js?v=20260724130205"></script>
+    <script defer src="js/settings.js?v=20260724130205"></script>
+    <script defer src="js/mp.js?v=20260724130205"></script>
+    <script defer src="js/modes.js?v=20260724130205"></script>
+    <!-- The guided-game driver — reads/writes the same globals ui.js exposes -->
+    <script defer src="js/tutorial.js?v=howto3"></script>
+
+    <div id="__audit" style="position:fixed;left:0;top:0;z-index:0;opacity:0;font:8px monospace">PENDING</div>
+    <script defer>
+    // PROMPT-PLACEMENT AUDIT. Lays out every step in turn and measures the
+    // bubble against the thing the player is being asked to look at (the
+    // spotlight hole), plus against the viewport. Reports anything that
+    // overlaps what it points at, runs off-screen, or is too tall to read.
+    window.addEventListener('load', function () { setTimeout(function () {
+      // CSS transitions do not advance under --virtual-time-budget (the same
+      // rAF starvation that stops the melee cinematic), so getComputedStyle
+      // reports the PRE-transition position and every measurement is a lie.
+      // Kill the transitions before measuring anything.
+      var st=document.createElement('style');
+      st.textContent='#tutBubble,#tutHole{transition:none !important;}';
+      document.head.appendChild(st);
+      var ids = window.TUT.steps.map(function (s) { return s.id; });
+      var rows = [], n = 0;
+      function r(el){ var b=el.getBoundingClientRect();
+        return {x:b.left,y:b.top,w:b.width,h:b.height,r:b.right,b:b.bottom}; }
+      function shown(el){ if(!el) return false; var cs=getComputedStyle(el);
+        if(cs.display==='none'||cs.visibility==='hidden') return false;
+        var b=el.getBoundingClientRect(); return b.width>0&&b.height>0; }
+      function overlap(a,b){
+        var w=Math.min(a.r,b.r)-Math.max(a.x,b.x), h=Math.min(a.b,b.b)-Math.max(a.y,b.y);
+        return (w>0&&h>0)?Math.round(w*h):0;
+      }
+      var t = setInterval(function () {
+        if (n >= ids.length) {
+          clearInterval(t);
+          document.getElementById('__audit').textContent = JSON.stringify(
+            {vw:window.innerWidth, vh:window.innerHeight, rows:rows}, null, 1);
+          return;
+        }
+        var id = ids[n++];
+        try { window.TUT.goto(id, true); } catch (e) { rows.push({id:id,err:String(e)}); return; }
+        // measure on the NEXT tick so layout() has positioned the bubble
+        setTimeout(function () {
+          try {
+            var bub = document.getElementById('tutBubble');
+            var hole = document.getElementById('tutHole');
+            if (!shown(bub)) { rows.push({id:id, hidden:true}); return; }
+            var B = r(bub), issues = [];
+            if (B.h > window.innerHeight - 8) issues.push('TALLER_THAN_SCREEN');
+            if (B.y < -1 || B.b > window.innerHeight + 1) issues.push('OFF_SCREEN_V');
+            if (B.x < -1 || B.r > window.innerWidth + 1) issues.push('OFF_SCREEN_H');
+            var ov = 0, H = null;
+            if (shown(hole)) { H = r(hole); ov = overlap(B, H);
+              if (ov > 0) issues.push('COVERS_TARGET'); }
+            var cs = getComputedStyle(bub);
+            rows.push({ id:id,
+              cls: bub.className, cssLeft: cs.left, cssTop: cs.top, cssTf: cs.transform,
+              resolved: (window.TUT.cur()||{}).resolved, pb: window.__pbTrace,
+              bub:[Math.round(B.x),Math.round(B.y),Math.round(B.w),Math.round(B.h)],
+              hole:H?[Math.round(H.x),Math.round(H.y),Math.round(H.w),Math.round(H.h)]:null,
+              overlapPx: ov, issues: issues });
+          } catch (e) { rows.push({id:id, err:String(e)}); }
+        }, 760);
+      }, 1300);
+    }, 6500); });
+    </script>
+
 </body>
 </html>

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>tutorial.js syntax + step-table probe</title></head>
+<body>
+<div id="__probe">PENDING</div>
+<script>
+window.__errs = [];
+window.addEventListener('error', e => window.__errs.push(String(e.message)));
+</script>
+<!-- Minimal stubs: tutorial.js only touches these at start(), never at parse. -->
+<script src="../data/cards.js"></script>
+<script src="../data/missions.js"></script>
+<script src="../js/tutorial.js"></script>
+<script>
+(function () {
+    const out = [];
+    out.push('errors=' + JSON.stringify(window.__errs));
+    out.push('TUT=' + (typeof window.TUT));
+    if (window.TUT && window.TUT.steps) {
+        const S = window.TUT.steps;
+        out.push('stepCount=' + S.length);
+        const ids = S.map(s => s.id);
+        out.push('dupIds=' + JSON.stringify(ids.filter((x, i) => ids.indexOf(x) !== i)));
+        out.push('missingId=' + S.filter(s => !s.id).length);
+        out.push('missingWhy=' + JSON.stringify(S.filter(s => !s.why).map(s => s.id)));
+        // Every step must have SOME way to advance, or the script dead-ends.
+        const stuck = S.filter(s => !s.advance && !s.choices);
+        out.push('noAdvance=' + JSON.stringify(stuck.map(s => s.id)));
+        // Choice steps must either advance the script or stop it deliberately.
+        const badChoice = [];
+        S.forEach(s => (s.choices || []).forEach(c => {
+            if (!c.label) badChoice.push(s.id + ':nolabel');
+        }));
+        out.push('badChoice=' + JSON.stringify(badChoice));
+        out.push('ids=' + JSON.stringify(ids));
+    }
+    document.getElementById('__probe').textContent = out.join('\n');
+})();
+</script>
+</body></html>

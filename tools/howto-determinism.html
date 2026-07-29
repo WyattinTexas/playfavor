@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><base href="../"><title>seeded-deal determinism probe</title></head>
+<body>
+<div id="__det">PENDING</div>
+<script src="data/cards.js"></script>
+<script src="data/missions.js"></script>
+<script src="data/characters.js"></script>
+<script src="engine/gameState.js"></script>
+<script>
+// Wyatt: "everything scripted, no RNG for either the player or the computer."
+// The engine's only gameplay randomness is the deck shuffle, and setSeed()
+// pins it. This boots the tutorial's exact setup TWICE and compares the full
+// three-act deal — decks, hands and mission pools — card for card.
+(function () {
+    const CAST = [
+        { characterId: 'bandit',    playerName: 'You' },
+        { characterId: 'knight',    playerName: 'Sir Aldric' },
+        { characterId: 'fisherman', playerName: 'Old Wren' },
+    ];
+    function deal() {
+        const g = new FavorGame(3);
+        g.setSeed(0x20260724);          // exactly what tutorial.js start() does
+        g.loadDecks();
+        g.initPlayers(CAST);
+        g.emblemHolder = 0;
+        const out = { acts: {} };
+        for (const act of [1, 2, 3]) {
+            g.startAct(act);
+            out.acts[act] = {
+                hands: g.players.map(p => p.hand.map(c => c.name)),
+                deckTop: (g.actDecks[act] || []).slice(0, 8).map(c => c.name),
+                deckLen: (g.actDecks[act] || []).length,
+                missionPool: (g.missionDecks[act] || []).slice(0, 3).map(m => m.name),
+            };
+        }
+        return out;
+    }
+    const a = deal(), b = deal();
+    const sa = JSON.stringify(a), sb = JSON.stringify(b);
+    const lines = ['identical=' + (sa === sb)];
+    for (const act of [1, 2, 3]) {
+        lines.push('--- ACT ' + act + ' ---');
+        lines.push(' you   : ' + a.acts[act].hands[0].join(' | '));
+        lines.push(' aldric: ' + a.acts[act].hands[1].join(' | '));
+        lines.push(' wren  : ' + a.acts[act].hands[2].join(' | '));
+        lines.push(' missions: ' + a.acts[act].missionPool.join(' | '));
+        lines.push(' deckLeft=' + a.acts[act].deckLen + ' top: ' + a.acts[act].deckTop.join(' | '));
+    }
+    document.getElementById('__det').textContent = lines.join('\n');
+})();
+</script>
+</body></html>

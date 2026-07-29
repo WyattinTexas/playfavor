@@ -1,0 +1,174 @@
+/* FAVOR — How to Play v2 (branch howto-v2). Shield, spotlight, bubble. */
+
+#tutRoot { position: fixed; inset: 0; z-index: 11980; pointer-events: none; }
+.tut-block { position: fixed; background: transparent; pointer-events: auto; z-index: 11990; }
+#tutHole {
+    position: fixed; z-index: 11985; pointer-events: none;
+    border: 2px solid rgba(233, 212, 139, 0.9); border-radius: 12px;
+    box-shadow: 0 0 0 200vmax rgba(10, 6, 2, 0.62), 0 0 22px rgba(233, 212, 139, 0.35);
+    transition: left 0.35s ease, top 0.35s ease, width 0.35s ease, height 0.35s ease;
+}
+#tutRoot.tut-watch #tutHole { display: none !important; }
+/* While the spotlight is tracking a card it must keep up with the bloom
+   (0.22s) — its own 0.35s ease would trail behind and clip the card. */
+#tutHole.tut-hole-track { transition: none; }
+
+#tutBubble {
+    position: fixed; z-index: 12000; pointer-events: auto;
+    width: min(430px, calc(100vw - 24px));
+    background: linear-gradient(180deg, #2b1c0c, #1d1207);
+    border: 1.5px solid var(--gold, #c9a84c); border-radius: 14px;
+    padding: 14px 18px 12px; color: #f0e6d3;
+    font-family: 'Crimson Text', Georgia, serif; font-size: 15.5px; line-height: 1.5;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.65), 0 0 18px rgba(201, 168, 76, 0.25);
+    transition: left 0.35s ease, top 0.35s ease;
+}
+#tutBubble.tut-b-center { left: 50% !important; top: 44% !important; transform: translate(-50%, -50%); }
+/* Watch-beat prompt. Bottom-RIGHT on desktop: the left rail is where the board,
+   purse, skills and — the reason for this — the MISSIONS strip live, and a
+   bottom-left prompt sat straight on top of the missions the player is being
+   told to think about (Wyatt). The right of a desktop table is the opponents
+   column, which is empty below their cards. Phone keeps bottom-left; its table
+   view puts nothing there. */
+#tutBubble.tut-b-corner {
+    right: 14px !important; left: auto !important; top: auto !important;
+    bottom: 14px; transform: none;
+    width: min(360px, calc(100vw - 28px)); opacity: 0.96;
+}
+/* Pinned to a side — leaves the middle of the screen (a board/mission card) clear. */
+#tutBubble.tut-b-left  { left: 10px !important;  right: auto !important; top: 50% !important; bottom: auto; transform: translateY(-50%); }
+#tutBubble.tut-b-right { right: 10px !important; left: auto !important;  top: 50% !important; bottom: auto; transform: translateY(-50%); }
+.tut-kicker { font-family: 'Cinzel', serif; font-size: 10px; font-weight: 700; letter-spacing: 0.22em; color: #a98b4e; }
+.tut-title { font-family: 'Cinzel', serif; font-size: 18px; font-weight: 800; color: #e9d48b; margin: 3px 0 6px; }
+.tut-text b { color: #ffe9a8; }
+.tut-next { margin-top: 10px; }
+/* Act-boundary fork: carry on with the guide, or take the game solo. Stacked
+   so the secondary choice reads as a real option rather than a cancel link —
+   the player is meant to weigh them, not skim past one. */
+.tut-choices { display: flex; flex-direction: column; gap: 7px; margin-top: 11px; }
+.tut-choices:empty { display: none; }
+.tut-choice { width: 100%; }
+.tut-choice:not(.primary) { opacity: 0.9; }
+.tut-choice:not(.primary) span { font-size: 13px; }
+.tut-count { font-size: 11px; color: rgba(240, 230, 211, 0.45); margin-top: 8px; text-align: right; font-family: 'Cinzel', serif; }
+/* Lesson-card lock: while a step points at one card, the rest of the hand is
+   out of play. Greyed and pointer-dead so the drag can't even start on them —
+   the throwCard guard in tutorial.js is the backstop, this is the affordance. */
+.hand-card.tut-locked {
+    opacity: 0.3;
+    filter: grayscale(0.75);
+    pointer-events: none !important;
+    transition: opacity 0.25s ease, filter 0.25s ease;
+}
+.tut-green { color: #8ce17d; font-weight: 700; }
+.tut-orange { color: #ff9d3c; font-weight: 700; }
+
+/* Skip-anytime — persistent, top-right, above the shield. #tutRoot is
+   pointer-events:none, so this MUST re-enable them or it can't be clicked. */
+#tutSkip {
+    position: fixed; top: 10px; right: 12px; z-index: 12001; pointer-events: auto;
+    background: rgba(20, 12, 4, 0.82); color: #d8c79a;
+    border: 1px solid rgba(201, 168, 76, 0.5); border-radius: 8px;
+    padding: 6px 11px; cursor: pointer; opacity: 0.85;
+    font-family: 'Cinzel', serif; font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+    transition: opacity 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+#tutSkip:hover { opacity: 1; background: rgba(44, 28, 10, 0.96); color: #ffe9a8; }
+
+/* Card anatomy: real card art + positioned callout chips. */
+.tut-anat { position: relative; width: 240px; margin: 10px auto 2px; }
+.tut-anat img { width: 100%; border-radius: 10px; border: 1px solid rgba(201, 168, 76, 0.5); display: block; }
+.tut-an-chip {
+    position: absolute; max-width: 46%;
+    background: rgba(20, 12, 4, 0.92); border: 1px solid var(--gold, #c9a84c);
+    border-radius: 8px; padding: 3px 7px;
+    font-size: 10.5px; line-height: 1.3; color: #ffe9a8;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.6);
+}
+
+/* Card anatomy v2: art centered, callout labels in the SIDE GUTTERS so they
+   never cover the symbols they point at. */
+.tut-anat2 {
+    display: flex; align-items: flex-start; justify-content: center;
+    gap: 8px; margin: 12px auto 4px;
+}
+.tut-anat2 .aa-card { width: 140px; flex: 0 0 auto; }
+.tut-anat2 .aa-card img {
+    width: 100%; border-radius: 8px; border: 1px solid rgba(201, 168, 76, 0.5); display: block;
+}
+.tut-anat2 .aa-side { flex: 1 1 0; align-self: center; }
+.tut-anat2 .aa-lbl {
+    display: block; background: rgba(20, 12, 4, 0.92);
+    border: 1px solid rgba(201, 168, 76, 0.5); border-radius: 8px;
+    padding: 6px 8px; font-size: 11px; line-height: 1.35; color: #ffe9a8;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
+}
+.tut-anat2 .aa-side.left { text-align: right; }
+.tut-anat2 .aa-side.right { text-align: left; }
+.tut-anat-cap {
+    margin: 8px auto 2px; max-width: 380px; text-align: center;
+    font-size: 12.5px; line-height: 1.4; color: #e7d7b4;
+}
+.tut-anat-cap b { color: #9fd0ff; }
+
+/* Pulse on the exact control the step wants tapped. */
+.tut-pulse { animation: tutPulse 1.4s ease-in-out infinite !important; }
+@keyframes tutPulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(233, 212, 139, 0.9), 0 0 18px 5px rgba(233, 212, 139, 0.45); }
+    50%      { box-shadow: 0 0 0 3px rgba(233, 212, 139, 1),   0 0 26px 9px rgba(233, 212, 139, 0.65); }
+}
+/* Green variant — used on the glow-teaching steps so the "breathing" matches
+   the word "green" (the gold pulse read as orange over the card's green glow). */
+.tut-pulse.tut-pulse-green { animation: tutPulseGreen 1.4s ease-in-out infinite !important; }
+@keyframes tutPulseGreen {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(120, 225, 110, 0.9), 0 0 18px 6px rgba(120, 225, 110, 0.5); }
+    50%      { box-shadow: 0 0 0 3px rgba(140, 235, 125, 1),   0 0 28px 10px rgba(120, 225, 110, 0.7); }
+}
+
+/* Finale */
+#tutRoot.tut-done { pointer-events: auto; background: rgba(10, 6, 2, 0.7); }
+.tut-finale { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+.tut-finale-card {
+    background: linear-gradient(180deg, #2b1c0c, #1d1207);
+    border: 2px solid var(--gold, #c9a84c); border-radius: 18px;
+    padding: 30px 40px; text-align: center; max-width: 440px; color: #f0e6d3;
+    font-family: 'Crimson Text', Georgia, serif;
+    box-shadow: 0 0 60px rgba(201, 168, 76, 0.3);
+}
+.tut-finale-card h2 { font-family: 'Cinzel', serif; color: #e9d48b; margin: 4px 0 10px; }
+.tut-finale-card p { margin-bottom: 16px; line-height: 1.55; }
+
+/* ─── PHONE LANDSCAPE (iPhone etc.) — short viewport, table-view layout ───
+   The bubble is sized for tall screens; on a ~390px-tall landscape phone it
+   must shrink and, worst case, scroll internally so the Next button is ALWAYS
+   reachable. Anatomy art shrinks too. Matches the game's own compact breakpoint. */
+@media (orientation: landscape) and (max-height: 540px) {
+    #tutBubble {
+        width: min(340px, calc(100vw - 20px));
+        max-height: calc(100dvh - 16px);
+        overflow-y: auto; -webkit-overflow-scrolling: touch;
+        padding: 10px 14px 10px; font-size: 13.5px; line-height: 1.4;
+        border-radius: 12px;
+    }
+    #tutBubble.tut-b-center { top: 50% !important; }
+    /* Watch-mode corner bubble: keep it clear of the bottom hand strip */
+    /* Phone keeps the LEFT corner — must re-assert both sides, or the desktop
+       rule's `right` survives here and pins it to the wrong edge. */
+    #tutBubble.tut-b-corner { width: min(300px, calc(100vw - 20px)); bottom: 8px; left: 8px !important; right: auto !important; font-size: 12.5px; }
+    .tut-kicker { font-size: 9px; }
+    .tut-title { font-size: 15px; margin: 2px 0 4px; }
+    .tut-next { margin-top: 7px; padding: 8px 14px; }
+    .tut-next span { font-size: 13px; }
+    .tut-choices { gap: 5px; margin-top: 8px; }
+    .tut-choice { padding: 7px 12px; }
+    .tut-choice span { font-size: 12.5px; }
+    .tut-choice:not(.primary) span { font-size: 11.5px; }
+    .tut-count { margin-top: 5px; }
+    /* Anatomy: smaller card + labels so the whole thing fits a short screen */
+    .tut-anat2 { gap: 6px; margin: 8px auto 3px; }
+    .tut-anat2 .aa-card { width: 92px; }
+    .tut-anat2 .aa-lbl { font-size: 9.5px; padding: 4px 5px; line-height: 1.25; }
+    .tut-anat-cap { font-size: 10.5px; margin-top: 5px; }
+    /* Skip button: smaller, out of the way */
+    #tutSkip { top: 6px; right: 8px; padding: 4px 8px; font-size: 10px; }
+}

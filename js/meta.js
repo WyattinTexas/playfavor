@@ -1121,6 +1121,12 @@
     // celebrating the same purchase twice).
     async function drainMsgs() {
         let shown = 0;
+        // The How-to-Play harness boots this whole layer, and a congratulation
+        // that surfaced there would be UNREACHABLE (the tutorial shield sits
+        // above it and swallows the dismiss button) and then SPENT — every
+        // message is deleted from the queue once shown. So leave them queued;
+        // they'll be delivered, and celebrated properly, in the real game.
+        if (window.TUT_PAGE) return 0;
         try {
             const msgs = await dbGet(`players/${uid()}/msgQueue`);
             if (!msgs) return 0;
@@ -1740,7 +1746,16 @@
         // re-derive (idempotent, menu-gated inside; un-awaited so a
         // celebration never holds the chip). Retro first: "your board
         // turned" before "a stranger arrives".
-        checkSideBRetro().then(() => checkEarnedHero()).then(() => checkRewardRetro()).catch(() => {});
+        // Never on the How-to-Play page. Each of these announces a reward that
+        // was already earned and marks it shown (localStorage favorShownUnlock_*)
+        // BEFORE it appears — so one firing behind the tutorial shield is spent
+        // forever, unseen. Their own guard is only "is a game on screen", which
+        // is a RACE here: meta boots on load and the tutorial calls
+        // showGameScreen() a beat later. TUT_PAGE settles it. Skipping is free —
+        // every latch re-derives from the row on the next real boot.
+        if (!window.TUT_PAGE) {
+            checkSideBRetro().then(() => checkEarnedHero()).then(() => checkRewardRetro()).catch(() => {});
+        }
         // _me just landed -- repaint the WANTED plaque so its CLAIMED stamp is
         // driven by the row arriving rather than by a guessed timer. modes.js
         // loads after this file, so on the very first boot FMODES may not exist
@@ -2579,7 +2594,10 @@
         // it. Awaiting it here delayed the PayPal-return cleanup underneath by a
         // whole read, which is a real bug for a player coming back from checkout
         // (the audit caught it). It celebrates itself whenever it lands.
-        if (window.FACH) window.FACH.sync();
+        // Not on the How-to-Play page: sync CLAIMS the awards and then
+        // celebrates them, so running it behind the tutorial shield would burn
+        // the celebration the player never got to see.
+        if (window.FACH && !window.TUT_PAGE) window.FACH.sync();
 
         // Back from a PayPal tab? Clean the URL, land the player in the
         // store, and watch for the Stars the IPN is about to credit.

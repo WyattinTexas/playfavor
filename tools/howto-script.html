@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FAVOR — How to Play: the Script (for Wyatt)</title>
+<base href="../">
+<style>
+    * { box-sizing: border-box; margin: 0; }
+    body { background: #17100a; color: #f0e6d3; font-family: Georgia, serif; line-height: 1.5; overflow: auto !important; height: auto !important; }
+    .w { max-width: 900px; margin: 0 auto; padding: 26px 16px 90px; }
+    h1 { font-family: 'Cinzel', serif; font-size: 25px; color: #e9d48b; text-align: center; font-variant: small-caps; }
+    .tag { text-align: center; color: rgba(240,230,211,0.6); margin: 4px 0 22px; font-size: 14px; }
+    .step { background: linear-gradient(180deg, #221507, #1a1006); border: 1px solid rgba(201,168,76,0.35); border-radius: 12px; padding: 16px 18px; margin: 14px 0; }
+    .num { font-family: 'Cinzel', serif; color: #a98b4e; font-size: 12px; letter-spacing: 0.1em; }
+    .ttl { font-family: 'Cinzel', serif; font-size: 18px; font-weight: 800; color: #e9d48b; margin: 2px 0 10px; }
+    .lbl { font-family: 'Cinzel', serif; font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em; color: #c9a84c; margin: 10px 0 3px; }
+    .playersees { background: rgba(0,0,0,0.3); border-left: 3px solid #c9a84c; border-radius: 0 8px 8px 0; padding: 9px 13px; font-size: 15px; }
+    .playersees b { color: #ffe9a8; }
+    .why { color: rgba(240,230,211,0.75); font-size: 14px; font-style: italic; }
+    .mech { font-size: 12.5px; color: rgba(240,230,211,0.55); }
+    code, pre { font-size: 12px; color: #d9c69a; }
+    pre { white-space: pre-wrap; background: rgba(0,0,0,0.25); padding: 8px 10px; border-radius: 8px; margin-top: 4px; }
+    .dyn { color: #8fd0e8; font-size: 12.5px; }
+    .intro { background: rgba(38,24,10,0.7); border: 1px solid rgba(201,168,76,0.45); border-radius: 12px; padding: 12px 18px; font-size: 14.5px; margin-bottom: 20px; }
+</style>
+</head>
+<body>
+<div class="w">
+    <h1>How to Play — the Full Script</h1>
+    <p class="tag">Every prompt the guided game shows, in order, with the reasoning behind it.<br>
+    Edit any wording you don't like and send it back — text lives in one list in <code>js/tutorial.js</code>.</p>
+    <div class="intro">
+        <b style="color:#e9d48b">The shape of it:</b> the player sits at a real 3-seat table —
+        <b>You = the Bandit</b>, Sir Aldric = the Knight, Old Wren = the Fisherman — and plays a genuine
+        Act 1 into the start of Act 2. Key cards are swapped into the hand at the right beats
+        (always from the correct act's own deck), the mission pool is arranged so
+        <i>Helping the Merchant</i> is available, and everything else — throws, reveals, the pass-left
+        draft, the missions phase, the Melee cinematic — is the real game. While a prompt is up, a
+        shield blocks every tap except the one thing the step allows.
+    </div>
+    <div id="list">Loading script…</div>
+</div>
+<script src="js/tutorial.js?v=script"></script>
+<script>
+const ADV = s => {
+    if (s.advance === 'next') return 'Player taps <b>Next</b>.';
+    if (s.advance === 'click') return 'Advances when the spotlighted element is tapped.';
+    if (typeof s.advance === 'function') return 'Advances automatically when: <code>' +
+        s.advance.toString().replace(/^\(\)\s*=>\s*/, '').replace(/</g, '&lt;') + '</code>';
+    return '';
+};
+const TXT = s => {
+    if (typeof s.text === 'function') {
+        return '<span class="dyn">DYNAMIC — adapts to the live table:</span><pre>'
+            + s.text.toString().replace(/</g, '&lt;') + '</pre>';
+    }
+    return '<div class="playersees">' + s.text + '</div>';
+};
+document.getElementById('list').innerHTML = window.TUT.steps.map((s, i) => `
+    <div class="step">
+        <div class="num">STEP ${i + 1} of ${TUT.steps.length} · id: ${s.id}${s.mode === 'watch' ? ' · WATCH MODE (no shield — the game plays, bubble sits in the corner)' : ''}</div>
+        <div class="ttl">${s.title || '(untitled)'}</div>
+        <div class="lbl">THE PLAYER READS</div>
+        ${TXT(s)}
+        ${s.anatomy ? '<div class="lbl">PLUS AN ANNOTATED CARD</div><div class="mech">The real card art with positioned callout chips labeling: top-left cost zone, top-right skill ovals, act border color, Favor shield.</div>' : ''}
+        <div class="lbl">WHY THIS PROMPT EXISTS</div>
+        <div class="why">${s.why || ''}</div>
+        <div class="lbl">MECHANICS</div>
+        <div class="mech">
+            Spotlight: <code>${s.target ? (typeof s.target === 'function' ? 'dynamic element' : s.target) : (s.mode === 'watch' ? 'none — free play' : 'none — dimmed screen, centered bubble')}</code>
+            &nbsp;·&nbsp; ${ADV(s)}
+            ${s.before ? '<br>Stage direction first: <code>' + s.before.toString().replace(/</g, '&lt;').slice(0, 180) + '</code>' : ''}
+        </div>
+    </div>`).join('');
+</script>
+</body>
+</html>

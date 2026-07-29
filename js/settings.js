@@ -181,6 +181,28 @@
         }));
         body.appendChild(menu);
 
+        // Rules — the illustrated reference deck. It used to BE "How to Play";
+        // that button now opens the guided game, so the deck lives here as the
+        // thing you consult rather than the thing you're taught by (Wyatt 7/29).
+        // Sits directly above Version, as asked.
+        const rules = section('Rules');
+        const rrow = document.createElement('div');
+        rrow.className = 'set-build';
+        const rlabel = document.createElement('span');
+        rlabel.textContent = 'The rules, card by card';
+        const rbtn = document.createElement('button');
+        rbtn.className = 'set-upd-btn';
+        rbtn.textContent = 'Read the Rules';
+        rbtn.onclick = () => {
+            // The deck (z 2000) opens over this panel (z 1970) and closing it
+            // returns here, so Settings deliberately stays open behind it.
+            if (typeof openRulesDeck === 'function') openRulesDeck();
+            else if (typeof openHowto === 'function') openHowto();
+        };
+        rrow.append(rlabel, rbtn);
+        rules.appendChild(rrow);
+        body.appendChild(rules);
+
         // Build / update
         const upd = section('Version');
         const row = document.createElement('div');

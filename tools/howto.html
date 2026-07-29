@@ -3,37 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <base href="../">
     <title>FAVOR — A Game of Royal Succession</title>
-    <link rel="stylesheet" href="css/style.css?v=20260729154325">
+    <link rel="stylesheet" href="css/style.css?v=20260724130205">
     <!-- Skylar's melee cinematic — loaded AFTER style.css so its .ms-* rules win. -->
-    <link rel="stylesheet" href="css/melee.css?v=20260729154325">
-    <!-- How to Play — the guided game's shield, spotlight and prompt. -->
-    <link rel="stylesheet" href="css/tutorial.css?v=20260729154325">
+    <link rel="stylesheet" href="css/melee.css?v=20260724130205">
+    <!-- How to Play v3 guided-game shield/bubble -->
+    <link rel="stylesheet" href="css/tutorial.css?v=howto3">
     <link rel="icon" type="image/png" href="assets/ui/favicon-serpent.png">
     <link rel="apple-touch-icon" href="assets/ui/favicon-serpent.png">
 </head>
 <body>
 
-    <!-- HOW TO PLAY — the guided game runs on THIS page under ?tutorial=1, so
-         there is no cloned tutorial page to keep in sync with this one.
-         These flags MUST be set here, before the deferred scripts: the meta
-         layer boots on load, long before tutorial.js starts, and TUT_PAGE is
-         what stops the scripted game posting results to the real leaderboard
-         and suppresses reward popups the tutorial shield would trap. -->
-    <script>
-    if (/[?&]tutorial=1/.test(location.search)) {
-        window.TUT_PAGE = true;            // scripted table: never recorded, no celebrations
-        window.TUTORIAL_AUTOSTART = true;  // tutorial.js starts itself on load
-        window._mpSkipQueue = true;        // no multiplayer queue behind a solo lesson
-    }
-    </script>
+    <!-- HOW TO PLAY v3 harness — this page IS index.html + the tutorial driver.
+         Re-sync the DOM/scripts from index.html whenever index.html changes. -->
+    <!-- TUT_PAGE marks this as the How-to-Play harness. It MUST be set before
+         the deferred scripts run: the meta layer boots on load, well before
+         tutorial.js calls start(), so a flag set inside start() would lose the
+         race. It suppresses every reward celebration (which would appear under
+         the tutorial shield, undismissable, and be spent unseen) and stops the
+         scripted game posting its authored result to the real leaderboard. -->
+    <script>window._mpSkipQueue = true; window.TUTORIAL_AUTOSTART = true; window.TUT_PAGE = true;</script>
 
     <div id="buildVersion" style="position:fixed;bottom:2px;right:6px;z-index:99999;font:600 8px monospace;color:#e8caa0;opacity:.35;pointer-events:none"></div>
     <script>
+    // Show the TUTORIAL build, not just ui.js. A cached howto.html silently
+    // pins the old tutorial.js, and the page looked identical either way —
+    // which cost a whole review round arguing about a fix that was already
+    // deployed. Now a screenshot says which build it came from.
     document.addEventListener('DOMContentLoaded', function() {
-        var ui = document.querySelector('script[src*="ui.js"]');
-        var stamp = ui ? (ui.src.split('?v=')[1] || '?') : '?';
-        document.getElementById('buildVersion').textContent = 'v' + stamp;
+        var pick = function (m) {
+            var el = document.querySelector('script[src*="' + m + '"]');
+            return el ? (el.src.split('?v=')[1] || '?') : '?';
+        };
+        document.getElementById('buildVersion').textContent =
+            'howto ' + pick('tutorial.js') + ' · ui ' + pick('ui.js');
     });
     </script>
 
@@ -622,26 +626,26 @@
          falls back to local standings if these can't reach the project) -->
     <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script defer src="data/cards.js?v=20260729154325"></script>
-    <script defer src="data/missions.js?v=20260729154325"></script>
-    <script defer src="data/characters.js?v=20260729154325"></script>
-    <script defer src="data/achievements.js?v=20260729154325"></script>
-    <script defer src="data/playbook.js?v=20260729154325"></script>
-    <script defer src="engine/gameState.js?v=20260729154325"></script>
-    <script defer src="js/ai.js?v=20260729154325"></script>
-    <script defer src="js/telemetry.js?v=20260729154325"></script>
-    <script defer src="js/melee.js?v=20260729154325"></script>
-    <script defer src="js/ui.js?v=20260729154325"></script>
-    <script defer src="js/tablefx-pts.js?v=20260729154325"></script>
-    <script defer src="js/tablefx.js?v=20260729154325"></script>
-    <script defer src="js/ambient.js?v=20260729154325"></script>
-    <script defer src="js/meta.js?v=20260729154325"></script>
-    <script defer src="js/achievements.js?v=20260729154325"></script>
-    <script defer src="js/almanac.js?v=20260729154325"></script>
-    <script defer src="js/settings.js?v=20260729154325"></script>
-    <script defer src="js/mp.js?v=20260729154325"></script>
-    <script defer src="js/modes.js?v=20260729154325"></script>
-    <!-- The guided How to Play. Inert unless ?tutorial=1 is on the URL. -->
-    <script defer src="js/tutorial.js?v=20260729154325"></script>
+    <script defer src="data/cards.js?v=20260724130205"></script>
+    <script defer src="data/missions.js?v=20260724130205"></script>
+    <script defer src="data/characters.js?v=20260724130205"></script>
+    <script defer src="data/achievements.js?v=20260724130205"></script>
+    <script defer src="data/playbook.js?v=20260724130205"></script>
+    <script defer src="engine/gameState.js?v=20260724130205"></script>
+    <script defer src="js/ai.js?v=20260724130205"></script>
+    <script defer src="js/telemetry.js?v=20260724130205"></script>
+    <script defer src="js/melee.js?v=20260724130205"></script>
+    <script defer src="js/ui.js?v=20260724130205"></script>
+    <script defer src="js/tablefx-pts.js?v=20260724130205"></script>
+    <script defer src="js/tablefx.js?v=20260724130205"></script>
+    <script defer src="js/ambient.js?v=20260724130205"></script>
+    <script defer src="js/meta.js?v=20260724130205"></script>
+    <script defer src="js/achievements.js?v=20260724130205"></script>
+    <script defer src="js/almanac.js?v=20260724130205"></script>
+    <script defer src="js/settings.js?v=20260724130205"></script>
+    <script defer src="js/mp.js?v=20260724130205"></script>
+    <script defer src="js/modes.js?v=20260724130205"></script>
+    <!-- The guided-game driver — reads/writes the same globals ui.js exposes -->
+    <script defer src="js/tutorial.js?v=howto3"></script>
 </body>
 </html>
