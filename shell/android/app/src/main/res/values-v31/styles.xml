@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="ShellTheme" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/launchBg</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:navigationBarColor">@color/launchBg</item>
+        <item name="android:statusBarColor">@color/launchBg</item>
+        <item name="android:windowSplashScreenBackground">@color/launchBg</item>
+    </style>
+</resources>

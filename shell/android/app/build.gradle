@@ -1,0 +1,56 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The upload keystore and its passwords live OUTSIDE the repo, in
+// ~/.playconsole/private/favor-upload.properties (same law the ASC .p8 and
+// GVT's keystore live under). Absent that file, release builds are simply
+// unsigned.
+def signProps = new Properties()
+def signPropsFile = new File(System.getProperty('user.home'), '.playconsole/private/favor-upload.properties')
+if (signPropsFile.exists()) {
+    signPropsFile.withInputStream { signProps.load(it) }
+}
+
+android {
+    namespace 'com.corkscrewgames.favor'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.corkscrewgames.favor"
+        minSdk 28
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+    }
+
+    signingConfigs {
+        release {
+            if (signPropsFile.exists()) {
+                storeFile new File(signProps.getProperty('storeFile'))
+                storePassword signProps.getProperty('storePassword')
+                keyAlias signProps.getProperty('keyAlias')
+                keyPassword signProps.getProperty('keyPassword')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            if (signPropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+}

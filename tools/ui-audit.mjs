@@ -1707,6 +1707,147 @@ console.log('── Desktop: due mission short a borrowable skill — chooser of
   await page.close();
 }
 
+// ═══ DESKTOP: the Trade Route opens the WHOLE table in the borrow chooser ═══
+// Wyatt's report — with Great North Connection fielded and BOTH neighbours
+// skill-dry, the seat across the table never appeared as a lender, so the
+// card's borrow rights read as dead. The engine always planned across it;
+// only the chooser was narrow, which left "Let it Fail" as the one door.
+// f1e7c54 fixed it but shipped no UI lock, so nothing stopped the chooser
+// from narrowing again — this flow is that lock.
+// FOUR seats on purpose: at a 3-player table both rivals ARE neighbours, so
+// "across" cannot exist and the bug is invisible by construction.
+console.log('── Desktop: Trade Route lends ACROSS the table — the far seat is a real option');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('trade-route: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('trade-route pageerror: ' + e.message));
+  await page.setViewport({ width: 1420, height: 800 });
+  await startGame(page);
+
+  // startGame pins a 3-player queue — rebuild the table at four seats so a
+  // genuine across-seat exists (seat 2), then strip both neighbours bare.
+  const rig = await page.evaluate(() => {
+    game = new FavorGame(4);          // ui.js declares `let game`
+    game.loadDecks();
+    game.initPlayers([
+      { characterId: 'knight',   playerName: 'You' },
+      { characterId: 'bandit',   playerName: 'Left' },
+      { characterId: 'merchant', playerName: 'Across' },
+      { characterId: 'duchess',  playerName: 'Right' },
+    ]);
+    game.phase = 'gameplay';
+    game.currentAct = 3;
+    const p = game.players[0];
+    p.playedCards = [{ ...FAVOR_DATA.cards.find(c => c.name === 'Great North Connection') }];
+    game.players[1].playedCards = [];
+    game.players[3].playedCards = [];
+    // Only the far seat can lend the Prospecting the mission wants. A REAL
+    // card, not a hand-rolled stub — a stub has no filename and the played
+    // stack renders assets/cards/regular/undefined, which trips the
+    // zero-console-errors gate at the end of the run.
+    game.players[2].playedCards = [{ ...FAVOR_DATA.cards.find(c => c.name === 'Pearl Diving') }];
+    const m = { ...FAVOR_DATA.missions.find(mm => mm.name === 'Passing the Mirror Gate') };
+    p.missions = [m];
+    p.bonusSkills = { alchemy: 4, prospecting: 2 };
+    game.applySlotSkills(p);
+    p.gold = 20;
+    renderGameState();
+    const plan = game.missionBorrowPlan(0, m);
+    return { plan: plan && plan.borrowFrom.map(b => b.neighborIndex), cost: plan && plan.cost };
+  });
+  ok(rig.plan && rig.plan.every(i => i === 2),
+    `the engine plans the borrow ACROSS, at seat 2 (${JSON.stringify(rig.plan)})`);
+
+  // 1 · WITH the card fielded: every seat is offered, the far one is live.
+  await page.evaluate(() => { showMissionBorrowChooser(game.players[0].missions[0]); });
+  await page.waitForFunction(() =>
+    document.getElementById('promisePicker').classList.contains('active'), { timeout: 8000 });
+  await sleep(300);
+  const wide = await page.evaluate(() => ({
+    rows: [...document.querySelectorAll('#promisePicker .bw-row')].map(r => ({
+      pi: +r.dataset.pi, off: r.classList.contains('off'),
+      name: r.querySelector('.bw-name')?.textContent,
+    })),
+    sub: document.querySelector('#promisePicker .pp-sub')?.textContent.replace(/\s+/g, ' ') || '',
+  }));
+  const far = wide.rows.find(r => r.pi === 2);
+  ok(!!far, `the seat ACROSS is listed at all (seats offered: ${wide.rows.map(r => r.pi).join(',')})`);
+  ok(far && !far.off, 'and it is TAPPABLE, not greyed out — the card actually does something');
+  ok(wide.rows.length === 3, `all three rivals are offered, not just the two neighbours (${wide.rows.length})`);
+  ok(/Trade Route lets anyone lend/i.test(wide.sub), 'the copy says WHY the table opened up');
+  // The sub-line used to read "tap the neighbor who lends it" while the row
+  // you had to tap was NOT a neighbour — the last trace of the old
+  // neighbours-only framing, sitting on the very screen this bug was about.
+  ok(!/tap the neighbou?r/i.test(wide.sub),
+    `and stops calling an across-table lender a "neighbor" (${wide.sub.trim()})`);
+  await page.screenshot({ path: join(SHOTS, 'trade-route-borrow-wide.png') });
+
+  // 2 · Tapping the far seat pays THAT purse — borrowing across costs the
+  //     normal 2g a unit and nobody else is charged or paid.
+  //     The stream is watched at the same time: a rotated peer must be told
+  //     the lender in CANONICAL seats, or the fee lands in a stranger's purse.
+  const before = await page.evaluate(() => game.players.map(p => p.gold));
+  const res = await page.evaluate(() => {
+    const realFMP = window.FMP;
+    const sent = [];
+    window.FMP = { active: () => true, isHost: () => true,
+      publish: (type, data) => { sent.push({ type, data }); },
+      canonSeat: (i) => i + 10 };          // a deliberately un-local numbering
+    document.querySelector('#promisePicker .bw-row[data-pi="2"]:not(.off)').click();
+    window.FMP = realFMP;
+    return { sent };
+  });
+  await sleep(400);
+  const after = await page.evaluate(() => ({
+    gold: game.players.map(p => p.gold),
+    completed: game.players[0].completedMissions.length,
+    failed: game.players[0].failedMissions.length,
+    closed: !document.getElementById('promisePicker').classList.contains('active'),
+  }));
+  ok(after.completed === 1 && after.failed === 0, 'borrowing across completes the mission');
+  ok(after.gold[0] === before[0] - rig.cost,
+    `it costs the normal fee (${before[0]}→${after.gold[0]}, plan said ${rig.cost}g)`);
+  ok(after.gold[2] === before[2] + rig.cost,
+    `and every penny lands in the ACROSS seat's purse (${before[2]}→${after.gold[2]})`);
+  ok(after.gold[1] === before[1] && after.gold[3] === before[3],
+    'neither neighbour is charged or paid for a trade they had no part in');
+  ok(after.closed, 'chooser closes; the act rolls on');
+
+  const mv = res.sent.find(s => s.type === 'mission_borrow');
+  ok(!!mv && mv.data.accept === true, 'the borrow publishes a mission_borrow move');
+  ok(mv && Array.isArray(mv.data.borrowFrom) && mv.data.borrowFrom.every(b => b.lender === 12),
+    `and names the far lender in CANONICAL seats, not local ones (${
+      mv && JSON.stringify((mv.data.borrowFrom || []).map(b => b.lender))})`);
+
+  // 3 · WITHOUT the card the table closes back up — neighbours only.
+  const narrow = await page.evaluate(() => {
+    const p = game.players[0];
+    p.playedCards = [];                      // Trade Route off the field
+    const m = { ...FAVOR_DATA.missions.find(mm => mm.name === 'Passing the Mirror Gate') };
+    p.missions = [m];
+    p.bonusSkills = { alchemy: 4, prospecting: 2 };
+    game.applySlotSkills(p);
+    p.gold = 20;
+    // Give a NEIGHBOUR the skill so a chooser still opens at all.
+    game.players[1].playedCards = [{ ...FAVOR_DATA.cards.find(c => c.name === 'Pearl Diving') }];
+    showMissionBorrowChooser(m);
+    return true;
+  });
+  ok(narrow, 'chooser re-opened without the Trade Route');
+  await page.waitForFunction(() =>
+    document.getElementById('promisePicker').classList.contains('active'), { timeout: 8000 });
+  await sleep(300);
+  const seatsNarrow = await page.evaluate(() =>
+    [...document.querySelectorAll('#promisePicker .bw-row')].map(r => +r.dataset.pi));
+  ok(!seatsNarrow.includes(2),
+    `with no Trade Route the far seat is gone again — neighbours only (${seatsNarrow.join(',')})`);
+  ok(seatsNarrow.includes(1) && seatsNarrow.includes(3),
+    'both neighbours still stand where they always did');
+  await page.evaluate(() => document.getElementById('mbFail').click());
+  await sleep(300);
+  await page.close();
+}
+
 // ═══ DESKTOP: Let it Fail gets a real ceremony beat ═══
 // 7/18 recording: declining Alchemic Seige paid its +20-Prestige fail reward
 // in total silence — the toast fired behind the NEXT chooser. The decline now
@@ -8263,6 +8404,55 @@ console.log('── Court Seal: preview names the row; claim takes the seat');
   ok(seal.after.name === 'Seal Bearer' && seal.after.avatar === 'doctor'
     && seal.after.owned.includes('doctor'),
     'name, crest and owned heroes ride along');
+  await page.close();
+}
+
+// ═══ ANDROID SHELL GATE: the Play build must never show the PayPal Mint ═══
+// The Android shell's UA carries "FavorShell-Android" (shell/android/); the
+// widened IOS_SHELL regex must hide every purchase rail for it exactly as it
+// does for iOS and Steam — an unmodified WebView would ship a PayPal Stars
+// rail inside a Google Play app (Play payments policy, the same teeth as
+// Apple 3.1.1). Asserted here so the gate can never silently narrow again.
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('droid-shell: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('droid-shell pageerror: ' + e.message));
+  console.log('\n── Android shell gate (FavorShell-Android UA) ──');
+  await page.setViewport({ width: 960, height: 540, deviceScaleFactor: 2 });
+  await page.setUserAgent(await browser.userAgent() + ' FavorShell-Android/1.0');
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+  await page.evaluate(() => { FLB.openStore(); });
+  await page.waitForFunction(() => document.querySelectorAll('.st-card').length >= 1, { timeout: 10000 });
+  const gate = await page.evaluate(() => {
+    const disp = sel => { const el = document.querySelector(sel); return el ? getComputedStyle(el).display : 'absent'; };
+    return {
+      bodyClass: document.body.classList.contains('ios-shell'),
+      mintLink: disp('.mint-link'),
+      starsBtn: disp('.st-stars-btn'),
+      mintPanel: disp('#mintPanel'),
+      packs: (document.getElementById('storePacks') || { innerHTML: '' }).innerHTML,
+    };
+  });
+  ok(gate.bodyClass, 'FavorShell-Android UA gets the ios-shell body class');
+  ok(gate.mintLink === 'none', `menu ★ Get Stars link is hidden (${gate.mintLink})`);
+  ok(gate.starsBtn === 'none', `store ★ Purchase Stars button is hidden (${gate.starsBtn})`);
+  ok(gate.mintPanel === 'none', `the Royal Mint easel is hidden (${gate.mintPanel})`);
+  ok(gate.packs === '', 'no PayPal packs are rendered into #storePacks');
+  await sleep(400);
+  await page.screenshot({ path: join(SHOTS, 'droid-shell-store.png') });
+  // The sign-in door: an honest note, never a dead GIS button (Google's
+  // OAuth refuses embedded WebViews with disallowed_useragent).
+  const door = await page.evaluate(() => {
+    FLB.closeStore();
+    FLB.openProfile();
+    const sec = document.getElementById('pfSignin');
+    return { html: sec ? sec.innerHTML : 'absent', gsi: !!document.getElementById('pfGsi') };
+  });
+  ok(/Account linking arrives/.test(door.html), 'Android door shows the honest update note');
+  ok(!door.gsi, 'no GIS button is mounted under a FavorShell-Android UA');
+  await sleep(300);
+  await page.screenshot({ path: join(SHOTS, 'droid-shell-door.png') });
   await page.close();
 }
 

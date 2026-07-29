@@ -5980,7 +5980,7 @@ function showBorrowChooser(card) {
                 <div class="pp-inner bw">
                     <div class="pp-title">Borrow &amp; Play</div>
                     <div class="pp-sub"><b>${card.name}</b> needs <b>${needTxt}</b> —
-                        ${single ? 'tap the neighbor who lends it' : 'pick a lender for each skill'}.
+                        ${single ? `tap the ${wide ? 'player' : 'neighbor'} who lends it` : 'pick a lender for each skill'}.
                         The fee is paid <b>to them</b>${anyLender ? ' · your Merchant slot lets anyone lend' : tradeRoute ? ' · your Trade Route lets anyone lend' : ''}.</div>
                     <div class="bw-scroll">${sectionHtml}</div>
                     <div class="pp-actions">
@@ -6335,7 +6335,7 @@ function showMissionBorrowChooser(mission) {
                         </div>
                         <div class="mb-choose">
                             <div class="pp-sub">You're short <b>${shortTxt}</b> —
-                                ${single ? 'tap the neighbor who lends it' : 'pick a lender for each skill'}.
+                                ${single ? `tap the ${wide ? 'player' : 'neighbor'} who lends it` : 'pick a lender for each skill'}.
                                 The fee is paid <b>to them</b>${anyLender ? ' · your Merchant slot lets anyone lend' : tradeRoute ? ' · your Trade Route lets anyone lend' : ''}.
                                 Letting it fail is a real play.</div>
                             <div class="bw-scroll">${sectionHtml}</div>
