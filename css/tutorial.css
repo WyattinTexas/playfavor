@@ -15,7 +15,10 @@
 
 #tutBubble {
     position: fixed; z-index: 12000; pointer-events: auto;
-    width: min(430px, calc(100vw - 24px));
+    /* The notch: index.html sets viewport-fit=cover, so 100vw includes the
+       area under the cutout. Subtract the insets or a landscape iPhone clips
+       the first character off every line (Wyatt, iPhone 12 Pro Max). */
+    width: min(430px, calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)));
     background: linear-gradient(180deg, #2b1c0c, #1d1207);
     border: 1.5px solid var(--gold, #c9a84c); border-radius: 14px;
     padding: 14px 18px 12px; color: #f0e6d3;
@@ -31,13 +34,14 @@
    column, which is empty below their cards. Phone keeps bottom-left; its table
    view puts nothing there. */
 #tutBubble.tut-b-corner {
-    right: 14px !important; left: auto !important; top: auto !important;
-    bottom: 14px; transform: none;
-    width: min(360px, calc(100vw - 28px)); opacity: 0.96;
+    right: max(14px, env(safe-area-inset-right)) !important; left: auto !important; top: auto !important;
+    bottom: max(14px, env(safe-area-inset-bottom)); transform: none;
+    width: min(360px, calc(100vw - 28px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+    opacity: 0.96;
 }
 /* Pinned to a side — leaves the middle of the screen (a board/mission card) clear. */
-#tutBubble.tut-b-left  { left: 10px !important;  right: auto !important; top: 50% !important; bottom: auto; transform: translateY(-50%); }
-#tutBubble.tut-b-right { right: 10px !important; left: auto !important;  top: 50% !important; bottom: auto; transform: translateY(-50%); }
+#tutBubble.tut-b-left  { left: max(10px, env(safe-area-inset-left)) !important;  right: auto !important; top: 50% !important; bottom: auto; transform: translateY(-50%); }
+#tutBubble.tut-b-right { right: max(10px, env(safe-area-inset-right)) !important; left: auto !important;  top: 50% !important; bottom: auto; transform: translateY(-50%); }
 .tut-kicker { font-family: 'Cinzel', serif; font-size: 10px; font-weight: 700; letter-spacing: 0.22em; color: #a98b4e; }
 .tut-title { font-family: 'Cinzel', serif; font-size: 18px; font-weight: 800; color: #e9d48b; margin: 3px 0 6px; }
 .tut-text b { color: #ffe9a8; }
@@ -66,7 +70,8 @@
 /* Skip-anytime — persistent, top-right, above the shield. #tutRoot is
    pointer-events:none, so this MUST re-enable them or it can't be clicked. */
 #tutSkip {
-    position: fixed; top: 10px; right: 12px; z-index: 12001; pointer-events: auto;
+    position: fixed; top: max(10px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right)); z-index: 12001; pointer-events: auto;
     background: rgba(20, 12, 4, 0.82); color: #d8c79a;
     border: 1px solid rgba(201, 168, 76, 0.5); border-radius: 8px;
     padding: 6px 11px; cursor: pointer; opacity: 0.85;
@@ -144,8 +149,12 @@
    reachable. Anatomy art shrinks too. Matches the game's own compact breakpoint. */
 @media (orientation: landscape) and (max-height: 540px) {
     #tutBubble {
-        width: min(340px, calc(100vw - 20px));
-        max-height: calc(100dvh - 16px);
+        width: min(340px, calc(100vw - 20px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+        /* The insets come out of the height budget too. Without this, a tall
+           anatomy prompt pinned to bottom:inset pushed its own top ABOVE the
+           screen — the Next button stayed reachable (it scrolls) but the title
+           was gone. */
+        max-height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
         overflow-y: auto; -webkit-overflow-scrolling: touch;
         padding: 10px 14px 10px; font-size: 13.5px; line-height: 1.4;
         border-radius: 12px;
@@ -154,7 +163,10 @@
     /* Watch-mode corner bubble: keep it clear of the bottom hand strip */
     /* Phone keeps the LEFT corner — must re-assert both sides, or the desktop
        rule's `right` survives here and pins it to the wrong edge. */
-    #tutBubble.tut-b-corner { width: min(300px, calc(100vw - 20px)); bottom: 8px; left: 8px !important; right: auto !important; font-size: 12.5px; }
+    #tutBubble.tut-b-corner {
+        width: min(300px, calc(100vw - 20px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+        bottom: max(8px, env(safe-area-inset-bottom));
+        left: max(8px, env(safe-area-inset-left)) !important; right: auto !important; font-size: 12.5px; }
     .tut-kicker { font-size: 9px; }
     .tut-title { font-size: 15px; margin: 2px 0 4px; }
     .tut-next { margin-top: 7px; padding: 8px 14px; }
@@ -170,5 +182,5 @@
     .tut-anat2 .aa-lbl { font-size: 9.5px; padding: 4px 5px; line-height: 1.25; }
     .tut-anat-cap { font-size: 10.5px; margin-top: 5px; }
     /* Skip button: smaller, out of the way */
-    #tutSkip { top: 6px; right: 8px; padding: 4px 8px; font-size: 10px; }
+    #tutSkip { top: max(6px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); padding: 4px 8px; font-size: 10px; }
 }

@@ -408,7 +408,9 @@
         };
         // Skip-anytime — persistent, works in every step (shielded or watch).
         root.querySelector('#tutSkip').onclick = skip;
-        window.addEventListener('resize', () => { bubbleFixed = false; layout(); });
+        const onViewportChange = () => { insetCache = null; bubbleFixed = false; layout(); };
+        window.addEventListener('resize', onViewportChange);
+        window.addEventListener('orientationchange', onViewportChange);
     }
 
     // Leave the guided game for the real menu. On the standalone How-to page
@@ -590,6 +592,36 @@
         }
     }
 
+    // ── Safe-area insets (the notch) ─────────────────────────────────
+    // index.html sets viewport-fit=cover, so window.innerWidth INCLUDES the
+    // strip under an iPhone's camera cutout. Clamping a prompt to 10px from
+    // that edge puts it under the notch, which shears the first character off
+    // every line — exactly what Wyatt saw on an iPhone 12 Pro Max in
+    // landscape ("he top button is dead", "issing", "ther heirs'").
+    //
+    // env() can't be read from JS, so measure it: a probe whose padding IS the
+    // insets reports them back through getComputedStyle. Cached, and
+    // recomputed on resize/orientation change (rotating swaps which side the
+    // cutout is on).
+    let insetCache = null;
+    function safeInsets() {
+        if (insetCache) return insetCache;
+        let probe = document.getElementById('tutInsetProbe');
+        if (!probe) {
+            probe = document.createElement('div');
+            probe.id = 'tutInsetProbe';
+            probe.style.cssText = 'position:fixed;inset:0;pointer-events:none;visibility:hidden;'
+                + 'padding:env(safe-area-inset-top) env(safe-area-inset-right)'
+                + ' env(safe-area-inset-bottom) env(safe-area-inset-left);';
+            document.body.appendChild(probe);
+        }
+        const cs = getComputedStyle(probe);
+        const n = v => Math.max(0, parseFloat(v) || 0);
+        insetCache = { top: n(cs.paddingTop), right: n(cs.paddingRight),
+                       bottom: n(cs.paddingBottom), left: n(cs.paddingLeft) };
+        return insetCache;
+    }
+
     const areaOverlap = (a, b) => {
         const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
         const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
@@ -617,8 +649,13 @@
         const VW = window.innerWidth, VH = window.innerHeight, M = 10, GAP = 14;
         const bw = bubble.offsetWidth || Math.min(430, VW - 24);
         const bh = bubble.offsetHeight || 180;
-        const clampX = v => Math.max(M, Math.min(v, VW - bw - M));
-        const clampY = v => Math.max(M, Math.min(v, VH - bh - M));
+        // Clamp inside the SAFE box — the notch is part of the viewport under
+        // viewport-fit=cover, and a prompt flush to that edge loses characters.
+        const si = safeInsets();
+        const L = Math.max(M, si.left), R = Math.max(M, si.right);
+        const T = Math.max(M, si.top), B = Math.max(M, si.bottom);
+        const clampX = v => Math.max(L, Math.min(v, VW - bw - R));
+        const clampY = v => Math.max(T, Math.min(v, VH - bh - B));
         const put = (x, y) => { bubble.style.left = clampX(x) + 'px'; bubble.style.top = clampY(y) + 'px'; };
 
         if (!rect) { put((VW - bw) / 2, (VH - bh) / 2); return; }
@@ -641,7 +678,7 @@
         ];
         let best = null;
         cands.forEach(c => {
-            const fits = c.x >= M - 1 && c.y >= M - 1 && c.x + bw <= VW - M + 1 && c.y + bh <= VH - M + 1;
+            const fits = c.x >= L - 1 && c.y >= T - 1 && c.x + bw <= VW - R + 1 && c.y + bh <= VH - B + 1;
             // Score AFTER clamping — an off-screen candidate gets dragged back
             // on screen and may then cover the target, which must count against it.
             const box = { x: clampX(c.x), y: clampY(c.y), w: bw, h: bh };
