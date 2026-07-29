@@ -747,8 +747,19 @@
             // No crown — same flex-wrap off-center flaw as showRewardCelebration.
             document.getElementById('champSub').innerHTML =
                 'Two heroes at Level 5 — a new hero joins your court, earned, never sold';
+            // The new hero's BOARD — this dress announced a hero with no art
+            // at all. The full board, not a circle crop: character images are
+            // landscape boards (1600x1009), and at celebration size a circle
+            // crop shows a shrunken scene rather than a face.
+            const art = document.getElementById('champArt');
+            if (art) art.innerHTML =
+                `<img class="champ-hero-board" src="assets/characters/${char.filename}" alt="">`;
             ov.classList.add('active');
-            const done = () => { ov.classList.remove('active'); resolve(); };
+            const done = () => {
+                ov.classList.remove('active');
+                if (art) art.innerHTML = '';
+                resolve();
+            };
             ov.onclick = done;
             document.getElementById('champBtn').onclick = (e) => { e.stopPropagation(); done(); };
         });
@@ -1153,14 +1164,29 @@
     function showChampOverlay(m) {
         return new Promise(resolve => {
             const ov = document.getElementById('champOverlay');
+            const art = document.getElementById('champArt');
             const first = m.place === 1;
             document.getElementById('champTitle').textContent = first
                 ? 'You Placed 1st — You are the Daily Champion!'
                 : `You Placed ${PLACE_WORD[m.place - 1]} on the Daily Board`;
             document.getElementById('champSub').innerHTML =
-                `${first ? CROWN_SVG + ' ' : ''}${m.stars} Stars earned · ${m.dateKey}`;
+                `${m.stars} Stars earned · ${m.dateKey}`;
+            // The medal — this dress used to be the plainest of the frame's
+            // five (title, one small line, button) for what is the game's
+            // biggest daily honour. Gold/silver/bronze by place, crowned for
+            // the champion; the crown moved here from the sub, where its
+            // inline SVG used to shove the text off-center as a flex item.
+            if (art) {
+                art.innerHTML = `<div class="champ-place ${CHAMP_KEYS[m.place - 1] || ''}">
+                    ${first ? CROWN_SVG : ''}<span>${PLACE_WORD[m.place - 1] || m.place + 'th'}</span>
+                </div>`;
+            }
             ov.classList.add('active');
-            const done = () => { ov.classList.remove('active'); resolve(); };
+            const done = () => {
+                ov.classList.remove('active');
+                if (art) art.innerHTML = '';   // this dress mounts art now — leave the stage clean
+                resolve();
+            };
             ov.onclick = done;
             document.getElementById('champBtn').onclick = (e) => { e.stopPropagation(); done(); };
         });
@@ -2485,8 +2511,14 @@
             if (!ov) { resolve(); return; }
             document.getElementById('champTitle').textContent = 'The Royal Mint Delivers!';
             document.getElementById('champSub').innerHTML = `★ ${stars} Stars join your purse`;
+            const art = document.getElementById('champArt');
+            if (art) art.innerHTML = '<div class="champ-place gold champ-star">★</div>';
             ov.classList.add('active');
-            const done = () => { ov.classList.remove('active'); resolve(); };
+            const done = () => {
+                ov.classList.remove('active');
+                if (art) art.innerHTML = '';
+                resolve();
+            };
             ov.onclick = done;
             document.getElementById('champBtn').onclick = (e) => { e.stopPropagation(); done(); };
         });

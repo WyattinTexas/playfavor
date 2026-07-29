@@ -306,6 +306,12 @@
     <div class="champ-overlay" id="champOverlay">
         <div class="champ-card" onclick="event.stopPropagation()">
             <div class="champ-rays"></div>
+            <!-- Frame dressing — shared by every dress (placement, table, crest,
+                 Side B, stars): inner hairline, corner glints, laurel ornament.
+                 Pure decoration; the dresses still write only title/sub/art. -->
+            <div class="champ-inner" aria-hidden="true"></div>
+            <div class="champ-glints" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+            <div class="champ-ornament" aria-hidden="true">❧ ❦ ☙</div>
             <div class="champ-title" id="champTitle"></div>
             <div class="champ-sub" id="champSub"></div>
             <!-- Art stage for the Level-5 board flip — every other dress leaves it empty -->

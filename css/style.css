@@ -1306,11 +1306,50 @@ html, body {
     position: absolute;
     inset: -60%;
     background: repeating-conic-gradient(from 0deg,
-        transparent 0deg 14deg, rgba(232,195,75,0.06) 14deg 22deg);
+        transparent 0deg 14deg, rgba(232,195,75,0.09) 14deg 22deg);
     animation: champSpin 26s linear infinite;
     pointer-events: none;
 }
 @keyframes champSpin { to { transform: rotate(360deg); } }
+/* ── The frame's royal dressing (shared by every celebration) ─────────
+   An inner hairline makes the card a plaque; four corner glints twinkle
+   on a slow stagger; a laurel ornament crowns the title. The content
+   enters in ceremony order — ornament, title, sub, art, then the button
+   — each a beat behind the last (display:none → flex restarts the
+   animations on every open, the same trick ovZoom already rides). */
+.champ-inner {
+    position: absolute; inset: 9px;
+    border: 1px solid rgba(232, 195, 75, 0.35);
+    border-radius: 12px;
+    pointer-events: none;
+}
+.champ-glints { position: absolute; inset: 0; pointer-events: none; }
+.champ-glints i {
+    position: absolute; width: 5px; height: 5px;
+    background: radial-gradient(circle, #fff8d6 0%, rgba(255, 233, 168, 0.9) 35%, transparent 70%);
+    border-radius: 50%;
+    opacity: 0;
+    animation: champGlint 3.2s ease-in-out infinite;
+}
+.champ-glints i:nth-child(1) { top: 16px; left: 20px; }
+.champ-glints i:nth-child(2) { top: 22px; right: 26px; animation-delay: 0.9s; }
+.champ-glints i:nth-child(3) { bottom: 20px; left: 30px; animation-delay: 1.7s; }
+.champ-glints i:nth-child(4) { bottom: 26px; right: 20px; animation-delay: 2.4s; }
+@keyframes champGlint {
+    0%, 100% { opacity: 0; transform: scale(0.5); }
+    12% { opacity: 1; transform: scale(1.6); }
+    24% { opacity: 0.2; transform: scale(0.7); }
+}
+.champ-ornament {
+    position: relative;
+    font-size: 17px;
+    letter-spacing: 10px;
+    text-indent: 10px;   /* letter-spacing trails the last glyph — recentre */
+    color: rgba(240, 210, 130, 0.85);
+    text-shadow: 0 0 12px rgba(232, 195, 75, 0.4);
+    margin-bottom: 12px;
+    animation: champEnter 0.5s cubic-bezier(0.16,1,0.3,1) 0.10s backwards;
+}
 .champ-title {
     position: relative;
     font-family: 'Cinzel', serif;
@@ -1319,6 +1358,7 @@ html, body {
     letter-spacing: 2px;
     color: var(--gold-light);
     text-shadow: 0 0 30px rgba(232,195,75,0.5);
+    animation: champEnter 0.55s cubic-bezier(0.16,1,0.3,1) 0.18s backwards;
 }
 .champ-sub {
     position: relative;
@@ -1331,8 +1371,21 @@ html, body {
     font-weight: 700;
     color: #e8c34b;
     margin: 14px 0 26px;
+    animation: champEnter 0.55s cubic-bezier(0.16,1,0.3,1) 0.30s backwards;
 }
-.champ-card .btn-royal { position: relative; }
+@keyframes champEnter {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+}
+.champ-card .btn-royal {
+    position: relative;
+    animation: champEnter 0.5s cubic-bezier(0.16,1,0.3,1) 0.55s backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+    .champ-ornament, .champ-title, .champ-sub, .champ-card .btn-royal,
+    .champ-glints i, .champ-rays, .champ-art { animation: none; opacity: 1; }
+    .champ-glints i { opacity: 0; }
+}
 
 .btn-royal {
     font-family: 'Cinzel', serif;
@@ -7727,7 +7780,59 @@ body.ios-shell .st-stars-btn, body.ios-shell #mintPanel { display: none !importa
 @media (prefers-reduced-motion: reduce) { .vs-xp-shine { animation: none; } }
 
 /* the Level-5 ceremony — the board turns over inside the champ card */
-.champ-art { margin: 4px auto 14px; max-width: 250px; perspective: 1000px; }
+.champ-art {
+    margin: 4px auto 14px; max-width: 250px; perspective: 1000px;
+    position: relative;
+    animation: champEnter 0.6s cubic-bezier(0.16,1,0.3,1) 0.42s backwards;
+}
+/* Pedestal glow — a warm pool of light under whatever the dress mounts
+   (table swatch, crest, flipping board). z-index -1 stays inside the card
+   because .champ-card isolates (see below); without that it would slip
+   behind the card's own background and vanish. */
+.champ-art::before {
+    content: '';
+    position: absolute; inset: -14% -28%;
+    background: radial-gradient(ellipse 60% 55% at 50% 60%,
+        rgba(232, 195, 75, 0.22), transparent 68%);
+    z-index: -1;
+    pointer-events: none;
+}
+.champ-card { isolation: isolate; }
+/* The placement medal — gold/silver/bronze by daily-board place, the star
+   variant for Mint deliveries. Rides #champArt like every other dress. */
+.champ-place {
+    width: 96px; height: 96px; border-radius: 50%;
+    margin: 0 auto;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 1px;
+    font-family: 'Cinzel', serif; font-weight: 900; font-size: 26px;
+    letter-spacing: 1px; color: #241503;
+    background: radial-gradient(circle at 35% 28%, #fff3c8, #e8c34b 45%, #a37d22 100%);
+    border: 2.5px solid #f7e6b4;
+    box-shadow: 0 0 30px rgba(232, 195, 75, 0.55), 0 10px 24px rgba(0, 0, 0, 0.55),
+        inset 0 -6px 14px rgba(90, 60, 10, 0.45);
+}
+.champ-place .crown-ico { width: 26px; height: auto; margin-bottom: -2px; }
+.champ-place.silver {
+    background: radial-gradient(circle at 35% 28%, #f4f4f6, #b9bcc4 45%, #70747e 100%);
+    border-color: #e6e8ee;
+    box-shadow: 0 0 26px rgba(200, 205, 215, 0.4), 0 10px 24px rgba(0, 0, 0, 0.55),
+        inset 0 -6px 14px rgba(40, 44, 52, 0.4);
+    color: #23262c;
+}
+.champ-place.bronze {
+    background: radial-gradient(circle at 35% 28%, #f0c9a0, #b87a41 45%, #6d4218 100%);
+    border-color: #e5b183;
+    box-shadow: 0 0 26px rgba(200, 140, 80, 0.4), 0 10px 24px rgba(0, 0, 0, 0.55),
+        inset 0 -6px 14px rgba(60, 32, 8, 0.45);
+    color: #2b1706;
+}
+.champ-place.champ-star { font-size: 44px; padding-bottom: 4px; }
+/* The earned hero's board — the new arrival, shown whole. */
+.champ-hero-board {
+    width: 100%; display: block; border-radius: 5px;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.7), 0 0 0 1px var(--gold-dark);
+}
 .champ-art:empty { display: none; }
 .champ-flip { width: 100%; aspect-ratio: 1600/1009; }
 .cf-inner {
