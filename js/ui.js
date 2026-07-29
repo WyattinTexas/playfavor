@@ -7259,20 +7259,34 @@ function paintVictoryXp(xp) {
     const gained = Math.max(0, xp.fvAfter - xp.fvBefore);
     const rose = xp.levelAfter > xp.levelBefore;
     const chip = document.createElement('div');
-    chip.className = 'vs-delta xp';
+    // The old chip was a single baseline flex row of spans — at chip widths
+    // the label wrapped mid-phrase ("BANDIT 3 → 4 / · LEVEL") and the ribbon
+    // floated in the leftover space. This is a small CARD instead: the hero's
+    // face anchors it (same cover/top crop as the sheet's .vsg-face), the
+    // ribbon gets its own full-width line, and the footer carries the Favor
+    // banked plus the next visible reward.
+    chip.className = 'vs-delta xp' + (rose ? ' rose' : '');
     // Gilt Ladder: star drops crossed this game toast on the chip; the
     // next VISIBLE reward closes the loop ("one more game"). No games-away
     // estimate — Wyatt 7/22: don't tell players how many games it takes.
     const nr = (typeof FLB.nextReward === 'function') ? FLB.nextReward(xp.charId) : null;
-    const nextLine = nr ? `<div class="vs-d-next">${nr.label} at Lv ${nr.lvl}</div>` : '';
     chip.innerHTML = `
-        <span class="vs-d-what">${hero.name} · Level</span>
-        ${rose ? `<b>${xp.levelBefore}</b><span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${xp.levelAfter}">0</b>`
-               : `<b>${xp.levelAfter}</b>`}
-        <span class="vs-d-fv">+${gained} Favor</span>
-        ${xp.rungStars ? `<span class="vs-d-stars">+ ★ ${xp.rungStars}</span>` : ''}
-        <div class="vs-d-rb">${FLB.xpRibbonHtml(xp.fvAfter, 9, 11)}</div>
-        ${nextLine}`;
+        <img class="vs-xp-face" src="assets/characters/${hero.filename}" alt="">
+        <div class="vs-xp-body">
+            <div class="vs-xp-top">
+                <span class="vs-d-what">${hero.name}</span>
+                <span class="vs-xp-lv">${rose
+                    ? `Level <b>${xp.levelBefore}</b><span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${xp.levelAfter}">0</b>`
+                    : `Level <b>${xp.levelAfter}</b>`}</span>
+            </div>
+            <div class="vs-d-rb">${FLB.xpRibbonHtml(xp.fvAfter, 10, 13)}</div>
+            <div class="vs-xp-foot">
+                <span class="vs-d-fv">+${gained} Favor</span>
+                ${xp.rungStars ? `<span class="vs-d-stars">★ ${xp.rungStars} Stars</span>` : ''}
+                ${nr ? `<span class="vs-d-next">Next: ${nr.label} at Lv ${nr.lvl}</span>` : ''}
+            </div>
+        </div>
+        ${rose ? '<div class="vs-xp-shine" aria-hidden="true"></div>' : ''}`;
     row.appendChild(chip);
     animateVsTotals(chip);
 

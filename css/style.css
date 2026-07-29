@@ -3474,6 +3474,10 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
     gap: 14px;
     flex-wrap: wrap;
     justify-content: center;
+    /* Natural heights, centered — the XP card is taller than the Rating and
+       Stars chips, and stretching them to match left their single line of
+       text floating at the top of an empty box. */
+    align-items: center;
     margin: 12px 0 4px;
 }
 .vs-delta {
@@ -5644,6 +5648,14 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
     .vs-tiebreak img { width: 15px; height: 15px; flex-basis: 15px; }
     .vs-deltas { gap: 8px; margin: 6px 0 2px; }
     .vs-delta { font-size: 13px; padding: 5px 12px; gap: 6px; }
+    /* The XP card on a phone: smaller face, tighter body — the 844×390
+       budget can't spare the desktop card's height. */
+    .vs-delta.xp { gap: 8px; padding: 6px 12px 6px 7px; }
+    .vs-xp-face { width: 38px; height: 38px; }
+    .vs-xp-body { min-width: 168px; gap: 3px; }
+    .vs-xp-foot { font-size: 10px; }
+    .vs-delta.xp .vs-d-fv { font-size: 11.5px; }
+    .vs-delta.xp .vs-d-next { font-size: 9px; }
     .vs-places { gap: 3px; margin-top: 8px; }
     .vs-place { padding: 4px 12px 5px; gap: 2px; }
     .vs-place-row { gap: 8px; }
@@ -7655,12 +7667,64 @@ body.ios-shell .st-stars-btn, body.ios-shell #mintPanel { display: none !importa
 /* profile tile ribbon */
 .pf-hero .pf-xp { width: 100%; margin-top: 4px; }
 
-/* victory delta chip */
+/* ═══ Victory XP chip — the hero's level card on the score sheet ═══
+   A small card, not a run of inline spans: face | (name + level / ribbon /
+   footer). The face uses the sheet's own .vsg-face crop (cover, top) so the
+   two read as one family. A crossed level adds .rose: gold edge-glow and a
+   single shine sweep — quiet enough to sit beside the Rating chip, loud
+   enough that "you leveled" is unmissable. */
+.vs-delta.xp {
+    align-items: center;
+    gap: 12px;
+    padding: 9px 16px 9px 10px;
+    position: relative;
+    overflow: hidden;           /* the shine sweep clips to the card */
+}
+.vs-xp-face {
+    width: 52px; height: 52px; border-radius: 50%;
+    object-fit: cover; object-position: top;
+    border: 2px solid rgba(201, 168, 76, 0.55);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    flex: 0 0 auto;
+}
+.vs-delta.xp.rose .vs-xp-face {
+    border-color: #e8c34b;
+    box-shadow: 0 0 14px rgba(232, 195, 75, 0.5);
+}
+.vs-xp-body { display: flex; flex-direction: column; gap: 4px; min-width: 200px; }
+.vs-xp-top {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+}
+.vs-xp-lv { font-size: 0.72em; color: var(--parchment-dark); white-space: nowrap; }
+.vs-xp-lv b { font-size: 1.45em; }
+.vs-delta.xp .vs-d-rb { width: 100%; }
+.vs-xp-foot {
+    display: flex; align-items: baseline; gap: 8px;
+    font-size: 11.5px; letter-spacing: 0.04em;
+}
 .vs-delta.xp .vs-d-fv {
     font-family: 'EB Garamond', serif; font-style: italic;
-    font-size: 15px; color: #8f7a5c; margin-left: 6px;
+    font-size: 13.5px; color: #cdb684;
 }
-.vs-delta.xp .vs-d-rb { margin-top: 8px; min-width: 170px; }
+.vs-delta.xp .vs-d-next {
+    flex-basis: auto; margin: 0 0 0 auto;
+    font-size: 10.5px; color: rgba(240, 230, 211, 0.6);
+}
+/* Level crossed: the card itself gleams once. */
+.vs-delta.xp.rose {
+    border-color: rgba(232, 195, 75, 0.8);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), 0 0 18px rgba(232, 195, 75, 0.22);
+}
+.vs-xp-shine {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(115deg, transparent 30%,
+        rgba(255, 236, 170, 0.28) 48%, rgba(255, 248, 214, 0.5) 50%,
+        rgba(255, 236, 170, 0.28) 52%, transparent 70%);
+    transform: translateX(-110%);
+    animation: vsXpShine 1.4s ease-out 1.25s 1 forwards;
+}
+@keyframes vsXpShine { to { transform: translateX(110%); } }
+@media (prefers-reduced-motion: reduce) { .vs-xp-shine { animation: none; } }
 
 /* the Level-5 ceremony — the board turns over inside the champ card */
 .champ-art { margin: 4px auto 14px; max-width: 250px; perspective: 1000px; }
