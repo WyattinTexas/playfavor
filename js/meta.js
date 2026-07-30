@@ -679,6 +679,145 @@
                  fvNeeded: Math.max(0, XP_CUM[r.lvl - 1] - fv) };
     }
 
+    // ═══ Court Standing — the PLAYER's own level (Wyatt 7/30) ════════
+    // An account-wide ladder climbed JUST FOR PLAYING — separate from any
+    // hero's Gilt Ribbon. DERIVED entirely from p.games, the field every
+    // finished game's txn already writes: no new storage, no migration,
+    // and every existing player wakes up on the rung their history
+    // earned. Same discipline as the hero curve — the level is computed
+    // on every read, never written, so the curve retunes freely. Stars
+    // are again the exception: rungs crossed pay INSIDE the game txn off
+    // the same games count the commit writes (games is monotonic — each
+    // rung pays exactly once). Rungs a veteran passed BEFORE this ships
+    // never pay retroactively — same posture as any ladder retune.
+    const PLAYER_MAX_LEVEL = 50;
+    // Games to climb FROM level n: a level a game to start, stretching
+    // to 15-game rungs in the forties — Level 10 ≈ 21 games, 20 ≈ 71,
+    // 30 ≈ 151, 40 ≈ 251, 50 ≈ 401. (Defaults for Wyatt to veto.)
+    const plStep = n => n <= 2 ? 1 : n <= 4 ? 2 : n <= 9 ? 3
+        : n <= 19 ? 5 : n <= 29 ? 8 : n <= 39 ? 10 : 15;
+    const PL_CUM = (() => {
+        const c = [0];
+        for (let n = 1; n < PLAYER_MAX_LEVEL; n++) c.push(c[n - 1] + plStep(n));
+        return c;
+    })();
+    function playerLevel(games) {
+        const g = games || 0;
+        let lvl = 1;
+        while (lvl < PLAYER_MAX_LEVEL && g >= PL_CUM[lvl]) lvl++;
+        return lvl;
+    }
+    function playerLevelPct(games) {
+        const g = games || 0;
+        const lvl = playerLevel(g);
+        if (lvl >= PLAYER_MAX_LEVEL) return 100;
+        return (g - PL_CUM[lvl - 1]) / plStep(lvl) * 100;
+    }
+    const myGames = () => ((_me || {}).games) || 0;
+    const myPlayerLevel = () => playerLevel(myGames());
+
+    // The court rank the level grants — worn under the name on the menu
+    // and the profile. A new rank roughly every four rungs.
+    const PLAYER_TITLES = [
+        { lvl: 1,  title: 'Wanderer' },
+        { lvl: 4,  title: 'Squire' },
+        { lvl: 8,  title: 'Courtier' },
+        { lvl: 12, title: 'Envoy' },
+        { lvl: 16, title: 'Steward' },
+        { lvl: 20, title: 'Magistrate' },
+        { lvl: 25, title: 'Ambassador' },
+        { lvl: 30, title: 'Chancellor' },
+        { lvl: 35, title: 'Viceroy' },
+        { lvl: 40, title: 'Regent' },
+        { lvl: 45, title: 'Highlord' },
+        { lvl: 50, title: 'Crownkeeper' },
+    ];
+    function playerTitle(lvl) {
+        let t = PLAYER_TITLES[0].title;
+        for (const r of PLAYER_TITLES) { if (lvl >= r.lvl) t = r.title; else break; }
+        return t;
+    }
+    // The name's tint — the standing OTHER people see. Any surface that
+    // prints a player's name can derive the class from their games count
+    // (the players row already carries it), so the tint follows you onto
+    // the leaderboard with zero schema change.
+    const TINT_WORD = { 'plv-bronze': 'Bronze', 'plv-silver': 'Silver',
+        'plv-gold': 'Gold', 'plv-plat': 'Platinum', 'plv-radiant': 'Radiant' };
+    function nameTintClass(games) {
+        const lvl = playerLevel(games);
+        return lvl >= 50 ? 'plv-radiant' : lvl >= 40 ? 'plv-plat'
+            : lvl >= 30 ? 'plv-gold' : lvl >= 20 ? 'plv-silver'
+            : lvl >= 10 ? 'plv-bronze' : '';
+    }
+
+    // The PAYOUT ladder (star drops + the free table). Titles and tints
+    // are derived from their own tables above and never pay, so they are
+    // not rows here — nextPlayerReward() merges all three for display.
+    const PLAYER_REWARDS = [
+        { lvl: 2,  stars: 5 },
+        { lvl: 6,  stars: 10 },
+        { lvl: 10, stars: 10 },
+        { lvl: 12, kind: 'table' },
+        { lvl: 14, stars: 10 },
+        { lvl: 18, stars: 15 },
+        { lvl: 20, stars: 15 },
+        { lvl: 25, stars: 15 },
+        { lvl: 30, stars: 20 },
+        { lvl: 35, stars: 20 },
+        { lvl: 40, stars: 25 },
+        { lvl: 45, stars: 25 },
+        { lvl: 50, stars: 50 },
+    ];
+    // Stars crossed between two player levels — called INSIDE the game txn.
+    function playerLevelStars(levelBefore, levelAfter) {
+        return PLAYER_REWARDS
+            .filter(r => r.stars && r.lvl > levelBefore && r.lvl <= levelAfter)
+            .reduce((s, r) => s + r.stars, 0);
+    }
+
+    // The free table at Level 12: a random PRICED base skin — never a
+    // rare (those stay earned by deed) and never a hero table. The pick
+    // is a uid-seeded shuffle of the pool, then the first one this
+    // account hasn't BOUGHT — derived on every read, so it can never
+    // duplicate a purchase and there is nothing to write or migrate.
+    const PLAYER_TABLE_LEVEL = 12;
+    const PLAYER_TABLE_POOL = ['velvet', 'queens', 'emerald', 'celestial', 'map', 'alchemist'];
+    function playerTableOrder() {
+        let h = 2166136261;
+        const u = uid() + ':court-table';
+        for (let i = 0; i < u.length; i++) { h ^= u.charCodeAt(i); h = Math.imul(h, 16777619); }
+        const order = [...PLAYER_TABLE_POOL];
+        for (let i = order.length - 1; i > 0; i--) {
+            h = Math.imul(h ^ (h >>> 15), 2246822519); h ^= h >>> 13;
+            const j = (h >>> 0) % (i + 1);
+            [order[i], order[j]] = [order[j], order[i]];
+        }
+        return order;
+    }
+    function playerFreeTableId() {
+        const owned = (_me && _me.tables) || {};
+        return playerTableOrder().find(id => !owned[id]) || null;
+    }
+    function playerTableEarned(tableId) {
+        return myPlayerLevel() >= PLAYER_TABLE_LEVEL && tableId === playerFreeTableId();
+    }
+
+    // The next thing the ladder will hand this player — stars, the free
+    // table, a new rank, or a new tint, whichever rung comes first.
+    function nextPlayerReward() {
+        const lvl = myPlayerLevel();
+        const all = [
+            ...PLAYER_REWARDS.map(r => ({ lvl: r.lvl,
+                label: r.stars ? `★ ${r.stars}` : 'A free table' })),
+            ...PLAYER_TITLES.filter(t => t.lvl > 1)
+                .map(t => ({ lvl: t.lvl, label: `the rank of ${t.title}` })),
+            ...[10, 20, 30, 40, 50].map(l => ({ lvl: l,
+                label: `${TINT_WORD[nameTintClass(PL_CUM[l - 1])]} name` })),
+        ].sort((a, b) => a.lvl - b.lvl);
+        const nx = all.find(r => r.lvl > lvl);
+        return nx ? { ...nx, gamesNeeded: Math.max(0, PL_CUM[nx.lvl - 1] - myGames()) } : null;
+    }
+
     // ═══ The earned hero — two heroes at Level 5 (spec §6) ═══════════
     // The predicate is DERIVED on every read: nothing is written when the
     // threshold is crossed, so there is no counter to drift and the unlock
@@ -928,6 +1067,7 @@
             // Elo runs INSIDE the txn against the server's row, so two
             // tabs can't double-apply a delta computed off a stale read.
             let pendingXp = null;
+            let pendingPl = null;
             const txnRes = await dbTxn(`players/${uid()}`, p => {
                 const cur = p || {};
                 const streak = won ? (cur.streak || 0) + 1 : 0;
@@ -949,6 +1089,14 @@
                     streak,
                     bestStreak: Math.max(cur.bestStreak || 0, streak),
                 };
+                // Court Standing: rungs this game crosses pay into the same
+                // stars total the txn writes — games is monotonic, so a rung
+                // is crossable exactly once and a retry recomputes both legs.
+                const plBefore = playerLevel(cur.games || 0);
+                const plAfter = playerLevel(out.games);
+                const plStars = playerLevelStars(plBefore, plAfter);
+                if (plStars) out.stars = (out.stars || 0) + plStars;
+                pendingPl = { before: plBefore, after: plAfter, stars: plStars };
                 if (myChar && rr && rr.charId) {
                     const cc = ((cur.chars || {})[myChar]) || {};
                     // Hero XP: the game's final score banks onto this hero's
@@ -987,7 +1135,10 @@
             // Only a COMMITTED transaction's numbers are real — and the fresh
             // row keeps the select screen's levels honest without a re-read.
             if (txnRes && txnRes.committed) {
-                xpOut = pendingXp;
+                // Court Standing rides the same result object — present even
+                // when no hero ledger moved (older rigs pass no myChar).
+                xpOut = pendingXp || (pendingPl ? {} : null);
+                if (xpOut && pendingPl) xpOut.pl = pendingPl;
                 if (txnRes.value) _me = txnRes.value;
             }
 
@@ -1769,9 +1920,18 @@
         if (_me && _me.crests) mirrorCrests(_me.crests);       // owned crests ride along
         if (_me && _me.tables) mirrorTables(_me.tables);       // owned tables too
         const gold = (_me && _me.champs && _me.champs.gold) || 0;
+        // Court Standing on the front door: the level roundel wears the
+        // tint tier's ring, the name wears its tint, the rank sits under
+        // the name in small caps. All derived from _me.games.
+        const plv = myPlayerLevel();
+        const tint = nameTintClass(myGames());
         chip.innerHTML = `
             ${avatarDisc(myAvatar(), 'pc-av')}
-            <span class="pc-name">${myName()}</span>
+            <span class="pc-plv ${tint}" title="Court Standing — Level ${plv}">${plv}</span>
+            <span class="pc-id">
+                <span class="pc-name ${tint}">${myName()}</span>
+                <span class="pc-title">${playerTitle(plv)}</span>
+            </span>
             ${ratingSpan(eloOf(_me), 'pc-rating')}
             ${gold > 0 ? `<span class="pc-crowns" title="Daily Championships">${CROWN_SVG}${gold}</span>` : ''}
         `;
@@ -1841,6 +2001,28 @@
                     <span title="Daily Championships" class="pf-champs">${CROWN_SVG} ${ch.gold || 0}</span>
                 </div>
             </div>
+
+            ${(() => {
+                // Court Standing — the player's own ladder, above the heroes
+                // because it is the one every game feeds regardless of hero.
+                const plv = playerLevel(games);
+                const tint = nameTintClass(games);
+                const nx = nextPlayerReward();
+                return `
+            <div class="pf-sec">Court Standing</div>
+            <div class="pf-court">
+                <span class="pf-plv ${tint}">${plv}</span>
+                <div class="pf-court-main">
+                    <div class="pf-court-rank">
+                        <span class="pf-court-title ${tint}">${playerTitle(plv)}</span>
+                        <span class="pf-court-games">${games} game${games === 1 ? '' : 's'} played</span>
+                    </div>
+                    <div class="pf-court-track"><div class="pf-court-fill" style="--pct:${playerLevelPct(games).toFixed(1)}%"></div></div>
+                    ${nx ? `<div class="pf-court-next">Next: <b>${nx.label}</b> at Level ${nx.lvl}</div>`
+                         : '<div class="pf-court-next">The court has no higher rank.</div>'}
+                </div>
+            </div>`;
+            })()}
 
             ${ledger.length ? `
             <div class="pf-sec">Your Heroes</div>
@@ -1953,7 +2135,7 @@
             <div class="lb-row${me ? ' me' : ''}${rank <= 3 ? ` podium p${rank}` : ''}${opts && opts.appendix ? ' appendix' : ''}" style="--li:${opts ? opts.idx : 0}">
                 ${medal}
                 ${avatarDisc(r.avatar, 'lb-av')}
-                <span class="lb-name">${r.name || 'Unknown Noble'}${crowns}${me ? '<span class="lb-you">You</span>' : ''}</span>
+                <span class="lb-name ${nameTintClass(r.games)}"${r.games ? ` title="${playerTitle(playerLevel(r.games))} — Court Level ${playerLevel(r.games)}"` : ''}>${r.name || 'Unknown Noble'}${crowns}${me ? '<span class="lb-you">You</span>' : ''}</span>
                 ${best}
                 <b class="lb-score">${score}</b>
             </div>`;
@@ -2004,6 +2186,11 @@
             const deck = (u, p) => ({
                 uid: u, name: p.name, avatar: p.avatar || null,
                 gold: (p.champs && p.champs.gold) || 0,
+                // Court Standing tint rides every board row for free —
+                // games already lives on the players row. Personas carry
+                // no games count, so they stay untinted (they are not on
+                // the court's ladder).
+                games: p.games || 0,
             });
             let rows = [];
             if (tab === 'daily') {
@@ -2734,6 +2921,11 @@
         heroLevel, heroLevelPct, heroFv, sideBUnlocked, xpRibbonHtml,
         checkEarnedHero, showSideBCelebration, sideBLevel: () => SIDEB_LEVEL,
         heroTableUnlocked, heroCrestUnlocked, rareTableEarned, nextReward,
+        playerLevel, playerLevelPct, playerTitle, nameTintClass, myPlayerLevel,
+        playerTableEarned, playerFreeTableId, nextPlayerReward,
+        playerTableLevel: () => PLAYER_TABLE_LEVEL,
+        playerRewards: () => PLAYER_REWARDS, playerTitles: () => PLAYER_TITLES,
+        playerMaxLevel: () => PLAYER_MAX_LEVEL, plCum: () => PL_CUM,
         heroesAtTen, rareEvery: () => RARE_EVERY, tableLevel: () => TABLE_LEVEL,
         crestLevel: () => CREST_LEVEL, heroRewards: () => HERO_REWARDS,
         crownSvg: () => CROWN_SVG,

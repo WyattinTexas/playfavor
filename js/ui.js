@@ -7244,8 +7244,11 @@ function animateVsTotals(root) {
 // Level 5 alone raises the champ overlay, dressed as the board turning.
 function paintVictoryXp(xp) {
     const content = document.getElementById('scoringContent');
-    const hero = window.FAVOR_DATA.characters.find(c => c.id === xp.charId);
-    if (!content || !hero || !window.FLB) return;
+    // charId can be absent now (Court Standing rides the result even when
+    // no hero ledger moved) — the hero card skips, the Court chip doesn't.
+    const hero = xp.charId
+        ? window.FAVOR_DATA.characters.find(c => c.id === xp.charId) : null;
+    if (!content || !window.FLB) return;
     let row = content.querySelector('.vs-deltas');
     if (!row) {
         // Offline sheets render no deltas row — the chip builds its own
@@ -7256,6 +7259,7 @@ function paintVictoryXp(xp) {
         row.className = 'vs-deltas';
         head.insertAdjacentElement('afterend', row);
     }
+    if (!hero) { paintCourtDelta(row, xp.pl); return; }
     const gained = Math.max(0, xp.fvAfter - xp.fvBefore);
     const rose = xp.levelAfter > xp.levelBefore;
     const chip = document.createElement('div');
@@ -7289,6 +7293,7 @@ function paintVictoryXp(xp) {
         ${rose ? '<div class="vs-xp-shine" aria-hidden="true"></div>' : ''}`;
     row.appendChild(chip);
     animateVsTotals(chip);
+    paintCourtDelta(row, xp.pl);
 
     // Level 5 — the one that gets a ceremony (fourth champ dress).
     const sideBLv = (typeof FLB.sideBLevel === 'function') ? FLB.sideBLevel() : 5;
@@ -7296,6 +7301,39 @@ function paintVictoryXp(xp) {
         && typeof FLB.showSideBCelebration === 'function') {
         setTimeout(() => { FLB.showSideBCelebration(hero); }, 1400);
     }
+}
+
+// ═══ Court Standing on the victory screen ════════════════════════════
+// A slim chip under the hero card — and ONLY when this game actually
+// crossed a rung. Ordinary games stay quiet (same rule as the hero
+// ribbon: "12 → 12" reads like a bug, and the standing is always one
+// tap away on the menu chip).
+function paintCourtDelta(row, pl) {
+    if (!row || !pl || !(pl.after > pl.before) || !window.FLB) return;
+    const titleRose = FLB.playerTitle(pl.after) !== FLB.playerTitle(pl.before);
+    const TINT_AT = { 10: 'Bronze', 20: 'Silver', 30: 'Gold', 40: 'Platinum', 50: 'Radiant' };
+    const tintLvl = [10, 20, 30, 40, 50].find(l => pl.before < l && pl.after >= l);
+    const tableLvl = (FLB.playerTableLevel && FLB.playerTableLevel()) || 12;
+    const gotTable = pl.before < tableLvl && pl.after >= tableLvl;
+    const chip = document.createElement('div');
+    chip.className = 'vs-delta pl rose';
+    chip.innerHTML = `
+        <span class="vs-pl-crest" aria-hidden="true">♛</span>
+        <div class="vs-pl-body">
+            <div class="vs-xp-top">
+                <span class="vs-d-what">Court Standing</span>
+                <span class="vs-xp-lv">Level <b>${pl.before}</b><span class="vs-d-arrow">→</span><b class="vs-d-new" data-total="${pl.after}">0</b></span>
+            </div>
+            <div class="vs-pl-notes">
+                ${pl.stars ? `<span class="vs-d-stars">★ ${pl.stars} Stars</span>` : ''}
+                ${titleRose ? `<span class="vs-pl-title">You are now <b>${FLB.playerTitle(pl.after)}</b></span>` : ''}
+                ${tintLvl ? `<span class="vs-pl-tint">Your name turns <b>${TINT_AT[tintLvl]}</b></span>` : ''}
+                ${gotTable ? '<span class="vs-pl-table">The court gifts you a table — see the store</span>' : ''}
+            </div>
+        </div>
+        <div class="vs-xp-shine" aria-hidden="true"></div>`;
+    row.appendChild(chip);
+    animateVsTotals(chip);
 }
 
 // ═══ SCORE BREAKDOWN — tap a sheet cell, see the cards behind the number ══
@@ -8407,7 +8445,16 @@ function canUseTable(id) {
         && FLB.heroTableUnlocked(id.replace(/^hero-/, '')));
     if (s.lock === 'feat') return !!(window.FLB && FLB.rareTableEarned
         && FLB.rareTableEarned(id));
+    // Court Standing's free table (Level 12): a DERIVED grant, like the
+    // hero/rare unlocks — never written, so it needs no purchase record.
+    if (window.FLB && FLB.playerTableEarned && FLB.playerTableEarned(id)) return true;
     return ownedTableIds().includes(id);
+}
+// The court's gift specifically — usable through the Level-12 grant and
+// NOT through a Star purchase, so the store can say why it's yours.
+function courtGiftTable(id) {
+    return !!(window.FLB && FLB.playerTableEarned && FLB.playerTableEarned(id))
+        && !ownedTableIds().includes(id);
 }
 // Lock-line helpers — live progress instead of a flat padlock.
 function heroTableLockLine(id) {
@@ -8492,6 +8539,7 @@ function renderStoreTables() {
     const cur = currentTableSkin();
     const stateLine = s => {
         if (s.id === cur) return '✦ On your table';
+        if (courtGiftTable(s.id)) return '✦ A gift of the court';
         if (canUseTable(s.id)) return 'Tap to view';
         if (s.lock === 'hero') return heroTableLockLine(s.id);
         if (s.lock === 'feat') return rareTableLockLine();
@@ -8547,7 +8595,9 @@ function renderTableInspect() {
     if (equipped) {
         action = '<span class="st-owned">✦ On your table</span>';
     } else if (canUseTable(s.id)) {
-        action = `<button class="st-buy" onclick="event.stopPropagation(); applyTableSkin('${s.id}'); renderTableInspect()">Equip</button>`;
+        action = `${courtGiftTable(s.id)
+            ? `<span class="tt-insp-gift">✦ A gift of the court — Level ${(FLB.playerTableLevel && FLB.playerTableLevel()) || 12}</span>` : ''}
+            <button class="st-buy" onclick="event.stopPropagation(); applyTableSkin('${s.id}'); renderTableInspect()">Equip</button>`;
     } else if (s.lock === 'hero') {
         action = `<span class="tt-insp-lock">${heroTableLockLine(s.id)} — earned by leveling this hero</span>`;
     } else if (s.lock === 'feat') {

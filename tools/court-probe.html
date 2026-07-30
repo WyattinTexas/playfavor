@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<!-- Court Standing probe (tools/ = local-only, never linked from the game).
+     Loads the real meta.js OFFLINE (no firebase sdk → localStorage adapter)
+     and asserts the player-level machinery: curve landmarks, titles, tints,
+     the deterministic free-table pick, and 30 games driven through the REAL
+     postGameResult transaction — star payouts must equal per-game stars plus
+     exactly the rungs crossed, paid exactly once. -->
+<head><meta charset="utf-8"><title>Court Standing probe</title></head>
+<body>
+<div id="__probe">PENDING</div>
+<script>
+    window.__errs = [];
+    window.addEventListener('error', e => window.__errs.push(String(e.message)));
+    localStorage.clear();   // fresh account every run
+</script>
+<script src="../data/characters.js"></script>
+<script src="../js/meta.js"></script>
+<script>
+(async function () {
+    const out = [];
+    const ok = (name, cond, got) =>
+        out.push(`${cond ? 'PASS' : 'FAIL'} ${name}${cond ? '' : ' got=' + JSON.stringify(got)}`);
+    try {
+        // give meta.js's start() a beat to settle into local mode
+        for (let i = 0; i < 30 && FLB.mode === 'connecting'; i++) {
+            await new Promise(r => setTimeout(r, 100));
+        }
+        out.push('mode=' + FLB.mode);
+
+        // ── curve landmarks (games → level) ──
+        const L = FLB.playerLevel;
+        ok('L(0)=1', L(0) === 1, L(0));
+        ok('L(1)=2', L(1) === 2, L(1));
+        ok('L(21)=10', L(21) === 10, L(21));
+        ok('L(25)=10', L(25) === 10, L(25));
+        ok('L(71)=20', L(71) === 20, L(71));
+        ok('L(151)=30', L(151) === 30, L(151));
+        ok('L(251)=40', L(251) === 40, L(251));
+        ok('L(400)=49', L(400) === 49, L(400));
+        ok('L(401)=50', L(401) === 50, L(401));
+        ok('L(9999)=50 cap', L(9999) === 50, L(9999));
+        ok('pct mid-rung', FLB.playerLevelPct(0) === 0 && FLB.playerLevelPct(21) === 0
+            && FLB.playerLevelPct(9999) === 100, [FLB.playerLevelPct(21)]);
+
+        // ── titles & tints ──
+        ok('title 1 Wanderer', FLB.playerTitle(1) === 'Wanderer', FLB.playerTitle(1));
+        ok('title 13 Envoy', FLB.playerTitle(13) === 'Envoy', FLB.playerTitle(13));
+        ok('title 50 Crownkeeper', FLB.playerTitle(50) === 'Crownkeeper', FLB.playerTitle(50));
+        const cum = FLB.plCum();
+        ok('tint <10 none', FLB.nameTintClass(cum[8]) === '', FLB.nameTintClass(cum[8]));
+        ok('tint 10 bronze', FLB.nameTintClass(cum[9]) === 'plv-bronze', FLB.nameTintClass(cum[9]));
+        ok('tint 30 gold', FLB.nameTintClass(cum[29]) === 'plv-gold', FLB.nameTintClass(cum[29]));
+        ok('tint 50 radiant', FLB.nameTintClass(cum[49]) === 'plv-radiant', FLB.nameTintClass(cum[49]));
+
+        // ── free table: in the pool, deterministic, never a rare/hero ──
+        const POOL = ['velvet', 'queens', 'emerald', 'celestial', 'map', 'alchemist'];
+        const pick = FLB.playerFreeTableId();
+        ok('table pick in pool', POOL.includes(pick), pick);
+        ok('table pick stable', FLB.playerFreeTableId() === pick, FLB.playerFreeTableId());
+        ok('not earned below L12', !FLB.playerTableEarned(pick), FLB.playerTableEarned(pick));
+
+        // ── 30 games through the REAL txn (local adapter) ──
+        // Expect: games 0→30, stars = Σ per-game + rungs ≤ level(30 games).
+        // 30 games → PL_CUM: L11 @ 26 → level 11. Rungs paid: L2 ★5, L6 ★10,
+        // L10 ★10 = 25. Hero rungs also pay (bandit fv rises) — count them
+        // via the result's rungStars so the assert stays exact.
+        let expectStars = 0, plRungStars = 0, heroRungStars = 0, crossings = [];
+        for (let g = 0; g < 30; g++) {
+            const scores = [
+                { name: 'You', finalScore: 40, power: 3 },
+                { name: 'Bot A', finalScore: 30, power: 2 },
+                { name: 'Bot B', finalScore: 20, power: 1 },
+            ];
+            const res = await FLB.postGameResult(scores, [], { ratings: [], myChar: 'bandit', humans: 1 });
+            expectStars += FLB.gameStars(0, 3, 1);
+            if (res && res.pl) {
+                plRungStars += res.pl.stars || 0;
+                if (res.pl.after > res.pl.before) crossings.push(res.pl.before + '>' + res.pl.after);
+            }
+            if (res && res.rungStars) heroRungStars += res.rungStars;
+        }
+        const row = await FLB.readRow();
+        ok('games=30', row && row.games === 30, row && row.games);
+        ok('final level 11', L(row.games) === 11, L(row.games));
+        ok('pl rung stars = 25', plRungStars === 25, plRungStars);
+        ok('stars ledger exact', row.stars === expectStars + plRungStars + heroRungStars,
+            { stars: row && row.stars, expect: expectStars + plRungStars + heroRungStars });
+        ok('each rung once', crossings.length === new Set(crossings).size, crossings);
+        out.push('crossings=' + crossings.join(','));
+        ok('nextPlayerReward sane', (() => {
+            const nx = FLB.nextPlayerReward();
+            return nx && nx.lvl === 12 && /table/i.test(nx.label);
+        })(), FLB.nextPlayerReward());
+    } catch (e) {
+        out.push('THREW ' + e.message);
+    }
+    out.push('errors=' + JSON.stringify(window.__errs));
+    document.getElementById('__probe').textContent = out.join('\n');
+})();
+</script>
+</body>
+</html>

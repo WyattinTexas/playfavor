@@ -8325,3 +8325,99 @@ body.no-play-glow .hand-card.playable {
     .set-check, .vol-lbl { font-size: 11.5px; }
     .set-warn { font-size: 10px; }
 }
+
+/* ═══ Court Standing — the player's own level (7/30) ═══════════════════ */
+/* Name tints: the standing other players see. Defined LAST so they win
+   the tie against .pc-name / .lb-name / .pf-court-title base colors. */
+.plv-bronze  { color: #d29a6a; }
+.plv-silver  { color: #ccd6e0; }
+.plv-gold    { color: #ecc65a; }
+.plv-plat    { color: #dceef5; text-shadow: 0 0 8px rgba(190,230,245,0.35); }
+.plv-radiant {
+    background: linear-gradient(100deg, #ecc65a 10%, #f5ecd0 35%, #7fd4ff 60%, #ecc65a 90%);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: plvRadiant 6s linear infinite;
+}
+@keyframes plvRadiant { to { background-position: -300% 0; } }
+
+/* The level roundel — menu chip and profile. Ring color follows the tint
+   tier (default iron below Level 10). */
+.pc-plv, .pf-plv {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 22px; height: 22px; padding: 0 3px;
+    border-radius: 50%;
+    border: 2px solid #7a7f88;
+    background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.10), rgba(0,0,0,0.35));
+    color: #e9e2cf; font-size: 11px; font-weight: 900;
+    font-family: 'Cinzel', serif; line-height: 1;
+}
+.pc-plv.plv-bronze, .pf-plv.plv-bronze { border-color: #b5794c; color: #d29a6a; }
+.pc-plv.plv-silver, .pf-plv.plv-silver { border-color: #aeb9c6; color: #ccd6e0; }
+.pc-plv.plv-gold,   .pf-plv.plv-gold   { border-color: #d1a63e; color: #ecc65a; }
+.pc-plv.plv-plat,   .pf-plv.plv-plat   { border-color: #bfe0ee; color: #dceef5;
+    box-shadow: 0 0 8px rgba(190,230,245,0.35); }
+.pc-plv.plv-radiant, .pf-plv.plv-radiant { border-color: #ecc65a;
+    box-shadow: 0 0 10px rgba(236,198,90,0.55);
+    animation: none; color: #f5ecd0; background: radial-gradient(circle at 35% 30%, rgba(236,198,90,0.35), rgba(0,0,0,0.35)); }
+
+/* Menu chip: name + rank stack */
+.pc-id { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.pc-title {
+    font-size: 8.5px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--gold-dark); font-weight: 700; line-height: 1;
+}
+
+/* Profile — the Court Standing card */
+.pf-court { display: flex; align-items: center; gap: 12px; padding: 4px 2px 2px; }
+.pf-plv { min-width: 34px; height: 34px; font-size: 15px; border-width: 2.5px; }
+.pf-court-main { flex: 1; min-width: 0; }
+.pf-court-rank { display: flex; align-items: baseline; gap: 10px; }
+.pf-court-title {
+    font-family: 'Cinzel', serif; font-weight: 900; font-size: 15px;
+    letter-spacing: 1.5px; color: var(--gold-light);
+}
+.pf-court-games { font-size: 11px; color: var(--parchment-dim, #b9a98c); }
+.pf-court-track {
+    height: 7px; margin: 6px 0 4px; border-radius: 4px;
+    background: rgba(0,0,0,0.45); border: 1px solid rgba(201,168,76,0.35);
+    overflow: hidden;
+}
+.pf-court-fill {
+    height: 100%; width: var(--pct, 0%);
+    background: linear-gradient(90deg, #8a6a1f, #e8c34b);
+    border-radius: 4px;
+}
+.pf-court-next { font-size: 11.5px; color: var(--parchment-dim, #b9a98c); }
+.pf-court-next b { color: var(--gold-light); }
+
+/* Victory screen — the Court chip (only when a rung was crossed) */
+.vs-delta.pl {
+    display: flex; align-items: center; gap: 10px;
+    position: relative; overflow: hidden;
+}
+.vs-pl-crest {
+    font-size: 20px; color: #e8c34b;
+    text-shadow: 0 0 10px rgba(232,195,75,0.5);
+}
+.vs-pl-body { flex: 1; min-width: 0; }
+.vs-pl-notes {
+    display: flex; flex-wrap: wrap; gap: 4px 12px;
+    font-size: 11px; margin-top: 3px;
+}
+.vs-pl-title, .vs-pl-tint, .vs-pl-table { color: var(--parchment-dim, #b9a98c); }
+.vs-pl-title b, .vs-pl-tint b { color: var(--gold-light); }
+
+/* Store — the court's gift note on the inspect easel */
+.tt-insp-gift {
+    display: block; font-size: 11px; color: #e8c34b;
+    letter-spacing: 1px; margin-bottom: 4px;
+}
+
+@media (max-width: 700px) {
+    .pc-plv { min-width: 18px; height: 18px; font-size: 9.5px; }
+    .pc-title { font-size: 7px; letter-spacing: 1.5px; }
+    .pf-court-title { font-size: 13px; }
+}
