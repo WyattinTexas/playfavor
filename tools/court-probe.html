@@ -114,6 +114,34 @@
             const nx = FLB.nextPlayerReward();
             return nx && nx.lvl === 12 && /table/i.test(nx.label);
         })(), FLB.nextPlayerReward());
+
+        // ── the wardrobe: wear any EARNED rank or color (account is now
+        // level 11 → titles through Herald, tint tier 10 unlocked) ──
+        await FLB.wearTitleAt(4);
+        const rowW = await FLB.readRow();
+        ok('wear Squire persisted', rowW.titleAt === 4, rowW.titleAt);
+        ok('shown title Squire', FLB.myShownTitle() === 'Squire', FLB.myShownTitle());
+        ok('earned title unmoved', FLB.playerTitle(11) === 'Herald', FLB.playerTitle(11));
+        ok('invalid pick falls back', FLB.shownTitle(30, { titleAt: 45, form: null }) === 'Herald',
+            FLB.shownTitle(30, { titleAt: 45, form: null }));
+        await FLB.wearTitleAt(8);   // Herald = the newest → stores null (follow)
+        const rowN = await FLB.readRow();
+        ok('newest title stores null', rowN.titleAt == null, rowN.titleAt);
+        await FLB.wearTintAt(0);
+        ok('plain worn', FLB.myShownTint() === '', FLB.myShownTint());
+        ok('pick above earned clamps', FLB.nameTintClass(30, 50) === 'plv-bronze',
+            FLB.nameTintClass(30, 50));
+        await FLB.wearTintAt(10);   // bronze = the newest tier → null (follow)
+        const rowT = await FLB.readRow();
+        ok('newest tint stores null', rowT.tintAt == null, rowT.tintAt);
+        ok('bronze worn again', FLB.myShownTint() === 'plv-bronze', FLB.myShownTint());
+
+        // ── public profile: unknown noble gets the polite empty card ──
+        await FLB.openPublicProfile('nobody-in-particular');
+        const pp = document.getElementById('pubProfilePanel');
+        ok('pub panel opens', !!(pp && pp.classList.contains('active')
+            && /no public record/.test(pp.textContent)),
+            pp && pp.textContent.replace(/\s+/g, ' ').slice(0, 60));
     } catch (e) {
         out.push('THREW ' + e.message);
     }

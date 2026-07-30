@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<!-- Visual harness: seeds a Level-20 local account (75 games — current rank
+     Baron/Baroness, wardrobe through Magistrate, tints through Silver) and
+     opens the REAL profile panel with the real CSS, for screenshotting. -->
+<head>
+<meta charset="utf-8"><title>Court profile shot</title>
+<link rel="stylesheet" href="../css/style.css">
+<style>body { background: #241408; } .profile-panel { position: static; display: flex; }</style>
+</head>
+<body>
+<!-- the real menu chip too — renderProfileChip needs it to exist, and it
+     is the other surface worth eyeballing -->
+<button class="profile-chip" id="profileChip" style="position:static;margin:14px"></button>
+<div class="profile-panel active" id="profilePanel">
+    <div class="pf-inner">
+        <div class="pf-title">Your Standing</div>
+        <div id="profileBody"></div>
+    </div>
+</div>
+<script>
+    localStorage.clear();
+    localStorage.setItem('favorUid', 'shotuid');
+    localStorage.setItem('favorName', 'Wyatt');
+    localStorage.setItem('favorLB', JSON.stringify({ players: { shotuid: {
+        name: 'Wyatt', rating: 1520, ratingV: 2, stars: 140, games: 75, wins: 31,
+        bestStreak: 5, champs: { gold: 1 },
+        chars: { bandit: { r: 1560, g: 40, best: 88, fv: 2600 },
+                 fisherman: { r: 1480, g: 20, best: 71, fv: 1300 } },
+    } } }));
+</script>
+<script src="../data/characters.js"></script>
+<script src="../js/meta.js"></script>
+<script>
+    (async function () {
+        for (let i = 0; i < 30 && FLB.mode === 'connecting'; i++) {
+            await new Promise(r => setTimeout(r, 100));
+        }
+        await FLB.renderProfileChip();   // pulls _me from the seeded row
+        FLB.openProfile();
+    })();
+</script>
+</body>
+</html>

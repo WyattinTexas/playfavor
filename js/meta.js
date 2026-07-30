@@ -776,14 +776,46 @@
     // prints a player's name can derive the class from their games count
     // (the players row already carries it), so the tint follows you onto
     // the leaderboard with zero schema change.
+    //
+    // WORN vs EARNED (Wyatt 7/30): reaching a tier unlocks it forever,
+    // and the player may WEAR any tier already passed — `tintAt` on the
+    // row (0 = plain, 10/20/30/40/50 = that tier). Same for titles via
+    // `titleAt` (a PLAYER_TITLES lvl). Picks are VALIDATED against the
+    // earned level on every read — a pick above what's earned falls back
+    // to earned, so a bad write can't dress anyone above their station.
+    // Picking your newest tier/rank stores NULL ("follow my progress"),
+    // so players who never touch the picker keep climbing visibly.
+    const TINT_LEVELS = [10, 20, 30, 40, 50];
+    const TIER_CLASS = { 0: '', 10: 'plv-bronze', 20: 'plv-silver',
+        30: 'plv-gold', 40: 'plv-plat', 50: 'plv-radiant' };
     const TINT_WORD = { 'plv-bronze': 'Bronze', 'plv-silver': 'Silver',
         'plv-gold': 'Gold', 'plv-plat': 'Platinum', 'plv-radiant': 'Radiant' };
-    function nameTintClass(games) {
-        const lvl = playerLevel(games);
-        return lvl >= 50 ? 'plv-radiant' : lvl >= 40 ? 'plv-plat'
-            : lvl >= 30 ? 'plv-gold' : lvl >= 20 ? 'plv-silver'
-            : lvl >= 10 ? 'plv-bronze' : '';
+    const earnedTier = lvl => TINT_LEVELS.filter(t => lvl >= t).pop() || 0;
+    function nameTintClass(games, tintAt) {
+        const earned = earnedTier(playerLevel(games));
+        const worn = (tintAt == null) ? earned : Math.min(tintAt, earned);
+        return TIER_CLASS[TINT_LEVELS.includes(worn) ? worn : 0] || '';
     }
+    // The title actually WORN: the pick if it's earned, else the newest.
+    function shownTitle(games, o) {
+        const lvl = playerLevel(games);
+        const opts = o || {};
+        const pick = opts.titleAt != null
+            && PLAYER_TITLES.find(t => t.lvl === opts.titleAt && t.lvl <= lvl);
+        return titleWord(pick || titleRowAt(lvl), opts.form === undefined ? myTitleForm() : opts.form);
+    }
+    const myShownTitle = () => shownTitle(myGames(),
+        { form: myTitleForm(), titleAt: (_me || {}).titleAt });
+    const myShownTint = () => nameTintClass(myGames(), (_me || {}).tintAt);
+    // Wearing a rank/tint — picking your NEWEST stores null (follow).
+    async function wearPick(field, val, newestVal) {
+        const v = (val === newestVal) ? null : val;
+        const res = await mergeRow(p => ({ ...(p || {}), [field]: v }));
+        if (res && res.committed && res.value) _me = res.value;
+        renderProfileChip();
+    }
+    const wearTitleAt = lvl => wearPick('titleAt', lvl, titleRowAt(myPlayerLevel()).lvl);
+    const wearTintAt = t => wearPick('tintAt', t, earnedTier(myPlayerLevel()));
 
     // The PAYOUT ladder (star drops + the free table). Titles and tints
     // are derived from their own tables above and never pay, so they are
@@ -1959,13 +1991,14 @@
         // tint tier's ring, the name wears its tint, the rank sits under
         // the name in small caps. All derived from _me.games.
         const plv = myPlayerLevel();
-        const tint = nameTintClass(myGames());
+        // Roundel ring = the tier EARNED (it decorates the level number);
+        // name + rank = what the player chose to WEAR.
         chip.innerHTML = `
             ${avatarDisc(myAvatar(), 'pc-av')}
-            <span class="pc-plv ${tint}" title="Court Standing — Level ${plv}">${plv}</span>
+            <span class="pc-plv ${nameTintClass(myGames())}" title="Court Standing — Level ${plv}">${plv}</span>
             <span class="pc-id">
-                <span class="pc-name ${tint}">${myName()}</span>
-                <span class="pc-title">${playerTitle(plv)}</span>
+                <span class="pc-name ${myShownTint()}">${myName()}</span>
+                <span class="pc-title">${myShownTitle()}</span>
             </span>
             ${ratingSpan(eloOf(_me), 'pc-rating')}
             ${gold > 0 ? `<span class="pc-crowns" title="Daily Championships">${CROWN_SVG}${gold}</span>` : ''}
@@ -2041,33 +2074,55 @@
                 // Court Standing — the player's own ladder, above the heroes
                 // because it is the one every game feeds regardless of hero.
                 const plv = playerLevel(games);
-                const tint = nameTintClass(games);
                 const nx = nextPlayerReward();
-                // A his-and-hers rank offers its choice right on the card
-                // (and lets it be changed — the form carries to every
-                // later gendered rank, so it should never feel locked).
-                const pair = titleChoiceAt(plv);
                 const form = myTitleForm();
-                const chooser = pair ? `
+                // His-and-hers: the toggle shows whenever ANY earned rank is
+                // a pair (labels from the highest one), so a Baroness worn
+                // below a non-paired current rank can still be restyled.
+                const pairRow = [...PLAYER_TITLES].reverse().find(t => t.m && t.lvl <= plv);
+                const chooser = pairRow ? `
                         <span class="pf-court-forms">
                             <button class="pf-court-form${form === 'm' ? ' on' : ''}"
-                                onclick="FLB.chooseTitleForm('m').then(() => FLB.openProfile())">${pair.m}</button>
+                                onclick="FLB.chooseTitleForm('m').then(() => FLB.openProfile())">${pairRow.m}</button>
                             <button class="pf-court-form${form === 'f' ? ' on' : ''}"
-                                onclick="FLB.chooseTitleForm('f').then(() => FLB.openProfile())">${pair.f}</button>
+                                onclick="FLB.chooseTitleForm('f').then(() => FLB.openProfile())">${pairRow.f}</button>
                         </span>` : '';
+                // The wardrobe (Wyatt 7/30): every rank and tint EARNED
+                // stays wearable — pills, worn one lit. Picking the newest
+                // stores null, so untouched players keep climbing visibly.
+                const unlockedT = PLAYER_TITLES.filter(t => t.lvl <= plv);
+                const wornTitleLvl = (p.titleAt != null
+                    && unlockedT.some(t => t.lvl === p.titleAt))
+                    ? p.titleAt : titleRowAt(plv).lvl;
+                const wardrobe = unlockedT.length > 1 ? `
+                    <div class="pf-court-wear-lbl">Title — wear any you've earned</div>
+                    <div class="pf-court-wear">${unlockedT.map(t => `
+                        <button class="pf-court-form${t.lvl === wornTitleLvl ? ' on' : ''}"
+                            onclick="FLB.wearTitleAt(${t.lvl}).then(() => FLB.openProfile())">${titleWord(t, form)}</button>`).join('')}
+                    </div>` : '';
+                const tiers = [0, ...TINT_LEVELS.filter(t => plv >= t)];
+                const wornTier = (p.tintAt == null) ? earnedTier(plv)
+                    : Math.min(p.tintAt, earnedTier(plv));
+                const tintRow = tiers.length > 1 ? `
+                    <div class="pf-court-wear-lbl">Name color</div>
+                    <div class="pf-court-wear">${tiers.map(t => `
+                        <button class="pf-court-form tintpill ${TIER_CLASS[t]}${t === wornTier ? ' on' : ''}"
+                            onclick="FLB.wearTintAt(${t}).then(() => FLB.openProfile())">${t === 0 ? 'Plain' : TINT_WORD[TIER_CLASS[t]]}</button>`).join('')}
+                    </div>` : '';
                 return `
             <div class="pf-sec">Court Standing</div>
             <div class="pf-court">
-                <span class="pf-plv ${tint}">${plv}</span>
+                <span class="pf-plv ${nameTintClass(games)}">${plv}</span>
                 <div class="pf-court-main">
                     <div class="pf-court-rank">
-                        <span class="pf-court-title ${tint}">${playerTitle(plv)}</span>
+                        <span class="pf-court-title ${myShownTint()}">${myShownTitle()}</span>
                         ${chooser}
                         <span class="pf-court-games">${games} game${games === 1 ? '' : 's'} played</span>
                     </div>
                     <div class="pf-court-track"><div class="pf-court-fill" style="--pct:${playerLevelPct(games).toFixed(1)}%"></div></div>
                     ${nx ? `<div class="pf-court-next">Next: <b>${nx.label}</b> at Level ${nx.lvl}</div>`
                          : '<div class="pf-court-next">The court has no higher rank.</div>'}
+                    ${wardrobe}${tintRow}
                 </div>
             </div>`;
             })()}
@@ -2106,6 +2161,90 @@
         document.getElementById('profilePanel').classList.add('active');
     }
     function closeProfile() { document.getElementById('profilePanel').classList.remove('active'); }
+
+    // ═══ Public profile — tap a board row, meet the noble (Wyatt 7/30) ═
+    // Read-only view of any player's row: name as WORN (tint/title), court
+    // level, record, crowns, and their three best heroes. The panel is
+    // built once, on demand — no index.html markup to keep in step. Your
+    // own row opens your real profile instead.
+    function ensurePubPanel() {
+        let el = document.getElementById('pubProfilePanel');
+        if (el) return el;
+        el = document.createElement('div');
+        el.className = 'profile-panel';
+        el.id = 'pubProfilePanel';
+        el.onclick = closePublicProfile;
+        el.innerHTML = `<div class="pf-inner" onclick="event.stopPropagation()">
+            <div class="pf-title">A Noble of the Court</div>
+            <div id="pubProfileBody"></div></div>`;
+        document.body.appendChild(el);
+        return el;
+    }
+    async function openPublicProfile(u) {
+        if (!u) return;
+        if (u === uid()) { openProfile(); return; }
+        const panel = ensurePubPanel();
+        const body = document.getElementById('pubProfileBody');
+        body.innerHTML = '<div class="lb-loading">Fetching the herald’s scroll…</div>';
+        panel.classList.add('active');
+        const p = await dbGet(`players/${u}`) || null;
+        if (!p || !p.name) {
+            body.innerHTML = '<div class="pf-note">This noble keeps no public record.</div>';
+            return;
+        }
+        const games = p.games || 0;
+        const plv = playerLevel(games);
+        const worn = nameTintClass(games, (p.tintAt == null) ? null : p.tintAt);
+        const title = shownTitle(games, { form: p.titleForm || null,
+            titleAt: (p.titleAt == null) ? null : p.titleAt });
+        const wins = p.wins || 0;
+        const rate = games ? Math.round((wins / games) * 100) : 0;
+        const ch = p.champs || {};
+        const ledger = (((window.FAVOR_DATA || {}).characters) || [])
+            .map(c => ({ c, s: (p.chars || {})[c.id] }))
+            .filter(x => x.s && (x.s.g || 0) > 0)
+            .sort((a, b) => (b.s.r || 0) - (a.s.r || 0)).slice(0, 3);
+        // Personas and fresh rows have no games — their card is name +
+        // rating only; a Level-1 "Peasant" line would just be noise.
+        body.innerHTML = `
+            <div class="pf-standing">
+                ${avatarDisc(p.avatar, 'pf-av-current')}
+                <div class="pf-standing-main">
+                    <div class="pf-rating"><span class="pub-name ${worn}">${p.name}</span>
+                        ${(ch.gold || 0) > 0 ? `<span class="pc-crowns" title="Daily Championships">${CROWN_SVG}${ch.gold}</span>` : ''}</div>
+                    <div class="pf-record">${ratingSpan(eloOf(p), 'pf-rating-val')}
+                        <span class="pf-tier">Tier ${ratingTier(eloOf(p))}</span></div>
+                </div>
+            </div>
+            ${games ? `
+            <div class="pf-sec">Court Standing</div>
+            <div class="pf-court">
+                <span class="pf-plv ${nameTintClass(games)}">${plv}</span>
+                <div class="pf-court-main">
+                    <div class="pf-court-rank">
+                        <span class="pf-court-title ${worn}">${title}</span>
+                        <span class="pf-court-games">Level ${plv}</span>
+                    </div>
+                    <div class="pf-record"><b>${wins}</b> W · <b>${games}</b> played · <b>${rate}%</b>${(p.bestStreak || 0) > 1 ? ` · best streak <b>${p.bestStreak}</b>` : ''}</div>
+                </div>
+            </div>` : ''}
+            ${ledger.length ? `
+            <div class="pf-sec">Best Heroes</div>
+            <div class="pf-heroes">${ledger.map(({ c, s }) => `
+                <div class="pf-hero" title="${c.name}">
+                    <img src="assets/characters/${c.filename}" alt="${c.name}">
+                    <span class="pf-hero-name">${c.name}</span>
+                    <span class="pf-hero-r">${ratingSpan(clampElo(s.r))}</span>
+                    <span class="pf-hero-g">${s.g} game${s.g === 1 ? '' : 's'}</span>
+                    ${(s.best || 0) > 0 ? `<span class="lb-best"><img class="lb-ico" src="assets/icons/favor.png" alt="">${s.best}</span>` : ''}
+                    <div class="pf-xp">${xpRibbonHtml(s.fv || 0, 7, 9)}</div>
+                </div>`).join('')}</div>` : ''}
+        `;
+    }
+    function closePublicProfile() {
+        const el = document.getElementById('pubProfilePanel');
+        if (el) el.classList.remove('active');
+    }
 
     // Boards, one renderer (Wyatt 7/17 overhaul): All-Time (rating), a
     // tab per CHARACTER (your rating riding that hero), Daily (best
@@ -2179,11 +2318,13 @@
         const best = (tab && tab.indexOf('char:') === 0 && (r.best || 0) > 0)
             ? `<span class="lb-best" title="Best game with this hero"><img class="lb-ico" src="assets/icons/favor.png" alt="">${r.best}</span>`
             : '';
+        // The whole row opens that player's public profile (Wyatt 7/30).
         return `
-            <div class="lb-row${me ? ' me' : ''}${rank <= 3 ? ` podium p${rank}` : ''}${opts && opts.appendix ? ' appendix' : ''}" style="--li:${opts ? opts.idx : 0}">
+            <div class="lb-row${me ? ' me' : ''}${rank <= 3 ? ` podium p${rank}` : ''}${opts && opts.appendix ? ' appendix' : ''}" style="--li:${opts ? opts.idx : 0}"
+                 onclick="FLB.openPublicProfile('${(r.uid || '').replace(/[^\w-]/g, '')}')">
                 ${medal}
                 ${avatarDisc(r.avatar, 'lb-av')}
-                <span class="lb-name ${nameTintClass(r.games)}"${r.games ? ` title="${playerTitle(playerLevel(r.games), r.titleForm || null)} — Court Level ${playerLevel(r.games)}"` : ''}>${r.name || 'Unknown Noble'}${crowns}${me ? '<span class="lb-you">You</span>' : ''}</span>
+                <span class="lb-name ${nameTintClass(r.games, r.tintAt)}"${r.games ? ` title="${shownTitle(r.games, { form: r.titleForm || null, titleAt: r.titleAt })} — Court Level ${playerLevel(r.games)}"` : ''}>${r.name || 'Unknown Noble'}${crowns}${me ? '<span class="lb-you">You</span>' : ''}</span>
                 ${best}
                 <b class="lb-score">${score}</b>
             </div>`;
@@ -2234,12 +2375,14 @@
             const deck = (u, p) => ({
                 uid: u, name: p.name, avatar: p.avatar || null,
                 gold: (p.champs && p.champs.gold) || 0,
-                // Court Standing tint rides every board row for free —
-                // games already lives on the players row. Personas carry
-                // no games count, so they stay untinted (they are not on
-                // the court's ladder). titleForm rides along so a
-                // Baroness reads as Baroness on everyone's board.
+                // Court Standing rides every board row for free — games
+                // already lives on the players row. Personas carry no
+                // games count, so they stay untinted (they are not on
+                // the court's ladder). titleForm/titleAt/tintAt ride
+                // along so everyone sees what each player chose to WEAR.
                 games: p.games || 0, titleForm: p.titleForm || null,
+                titleAt: (p.titleAt == null) ? null : p.titleAt,
+                tintAt: (p.tintAt == null) ? null : p.tintAt,
             });
             let rows = [];
             if (tab === 'daily') {
@@ -2972,6 +3115,8 @@
         heroTableUnlocked, heroCrestUnlocked, rareTableEarned, nextReward,
         playerLevel, playerLevelPct, playerTitle, nameTintClass, myPlayerLevel,
         titleChoiceAt, chooseTitleForm, myTitleForm,
+        shownTitle, myShownTitle, myShownTint, wearTitleAt, wearTintAt,
+        openPublicProfile, closePublicProfile,
         playerTableEarned, playerFreeTableId, nextPlayerReward,
         playerTableLevel: () => PLAYER_TABLE_LEVEL,
         playerRewards: () => PLAYER_REWARDS, playerTitles: () => PLAYER_TITLES,

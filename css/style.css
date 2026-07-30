@@ -8371,7 +8371,8 @@ body.no-play-glow .hand-card.playable {
 }
 
 /* Profile — the Court Standing card */
-.pf-court { display: flex; align-items: center; gap: 12px; padding: 4px 2px 2px; }
+.pf-court { display: flex; align-items: flex-start; gap: 12px; padding: 4px 2px 2px; }
+.pf-court .pf-plv { margin-top: 1px; }
 .pf-plv { min-width: 34px; height: 34px; font-size: 15px; border-width: 2.5px; }
 .pf-court-main { flex: 1; min-width: 0; }
 .pf-court-rank { display: flex; align-items: baseline; gap: 10px; }
@@ -8436,3 +8437,23 @@ body.no-play-glow .hand-card.playable {
 }
 .pf-court-form:hover, .vs-pl-form:hover { border-color: var(--gold); }
 .vs-pl-form { font-size: 10px; padding: 1px 8px; margin-left: 4px; }
+
+/* The wardrobe — wear any earned rank or color (profile card) */
+.pf-court-wear-lbl {
+    font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--gold-dark); margin: 10px 0 4px;
+}
+.pf-court-wear { display: flex; flex-wrap: wrap; gap: 5px; }
+/* Tint pills keep their own color; the worn one is framed, not filled */
+.pf-court-form.tintpill.on {
+    background: rgba(232,195,75,0.14); border-color: #e8c34b;
+    color: var(--gold-light);   /* the Plain pill; tinted pills override below */
+}
+.pf-court-form.tintpill.on.plv-bronze { color: #d29a6a; }
+.pf-court-form.tintpill.on.plv-silver { color: #ccd6e0; }
+.pf-court-form.tintpill.on.plv-gold   { color: #ecc65a; }
+.pf-court-form.tintpill.on.plv-plat   { color: #dceef5; }
+
+/* Board rows now open the noble's public profile */
+.lb-row { cursor: pointer; }
+.pub-name { font-family: 'Cinzel', serif; font-weight: 900; font-size: 17px; letter-spacing: 1px; }
