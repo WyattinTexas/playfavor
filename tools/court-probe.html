@@ -44,9 +44,21 @@
             && FLB.playerLevelPct(9999) === 100, [FLB.playerLevelPct(21)]);
 
         // ── titles & tints ──
-        ok('title 1 Wanderer', FLB.playerTitle(1) === 'Wanderer', FLB.playerTitle(1));
-        ok('title 13 Envoy', FLB.playerTitle(13) === 'Envoy', FLB.playerTitle(13));
-        ok('title 50 Crownkeeper', FLB.playerTitle(50) === 'Crownkeeper', FLB.playerTitle(50));
+        ok('title 1 Peasant', FLB.playerTitle(1) === 'Peasant', FLB.playerTitle(1));
+        ok('title 13 Steward', FLB.playerTitle(13) === 'Steward', FLB.playerTitle(13));
+        ok('title 30 Earl', FLB.playerTitle(30) === 'Earl', FLB.playerTitle(30));
+        // his-and-hers ranks: both shown until chosen, then the chosen form
+        ok('title 20 unchosen', FLB.playerTitle(20) === 'Baron/Baroness', FLB.playerTitle(20));
+        ok('title 50 m King', FLB.playerTitle(50, 'm') === 'King', FLB.playerTitle(50, 'm'));
+        ok('title 25 f Countess', FLB.playerTitle(25, 'f') === 'Countess', FLB.playerTitle(25, 'f'));
+        ok('choiceAt 22 pair', (() => { const c = FLB.titleChoiceAt(22); return c && c.m === 'Baron'; })(),
+            FLB.titleChoiceAt(22));
+        ok('choiceAt 35 none', FLB.titleChoiceAt(35) === null, FLB.titleChoiceAt(35));
+        await FLB.chooseTitleForm('f');
+        ok('form persisted', FLB.myTitleForm() === 'f', FLB.myTitleForm());
+        ok('title 20 after choice', FLB.playerTitle(20) === 'Baroness', FLB.playerTitle(20));
+        const row0 = await FLB.readRow();
+        ok('titleForm on row', row0 && row0.titleForm === 'f', row0 && row0.titleForm);
         const cum = FLB.plCum();
         ok('tint <10 none', FLB.nameTintClass(cum[8]) === '', FLB.nameTintClass(cum[8]));
         ok('tint 10 bronze', FLB.nameTintClass(cum[9]) === 'plv-bronze', FLB.nameTintClass(cum[9]));

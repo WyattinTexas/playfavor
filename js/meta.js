@@ -718,24 +718,56 @@
 
     // The court rank the level grants — worn under the name on the menu
     // and the profile. A new rank roughly every four rungs.
+    //
+    // ORDER (Wyatt 7/30, ranked as real life ranks them): commoner →
+    // gentry (Squire, Knight) → crown offices (Steward, Magistrate) →
+    // the peerage (Baron, Count, Earl) → the great offices that WIELD
+    // the crown's power and so outrank the nobles who hold land under
+    // it (Chancellor runs the law, a Viceroy rules in the monarch's
+    // name, a Regent rules the realm itself) → the crown.
+    //
+    // Rows with {m, f} are his-and-hers titles: the PLAYER CHOOSES the
+    // form (Baron or Baroness) the first time they earn one. The choice
+    // is `titleForm` ('m'|'f') on the players row — the ONE written
+    // piece of Court Standing state, because a choice cannot be derived
+    // — and it carries to every later gendered rank (a Baroness will be
+    // crowned Queen). Unchosen shows both ("Baron/Baroness").
     const PLAYER_TITLES = [
-        { lvl: 1,  title: 'Wanderer' },
+        { lvl: 1,  title: 'Peasant' },
         { lvl: 4,  title: 'Squire' },
-        { lvl: 8,  title: 'Courtier' },
-        { lvl: 12, title: 'Envoy' },
-        { lvl: 16, title: 'Steward' },
-        { lvl: 20, title: 'Magistrate' },
-        { lvl: 25, title: 'Ambassador' },
-        { lvl: 30, title: 'Chancellor' },
-        { lvl: 35, title: 'Viceroy' },
-        { lvl: 40, title: 'Regent' },
-        { lvl: 45, title: 'Highlord' },
-        { lvl: 50, title: 'Crownkeeper' },
+        { lvl: 8,  title: 'Knight' },
+        { lvl: 12, title: 'Steward' },
+        { lvl: 16, title: 'Magistrate' },
+        { lvl: 20, m: 'Baron', f: 'Baroness' },
+        { lvl: 25, m: 'Count', f: 'Countess' },
+        { lvl: 30, title: 'Earl' },
+        { lvl: 35, title: 'Chancellor' },
+        { lvl: 40, title: 'Viceroy' },
+        { lvl: 45, title: 'Regent' },
+        { lvl: 50, m: 'King', f: 'Queen' },
     ];
-    function playerTitle(lvl) {
-        let t = PLAYER_TITLES[0].title;
-        for (const r of PLAYER_TITLES) { if (lvl >= r.lvl) t = r.title; else break; }
-        return t;
+    const titleWord = (r, form) => r.title
+        || (form === 'm' ? r.m : form === 'f' ? r.f : `${r.m}/${r.f}`);
+    const myTitleForm = () => ((_me || {}).titleForm) || null;
+    function titleRowAt(lvl) {
+        let row = PLAYER_TITLES[0];
+        for (const r of PLAYER_TITLES) { if (lvl >= r.lvl) row = r; else break; }
+        return row;
+    }
+    function playerTitle(lvl, form) {
+        return titleWord(titleRowAt(lvl), form === undefined ? myTitleForm() : form);
+    }
+    // The gendered pair at this level, if the CURRENT rank is one — the
+    // victory chip and profile use it to offer the choice.
+    function titleChoiceAt(lvl) {
+        const r = titleRowAt(lvl);
+        return r.m ? r : null;
+    }
+    async function chooseTitleForm(form) {
+        if (form !== 'm' && form !== 'f') return;
+        const res = await mergeRow(p => ({ ...(p || {}), titleForm: form }));
+        if (res && res.committed && res.value) _me = res.value;
+        renderProfileChip();
     }
     // The name's tint — the standing OTHER people see. Any surface that
     // prints a player's name can derive the class from their games count
@@ -810,7 +842,7 @@
             ...PLAYER_REWARDS.map(r => ({ lvl: r.lvl,
                 label: r.stars ? `★ ${r.stars}` : 'A free table' })),
             ...PLAYER_TITLES.filter(t => t.lvl > 1)
-                .map(t => ({ lvl: t.lvl, label: `the rank of ${t.title}` })),
+                .map(t => ({ lvl: t.lvl, label: `the rank of ${titleWord(t, myTitleForm())}` })),
             ...[10, 20, 30, 40, 50].map(l => ({ lvl: l,
                 label: `${TINT_WORD[nameTintClass(PL_CUM[l - 1])]} name` })),
         ].sort((a, b) => a.lvl - b.lvl);
@@ -2008,6 +2040,18 @@
                 const plv = playerLevel(games);
                 const tint = nameTintClass(games);
                 const nx = nextPlayerReward();
+                // A his-and-hers rank offers its choice right on the card
+                // (and lets it be changed — the form carries to every
+                // later gendered rank, so it should never feel locked).
+                const pair = titleChoiceAt(plv);
+                const form = myTitleForm();
+                const chooser = pair ? `
+                        <span class="pf-court-forms">
+                            <button class="pf-court-form${form === 'm' ? ' on' : ''}"
+                                onclick="FLB.chooseTitleForm('m').then(() => FLB.openProfile())">${pair.m}</button>
+                            <button class="pf-court-form${form === 'f' ? ' on' : ''}"
+                                onclick="FLB.chooseTitleForm('f').then(() => FLB.openProfile())">${pair.f}</button>
+                        </span>` : '';
                 return `
             <div class="pf-sec">Court Standing</div>
             <div class="pf-court">
@@ -2015,6 +2059,7 @@
                 <div class="pf-court-main">
                     <div class="pf-court-rank">
                         <span class="pf-court-title ${tint}">${playerTitle(plv)}</span>
+                        ${chooser}
                         <span class="pf-court-games">${games} game${games === 1 ? '' : 's'} played</span>
                     </div>
                     <div class="pf-court-track"><div class="pf-court-fill" style="--pct:${playerLevelPct(games).toFixed(1)}%"></div></div>
@@ -2135,7 +2180,7 @@
             <div class="lb-row${me ? ' me' : ''}${rank <= 3 ? ` podium p${rank}` : ''}${opts && opts.appendix ? ' appendix' : ''}" style="--li:${opts ? opts.idx : 0}">
                 ${medal}
                 ${avatarDisc(r.avatar, 'lb-av')}
-                <span class="lb-name ${nameTintClass(r.games)}"${r.games ? ` title="${playerTitle(playerLevel(r.games))} — Court Level ${playerLevel(r.games)}"` : ''}>${r.name || 'Unknown Noble'}${crowns}${me ? '<span class="lb-you">You</span>' : ''}</span>
+                <span class="lb-name ${nameTintClass(r.games)}"${r.games ? ` title="${playerTitle(playerLevel(r.games), r.titleForm || null)} — Court Level ${playerLevel(r.games)}"` : ''}>${r.name || 'Unknown Noble'}${crowns}${me ? '<span class="lb-you">You</span>' : ''}</span>
                 ${best}
                 <b class="lb-score">${score}</b>
             </div>`;
@@ -2189,8 +2234,9 @@
                 // Court Standing tint rides every board row for free —
                 // games already lives on the players row. Personas carry
                 // no games count, so they stay untinted (they are not on
-                // the court's ladder).
-                games: p.games || 0,
+                // the court's ladder). titleForm rides along so a
+                // Baroness reads as Baroness on everyone's board.
+                games: p.games || 0, titleForm: p.titleForm || null,
             });
             let rows = [];
             if (tab === 'daily') {
@@ -2922,6 +2968,7 @@
         checkEarnedHero, showSideBCelebration, sideBLevel: () => SIDEB_LEVEL,
         heroTableUnlocked, heroCrestUnlocked, rareTableEarned, nextReward,
         playerLevel, playerLevelPct, playerTitle, nameTintClass, myPlayerLevel,
+        titleChoiceAt, chooseTitleForm, myTitleForm,
         playerTableEarned, playerFreeTableId, nextPlayerReward,
         playerTableLevel: () => PLAYER_TABLE_LEVEL,
         playerRewards: () => PLAYER_REWARDS, playerTitles: () => PLAYER_TITLES,

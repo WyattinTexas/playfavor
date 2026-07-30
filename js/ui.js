@@ -7326,12 +7326,29 @@ function paintCourtDelta(row, pl) {
             </div>
             <div class="vs-pl-notes">
                 ${pl.stars ? `<span class="vs-d-stars">★ ${pl.stars} Stars</span>` : ''}
-                ${titleRose ? `<span class="vs-pl-title">You are now <b>${FLB.playerTitle(pl.after)}</b></span>` : ''}
+                ${titleRose ? titleNote() : ''}
                 ${tintLvl ? `<span class="vs-pl-tint">Your name turns <b>${TINT_AT[tintLvl]}</b></span>` : ''}
                 ${gotTable ? '<span class="vs-pl-table">The court gifts you a table — see the store</span>' : ''}
             </div>
         </div>
         <div class="vs-xp-shine" aria-hidden="true"></div>`;
+    // A his-and-hers rank earned with no style on record asks RIGHT HERE —
+    // the moment of the honor is the moment of the choice.
+    function titleNote() {
+        const pair = FLB.titleChoiceAt && FLB.titleChoiceAt(pl.after);
+        if (pair && FLB.myTitleForm && !FLB.myTitleForm()) {
+            return `<span class="vs-pl-title">Choose your title:
+                <button class="vs-pl-form" data-form="m">${pair.m}</button>
+                <button class="vs-pl-form" data-form="f">${pair.f}</button></span>`;
+        }
+        return `<span class="vs-pl-title">You are now <b>${FLB.playerTitle(pl.after)}</b></span>`;
+    }
+    chip.querySelectorAll('.vs-pl-form').forEach(b => b.onclick = () => {
+        FLB.chooseTitleForm(b.dataset.form).then(() => {
+            const span = chip.querySelector('.vs-pl-title');
+            if (span) span.innerHTML = `You are now <b>${FLB.playerTitle(pl.after)}</b>`;
+        });
+    });
     row.appendChild(chip);
     animateVsTotals(chip);
 }
