@@ -45,7 +45,17 @@
 
         // ── titles & tints ──
         ok('title 1 Peasant', FLB.playerTitle(1) === 'Peasant', FLB.playerTitle(1));
+        ok('title 8 Herald', FLB.playerTitle(8) === 'Herald', FLB.playerTitle(8));
         ok('title 13 Steward', FLB.playerTitle(13) === 'Steward', FLB.playerTitle(13));
+        // Wyatt 7/30: no rank may share a name with a hero (killed Knight
+        // and Duke/Duchess). Guard the whole roster, forever.
+        ok('no title collides with a hero', (() => {
+            const heroes = ((window.FAVOR_DATA || {}).characters || [])
+                .map(c => (c.name || '').toLowerCase());
+            return heroes.length > 0 && FLB.playerTitles().every(t =>
+                [t.title, t.m, t.f].filter(Boolean)
+                    .every(w => !heroes.includes(w.toLowerCase())));
+        })(), FLB.playerTitles());
         ok('title 30 Earl', FLB.playerTitle(30) === 'Earl', FLB.playerTitle(30));
         // his-and-hers ranks: both shown until chosen, then the chosen form
         ok('title 20 unchosen', FLB.playerTitle(20) === 'Baron/Baroness', FLB.playerTitle(20));

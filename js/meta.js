@@ -720,11 +720,14 @@
     // and the profile. A new rank roughly every four rungs.
     //
     // ORDER (Wyatt 7/30, ranked as real life ranks them): commoner →
-    // gentry (Squire, Knight) → crown offices (Steward, Magistrate) →
+    // gentry (Squire, Herald) → crown offices (Steward, Magistrate) →
     // the peerage (Baron, Count, Earl) → the great offices that WIELD
     // the crown's power and so outrank the nobles who hold land under
     // it (Chancellor runs the law, a Viceroy rules in the monarch's
     // name, a Regent rules the realm itself) → the crown.
+    // ⚠ NO title may share a name with a HERO (Wyatt 7/30) — that rule
+    // killed Knight and Duke/Duchess. Check data/characters.js before
+    // adding or renaming a rank.
     //
     // Rows with {m, f} are his-and-hers titles: the PLAYER CHOOSES the
     // form (Baron or Baroness) the first time they earn one. The choice
@@ -735,7 +738,7 @@
     const PLAYER_TITLES = [
         { lvl: 1,  title: 'Peasant' },
         { lvl: 4,  title: 'Squire' },
-        { lvl: 8,  title: 'Knight' },
+        { lvl: 8,  title: 'Herald' },
         { lvl: 12, title: 'Steward' },
         { lvl: 16, title: 'Magistrate' },
         { lvl: 20, m: 'Baron', f: 'Baroness' },
