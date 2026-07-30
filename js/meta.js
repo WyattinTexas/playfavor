@@ -2095,7 +2095,7 @@
                     && unlockedT.some(t => t.lvl === p.titleAt))
                     ? p.titleAt : titleRowAt(plv).lvl;
                 const wardrobe = unlockedT.length > 1 ? `
-                    <div class="pf-court-wear-lbl">Title — wear any you've earned</div>
+                    <div class="pf-court-wear-lbl">Titles</div>
                     <div class="pf-court-wear">${unlockedT.map(t => `
                         <button class="pf-court-form${t.lvl === wornTitleLvl ? ' on' : ''}"
                             onclick="FLB.wearTitleAt(${t.lvl}).then(() => FLB.openProfile())">${titleWord(t, form)}</button>`).join('')}
