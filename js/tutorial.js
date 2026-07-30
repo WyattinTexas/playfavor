@@ -18,8 +18,9 @@
  *   Act 2  — only the NEW things stop play (a Map's free play, borrowing, the
  *            Potion, the Mind's Eye / Philosopher's Stone gates, Artifacts);
  *            every other turn is theirs, unshielded (`freeTurn`).
- *   Act 3  — no new rules exist, so nothing interrupts but the Melee and the
- *            final score sheet.
+ *   Act 3  — no new rules, so only the showpieces stop play (the Map chain's
+ *            third payoff, a formula Artifact, the Chemicals, the summit
+ *            cards), then the Melee and the final score sheet.
  * At the end of Acts 1 and 2 the player is offered a FORK: carry on with the
  * guide, or `release()` — the tutorial tears itself down and this same game
  * continues as a normal one, board and score intact.
@@ -222,6 +223,23 @@
         chemLesson = rigBest(c => !/^Chemical /.test(c.name) ? null
             : (c.name === 'Chemical X' ? 100 : 60));
         return chemLesson;
+    }
+    // The summit of the deck — the cards the Act 2 keys lesson promised: the
+    // two double-figure Adventures, the potion that erases a mission's
+    // requirement, and the Mind's Eye that asks nothing at all. A card the
+    // player can actually pay for outranks one to admire; the biggest wins ties.
+    let peakLesson = null;
+    function rigPeak() {
+        const RANK = { 'Reunited': 4, "The Alchemist's Daughter": 3,
+                       'Life Essence': 2, 'Lens of Truth': 1 };
+        peakLesson = rigBest(c => {
+            const rank = RANK[c.name];
+            if (!rank) return null;
+            let can = false;
+            try { const q = game.checkRequirements(0, c); can = !!(q.canPlay || q.mapFree); } catch (e) {}
+            return rank + (can ? 100 : 0);
+        });
+        return peakLesson;
     }
 
     const SKILL_LABEL = s => s.replace(/_/g, ' ').replace(/\b\w/g, m => m.toUpperCase());
@@ -1520,9 +1538,9 @@
                Adventures that pay in double figures, the Artifacts, the cards your Maps
                and your Mind's Eye were always for. Spend it all — <b>nothing you're
                holding at the end is worth anything.</b><br><br>
-               There are <b>no new rules left</b> — but there are three things this Act does
+               There are <b>no new rules left</b> — but there are four things this Act does
                that no other Act can, and I'll stop for each.`,
-        why: 'Sets the one strategic truth that changes in Act 3 (hoarding is now pure loss) and promises exactly three stops, so the free turns between them read as intentional.',
+        why: 'Sets the one strategic truth that changes in Act 3 (hoarding is now pure loss) and promises exactly four stops, so the free turns between them read as intentional.',
     },
 
     // ── The Map chain completes: Act 1's mission is still paying ──
@@ -1628,6 +1646,46 @@
                    Prospecting. Deep Alchemy is what buys you a seat at this table.`;
         },
         why: "Verified against the data: X = move_slider_any (req 2 Alchemy), Y = double_adventure_favor (6 Alchemy + Stone), Z = others_15_scorn (5 Alchemy + 5 Prospecting). Pays off the Act 2 Mind's Eye/Stone lesson by showing what the keys actually unlock.",
+    },
+
+    // ── STOP 4: the summit — the cards the Act 2 keys lesson promised ──
+    {
+        id: 'act3-peak', ready: () => gameplayIdle(), mode: 'watch', advance: 'next',
+        skipIf: () => !rigPeak(),
+        title: 'The Summit of the Deck',
+        text: () => {
+            if (!peakLesson) return '';
+            let q = null;
+            try { q = game.checkRequirements(0, peakLesson); } catch (e) {}
+            const now = q && (q.canPlay || q.mapFree)
+                ? `<br><br>And check your board — <b>you can pay for it right now</b>.`
+                : '';
+            const BODY = {
+                'Reunited':
+                    `<b>Reunited</b> — the single biggest score in FAVOR: <b>22 Favor</b>,
+                     and it hands you a <b>Philosopher's Stone</b> on top. The front door
+                     costs <b>12 Knowledge, a Mind's Eye and a Stone</b> — unless you hold
+                     the <b>Finding the Lost Corridor</b> Map, which waives every word of
+                     it. This is the card your keys were always pointed at.`,
+                "The Alchemist's Daughter":
+                    `<b>The Alchemist's Daughter</b> — <b>18 Favor</b>, an Alchemy, and a
+                     <b>Mind's Eye</b> of its own. The ask is a whole game's building —
+                     <b>5 Charisma, 5 Alchemy and 5 Power</b> — or simply the
+                     <b>A Day With the Birds</b> Map.`,
+                'Life Essence':
+                    `<b>Life Essence</b> — choose one of your active Missions and its
+                     requirement is <b>erased outright</b>: the mission you never quite
+                     built for simply resolves. It asks <b>4 Alchemy and a Mind's Eye</b>
+                     — one more door the keys open.`,
+                'Lens of Truth':
+                    `<b>Lens of Truth</b> — <b>3 Survival and a Mind's Eye</b>, for
+                     <b>no requirement at all</b>. Every other key in the game sits behind
+                     deep skills; this one is lying on the table. If Act 2 passed without
+                     your Mind's Eye, here is the late door back in.`,
+            };
+            return `${BODY[peakLesson.name] || ''}${now}`;
+        },
+        why: "Pays off the Act 2 keys promise ('opens Act 3's biggest scores') with the cards that cash it, data-verified: Reunited = 22 Favor + philosopher_stone special (req 12 Knowledge + Mind's Eye + Stone OR Finding the Lost Corridor Map), Alchemist's Daughter = 18 Favor + minds_eye special (req 5 Charisma/5 Alchemy/5 Power OR A Day With the Birds Map), Life Essence = remove_mission_requirements (4 Alchemy + Mind's Eye), Lens of Truth = 3 Survival + minds_eye with requirements: []. Rigged adaptively — a payable card outranks an admirable one, the biggest wins ties — and skips clean when none is reachable.",
     },
 
     {
