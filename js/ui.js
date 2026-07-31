@@ -7592,6 +7592,7 @@ function buildPeekPlaques(src) {
         if (sr.length) out += peekPlaque('On Success', sr.join(' · '));
         const f = d.failurePenalties || {};
         if (f.scorn) out += peekPlaque('On Failure', `+${f.scorn} Scorn`, 'scorn');
+        if (d.reqMaps && d.reqMaps.length) out += peekPlaque('Map Route', `Hold the ${d.reqMaps.join(' or ')} Map and this mission succeeds on its own — no requirements needed.`, 'special');
         if (d.grantsMap) out += peekPlaque('Grants Map', d.grantsMap, 'special');
     }
     return out;

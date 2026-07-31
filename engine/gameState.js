@@ -2562,10 +2562,12 @@ class FavorGame {
         if (mission.reqFavor && this.currentFavor(playerIndex) < mission.reqFavor) {
             missing.push(`${mission.reqFavor} Favor`); met = false;
         }
-        // Mission maps come in two printed forms: an ALTERNATIVE ("7 Power &
-        // 7 Knowledge OR Guardian Map" — holding it completes the mission by
-        // itself) or, with reqMapsAll, one MORE requirement alongside the
-        // stats (The Shadow Guide's A Hidden Door).
+        // Every printed mission map is an ALTERNATIVE ("7 Power & 7 Knowledge
+        // OR Guardian Map" — holding it completes the mission by itself).
+        // reqMapsAll is the opposite reading, a map that is one MORE
+        // requirement alongside the stats; NO card in the deck uses it as of
+        // 7/31 (The Shadow Guide did, in error — see data/missions.js). The
+        // branch stays for a future card that genuinely prints an AND.
         if (mission.reqMaps && mission.reqMaps.length) {
             const held = this.getPlayerMaps(playerIndex);
             if (mission.reqMapsAll) {

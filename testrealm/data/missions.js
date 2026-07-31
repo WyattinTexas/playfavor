@@ -119,11 +119,17 @@ window.FAVOR_DATA.missions = [
       successRewards: { philosopherStone: 1 },
       failurePenalties: {} },
 
-    // Art-verified 7/9 — the old transcription had the favor clause on the
-    // wrong side. Reqs = 4 Knowledge + 3 Prospecting + 1 Mind's Eye + A Hidden
-    // Door Map (reqMapsAll: the map is one MORE requirement, not an
-    // alternative); reward = 5 Favor per Mind's Eye + the map. No flat favor.
-    { id: mid(), name: "The Shadow Guide", successSpecial: "favor_per_minds_eye_x5", reqMapsAll: true, placeholderName: "Ghosts in the Mirror", grantsMap: "Shattering the Mirror Prison", reqMaps: ["A Hidden Door"], audit: "Success Req: 4 Knowledge & 3 Prospecting & 1 Mind's Eye & A Hidden Door Map, Act 2 Success Reward: 5 Favor for each Mind's Eye you have, Shattering the Mirror Prison Map Failure Reward: 10 Scorn", filename: "Act 2_Ghosts in the Mirror Card.jpg",
+    // AUDIT FIX 2026-07-31 (Wyatt): the map is an ALTERNATIVE, not an extra
+    // requirement — the 7/9 pass read the banner as an AND and set reqMapsAll,
+    // which locked the mission behind A Hidden Door even for a player holding
+    // every stat. The art uses a consistent grammar: a map banner sitting BELOW
+    // the requirement column on the LEFT is the "... OR [X] Map" clause (same
+    // placement as Defend the Throne's Guardian and King of the Sky's
+    // Dawnharbinger, both printed OR), while a banner on the RIGHT beside the
+    // success medallion is the map GRANTED. This card has both — A Hidden Door
+    // on the left (alternative), Shattering the Mirror Prison on the right
+    // (granted). Reward = 5 Favor per Mind's Eye + the map. No flat favor.
+    { id: mid(), name: "The Shadow Guide", successSpecial: "favor_per_minds_eye_x5", placeholderName: "Ghosts in the Mirror", grantsMap: "Shattering the Mirror Prison", reqMaps: ["A Hidden Door"], audit: "Success Req: 4 Knowledge & 3 Prospecting & 1 Mind's Eye OR A Hidden Door Map, Act 2 Success Reward: 5 Favor for each Mind's Eye you have, Shattering the Mirror Prison Map Failure Reward: 10 Scorn", filename: "Act 2_Ghosts in the Mirror Card.jpg",
       act: 2, activationRound: 2, favorValue: 0,
       requirements: ["knowledge", "knowledge", "knowledge", "knowledge", "prospecting", "prospecting", "prospecting", "minds_eye"],
       successRewards: {},
