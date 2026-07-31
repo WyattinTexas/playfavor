@@ -2,12 +2,20 @@
 """App Store submission driver for FAVOR (self-contained JWT; Nation's
 asc_store.py pattern). Run with a venv that has pyjwt+cryptography+requests.
 
+  favor_store.py newversion <version>     open the next version + release notes
   favor_store.py status|metadata|agerating|pricing|availability|reviewdetail
   favor_store.py screenshots <dir> <IPHONE_69|IPAD_PRO_3GEN_129>
   favor_store.py attach <CFBundleVersion>
   favor_store.py submit
 
+Every command but `newversion` targets whichever version ASC still lets us
+edit — resolved at startup, never pinned. A released version is immutable, so
+shipping an update always starts with `newversion`.
+
+  Shipping 1.1:  newversion 1.1 && metadata && attach 20 && status && submit
+
 App privacy labels are NOT in the public API — set them in the ASC web UI.
+Needs ~/.appstoreconnect/private/AuthKey_9Q9CJ93G2Z.p8 (not in this repo).
 """
 import hashlib
 import json
@@ -24,9 +32,18 @@ KEY_PATH = os.path.expanduser("~/.appstoreconnect/private/AuthKey_9Q9CJ93G2Z.p8"
 BASE = "https://api.appstoreconnect.apple.com"
 
 APP_ID = "6790169069"                                   # FAVOR: Royal Succession
-VID = "bce36ab5-b8b5-4a63-98cb-20ba4b56246b"            # appStoreVersion 1.0 (IOS)
-INFO_ID = "bd8cacb1-e324-4a34-a613-fa0a88c3811d"        # appInfo
-VLOC_ID = "aaa85257-d31b-4535-bcc6-1779496809ba"        # en-US version localization
+INFO_ID = "bd8cacb1-e324-4a34-a613-fa0a88c3811d"        # appInfo (version-independent)
+
+# VID/VLOC_ID are RESOLVED AT STARTUP now, not pinned. They used to name the
+# 1.0 records by hand; 1.0 went READY_FOR_SALE on 7/21, and a released version
+# is immutable — every command was aimed at a record Apple will never accept
+# another edit to. `newversion` opens the next one; everything else finds it.
+VID = None          # the appStoreVersion being edited
+VLOC_ID = None      # its en-US localization
+
+# States in which Apple treats a version as final — nothing about it changes.
+SEALED_STATES = {"READY_FOR_SALE", "REPLACED_BY_NEW_VERSION",
+                 "REMOVED_FROM_SALE", "DEVELOPER_REMOVED_FROM_SALE"}
 
 
 def token():
@@ -64,6 +81,60 @@ def patch(path, body):
     return r.json() if r.text.strip() else {}
 
 
+def resolve_targets():
+    """The version ASC will still let us edit, and its en-US localization."""
+    vs = get("/v1/appStoreVersions", **{"filter[app]": APP_ID, "limit": 50})["data"]
+    openv = [v for v in vs if v["attributes"]["appStoreState"] not in SEALED_STATES]
+    if not openv:
+        live = ", ".join(sorted(v["attributes"]["versionString"] for v in vs)) or "?"
+        sys.exit(f"No editable version (live and sealed: {live}).\n"
+                 f"Open the next one first:  favor_store.py newversion <version>")
+    v = openv[0]
+    locs = get(f"/v1/appStoreVersions/{v['id']}/appStoreVersionLocalizations")["data"]
+    loc = next((l for l in locs if l["attributes"].get("locale") == "en-US"), None)
+    if loc is None:
+        sys.exit(f"version {v['attributes']['versionString']} has no en-US localization — "
+                 f"run:  favor_store.py newversion {v['attributes']['versionString']}")
+    print(f"→ editing version {v['attributes']['versionString']} "
+          f"({v['attributes']['appStoreState']})")
+    return v["id"], loc["id"], v["attributes"]["versionString"]
+
+
+def cmd_newversion():
+    """Open the next App Store version and give it its release notes."""
+    ver = sys.argv[2]
+    vs = get("/v1/appStoreVersions", **{"filter[app]": APP_ID, "limit": 50})["data"]
+    ex = next((v for v in vs if v["attributes"]["versionString"] == ver), None)
+    if ex:
+        v_id = ex["id"]
+        print(f"version {ver} already exists ({v_id}, {ex['attributes']['appStoreState']})")
+    else:
+        v_id = post("/v1/appStoreVersions", {"data": {
+            "type": "appStoreVersions",
+            "attributes": {"platform": "IOS", "versionString": ver,
+                           "releaseType": "AFTER_APPROVAL"},
+            "relationships": {"app": {"data": {"type": "apps", "id": APP_ID}}}}})["data"]["id"]
+        print(f"created version {ver} ({v_id})")
+    locs = get(f"/v1/appStoreVersions/{v_id}/appStoreVersionLocalizations")["data"]
+    loc = next((l for l in locs if l["attributes"].get("locale") == "en-US"), None)
+    if loc is None:
+        post("/v1/appStoreVersionLocalizations", {"data": {
+            "type": "appStoreVersionLocalizations",
+            "attributes": {"locale": "en-US", "whatsNew": WHATS_NEW},
+            "relationships": {"appStoreVersion": {
+                "data": {"type": "appStoreVersions", "id": v_id}}}}})
+        print("created en-US localization with release notes")
+    else:
+        patch(f"/v1/appStoreVersionLocalizations/{loc['id']}", {"data": {
+            "type": "appStoreVersionLocalizations", "id": loc["id"],
+            "attributes": {"whatsNew": WHATS_NEW}}})
+        print("release notes set")
+    print(f"\nNext:  favor_store.py metadata"
+          f"\n       favor_store.py attach <CFBundleVersion>"
+          f"\n       favor_store.py status      # read it before submitting"
+          f"\n       favor_store.py submit")
+
+
 # ---------- listing text ----------
 
 DESCRIPTION = """The King has passed, and his heirs vie for the throne. The Queen will crown whoever wins the most Favor in her eyes — make that heir you.
@@ -98,6 +169,18 @@ Is fate dealt, or chosen?"""
 
 PROMO = ("Draft cards, complete missions, and win the Queen's Favor. The tabletop card game "
          "of royal succession — live multiplayer, daily crowns, ten heroes to master.")
+
+# 1.1's release notes. Only NATIVE changes belong here — the realm itself is
+# web and reaches every phone the moment it deploys, so features that shipped
+# to playfavor.net after 1.0 are already in players' hands and are not news.
+WHATS_NEW = """SIGN IN WITH APPLE
+Seal your court to your Apple ID and take your seat on any device.
+
+YOUR COURT SURVIVES A REINSTALL
+Your account is now kept in the Keychain. Deleting and reinstalling FAVOR no longer strands your heroes, your rating, or your Stars.
+
+MOVE A COURT BETWEEN DEVICES
+Your Court Seal returns to the standing screen — copy it on one device, paste it on another, and take your seat there."""
 
 KEYWORDS = "card,draft,board,strategy,tabletop,royal,queen,mission,multiplayer,family,fantasy,deck"
 SUBTITLE = "Draft cards. Win the crown."
@@ -306,7 +389,7 @@ def cmd_attach():
     b = d["data"][0]
     assert b["attributes"]["processingState"] == "VALID", f"build {want_ver} is {b['attributes']['processingState']}"
     patch(f"/v1/appStoreVersions/{VID}/relationships/build", {"data": {"type": "builds", "id": b["id"]}})
-    print(f"attached build v{want_ver} ({b['id']}) to version 1.0")
+    print(f"attached build v{want_ver} ({b['id']}) to version {VER_STR}")
 
 
 def cmd_submit():
@@ -328,7 +411,7 @@ def cmd_submit():
             "relationships": {
                 "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": sub["id"]}},
                 "appStoreVersion": {"data": {"type": "appStoreVersions", "id": VID}}}}})
-        print("added version 1.0 to the submission")
+        print(f"added version {VER_STR} to the submission")
     else:
         print(f"submission already has {len(items)} item(s)")
     patch(f"/v1/reviewSubmissions/{sub['id']}", {"data": {
@@ -338,7 +421,7 @@ def cmd_submit():
 
 def cmd_status():
     v = get(f"/v1/appStoreVersions/{VID}", include="build")["data"]
-    print("version 1.0 state:", v["attributes"]["appStoreState"], "| releaseType:", v["attributes"]["releaseType"])
+    print(f"version {VER_STR} state:", v["attributes"]["appStoreState"], "| releaseType:", v["attributes"]["releaseType"])
     rel = v.get("relationships", {}).get("build", {}).get("data")
     print("attached build:", rel["id"] if rel else None)
     loc = get(f"/v1/appStoreVersionLocalizations/{VLOC_ID}")["data"]["attributes"]
@@ -359,4 +442,9 @@ def cmd_status():
 
 
 if __name__ == "__main__":
-    globals()[f"cmd_{sys.argv[1]}"]()
+    cmd = sys.argv[1]
+    # newversion is the one command that runs BEFORE an editable version
+    # exists — everything else resolves the open version first.
+    if cmd != "newversion":
+        VID, VLOC_ID, VER_STR = resolve_targets()
+    globals()[f"cmd_{cmd}"]()
