@@ -7971,6 +7971,33 @@ body:has(#howto-overlay.open) .throw-hint {
     display: none !important;
 }
 
+/* Court Seal (7/20, back 7/31) — the account's token: the road between
+   devices and the pre-delete backup, folded away under a disclosure. */
+.pf-seal-more { margin-top: 10px; }
+.pf-seal-more > summary {
+    cursor: pointer; list-style: none; user-select: none;
+    color: var(--gold-light); opacity: 0.75;
+    font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
+    padding: 6px 0;
+}
+.pf-seal-more > summary::-webkit-details-marker { display: none; }
+.pf-seal-more > summary::before { content: '▸ '; }
+.pf-seal-more[open] > summary::before { content: '▾ '; }
+.pf-seal-more > summary:hover { opacity: 1; }
+.pf-sealrow { display: flex; gap: 10px; align-items: center; }
+.pf-sealrow code {
+    flex: 1; min-width: 0; overflow-wrap: anywhere;
+    font-family: ui-monospace, Menlo, monospace; font-size: 13px;
+    color: var(--gold-light); background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(201, 168, 76, 0.3); border-radius: 6px;
+    padding: 8px 10px; user-select: all; -webkit-user-select: all;
+}
+.pf-restore-note b { color: var(--gold-light); }
+/* A seal is a token, not a name: it reads in the same mono as the code
+   above it. The name row's Cinzel is an all-caps display face, which made
+   a pasted lowercase seal come back as capitals it never contained. */
+#pfRestoreIn { font-family: ui-monospace, Menlo, monospace; font-size: 13px; text-transform: none; }
+
 /* Court Sign-In (7/20) — the platform door that replaced the Court Seal */
 #pfSignin .pf-note b { color: var(--gold-light); }
 .pf-sealed { color: #46d17f; font-style: normal; font-weight: 700; }

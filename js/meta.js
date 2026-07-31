@@ -1694,6 +1694,87 @@
         mountGoogleButton();
     }
 
+    // ── The seal, back as the road between devices (Wyatt 7/31) ──────
+    // Retired as the PRIMARY restore on 7/20 when Court Sign-In landed,
+    // and that retirement left two holes sign-in cannot close.
+    //
+    // Sign-in opens ONE door per platform: the web seals to a Google
+    // account, the iOS shell offers Apple alone (Google's OAuth refuses
+    // embedded WebViews). A court sealed on the web therefore carries no
+    // Apple entry, the phone reads ids['apple'] as empty, and signing in
+    // there links Apple to whatever court is local — a DIFFERENT uid.
+    // First link wins and nothing merges, so the two never meet. The seal
+    // is the only road across that line.
+    //
+    // Worse, App Store 1.0 predates the b18 sign-in bridge, so its door is
+    // a placeholder — retiring the seal left those players with no restore
+    // path at all, and a reinstall strands the court forever.
+    //
+    // Tucked behind a disclosure so the standing screen stays as clean as
+    // the retirement intended, and never platform-gated: the case that
+    // needs it (storage wiped, app deleted) happens on every device.
+    function sealSectionHtml() {
+        return `
+            <details class="pf-seal-more">
+                <summary>Move this court to another device</summary>
+                <div class="pf-note">Your seal <b>is</b> this account. Copy it somewhere safe
+                    <b>before</b> deleting the app, and paste it on another device to take this seat there.</div>
+                <div class="pf-row pf-sealrow">
+                    <code id="pfSeal">${uid()}</code>
+                    <button class="btn-royal" id="pfSealCopy"><span>Copy</span></button>
+                </div>
+                <div class="pf-row pf-namerow">
+                    <input id="pfRestoreIn" maxlength="48" autocapitalize="off" autocorrect="off"
+                           spellcheck="false" placeholder="Paste a seal to take that seat">
+                    <button class="btn-royal" id="pfRestoreBtn"><span>Take Seat</span></button>
+                </div>
+                <div class="pf-note pf-restore-note" id="pfRestoreNote" style="display:none"></div>
+            </details>`;
+    }
+    function wireSealSection() {
+        const copyBtn = document.getElementById('pfSealCopy');
+        if (!copyBtn) return;
+        copyBtn.onclick = async () => {
+            const lbl = copyBtn.querySelector('span');
+            try { await navigator.clipboard.writeText(uid()); lbl.textContent = 'Copied ✓'; }
+            catch (e) {
+                // Clipboard needs a secure context — select the code instead.
+                const sel = window.getSelection(), r = document.createRange();
+                r.selectNodeContents(document.getElementById('pfSeal'));
+                sel.removeAllRanges(); sel.addRange(r);
+                lbl.textContent = 'Select & copy';
+            }
+            setTimeout(() => { lbl.textContent = 'Copy'; }, 1600);
+        };
+        // Two-tap claim, the same grammar the sign-in switch speaks: the
+        // first tap PREVIEWS the row and names it, the second takes the
+        // seat and reloads. Nothing moves on a single tap.
+        let armed = null;
+        const btnEl = document.getElementById('pfRestoreBtn');
+        btnEl.onclick = async () => {
+            const inp = document.getElementById('pfRestoreIn');
+            const note = document.getElementById('pfRestoreNote');
+            const lbl = btnEl.querySelector('span');
+            const code = inp.value.trim();
+            if (armed && armed.code === code) { claimSeal(code, armed.row); return; }
+            armed = null;
+            lbl.textContent = 'Take Seat';
+            const res = await previewSeal(code);
+            note.style.display = '';
+            if (!res.ok) {
+                note.innerHTML = res.why === 'shape' ? 'That doesn’t read like a Court Seal.'
+                    : res.why === 'self' ? 'That seal is already this account.'
+                    : res.why === 'offline' ? 'The realm is unreachable — try again online.'
+                    : 'No court answers this seal.';
+                return;
+            }
+            armed = { code, row: res.row };
+            note.innerHTML = `That seal is the court of <b>${res.name}</b> · rating ${fmtRating(res.rating)}
+                · ${res.games} game${res.games === 1 ? '' : 's'}. Taking that seat replaces the court on THIS device.`;
+            lbl.textContent = `Become ${res.name}`;
+        };
+    }
+
     // ═══ Menu UI — profile chip, profile panel, leaderboard ══════════
 
     let _me = null;
@@ -2147,17 +2228,16 @@
                 <button class="btn-royal" id="pfSave"><span>Save</span></button>
             </div>
             ${signinSectionHtml()}
+            ${sealSectionHtml()}
             ${mode === 'local' ? '<div class="pf-note"><b class="pf-local">LOCAL PROFILE — leaderboard offline</b></div>' : ''}
         `;
-        // The COURT SEAL section (copy/paste uid restore) retired 7/20 eve —
-        // Court Sign-In above is the restore mechanism now. previewSeal/
-        // claimSeal live on as the sign-in machinery's internal token.
         document.getElementById('pfSave').onclick = async () => {
             const okd = await rename(document.getElementById('pfName').value);
             if (okd) { renderProfileChip(); closeProfile(); }
             else document.getElementById('pfName').classList.add('bad');
         };
         mountGoogleButton();   // the section's HTML is in place — GIS can mount
+        wireSealSection();
         document.getElementById('profilePanel').classList.add('active');
     }
     function closeProfile() { document.getElementById('profilePanel').classList.remove('active'); }
