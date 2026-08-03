@@ -7612,7 +7612,7 @@ console.log('── Wanted: deterministic pick, drifting bounty, intro plaque, c
         && src.indexOf('var ROSTER') < src.indexOf('src="js/modes.js'),
       deferred: tags.filter(t => /\bdefer\b/.test(t)).length,
       tags: tags.length,
-      audio: (document.getElementById('themeMusic') || {}).getAttribute('preload'),
+      audio: !document.getElementById('themeMusic'),
       preload: !!document.querySelector('link[rel="preload"][as="image"]'),
     };
   });
@@ -7621,7 +7621,7 @@ console.log('── Wanted: deterministic pick, drifting bounty, intro plaque, c
   ok(pre.before, 'the plaque paints before modes.js is even requested');
   ok(pre.deferred === pre.tags && pre.tags >= 14,
     `every script tag is deferred, so 762 KB never blocks the parser (${pre.deferred}/${pre.tags})`);
-  ok(pre.audio === 'none', 'the 482 KB theme is not fetched before the player presses anything');
+  ok(pre.audio === true, 'no theme audio element — the menu is silent (removed 8/3)');
   ok(pre.preload, "the rival's portrait is preloaded from the head");
 
   await page.evaluate(() => FMODES.openDailyRival());

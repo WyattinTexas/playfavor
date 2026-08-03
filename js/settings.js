@@ -2,30 +2,26 @@
  * FAVOR — Settings (FSET)
  *
  * The cog on the title screen (bottom-right, above the edition plate).
- * Owns: the Almanac door, the volume mixer (Master / Music / Effects,
- * each with a kill-switch), the playable-card glow toggle, Replay Tips
- * (moved here from the title footer), the menu-ambience toggle, and the
- * build stamp + Get Latest Version button (the stale-cache fix: phones
- * kept serving old css/js after deploys until a hard refresh).
+ * Owns: the Almanac door, the volume mixer (Master / Effects, each with
+ * a kill-switch), the playable-card glow toggle, Replay Tips (moved here
+ * from the title footer), the menu-ambience toggle, and the build stamp
+ * + Get Latest Version button (the stale-cache fix: phones kept serving
+ * old css/js after deploys until a hard refresh).
  *
  * Device-level, not account-level — one localStorage blob 'favor_settings'.
- * Volumes are 0-100 sliders; the music element's real gain is
- * MUSIC_BASE × master × music so untouched settings sound exactly like
- * the game always has. There are NO sound effects in the game yet — the
- * Effects channel is wired and waiting: play future SFX at
- * FSET.sfxVolume() gain and the mixer governs them from day one.
- *
- * The title-screen music note (toggleMusic) stays the play/pause switch;
- * these sliders only set loudness. ui.js reads FSET.musicVolume() at its
- * two play sites; ambient.js honors 'favor_ambient_off' at boot.
+ * Volumes are 0-100 sliders. The theme music was removed entirely (Wyatt
+ * 8/3) — the Music channel went with it; older blobs may still carry
+ * music keys and they're simply ignored. sfx.js plays every effect at
+ * FSET.sfxVolume() gain, read live at each play, so the mixer governs
+ * them without a push. ambient.js honors 'favor_ambient_off' at boot.
  */
 (function () {
     'use strict';
 
     const KEY = 'favor_settings';
     const DEF = {
-        master: 100, music: 100, sfx: 100,
-        masterOn: true, musicOn: true, sfxOn: true,
+        master: 100, sfx: 100,
+        masterOn: true, sfxOn: true,
         glow: true, ambient: true,
     };
     let S = load();
@@ -39,19 +35,13 @@
     }
 
     // ── Application ──────────────────────────────────────────────────
-    const MUSIC_BASE = 0.4;   // the theme's historical loudness at full sliders
-
-    function musicVolume() {
-        return S.masterOn && S.musicOn
-            ? MUSIC_BASE * (S.master / 100) * (S.music / 100) : 0;
-    }
     function sfxVolume() {
         return S.masterOn && S.sfxOn
             ? (S.master / 100) * (S.sfx / 100) : 0;
     }
     function applyAudio() {
-        const music = document.getElementById('themeMusic');
-        if (music) music.volume = musicVolume();
+        // Nothing to push — sfx.js reads FSET.sfxVolume() live at each
+        // play. Kept as the mixer's change hook (volRow calls it).
     }
     function applyGlow() {
         document.body.classList.toggle('no-play-glow', !S.glow);
@@ -157,7 +147,6 @@
         // Volume mixer
         const snd = section('Sound');
         snd.appendChild(volRow('Master', 'master', 'masterOn'));
-        snd.appendChild(volRow('Music', 'music', 'musicOn'));
         snd.appendChild(volRow('Effects', 'sfx', 'sfxOn'));
         body.appendChild(snd);
 
@@ -231,5 +220,5 @@
 
     applyAll();   // deferred script: body exists, saved settings take effect at boot
 
-    window.FSET = { open, close, musicVolume, sfxVolume, applyAll };
+    window.FSET = { open, close, sfxVolume, applyAll };
 })();

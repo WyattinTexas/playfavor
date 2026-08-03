@@ -6,7 +6,6 @@
 
 let game = null;
 let selectedCharacter = null;
-let musicPlaying = false;
 
 // ─── CINEMATIC SPEED MULTIPLIER ──────────────────────────
 // 1.0 = normal, 0.5 = fast, 2.0 = slow drama
@@ -351,37 +350,6 @@ function addLogEntry(msg) {
 function toggleLog() {
     document.getElementById('gameLog').classList.toggle('open');
 }
-
-// ─── MUSIC ─────────────────────────────────────────────────
-
-function toggleMusic() {
-    const audio = document.getElementById('themeMusic');
-    const btn = document.getElementById('musicBtn');
-
-    if (musicPlaying) {
-        audio.pause();
-        btn.classList.add('muted');
-        musicPlaying = false;
-    } else {
-        audio.volume = window.FSET ? FSET.musicVolume() : 0.4;
-        audio.play().catch(() => {});
-        btn.classList.remove('muted');
-        musicPlaying = true;
-    }
-}
-
-// Auto-play music on first interaction
-document.addEventListener('click', function initMusic() {
-    if (!musicPlaying) {
-        const audio = document.getElementById('themeMusic');
-        audio.volume = window.FSET ? FSET.musicVolume() : 0.4;
-        audio.play().then(() => {
-            musicPlaying = true;
-            document.getElementById('musicBtn').classList.remove('muted');
-        }).catch(() => {});
-    }
-    document.removeEventListener('click', initMusic);
-}, { once: true });
 
 // ─── TITLE SCREEN ──────────────────────────────────────────
 
