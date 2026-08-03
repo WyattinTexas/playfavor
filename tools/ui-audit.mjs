@@ -4254,8 +4254,9 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   // daily window, so it is an all-time high table with no new write path.
   const tabs = await page.evaluate(() =>
     [...document.querySelectorAll('.lb-tab')].map(t => t.textContent.trim()));
-  ok(tabs.length === 3 && tabs[0] === 'Rating' && tabs[2] === 'Top Scores',
-    `three text tabs: ${tabs.join(' / ')}`);
+  ok(tabs.length === 4 && tabs[0] === 'Rating' && tabs[2] === 'Top Scores'
+     && tabs[3] === 'Throne',
+    `four text tabs, Throne last: ${tabs.join(' / ')}`);
   ok(!tabs.some(t => /all.?time/i.test(t)), 'the All-Time label is retired for Rating');
 
   await page.evaluate(() => FLB.openLeaderboard('topscores'));
@@ -4282,13 +4283,136 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   // ⚠ The one line that silently breaks: overallOn in renderCharTabs. A new
   // tab key that misses it mis-lights the "All Heroes" rail chip.
   const rail = [];
-  for (const t of ['alltime', 'daily', 'topscores']) {
+  for (const t of ['alltime', 'daily', 'topscores', 'throne']) {
     await page.evaluate((x) => FLB.openLeaderboard(x), t);
     await sleep(500);
     rail.push(await page.evaluate(() => !!document.querySelector('.lb-chartab.all.on')));
   }
-  ok(rail.every(Boolean), `the All Heroes rail chip lights on all three overall tabs (${rail.join(',')})`);
+  ok(rail.every(Boolean), `the All Heroes rail chip lights on all four overall tabs (${rail.join(',')})`);
   await page.screenshot({ path: join(SHOTS, 'lb-topscores.png') });
+
+  // 5c · THE THRONE (ship 1 of 3: the board before the mode). Wins first —
+  // 1st = 1, 2nd = ½, 3rd = ¼, stored as integer quarters — lifetime Throne
+  // Favor breaks ties. The node rides the same whole-row transaction as
+  // everything else, and only ctx.throne games move it.
+
+  // Empty era: nobody in the realm CAN have played a Throne game yet (the
+  // lobby/draw is ship 2), so the tab opens on its empty copy.
+  // ⚠ SHIP-3 NOTE: this assert dies the day real Throne rows exist —
+  // replace it with the payout probe when the mode goes live.
+  await page.evaluate(() => FLB.openLeaderboard('throne'));
+  await sleep(700);
+  const thrEmpty = await page.evaluate(() => ({
+    copy: (document.querySelector('#lbBody .lb-loading') || {}).textContent || '',
+    tabLit: ((document.querySelector('.lb-tab.on') || {}).dataset || {}).tab || '',
+  }));
+  ok(/court has yet to convene/i.test(thrEmpty.copy),
+    `before any Throne game the board says so ("${thrEmpty.copy.trim()}")`);
+  ok(thrEmpty.tabLit === 'throne', 'the Throne tab lights when open');
+
+  // Fake posts prove the TXN: a Throne 1st (purse + 4 quarters), a Throne
+  // 3rd (+1 quarter), and an ORDINARY game between them that must leave the
+  // node untouched — all through the one postGameResult path.
+  const preThrone = await page.evaluate((u) =>
+    firebase.database().ref(`favor/players/${u}/games`).get().then(s => s.val() || 0), AUDIT_UID);
+  await page.evaluate(async () => {
+    await FLB.postGameResult([
+      { name: 'You', finalScore: 77, power: 12, playerIndex: 0 },
+      { name: 'Rival A', finalScore: 60, power: 8, playerIndex: 1 },
+      { name: 'Rival B', finalScore: 44, power: 5, playerIndex: 2 },
+      { name: 'Rival C', finalScore: 30, power: 3, playerIndex: 3 },
+    ], [], { ratings: [null, null, null, null], throne: '2026-08-03' });
+    await FLB.postGameResult([
+      { name: 'Rival A', finalScore: 90, power: 8, playerIndex: 1 },
+      { name: 'Rival B', finalScore: 70, power: 5, playerIndex: 2 },
+      { name: 'You', finalScore: 41, power: 9, playerIndex: 0 },
+      { name: 'Rival C', finalScore: 20, power: 3, playerIndex: 3 },
+    ], [], { ratings: [null, null, null, null], throne: '2026-08-04' });
+    await FLB.postGameResult([
+      { name: 'Rival A', finalScore: 66, power: 7, playerIndex: 1 },
+      { name: 'You', finalScore: 55, power: 6, playerIndex: 0 },
+      { name: 'Rival B', finalScore: 33, power: 4, playerIndex: 2 },
+    ], [], { ratings: [null, null, null] });
+  });
+  await sleep(400);
+  const thRow = await page.evaluate((u) =>
+    firebase.database().ref(`favor/players/${u}`).get().then(s => s.val()), AUDIT_UID);
+  const th = (thRow && thRow.throne) || {};
+  ok(th.q === 5 && th.fv === 118 && th.games === 2 && th.purses === 1,
+    `throne = 4+1 quarters, 77+41 Favor, 2 games, 1 purse (${JSON.stringify(th)})`);
+  ok(thRow && thRow.games === preThrone + 3,
+    `the node rides the SAME whole-row txn — 3 games posted, only the 2 Throne ones moved it (games ${preThrone}→${thRow && thRow.games})`);
+
+  // Sort + tiebreak on the RENDERED board. Fixture rows live ONLY inside a
+  // patched players read — never in RTDB, so a crashed run cannot leave a
+  // phantom court on the live board (the 7/18 'Audit Herald bronze' class
+  // of hazard). Quartermain leads on quarters; Fairwind and Greyfell tie
+  // on q=8 and Favor 300 v 90 breaks it; your real row (q=5) sits fourth;
+  // the persona is barred no matter what its node claims.
+  await page.evaluate(() => {
+    const db = firebase.database();
+    const orig = db.ref.bind(db);
+    window.__thrUnpatch = () => { delete db.ref; };
+    const FIX = {
+      fixthrone1: { name: 'Duke Quartermain', throne: { q: 14, fv: 120, games: 9, purses: 2 } },
+      fixthrone2: { name: 'Lady Fairwind', throne: { q: 8, fv: 300, games: 5, purses: 1 } },
+      fixthrone3: { name: 'Lord Greyfell', throne: { q: 8, fv: 90, games: 6, purses: 0 } },
+      fixthrone4: { name: 'Court Phantom', persona: true, throne: { q: 40, fv: 999, games: 10, purses: 9 } },
+    };
+    db.ref = (p) => {
+      const r = orig(p);
+      if (p === 'favor/players') {
+        const og = r.get.bind(r);
+        r.get = async () => {
+          const s = await og();
+          const merged = { ...(s.exists() ? s.val() : {}), ...FIX };
+          return { exists: () => true, val: () => merged };
+        };
+      }
+      return r;
+    };
+  });
+  await page.evaluate(() => FLB.openLeaderboard('throne'));
+  await sleep(700);
+  const thr = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.lb-row')];
+    const name = (r) => r.querySelector('.lb-name').textContent.trim();
+    const sub = (r) => {
+      const s = r.querySelector('.lb-sub');
+      return s ? s.textContent.replace(/\s+/g, ' ').trim() : '(none)';
+    };
+    const mine = rows.find(r => r.classList.contains('me'));
+    return {
+      names: rows.map(name),
+      subs: rows.map(sub),
+      medals: document.querySelectorAll('#lbBody .lb-medal.m1, #lbBody .lb-medal.m2, #lbBody .lb-medal.m3').length,
+      fairwindScore: rows[1] ? rows[1].querySelector('.lb-score').textContent.trim() : '',
+      favorIcon: rows.length > 0 && !!rows[0].querySelector('.lb-score .lb-ico'),
+      crownTop: !!(rows[0] && rows[0].querySelector('.lb-sub .crown-ico')),
+      crownGreyfell: !!(rows[2] && rows[2].querySelector('.lb-sub .crown-ico')),
+      meSub: mine ? sub(mine) : '(no me row)',
+      meCrown: !!(mine && mine.querySelector('.lb-sub .crown-ico')),
+      noRating: !rows.some(r => /✦/.test(r.textContent)),
+    };
+  });
+  await page.evaluate(() => { window.__thrUnpatch(); delete window.__thrUnpatch; });
+  ok(thr.names[0] && thr.names[0].startsWith('Duke Quartermain')
+     && thr.names[1] && thr.names[1].startsWith('Lady Fairwind')
+     && thr.names[2] && thr.names[2].startsWith('Lord Greyfell')
+     && thr.names[3] && thr.names[3].startsWith('Audit Herald'),
+    `quarters rank first and Favor breaks the q=8 tie — Fairwind 300 over Greyfell 90 (${thr.names.slice(0, 4).join(' / ')})`);
+  ok(!thr.names.some(n => /Court Phantom/.test(n)),
+    'a persona never holds a Throne row, whatever its node claims');
+  ok(thr.subs[0] === '3½ W · 2 · 9 G' && thr.crownTop,
+    `q=14 reads as 3½ W with a purse crown (${thr.subs[0]})`);
+  ok(thr.subs[2] === '2 W · 6 G' && !thr.crownGreyfell,
+    `a purse-less row carries no crown (${thr.subs[2]})`);
+  ok(thr.meSub === '1¼ W · 1 · 2 G' && thr.meCrown,
+    `your real row reads 1¼ W · 1 purse · 2 G (${thr.meSub})`);
+  ok(thr.medals === 3, `the Throne podium wears medals (${thr.medals})`);
+  ok(thr.favorIcon && /^300$/.test(thr.fairwindScore) && thr.noRating,
+    `the big number is tiebreaker Favor, not a rating (Fairwind ${thr.fairwindScore})`);
+  await page.screenshot({ path: join(SHOTS, 'lb-throne.png') });
   await page.evaluate(() => FLB.closeLeaderboard());
 
   // 6 · The crest is home in-game: the board thumb's plate carries your
@@ -7008,16 +7132,26 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
   const gal = await page.evaluate(() => {
     const cells = [...document.querySelectorAll('#achGallery .ach-cell')];
     const secret = document.querySelector('#achGallery .ach-cell.secret');
+    const throne = cells.find(c =>
+      (c.querySelector('b') || {}).textContent === 'Claim the Throne');
     return {
       count: cells.length,
       got: cells.filter(c => c.classList.contains('got')).length,
       secretMasked: secret ? secret.querySelector('b').textContent : '(none)',
       sub: document.querySelector('#achGallery .ach-sub').textContent,
+      throneThere: !!throne,
+      throneLocked: !!throne && throne.classList.contains('locked'),
+      thronePlat: !!throne && throne.classList.contains('ach-platinum'),
+      throneOpen: !!throne && !throne.classList.contains('secret'),
     };
   });
-  ok(gal.count === 24, `the gallery lists all 24 achievements (${gal.count})`);
+  ok(gal.count === 25, `the gallery lists all 25 achievements (${gal.count})`);
   ok(gal.got === 2, `and marks the 2 just earned as unlocked (${gal.got})`);
   ok(gal.secretMasked === '???', `the SECRET stays hidden until it fires ("${gal.secretMasked}")`);
+  // Ship 1 of the Throne Room: the 50★ Platinum sits in the gallery as a
+  // visible tease — named, locked, and unearnable until Throne nights pay.
+  ok(gal.throneThere && gal.throneLocked && gal.thronePlat && gal.throneOpen,
+    'Claim the Throne waits in the gallery — locked Platinum, named not secret');
   await page.screenshot({ path: join(SHOTS, 'achievement-gallery.png') });
 
   await page.evaluate(() => window.FACH.closeGallery());

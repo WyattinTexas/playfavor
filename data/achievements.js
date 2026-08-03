@@ -7,7 +7,7 @@
  *
  * Stars are the same currency the character store spends (★100 per hero, first
  * five free) — so earning these is how you unlock the rest of the roster.
- * Total on offer: 570★, against the 500★ needed for all five locked heroes.
+ * Total on offer: 710★, well past the cost of every locked hero.
  *
  * `check` runs at game over against a snapshot of YOUR seat and your lifetime
  * stats — see js/achievements.js. It must be a pure function: no side effects,
@@ -22,6 +22,7 @@
  *   s.charWins       — { characterId: true } — heroes you have EVER won with
  *   s.dailyPodiums   — times you have finished top three on a daily board
  *   s.dailyCrowns    — times you have been Champion of the Day
+ *   s.throne         — your players/{uid}/throne node ({q, fv, games, purses})
  */
 
 window.FAVOR_DATA = window.FAVOR_DATA || {};
@@ -84,6 +85,19 @@ window.FAVOR_DATA.achievements = [
         desc: 'Be crowned Champion of the Day five times.',
         stars: 50,                               // Platinum
         check: (s) => s.dailyCrowns >= 5,
+    },
+
+    // ── The Throne Room ───────────────────────────────────────────────
+    // Dormant until Throne nights pay out (ship 3 of the Throne Room):
+    // `purses` counts 100★ table wins, and only the Throne payout leg of
+    // postGameResult ever writes it — until then this stays a locked
+    // Platinum in the gallery, which is the tease working as intended.
+    {
+        id: 'throne_claim',
+        name: 'Claim the Throne',
+        desc: 'Take first at a table of the court.',
+        stars: 50,                               // Platinum
+        check: (s) => ((s.throne && s.throne.purses) || 0) >= 1,
     },
 
     // ── Skill mastery: reach 10 of a skill in one game (Wyatt 7/17) ───

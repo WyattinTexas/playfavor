@@ -52,6 +52,9 @@
             charWins,
             dailyCrowns: champs.gold || 0,
             dailyPodiums: (champs.gold || 0) + (champs.silver || 0) + (champs.bronze || 0),
+            // The Throne node rides whole — always an object, so a check
+            // can read s.throne.purses without its own null dance.
+            throne: r.throne || {},
         };
 
         const earned = DEFS().filter(d => !have[d.id] && safeCheck(d, snap));

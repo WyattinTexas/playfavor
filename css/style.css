@@ -580,7 +580,14 @@ html, body {
     color: #2b1a06; background: linear-gradient(#f4d488, #c99f4b);
     border-radius: 999px; font-weight: 900;
 }
-.lb-sub { color: rgba(240,230,211,0.42); font-size: 10.5px; letter-spacing: 0.5px; flex: none; }
+.lb-sub {
+    color: rgba(240,230,211,0.42); font-size: 10.5px; letter-spacing: 0.5px;
+    flex: none; display: inline-flex; align-items: center; gap: 4px;
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+/* The purse crown inside a Throne row's sub — scaled to the quiet line
+   it lives on, not the 17px name-line crown. */
+.lb-sub .crown-ico { width: 13px; height: 9px; }
 .lb-score { color: var(--gold-light); font-size: 15px; display: inline-flex; align-items: center; gap: 5px; flex: none; }
 .lb-ico { width: 17px; height: 17px; object-fit: contain; }
 /* Best single-game score with a hero, on that hero's board — a quieter

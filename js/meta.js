@@ -73,6 +73,24 @@
         return base + FELLOWSHIP_STARS_PER_HUMAN * Math.max(0, (humans || 1) - 1);
     }
 
+    // ── The Throne board (Wyatt's spec) ──────────────────────────────
+    // 1st = 1 win · 2nd = ½ · 3rd = ¼ · else 0 — stored as integer
+    // QUARTERS so the ledger never touches a float: 4 / 2 / 1 / 0.
+    // players/{uid}/throne = { q, fv, games, purses }, written ONLY by
+    // the postGameResult transaction when ctx.throne rides in (a seat
+    // the AFK fallback finished passes no ctx.throne and banks nothing).
+    // Personas never carry the node — the Throne is the human race.
+    function throneQ(place) {
+        return place === 0 ? 4 : place === 1 ? 2 : place === 2 ? 1 : 0;
+    }
+
+    // q/4 rendered the way a player says it: 14 → "3½", 1 → "¼", 0 → "0".
+    function throneWinsText(q) {
+        const whole = Math.floor((q || 0) / 4);
+        const frac = ['', '¼', '½', '¾'][(q || 0) % 4];
+        return (whole || !frac) ? `${whole}${frac}` : frac;
+    }
+
     // ── Persona rivals (defaults for Wyatt to veto) ──────────────────
     // Five PERMANENT leaderboard citizens — real favor/players rows with
     // fixed persona_* uids, seeded ONCE at staggered ratings and NEVER
@@ -1177,6 +1195,23 @@
                     streak,
                     bestStreak: Math.max(cur.bestStreak || 0, streak),
                 };
+                // Throne Room: a completed Throne-night seat banks its
+                // quarters, Favor and (for the table's winner) the purse
+                // count on the SAME commit as everything else — the board
+                // that ranks "wins first, Favor as the tiebreaker" can
+                // never disagree with the games that produced it. ctx.throne
+                // arrives only from a throne-stamped record whose seat YOU
+                // finished; no flag, no node — a row without Throne games
+                // carries no throne key at all.
+                if (ctx && ctx.throne) {
+                    const th = cur.throne || {};
+                    out.throne = {
+                        q: (th.q || 0) + throneQ(place),
+                        fv: (th.fv || 0) + Math.max(0, Math.round(mine.finalScore || 0)),
+                        games: (th.games || 0) + 1,
+                        purses: (th.purses || 0) + (place === 0 ? 1 : 0),
+                    };
+                }
                 // Court Standing: rungs this game crosses pay into the same
                 // stars total the txn writes — games is monotonic, so a rung
                 // is crossable exactly once and a retry recomputes both legs.
@@ -2380,6 +2415,7 @@
         alltime: 'No champions yet — the realm awaits its first.',
         daily: 'No champions yet — the day awaits its first.',
         topscores: 'No marks set yet — the first great game is still to be played.',
+        throne: 'The court has yet to convene — no one has played a Throne game.',
     };
 
     // Test residue from the ui-audit suite posts under these names; they are
@@ -2433,13 +2469,23 @@
             ? `<span class="lb-medal m${rank}">${rank}</span>`
             : `<span class="lb-rank">${rank}</span>`;
         const crowns = r.gold > 0 ? `<span class="lb-crowns">${CROWN_SVG}${r.gold}</span>` : '';
-        const score = (tab === 'daily' || tab === 'topscores')
+        const score = (tab === 'daily' || tab === 'topscores' || tab === 'throne')
             ? `<img class="lb-ico" src="assets/icons/favor.png" alt="">${r.score}`
             : `✦ ${ratingSpan(r.score)}`;
         // On a hero's board, each row wears its best single-game score with
         // that hero beside the rating (Wyatt 7/17) — the number players hunt.
         const best = (tab && tab.indexOf('char:') === 0 && (r.best || 0) > 0)
             ? `<span class="lb-best" title="Best game with this hero"><img class="lb-ico" src="assets/icons/favor.png" alt="">${r.best}</span>`
+            : '';
+        // Throne rows tell the whole night in one quiet line: win-units,
+        // purses taken (the ONLY crown on this tab — daily crowns stay
+        // home so one glyph can't mean two things), games sat. The big
+        // number stays the tiebreaker Favor, so every ranked stat is on
+        // the row.
+        const sub = (tab === 'throne' && r.th)
+            ? `<span class="lb-sub" title="Throne wins · purses taken · Throne games">${throneWinsText(r.th.q)} W`
+              + ((r.th.purses || 0) > 0 ? ` · ${CROWN_SVG}${r.th.purses}` : '')
+              + ` · ${r.th.games || 0} G</span>`
             : '';
         // The whole row opens that player's public profile (Wyatt 7/30).
         return `
@@ -2448,6 +2494,7 @@
                 ${medal}
                 ${avatarDisc(r.avatar, 'lb-av')}
                 <span class="lb-name ${nameTintClass(r.games, r.tintAt)}"${r.games ? ` title="${shownTitle(r.games, { form: r.titleForm || null, titleAt: r.titleAt })} — Court Level ${playerLevel(r.games)}"` : ''}>${r.name || 'Unknown Noble'}${crowns}${me ? '<span class="lb-you">You</span>' : ''}</span>
+                ${sub}
                 ${best}
                 <b class="lb-score">${score}</b>
             </div>`;
@@ -2462,7 +2509,8 @@
         const chars = ((window.FAVOR_DATA || {}).characters || []);
         // Every non-character tab lights the "All Heroes" chip. Miss a new tab
         // key here and the rail silently mis-lights - this is the one line.
-        const overallOn = tab === 'alltime' || tab === 'daily' || tab === 'topscores';
+        const overallOn = tab === 'alltime' || tab === 'daily' || tab === 'topscores'
+            || tab === 'throne';
         const allChip = `
             <button class="lb-chartab all${overallOn ? ' on' : ''}"
                     title="Overall standings" onclick="FLB.openLeaderboard('alltime')">
@@ -2540,6 +2588,27 @@
                         ...deck(p.uid, players[p.uid] || { name: p.name }),
                         name: p.name, score: p.best, gold: 0,
                     }));
+            } else if (tab === 'throne') {
+                // The Throne (Wyatt's spec): wins first — 1st = 1, 2nd = ½,
+                // 3rd = ¼, held as integer quarters — lifetime Throne Favor
+                // breaks ties. Only players who have FINISHED a Throne game
+                // hold a line, and personas are barred outright: postGameResult
+                // never writes them a throne node, and this filter holds the
+                // door even if one ever grew the key. The Throne is the human
+                // race, even more than Daily.
+                rows = Object.entries(players)
+                    .filter(([, p]) => p && p.name && !p.persona
+                        && p.throne && (p.throne.games || 0) > 0)
+                    .map(([u, p]) => ({
+                        ...deck(u, p),
+                        // Daily crowns stay off this tab (gold: 0) — the only
+                        // crown a Throne row wears is a purse taken.
+                        gold: 0,
+                        score: p.throne.fv || 0,
+                        th: p.throne,
+                    }))
+                    .sort((a, b) => ((b.th.q || 0) - (a.th.q || 0))
+                        || ((b.th.fv || 0) - (a.th.fv || 0)));
             } else if (charId) {
                 // Your rating WITH that hero — only players who've ridden
                 // them into a rated game hold a line on this board.

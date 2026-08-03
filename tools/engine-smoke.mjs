@@ -42,6 +42,7 @@ function achEvaluate(row, gameSnap) {
     charWins,
     dailyCrowns: champs.gold || 0,
     dailyPodiums: (champs.gold || 0) + (champs.silver || 0) + (champs.bronze || 0),
+    throne: r.throne || {},
   };
   const earned = ACH().filter(d => !have[d.id] && d.check(snap));
   return { earned, ids: earned.map(d => d.id), stars: earned.reduce((n, d) => n + d.stars, 0) };
@@ -1817,7 +1818,7 @@ console.log("── Art audit: The Alchemist's Daughter can be played via its ma
 console.log('── Achievements: hero victories, feats, The Master, the secret');
 {
   const HEROES = ['explorer','knight','bandit','merchant','fisherman','duchess','scientist','doctor','fiddler','magician'];
-  ok(ACH().length === 24, '24 achievements (10 heroes + The Master + 2 daily + 6 skill-10 + 2 mission feats + 2 feats + 1 secret)', String(ACH().length));
+  ok(ACH().length === 25, '25 achievements (10 heroes + The Master + 2 daily + 1 throne + 6 skill-10 + 2 mission feats + 2 feats + 1 secret)', String(ACH().length));
 
   // Tier derives purely from the Stars number, same thresholds as Nation.
   const tier = window.FAVOR_DATA.achievementTier;
@@ -1871,6 +1872,19 @@ console.log('── Achievements: hero victories, feats, The Master, the secret'
   ok(achEvaluate({ champs: { bronze: 1 } }, null).ids.includes('daily_podium'), 'a 3rd place counts as a podium');
   ok(achEvaluate({ champs: { gold: 5 } }, null).ids.includes('daily_crown_5'), 'five crowns grants Five-Time Champion');
   ok(!achEvaluate({ champs: { gold: 4 } }, null).ids.includes('daily_crown_5'), 'four crowns does NOT');
+
+  // The Throne Room (ship 1) — DORMANT by design: no game snapshot can fire
+  // it. Only the row's throne.purses (written by ship 3's payout leg of
+  // postGameResult, one per table won) unlocks it.
+  ok(!achEvaluate({}, { won: true, characterId: 'knight' }).ids.includes('throne_claim'),
+    'an ordinary victory does NOT grant Claim the Throne (dormant until Throne nights pay)');
+  ok(achEvaluate({ throne: { q: 4, fv: 77, games: 1, purses: 1 } }, null).ids.includes('throne_claim'),
+    'a taken Throne purse grants Claim the Throne');
+  ok(!achEvaluate({ throne: { q: 3, fv: 120, games: 4, purses: 0 } }, null).ids.includes('throne_claim'),
+    'Throne games without a purse do NOT');
+  const thr = ACH().find(d => d.id === 'throne_claim');
+  ok(thr && thr.stars === 50 && window.FAVOR_DATA.achievementTier(thr.stars) === 'platinum',
+    'Claim the Throne is a 50★ Platinum', thr && String(thr.stars));
 
   // The secret.
   const sec = ACH().find(d => d.id === 'foretold_doom');
