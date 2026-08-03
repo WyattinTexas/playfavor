@@ -817,6 +817,27 @@
     const wearTitleAt = lvl => wearPick('titleAt', lvl, titleRowAt(myPlayerLevel()).lvl);
     const wearTintAt = t => wearPick('tintAt', t, earnedTier(myPlayerLevel()));
 
+    // ── A private court (Skylar 8/3) ─────────────────────────────────
+    // `priv` on the players row — the fourth WRITTEN field, and like the
+    // other three it is a choice, not a derivation. It gates ONE surface:
+    // openPublicProfile stops after the standing block. Boards are
+    // deliberately untouched — a private noble still ranks, still wears
+    // their tint, and their row still opens; what closes is the ledger
+    // behind it (record, court standing, heroes).
+    const iAmPrivate = () => !!((_me || {}).priv);
+    async function setPrivate(on) {
+        const v = !!on;
+        const res = await mergeRow(p => ({ ...(p || {}), priv: v }));
+        // An uncommitted transaction means the wire refused it — say so
+        // rather than leaving a checkbox that lies about what others see.
+        if (!res || !res.committed) return false;
+        if (res.value) _me = res.value; else if (_me) _me.priv = v;
+        return true;
+    }
+    const privNoteText = on => on
+        ? 'Hidden. Nobles who tap your name on a board see your crest, your name and your rating — nothing else.'
+        : 'Open. Nobles who tap your name on a board see your record, your court standing and your best heroes.';
+
     // The PAYOUT ladder (star drops + the free table). Titles and tints
     // are derived from their own tables above and never pay, so they are
     // not rows here — nextPlayerReward() merges all three for display.
@@ -2227,6 +2248,13 @@
                 <input id="pfName" maxlength="24" value="${myName().replace(/"/g, '&quot;')}">
                 <button class="btn-royal" id="pfSave"><span>Save</span></button>
             </div>
+
+            <div class="pf-sec">Privacy</div>
+            <div class="pf-row pf-privrow">
+                <label class="pf-check"><input type="checkbox" id="pfPriv"${iAmPrivate() ? ' checked' : ''}>
+                    <span>Make profile private</span></label>
+            </div>
+            <div class="pf-note pf-priv-note" id="pfPrivNote">${privNoteText(iAmPrivate())}</div>
             ${signinSectionHtml()}
             ${sealSectionHtml()}
             ${mode === 'local' ? '<div class="pf-note"><b class="pf-local">LOCAL PROFILE — leaderboard offline</b></div>' : ''}
@@ -2235,6 +2263,17 @@
             const okd = await rename(document.getElementById('pfName').value);
             if (okd) { renderProfileChip(); closeProfile(); }
             else document.getElementById('pfName').classList.add('bad');
+        };
+        const priv = document.getElementById('pfPriv');
+        priv.onchange = async () => {
+            const want = priv.checked;
+            priv.disabled = true;
+            const ok = await setPrivate(want);
+            priv.disabled = false;
+            priv.checked = ok ? want : !want;      // refused → snap back
+            document.getElementById('pfPrivNote').textContent = ok
+                ? privNoteText(want)
+                : 'The court could not record that — try again.';
         };
         mountGoogleButton();   // the section's HTML is in place — GIS can mount
         wireSealSection();
@@ -2284,10 +2323,14 @@
             .map(c => ({ c, s: (p.chars || {})[c.id] }))
             .filter(x => x.s && (x.s.g || 0) > 0)
             .sort((a, b) => (b.s.r || 0) - (a.s.r || 0)).slice(0, 3);
+        // A private court shows the herald's line and stops: crest, worn
+        // name, crowns, rating. No note explaining the silence — the card
+        // simply ends, the way a noble who says nothing says nothing.
+        const open = !p.priv;
         // Personas and fresh rows have no games — their card is name +
         // rating only; a Level-1 "Peasant" line would just be noise.
         body.innerHTML = `
-            <div class="pf-standing">
+            <div class="pf-standing${open ? '' : ' pf-standing-only'}">
                 ${avatarDisc(p.avatar, 'pf-av-current')}
                 <div class="pf-standing-main">
                     <div class="pf-rating"><span class="pub-name ${worn}">${p.name}</span>
@@ -2296,7 +2339,7 @@
                         <span class="pf-tier">Tier ${ratingTier(eloOf(p))}</span></div>
                 </div>
             </div>
-            ${games ? `
+            ${open && games ? `
             <div class="pf-sec">Court Standing</div>
             <div class="pf-court">
                 <span class="pf-plv ${nameTintClass(games)}">${plv}</span>
@@ -2308,7 +2351,7 @@
                     <div class="pf-record"><b>${wins}</b> W · <b>${games}</b> played · <b>${rate}%</b>${(p.bestStreak || 0) > 1 ? ` · best streak <b>${p.bestStreak}</b>` : ''}</div>
                 </div>
             </div>` : ''}
-            ${ledger.length ? `
+            ${open && ledger.length ? `
             <div class="pf-sec">Best Heroes</div>
             <div class="pf-heroes">${ledger.map(({ c, s }) => `
                 <div class="pf-hero" title="${c.name}">
@@ -3196,6 +3239,7 @@
         playerLevel, playerLevelPct, playerTitle, nameTintClass, myPlayerLevel,
         titleChoiceAt, chooseTitleForm, myTitleForm,
         shownTitle, myShownTitle, myShownTint, wearTitleAt, wearTintAt,
+        setPrivate, iAmPrivate,
         openPublicProfile, closePublicProfile,
         playerTableEarned, playerFreeTableId, nextPlayerReward,
         playerTableLevel: () => PLAYER_TABLE_LEVEL,
