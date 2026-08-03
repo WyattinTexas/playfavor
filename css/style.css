@@ -1276,6 +1276,23 @@ html, body {
 .pf-note { margin-top: 12px; }
 .pf-local { color: #e88; font-style: normal; }
 
+/* Privacy — one checkbox, the settings panel's gold accent. The note
+   below it reads as an explanation, so it drops .pf-note's centering. */
+.pf-privrow { border-bottom: none; padding: 4px 4px 0; }
+.pf-check {
+    display: inline-flex; align-items: center; gap: 9px; cursor: pointer;
+    font-family: 'Cinzel', serif; font-size: 13px; color: var(--parchment);
+}
+.pf-check:hover { color: var(--gold-light); }
+.pf-check input[type="checkbox"] {
+    width: 15px; height: 15px; accent-color: #c9a542; cursor: pointer;
+}
+.pf-check input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
+.pf-priv-note { margin-top: 5px; text-align: left; font-size: 12px; }
+/* A private card ends at the standing block — no rule under it, or the
+   panel looks like it lost the section that was meant to follow. */
+.pf-standing-only { border-bottom: none; padding-bottom: 4px; }
+
 /* ── Daily Champion — the royal moment, not a toast ── */
 .champ-overlay {
     position: fixed;

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<!-- Visual harness for the private profile (Skylar 8/3). Seeds two courts —
+     yours and another noble's — and renders the REAL panels with the real
+     CSS. Three views:
+       privacy-shot.html            → the private noble's public profile
+       privacy-shot.html?open=1     → the same noble with privacy OFF
+       privacy-shot.html?me=1       → your own profile (the new checkbox)
+     Everything is local mode, so toggling the box writes to localStorage
+     and nothing touches the wire. -->
+<head>
+<meta charset="utf-8"><title>Privacy shot</title>
+<!-- base ../ so crest and hero art resolve the way the game resolves them -->
+<base href="../">
+<link rel="stylesheet" href="css/style.css">
+<style>
+    body { background: #241408; margin: 0; padding: 12px; }
+    .profile-panel { position: static; display: flex; }
+</style>
+</head>
+<body>
+<!-- renderProfileChip early-returns without this, and then _me never loads -->
+<button class="profile-chip" id="profileChip" style="position:static;margin:14px"></button>
+<div class="profile-panel" id="profilePanel" style="display:none">
+    <div class="pf-inner">
+        <div class="pf-title">Your Standing</div>
+        <div id="profileBody"></div>
+    </div>
+</div>
+<script>
+    const Q = new URLSearchParams(location.search);
+    localStorage.clear();
+    localStorage.setItem('favorUid', 'shotuid');
+    localStorage.setItem('favorName', 'Wyatt');
+    localStorage.setItem('favorLB', JSON.stringify({ players: {
+        shotuid: {
+            name: 'Wyatt', rating: 1520, ratingV: 2, stars: 140, games: 75,
+            wins: 31, bestStreak: 5, champs: { gold: 1 }, priv: Q.has('mypriv'),
+            chars: { bandit: { r: 1560, g: 40, best: 88, fv: 2600 },
+                     fisherman: { r: 1480, g: 20, best: 71, fv: 1300 } },
+        },
+        // 3250 with ratingV 2 prints 3.25 — Tier 3, the screenshot's noble.
+        nobleuid: {
+            name: 'TheFavorite', rating: 3250, ratingV: 2, games: 61, wins: 44,
+            bestStreak: 9, champs: { gold: 4 }, priv: !Q.has('open'),
+            chars: { bandit: { r: 3300, g: 30, best: 104, fv: 4100 },
+                     magician: { r: 3180, g: 21, best: 96, fv: 2400 },
+                     fisherman: { r: 3010, g: 10, best: 77, fv: 900 } },
+        },
+    } }));
+</script>
+<script src="data/characters.js"></script>
+<script src="js/meta.js"></script>
+<script>
+    (async function () {
+        for (let i = 0; i < 30 && FLB.mode === 'connecting'; i++) {
+            await new Promise(r => setTimeout(r, 100));
+        }
+        await FLB.renderProfileChip();   // pulls _me from the seeded row
+        if (Q.has('me')) {
+            document.getElementById('profilePanel').style.display = '';
+            FLB.openProfile();
+        } else {
+            await FLB.openPublicProfile('nobleuid');
+        }
+    })();
+</script>
+</body>
+</html>
