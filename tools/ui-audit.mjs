@@ -4102,9 +4102,13 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   //   1st of 3: ps 1.00 -> 100 x 1.00 x 1.067 x 2.0 = 213 -> 1279
   // ⚠ wins is 2, not 1: isWin is place < ceil(n * 0.4), so 2nd of 3 is a
   // win now — "coming in 2nd in a 5 player game should be considered a
-  // win" (Wyatt 7/18). The streak follows it to 2. Stars are unchanged.
-  ok(row && row.rating === 1279 && row.ratingV === 2 && row.stars === 16,
-    `the ladder lands 1066 → 1279 with ratingV 2, stars 6+10=16 (${row && row.rating}/${row && row.stars})`);
+  // win" (Wyatt 7/18). The streak follows it to 2.
+  // ⚠ stars carry Court Standing (7/31): the fresh uid's FIRST game lands
+  // playerLevel 2 (games ≥ 1), whose PLAYER_REWARDS rung pays +5 into the
+  // same txn; game two reaches level 3, which has no star rung.
+  //   place stars 6 + 10, standing rung +5 → 21.
+  ok(row && row.rating === 1279 && row.ratingV === 2 && row.stars === 21,
+    `the ladder lands 1066 → 1279 with ratingV 2, stars 6+10 +5 standing = 21 (${row && row.rating}/${row && row.stars})`);
   ok(row && row.power === 74 && row.games === 2 && row.wins === 2 &&
      row.streak === 2 && row.bestStreak === 2,
     `power 74, 2 games, TWO wins (2nd of 3 counts), streak 2 ride the same transaction`);
