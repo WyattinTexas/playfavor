@@ -212,6 +212,17 @@ class FavorGame {
     }
 
     startAct(actNumber) {
+        // Deeds (The Long Road Back): where everyone stood as Act III opened,
+        // read BEFORE currentAct advances so the standings are Act II's close.
+        // calculateFinalScores only reads state, so this cannot disturb play.
+        if (actNumber === 3 && this.players.length) {
+            try {
+                this.calculateFinalScores().forEach((row, place) => {
+                    const p = this.players[row.playerIndex];
+                    if (p) p._actThreePlace = place;      // 0 = leading
+                });
+            } catch (e) { /* a deed is never worth breaking an act change */ }
+        }
         this.currentAct = actNumber;
         this.turnInAct = 0;
 
@@ -756,6 +767,12 @@ class FavorGame {
                 // and/or gold ignored). State-derived, so every lockstep
                 // client reaches the same answer at the same point.
                 player._freePotionRound = true;
+                // Deeds tally (The Doctor Is In) — which ACTS the waiver was
+                // actually spent in; the waiver itself recharges per round.
+                player._freePotionActs = player._freePotionActs || [];
+                if (!player._freePotionActs.includes(this.currentAct)) {
+                    player._freePotionActs.push(this.currentAct);
+                }
                 this.addLog(`${player.name}'s board plays ${card.name} free (1 Potion per round)`);
             } else if (card.cost && card.cost > 0 && !mapFree) {
                 if (player.gold < card.cost) {
@@ -1268,6 +1285,23 @@ class FavorGame {
         player.peakGold = Math.max(player.peakGold || 0, player.gold || 0);
         player.peakPower = Math.max(player.peakPower || 0, this.calculatePower(i) || 0);
         player.potionsPlayed = (player.playedCards || []).filter(c => c.type === 'potion').length;
+        // Deeds read PEAK counts per type ("hold five Weapons at once"), so
+        // a field gutted by A Promise or a rival's discard still counts what
+        // it once held. Sampled here for the same reason gold is.
+        player.peakOnField = player.peakOnField || {};
+        const byType = {};
+        (player.playedCards || []).forEach(c => {
+            if (c && c.type) byType[c.type] = (byType[c.type] || 0) + 1;
+        });
+        Object.keys(byType).forEach(t => {
+            player.peakOnField[t] = Math.max(player.peakOnField[t] || 0, byType[t]);
+        });
+        // Every card name ever played to this board, kept past a discard so
+        // a chain deed can see all three steps (The Long Way Round).
+        player.playedEver = player.playedEver || [];
+        (player.playedCards || []).forEach(c => {
+            if (c && c.name && !player.playedEver.includes(c.name)) player.playedEver.push(c.name);
+        });
         // Peak of every skill this game — the "reach 10 X" achievements read
         // these (Wyatt 7/17). Power uses effectiveSkill so Blind Faith etc. count.
         player.peakSkills = player.peakSkills || {};
@@ -1338,6 +1372,9 @@ class FavorGame {
                         const stolen = Math.min(2, this.players[i].gold);
                         this.players[i].gold -= stolen;
                         player.gold += stolen;
+                        // Deeds tally (Bandit's Bounty) — a running total of
+                        // what this seat lifted off the table all game.
+                        player._goldStolen = (player._goldStolen || 0) + stolen;
                         this.addLog(`${player.name} steals ${stolen} Gold from ${this.players[i].name}`);
                     }
                 }
@@ -2169,6 +2206,7 @@ class FavorGame {
         if (success) {
             this.applyMissionRewards(playerIndex, mission);
             player.completedMissions.push(mission);
+            this._noteMissionDone(playerIndex, mission, 0);
             if (playerIndex === 0 && window.FALM) window.FALM.recordMission(mission);
         } else {
             player.failedMissions.push(mission);
@@ -2261,6 +2299,8 @@ class FavorGame {
         player.missions.splice(missionIndex, 1);
         this.applyMissionRewards(playerIndex, mission);
         player.completedMissions.push(mission);
+        this._noteMissionDone(playerIndex, mission,
+            new Set(plan.borrowFrom.map(b => b.neighborIndex)).size);
         if (playerIndex === 0 && window.FALM) window.FALM.recordMission(mission);
         const skills = plan.borrowFrom.map(b => b.skill).join(', ');
         const lenders = [...new Set(plan.borrowFrom.map(b => this.players[b.neighborIndex].name))].join(' & ');
@@ -2427,6 +2467,7 @@ class FavorGame {
                     resolved.add(mission);
                     const deltas = measure(pi, () => this.applyMissionRewards(pi, mission));
                     player.completedMissions.push(mission);
+                    this._noteMissionDone(pi, mission, 0);
                     if (pi === 0 && window.FALM) window.FALM.recordMission(mission);
                     playerResults.push({ mission, success: true, details, deltas });
                     progressed = true;   // its rewards may unlock a sibling
@@ -2474,6 +2515,7 @@ class FavorGame {
                         });
                         resolved.add(mission);
                         player.completedMissions.push(mission);
+                        this._noteMissionDone(pi, mission, 0);
                         if (pi === 0 && window.FALM) window.FALM.recordMission(mission);
                         this.addLog(`${player.name} borrows ${plan.borrowFrom.map(b => b.skill).join(', ')} (−${plan.cost}g) to complete ${mission.name}`);
                         playerResults.push({ mission, success: true, details, borrowed: plan.cost, deltas });
@@ -2800,6 +2842,28 @@ class FavorGame {
         return this.discardPlayedCards(playerIndex, c => dump.includes(c), take);
     }
 
+    /**
+     * Deeds bookkeeping for a completed mission (js/deeds.js reads it at
+     * game over). `completedMissions` holds the mission OBJECTS, which are
+     * shared across games in a session — so WHEN and HOW a mission was
+     * turned in is recorded here instead of stamped onto the card.
+     *   act        — the act it was turned in during
+     *   openedAct  — the act it became claimable (data calls it
+     *                activationRound, but it is compared against currentAct)
+     *   lenders    — distinct rivals who lent skill to complete it
+     */
+    _noteMissionDone(playerIndex, mission, lenders) {
+        const player = this.players[playerIndex];
+        if (!player || !mission) return;
+        player.missionLog = player.missionLog || [];
+        player.missionLog.push({
+            name: mission.name,
+            act: this.currentAct,
+            openedAct: mission.activationRound || mission.act || 1,
+            lenders: lenders || 0,
+        });
+    }
+
     // Remove played cards (mission failure effects). Their skill grants come
     // off the running tally so requirements/Melee stay truthful.
     discardPlayedCards(playerIndex, filterFn, limit = Infinity) {
@@ -2872,6 +2936,9 @@ class FavorGame {
                         : 0;
                     if (n) {
                         player.prestige += PROMISE_PRESTIGE * n;
+                        // Deeds tally (The Price of a Promise) — the human's
+                        // side of this award lives in ui.js and tallies too.
+                        player._promisePrestige = (player._promisePrestige || 0) + PROMISE_PRESTIGE * n;
                         this.addLog(`${player.name} honors A Promise: ${n} card(s) discarded, +${PROMISE_PRESTIGE * n} Prestige`);
                     }
                 }

@@ -104,6 +104,61 @@
         beginGame();   // buffer spent
     }
 
+    // ── The book, for the Ledger of Deeds (js/deeds.js) ──────────────
+    // Counts are computed off the SAME roster() the gallery draws from, so
+    // a shelf that reads "14 of 14" in the Almanac is the shelf a deed
+    // calls complete — one definition, never two that drift apart.
+    function stats() {
+        const d = load();
+        const count = (key) => {
+            const list = roster(key);
+            const bucket = key === 'missions' ? d.missions : d.cards;
+            return { got: list.filter(c => bucket[c.name]).length, total: list.length };
+        };
+        const types = {};
+        TYPE_ORDER.forEach(t => { types[t] = count(t); });
+        const cardNames = new Set();
+        [1, 2, 3].forEach(a => roster('act' + a).forEach(c => cardNames.add(c.name)));
+        const topCard = Object.values(d.cards).reduce((n, e) => Math.max(n, e.n || 0), 0);
+        return {
+            acts: { 1: count('act1'), 2: count('act2'), 3: count('act3') },
+            types,
+            cards: [...cardNames].filter(n => d.cards[n]).length,
+            cardsTotal: cardNames.size,
+            missions: count('missions').got,
+            missionsTotal: count('missions').total,
+            topCard,      // most-played single card, lifetime
+        };
+    }
+
+    // Sync support. The book has always lived in this browser alone; these
+    // two let the player's record carry it between devices (Skylar 8/3).
+    // UNION, never replace: two devices each hold real plays, so the merge
+    // keeps the HIGHER count and the EARLIER first-seen date. That means a
+    // merge can only ever grow the book — no device can erase another's.
+    function exportBook() { return load(); }
+    function mergeBook(remote) {
+        if (!remote) return false;
+        const d = load();
+        let changed = false;
+        ['cards', 'missions'].forEach(bucket => {
+            const src = remote[bucket] || {};
+            Object.keys(src).forEach(name => {
+                const r = src[name] || {};
+                const mine = d[bucket][name];
+                if (!mine) {
+                    d[bucket][name] = { n: r.n || 1, first: r.first || today() };
+                    changed = true;
+                } else {
+                    if ((r.n || 0) > mine.n) { mine.n = r.n; changed = true; }
+                    if (r.first && r.first < mine.first) { mine.first = r.first; changed = true; }
+                }
+            });
+        });
+        if (changed) saveJson(KEY(), d);
+        return changed;
+    }
+
     // ── Rosters ──────────────────────────────────────────────────────
     // Medallions: acts wear their numeral, missions the scroll icon, and
     // each type a wax seal in its FRAME color — the frame IS the type in
@@ -271,5 +326,6 @@
         if (ov) ov.classList.remove('open');
     }
 
-    window.FALM = { recordCard, recordMission, beginGame, commitGame, open, close };
+    window.FALM = { recordCard, recordMission, beginGame, commitGame, open, close,
+        stats, exportBook, mergeBook };
 })();

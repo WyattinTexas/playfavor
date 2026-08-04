@@ -8501,3 +8501,119 @@ body.no-play-glow .hand-card.playable {
 /* Board rows now open the noble's public profile */
 .lb-row { cursor: pointer; }
 .pub-name { font-family: 'Cinzel', serif; font-weight: 900; font-size: 17px; letter-spacing: 1px; }
+
+/* ═══ THE LEDGER OF DEEDS ════════════════════════════════════════════
+   The second trophy system (js/deeds.js). Deeds pay nothing, so unlike
+   the achievements above there is no star value to derive a tier from —
+   the RANK is explicit data, and these five classes are what it buys.
+   Same palette as .ach-* on purpose: one visual language, two ledgers. */
+.deed-bronze    { --tc: #ff9d4d; --tc2: #a85a1e; }
+.deed-silver    { --tc: #e2e8f2; --tc2: #838d9c; }
+.deed-gold      { --tc: #ffd23f; --tc2: #c48a0c; }
+.deed-platinum  { --tc: #4bf0e6; --tc2: #1f9c9c; }
+.deed-legendary { --tc: #d977ff; --tc2: #8a1fd0; }
+
+/* ── The ruin frame: a disaster does not celebrate in gold ──
+   Applies to ruin deeds AND to the two failure achievements that predate
+   them (Best-Laid Plans, She Saw It Coming) — every catastrophe in the
+   game speaks the same language (Skylar 8/3). */
+.ach-card.ach-ruined {
+    background: linear-gradient(#26262a, #121215);
+    border-color: #6f7578;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 18px 60px rgba(0,0,0,.75),
+                0 0 34px -10px #9aa0a3;
+}
+/* the fissure — one jagged split from the lip past the seal's shoulder */
+.ach-card.ach-ruined::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: rgba(0,0,0,.55);
+    clip-path: polygon(58% 0, 60.5% 0, 54% 18%, 58% 19%, 49% 43%, 52.5% 44%,
+                       44% 71%, 46% 71.5%, 41% 100%, 39.5% 100%, 44.5% 71%,
+                       42.5% 70.5%, 51% 43.5%, 47.5% 42.5%, 56.5% 18.5%, 52.5% 17.5%);
+}
+.ach-card.ach-ruined .ach-tier { color: #9aa0a3; }
+.ach-card.ach-ruined .ach-seal {
+    background: radial-gradient(circle at 35% 30%, #b7bdbf, #4c5254);
+    box-shadow: 0 0 18px -6px #9aa0a3, inset 0 -3px 8px rgba(0,0,0,.5);
+    color: #17181a; position: relative; overflow: hidden;
+}
+.ach-card.ach-ruined .ach-seal::after {
+    content: ''; position: absolute; inset: 0; background: rgba(0,0,0,.5);
+    clip-path: polygon(52% 0, 57% 0, 44% 52%, 60% 100%, 54% 100%, 39% 52%);
+}
+.ach-card.ach-ruined .ach-kicker { color: #8d9497; }
+.ach-card.ach-ruined .ach-name { color: #dfe3e5; }
+.ach-card.ach-ruined .ach-desc { color: #9aa0a3; }
+.ach-card.ach-ruined .ach-stars { color: #b7bdbf; }
+.ach-card.ach-ruined .btn-royal {
+    border-color: #6f7578; color: #b7bdbf;
+    background: linear-gradient(135deg, rgba(140,146,150,.15), rgba(140,146,150,.05));
+}
+
+/* ── Gallery: chapter rules, and a ruin's cracked seal ── */
+.deed-chap {
+    flex: 1 1 100%; margin: 12px 2px 0; padding-bottom: 5px;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+    font-family: 'Cinzel', serif; font-size: 11.5px; font-weight: 700;
+    letter-spacing: 2.4px; text-transform: uppercase; color: #b39a6a;
+    border-bottom: 1px solid #3a2d17;
+}
+.deed-chap i {
+    font-family: 'EB Garamond', serif; font-style: normal; font-weight: 400;
+    letter-spacing: 0; color: #8d7c5d; font-variant-numeric: tabular-nums;
+}
+.deed-gallery .ach-cell.deed-ruin .ach-cell-seal { position: relative; overflow: hidden; }
+.deed-gallery .ach-cell.deed-ruin .ach-cell-seal::after {
+    content: ''; position: absolute; inset: 0; background: rgba(0,0,0,.45);
+    clip-path: polygon(52% 0, 58% 0, 43% 55%, 58% 100%, 52% 100%, 37% 55%);
+}
+
+/* ── "This court is unsaved" ── */
+.deed-nag {
+    position: fixed; inset: 0; z-index: 10002; display: flex;
+    align-items: center; justify-content: center;
+    background: rgba(8,5,2,.78); opacity: 0; transition: opacity .22s ease;
+}
+.deed-nag.in { opacity: 1; }
+.deed-nag .nag-card {
+    width: min(400px, 88vw); padding: 26px 24px 20px; text-align: center;
+    background: linear-gradient(#2a2012, #17110a);
+    border: 2px solid #8a6a1f; border-radius: 10px;
+    box-shadow: 0 18px 60px rgba(0,0,0,.65);
+    transform: translateY(12px); transition: transform .26s ease;
+}
+.deed-nag.in .nag-card { transform: none; }
+.nag-glyph { font-size: 30px; margin-bottom: 8px; }
+.nag-title {
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: 19px;
+    color: #f0dfb8; margin-bottom: 8px;
+}
+.nag-body { font-size: 14.5px; line-height: 1.55; color: #c3ae86; margin-bottom: 18px; }
+.nag-body b { color: #f0dfb8; }
+.nag-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.nag-actions .btn-royal { padding: 10px 34px; font-size: 13px; }
+.nag-dismiss {
+    background: none; border: none; cursor: pointer; padding: 4px 10px;
+    font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: #8d7c5d;
+}
+.nag-dismiss:hover, .nag-dismiss:focus-visible { color: #c3ae86; outline: none; }
+.nag-dismiss small {
+    display: block; font-family: 'EB Garamond', serif; font-style: italic;
+    font-size: 11.5px; letter-spacing: 0; text-transform: none;
+    color: #6e5f45; margin-top: 3px;
+}
+
+/* The Profile's door to the ledger — twin of .pf-alm-btn beside it. */
+.pf-deed-btn {
+    width: 44px; height: 44px; flex: 0 0 auto; padding: 0;
+    display: grid; place-items: center; cursor: pointer;
+    background: none; border: 1px solid rgba(201,168,76,0.45); border-radius: 9px;
+    color: var(--gold-light); font-size: 21px; line-height: 1;
+}
+.pf-deed-btn:hover, .pf-deed-btn:focus-visible {
+    border-color: var(--gold-light); background: rgba(201,168,76,0.12); outline: none;
+}
+@media (prefers-reduced-motion: reduce) {
+    .deed-nag, .deed-nag .nag-card { transition: none; }
+}
