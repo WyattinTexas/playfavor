@@ -224,7 +224,7 @@
     // pass over. No DOM element and no #themeMusic id: the old plumbing
     // stays retired (audit 918 asserts its absence), and a NEW filename
     // per track is the cache law.
-    const THEME_SRC = 'assets/audio/favor_take.mp3';
+    const THEME_SRC = 'assets/audio/favor_take_r2.mp3';
     const THEME_VOL = 0.55;    // dial — the sfx trims were tuned to sit under a theme
     let theme = null;
     let themeStarted = 0, themeStopped = 0;    // seams for the audit

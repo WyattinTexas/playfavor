@@ -8249,7 +8249,7 @@ console.log('── The menu theme: gesture starts it at the title only; any dea
   });
   ok(home.started === 1, "the title's return starts the theme (exactly once)");
   ok(home.loop === false, 'and it is NOT set to loop — one pass only');
-  ok(/favor_take\.mp3$/.test(home.src || ''),
+  ok(/favor_take_r2\.mp3$/.test(home.src || ''),
     `it plays the new track (${(home.src || '').split('/').pop()})`);
   // Autoplay is RIG-DEPENDENT here: puppeteer's --mute-audio lets a muted
   // Chrome genuinely play without a gesture (paused=false) where a strict
