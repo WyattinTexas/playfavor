@@ -2163,16 +2163,14 @@ class FavorGame {
      * picks); pays nothing.
      */
     missionFavorEstimate(playerIndex, mission) {
-        const p = this.players[playerIndex];
         let favor = mission.favorValue || 0;
-        switch (mission.successSpecial) {
-            // Estimates read the same flex-aware count the payer uses —
-            // an AI weighing this mission must see the number it will get.
-            case 'favor_per_charisma_x2':   favor += 2 * this.formulaSkillCount(playerIndex, ['charisma']); break;
-            case 'favor_per_knowledge_x1':  favor += this.formulaSkillCount(playerIndex, ['knowledge']); break;
-            case 'favor_per_minds_eye_x5':  favor += 5 * this.getMindsEyeCount(playerIndex); break;
-            case 'favor_per_philstone_x10': favor += 10 * this.getStoneCount(playerIndex); break;
-        }
+        // Estimates read the same flex-aware formulas the payer uses — an
+        // AI weighing this mission must see the number it will get. Under
+        // the final-tally rule (Wyatt 8/3, settleFormulaMissions) today's
+        // count is the FLOOR of what a formula will pay — skills tend to
+        // grow — so the estimate stays honest and conservative.
+        const fv = this.missionFormulaValue(playerIndex, mission);
+        if (fv) favor += fv.amount;
         return favor;
     }
 
@@ -2398,6 +2396,25 @@ class FavorGame {
             const player = this.players[pi];
             const playerResults = [];
 
+            // THE CHOSEN ORDER (Wyatt 8/3: "the game did not display them
+            // in the correct order"). player.missions IS the order the
+            // player set — chooseMissionOrder writes it directly — and it
+            // is the order every surface must speak in. The sweep below
+            // completes missions in requirement-unlock order and the pay
+            // partition moves formulas last, so playerResults and the
+            // completed/failed lists used to accrue in ENGINE order: his
+            // reverse-score mission, slotted fourth, was announced second
+            // while the pays were right all along. Snapshot the player's
+            // order now; presentation is restored after the sweep, and the
+            // PAY order keeps its own rules untouched.
+            const chosenOrder = player.missions.slice();
+            const chosenPos = (m) => {
+                const at = chosenOrder.indexOf(m);
+                return at < 0 ? chosenOrder.length : at;   // mid-phase arrivals last
+            };
+            const doneBase = player.completedMissions.length;
+            const failBase = player.failedMissions.length;
+
             // Two passes: every due mission is CHECKED (and successes paid
             // out) before any failure penalty lands. A failure that discards
             // played cards must never strip the skills a sibling mission in
@@ -2532,6 +2549,22 @@ class FavorGame {
                 const entry = playerResults.find(r => r.mission === mission && !r.success);
                 if (entry) entry.deltas = deltas;
             });
+
+            // Present in the player's CHOSEN order — results drive the
+            // ceremony and the log; completedMissions / failedMissions
+            // drive the journal, the browser, the strip and the score
+            // sheet. The pays above already landed (grants before
+            // formulas, sweep to fixed point); reordering the RECORDS
+            // afterwards changes what is said, never what was paid.
+            // Deterministic from state, so every lockstep client speaks
+            // the same order.
+            playerResults.sort((a, b) => chosenPos(a.mission) - chosenPos(b.mission));
+            const doneTail = player.completedMissions.slice(doneBase)
+                .sort((a, b) => chosenPos(a) - chosenPos(b));
+            player.completedMissions.splice(doneBase, doneTail.length, ...doneTail);
+            const failTail = player.failedMissions.slice(failBase)
+                .sort((a, b) => chosenPos(a) - chosenPos(b));
+            player.failedMissions.splice(failBase, failTail.length, ...failTail);
 
             // Remove only what actually resolved — missions still inside
             // their window carry over to the next act.
@@ -2694,6 +2727,65 @@ class FavorGame {
         return n;
     }
 
+    /**
+     * The favor_per_* mission formulas, in ONE place — the resolution pay,
+     * the end-of-game settle and the AI's estimate must never disagree
+     * about what a formula is worth (three separate copies is how the
+     * Fiddle bugs happened). Returns null for a mission with no formula.
+     *
+     * Skill formulas read formulaSkillCount (fixed tally + flex units
+     * counted once — 7/23); eyes and stones read their positional counts.
+     */
+    missionFormulaValue(playerIndex, mission) {
+        switch (mission.successSpecial) {
+            case 'favor_per_charisma_x2':
+                return { amount: 2 * this.formulaSkillCount(playerIndex, ['charisma']), label: '2 per Charisma' };
+            case 'favor_per_knowledge_x1':
+                return { amount: this.formulaSkillCount(playerIndex, ['knowledge']), label: '1 per Knowledge' };
+            case 'favor_per_minds_eye_x5':
+                return { amount: 5 * this.getMindsEyeCount(playerIndex), label: "5 per Mind's Eye" };
+            case 'favor_per_philstone_x10':
+                return { amount: 10 * this.getStoneCount(playerIndex), label: "10 per Philosopher's Stone" };
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * WYATT'S RULE (8/3, overruling the 7/23 physical-table rule): a
+     * favor_per_* formula mission pays on the FINAL end-of-game tally,
+     * never just the tally at its resolution act — his Trust of the
+     * Elders paid +3 in Act 1 on a game he finished with 12 Knowledge:
+     * "it should have adapted and paid 12. This is also how the Magic
+     * Fiddle card works."
+     *
+     * The resolution pay stays (the ceremony beat shows a real number the
+     * moment the mission lands, and Favor-threshold checks keep their
+     * mid-game meaning); HERE, as Act 3 closes and before anything reads
+     * a score, every completed formula mission is topped up — or clawed
+     * back, the final tally is the truth in both directions — to
+     * formula(final state). Paid-so-far is re-derived from the ledger
+     * (formula entries carry `formula`; structured favor does not), so a
+     * solo save/load between acts cannot fork the delta and every
+     * lockstep client computes the same settle at the same point.
+     */
+    settleFormulaMissions() {
+        this.players.forEach((player, pi) => {
+            (player.completedMissions || []).forEach(m => {
+                const fv = this.missionFormulaValue(pi, m);
+                if (!fv) return;
+                const paid = (player.favorLog || [])
+                    .filter(e => e.src === 'mission' && e.label === m.name && e.formula)
+                    .reduce((n, e) => n + e.amount, 0);
+                const delta = fv.amount - paid;
+                if (!delta) return;
+                this.awardFavor(pi, delta, 'mission', m.name,
+                    { file: m.filename, formula: fv.label, settled: true });
+                this.addLog(`${player.name}: ${delta > 0 ? '+' : ''}${delta} Favor — ${m.name} settles at the final tally (${fv.label})`);
+            });
+        });
+    }
+
     resolveMissionSuccessSpecial(playerIndex, mission) {
         const player = this.players[playerIndex];
         // Scaled mission payouts are MISSION favor. They used to land in the
@@ -2705,16 +2797,11 @@ class FavorGame {
                 { file: mission.filename, formula });
             this.addLog(`${player.name}: +${f} Favor (${formula})`);
         };
+        // A favor formula pays TODAY'S tally now — and settleFormulaMissions
+        // trues it up to the FINAL tally when the game ends (Wyatt 8/3).
+        const fv = this.missionFormulaValue(playerIndex, mission);
+        if (fv) { payMission(fv.amount, fv.label); return; }
         switch (mission.successSpecial) {
-            case 'favor_per_charisma_x2':
-                payMission(2 * this.formulaSkillCount(playerIndex, ['charisma']), '2 per Charisma');
-                break;
-            case 'favor_per_knowledge_x1':
-                payMission(this.formulaSkillCount(playerIndex, ['knowledge']), '1 per Knowledge');
-                break;
-            case 'favor_per_minds_eye_x5':
-                payMission(5 * this.getMindsEyeCount(playerIndex), "5 per Mind's Eye");
-                break;
             case 'philosopher_stone_x2_grant':
                 player.philosopherStone = (player.philosopherStone || 0) + 2;
                 this.addLog(`${player.name} gains 2 Philosopher's Stones`);
@@ -2730,12 +2817,10 @@ class FavorGame {
                 player.scorn = Math.max(0, player.scorn - 20);
                 this.addLog(`${player.name} removes up to 20 Scorn`);
                 break;
-            case 'favor_per_philstone_x10':
-                // King of the Sky — the one printed mechanic that pays FOR
-                // stones. Stones themselves are a requirement resource, never
-                // a scoring multiplier (see calculateFinalScores).
-                payMission(10 * this.getStoneCount(playerIndex), "10 per Philosopher's Stone");
-                break;
+            // (favor_per_philstone_x10 — King of the Sky, the one printed
+            // mechanic that pays FOR stones — rides the formula path above.
+            // Stones themselves are a requirement resource, never a scoring
+            // multiplier; see calculateFinalScores.)
             case 'duplicate_artifact':
             case 'duplicate_potion': {
                 // "Choose one Artifact/Potion you own" — the CHOICE is the
@@ -3349,6 +3434,12 @@ class FavorGame {
             this.startAct(nextAct);
             return 'next_act';
         } else {
+            // The last act closes: formula missions settle against the
+            // FINAL tallies before anything reads a score (Wyatt 8/3 —
+            // "1 per Knowledge" on a 12-Knowledge finish pays 12). Runs
+            // after every end-of-act chooser (penalty discards, duplicate
+            // picks), so it reads the table as it truly ended.
+            this.settleFormulaMissions();
             this.phase = PHASES.SCORING;
             return 'scoring';
         }

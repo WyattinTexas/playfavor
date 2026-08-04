@@ -200,7 +200,14 @@
     //     plays whom. The bump also cohorts everyone onto the throne
     //     seal-race fix (same night): a stale sealer's local-guess
     //     roster could fork the table all by itself.
-    const MPV = 28;
+    // 29 (8/4): mission surfaces speak the player's CHOSEN order —
+    //     resolveMissions returns results and books completed/failed in
+    //     player.missions order (chooseMissionOrder's order), pays keep
+    //     the 7/23 partition — and favor_per_* formula missions SETTLE
+    //     at the final tally when Act 3 closes (settleFormulaMissions;
+    //     Wyatt: 12 Knowledge ⇒ 12 Favor, "like the Fiddle"). Both move
+    //     mission records and favor totals, so one law per table.
+    const MPV = 29;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

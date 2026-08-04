@@ -7413,7 +7413,10 @@ function showScoreBreakdown(pi, cat) {
             led.forEach((e, ei) => { if (e.label === m.name) claimed.add(ei); });
             const v = (m.favorValue || 0) + lines.reduce((n, e) => n + e.amount, 0);
             if (!v) return;
-            const how = lines.map(e => e.formula).filter(Boolean).join(', ');
+            // Deduped: the end-of-game settle books a second ledger line
+            // with the SAME formula label (settleFormulaMissions) — the row
+            // should read "1 per Knowledge" once, over the summed total.
+            const how = [...new Set(lines.map(e => e.formula).filter(Boolean))].join(', ');
             items.push({ img: `assets/cards/missions/${m.filename}`,
                 label: m.name + (how ? ` — ${how}` : ''), val: v });
             total += v;
@@ -8140,6 +8143,12 @@ function showMissionCeremony(missionResults, actNum) {
                 chips.push(chip('mission', 'Artifact duplicated', 'good'));
             if (b.r.success && m.successSpecial === 'duplicate_potion')
                 chips.push(chip('mission', 'Potion duplicated — it fires again', 'good'));
+            // A formula mission pays today's tally now and TRUES UP to the
+            // final tally when the game ends (Wyatt 8/3) — whisper that so
+            // a "+3" beat over a growing Knowledge table reads as a floor,
+            // never the ceiling.
+            if (b.r.success && String(m.successSpecial || '').indexOf('favor_per_') === 0)
+                chips.push(chip('mission', 'Settles at the final tally', 'flat'));
             if (b.r.borrowed) chips.push(chip('gold', `Borrowed help −${b.r.borrowed}g`, 'bad'));
             if (goldGain < 0) chips.push(chip('gold', `−${-goldGain} Gold`, 'bad'));
             if (d.favor < 0) chips.push(chip('favor', `−${-d.favor} Favor`, 'bad'));

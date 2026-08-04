@@ -3369,6 +3369,158 @@ console.log('── 7/23 mission math: Water Temple pays ONCE, formulas count fl
     `Great Vault Key counts the charisma|prospecting unit ONCE (${g4.dynamicCardFavor(0, gvk)} = ${base}+1)`);
 }
 
+console.log('── 8/3: surfaces speak the CHOSEN order — pays keep their own (Wyatt: "displayed second, played fourth") ──');
+{
+  // Wyatt set his turn-in order and the ceremony announced the sweep's
+  // internal order instead: his score-reverser, slotted FOURTH, was
+  // announced second (the pay partition moves formulas last, so the two
+  // plain missions led). Resolution paid correctly all along — the fix is
+  // that results / completedMissions / failedMissions now come back in
+  // player.missions order, which is exactly what chooseMissionOrder wrote.
+  const g = newGame();
+  const p = g.players[0];
+  g.currentAct = 3; g.emblemHolder = 0;
+  g.players.forEach(q => { q.missions = []; });
+  p.skills.power = 7;                                  // Mercy
+  p.skills.survival = 3; p.skills.knowledge = 3;       // Golden Fiddle
+  p.skills.prospecting = 2; p.favor = 5;               // Trust of the Elders
+  p.philosopherStone = 3;                              // Quest for the Stones
+  p.scorn = 25;
+  p.missions = [
+    { ...missionByName('Mercy') },                     // chosen 1st (plain)
+    { ...missionByName('Golden Fiddle') },             // chosen 2nd (formula)
+    { ...missionByName('Trust of the Elders') },       // chosen 3rd (formula)
+    { ...missionByName('Quest for the Stones') },      // chosen 4th (the reverser)
+  ];
+  const chosen = p.missions.map(m => m.name).join('|');
+  const res = g.resolveMissions().find(r => r.playerIndex === 0).results;
+  ok(res.every(r => r.success), 'all four bank');
+  ok(res.map(r => r.mission.name).join('|') === chosen,
+    `results speak the chosen order (${res.map(r => r.mission.name).join(' → ')})`);
+  ok(p.completedMissions.map(m => m.name).join('|') === chosen,
+    'completedMissions record the chosen order (journal / browser / score sheet)');
+  ok(res[3].mission.name === 'Quest for the Stones',
+    'the reverser is announced FOURTH — where Wyatt slotted it');
+
+  // Display order ≠ pay order: formula chosen FIRST still pays AFTER the
+  // grant lands (the 7/23 partition), while the announcement leads with it.
+  const g2 = newGame();
+  const p2 = g2.players[0];
+  g2.currentAct = 1; g2.emblemHolder = 0;
+  g2.players.forEach(q => { q.missions = []; });
+  p2.skills.knowledge = 3; p2.skills.survival = 3; p2.skills.charisma = 2;
+  p2.missions = [
+    { ...missionByName('Golden Fiddle') },             // chosen 1st — a formula
+    { ...missionByName('A Day With the Birds') },      // chosen 2nd — grants +3 Cha
+  ];
+  const res2 = g2.resolveMissions().find(r => r.playerIndex === 0).results;
+  const fiddlePaid = (p2.favorLog || [])
+    .filter(e => e.src === 'mission' && e.label === 'Golden Fiddle')
+    .reduce((n, e) => n + e.amount, 0);
+  ok(res2[0].mission.name === 'Golden Fiddle', 'announced first, as chosen…');
+  ok(fiddlePaid === 2 * (2 + 3),
+    `…yet PAID after Birds' grant: 2×(2+3) = ${fiddlePaid} (pay rules untouched)`);
+
+  // A failure keeps its chosen slot too — failures used to append after
+  // every success regardless of where the player put them.
+  const g3 = newGame();
+  const p3 = g3.players[0];
+  g3.currentAct = 3; g3.emblemHolder = 0;
+  g3.players.forEach(q => { q.missions = []; });
+  p3.skills.prospecting = 2; p3.favor = 5; p3.skills.knowledge = 1;
+  p3.missions = [
+    { ...missionByName('Mercy') },                     // chosen 1st — FAILS (0 Power)
+    { ...missionByName('Trust of the Elders') },       // chosen 2nd — banks
+  ];
+  const res3 = g3.resolveMissions().find(r => r.playerIndex === 0).results;
+  ok(res3.length === 2 && !res3[0].success && res3[0].mission.name === 'Mercy',
+    `a failed mission is announced in ITS chosen slot (${res3.map(r => `${r.mission.name}:${r.success ? 'ok' : 'fail'}`).join(' → ')})`);
+}
+
+console.log('── 8/3: formula missions settle at the FINAL tally (Wyatt: 12 Knowledge ⇒ 12 Favor, "like the Fiddle") ──');
+{
+  // THE LIVE REPRO. Trust of the Elders banked in Act 1 on a table of 3
+  // Knowledge (+3), and Wyatt finished the game holding 12 — the 7/23
+  // physical rule froze the pay at its resolution act; Wyatt overrules:
+  // "it should have adapted and paid 12."
+  const g = newGame();
+  const p = g.players[0];
+  g.currentAct = 1; g.emblemHolder = 0;
+  g.players.forEach(q => { q.missions = []; });
+  p.skills.prospecting = 2; p.favor = 5;
+  p.skills.knowledge = 2;                    // its own +1 Knowledge reward lands first
+  p.missions = [{ ...missionByName('Trust of the Elders') }];
+  g.resolveMissions();
+  const ledger = () => (p.favorLog || [])
+    .filter(e => e.src === 'mission' && e.label === 'Trust of the Elders')
+    .reduce((n, e) => n + e.amount, 0);
+  ok(ledger() === 3, `Act 1 pays today's tally (+${ledger()})`);
+  p.skills.knowledge = 12;                   // the rest of his game
+  g.endAct(); g.endAct();
+  const before = p.favor;
+  ok(g.endAct() === 'scoring', 'Act 3 closes into scoring');
+  ok(ledger() === 12, `…and the mission has settled at 12 (ledger ${ledger()})`);
+  ok(p.favor - before === 9, `the +9 delta landed in player.favor (+${p.favor - before})`);
+  ok((p.favorLog || []).some(e => e.label === 'Trust of the Elders' && e.settled && e.formula === '1 per Knowledge'),
+    'the settle line is a marked ledger entry with the formula');
+
+  // Settle reads formulaSkillCount — a Knowledge-capable flex unit counts
+  // once at the final tally, exactly as it does at resolution.
+  const gx = newGame();
+  const px = gx.players[0];
+  gx.currentAct = 1; gx.emblemHolder = 0;
+  gx.players.forEach(q => { q.missions = []; });
+  px.skills.prospecting = 2; px.favor = 5; px.skills.knowledge = 4;
+  px.missions = [{ ...missionByName('Trust of the Elders') }];
+  gx.resolveMissions();
+  px.flexSkills = [['knowledge', 'survival']];
+  gx.endAct(); gx.endAct(); gx.endAct();
+  const xt = (px.favorLog || []).filter(e => e.src === 'mission' && e.label === 'Trust of the Elders')
+    .reduce((n, e) => n + e.amount, 0);
+  ok(xt === 6, `flex counts once at the settle (5+1 = ${xt})`);
+
+  // The Fiddle rides the SAME rule — and the tally is the truth in both
+  // directions: a Charisma table that shrank settles DOWN.
+  const g2 = newGame();
+  const p2 = g2.players[0];
+  g2.currentAct = 1; g2.emblemHolder = 0;
+  g2.players.forEach(q => { q.missions = []; });
+  p2.bonusSkills = { survival: 3, knowledge: 1, charisma: 5 };
+  g2.applySlotSkills(p2);
+  p2.missions = [{ ...missionByName('Golden Fiddle') }];
+  g2.resolveMissions();
+  const fl = () => (p2.favorLog || []).filter(e => e.src === 'mission' && e.label === 'Golden Fiddle')
+    .reduce((n, e) => n + e.amount, 0);
+  const paidAt1 = fl();
+  p2.bonusSkills.charisma = 1;               // the table lost its Charisma
+  g2.applySlotSkills(p2);
+  g2.endAct(); g2.endAct(); g2.endAct();
+  ok(paidAt1 === 2 * 5 && fl() === 2 * g2.formulaSkillCount(0, ['charisma']),
+    `Golden Fiddle adapts BOTH ways (paid ${paidAt1} → settled ${fl()})`);
+
+  // An Act-3 formula (King of the Sky's stones) settles to ITSELF — the
+  // final act's resolution IS the final tally, and no second line books.
+  const g3 = newGame();
+  const p3 = g3.players[0];
+  g3.currentAct = 3; g3.emblemHolder = 0;
+  g3.players.forEach(q => { q.missions = []; });
+  p3.skills.survival = 4; p3.skills.power = 12;
+  p3.philosopherStone = 2;
+  p3.missions = [{ ...missionByName('King of the Sky') }];
+  g3.resolveMissions();
+  g3.endAct();
+  const kEntries = (p3.favorLog || []).filter(e => e.src === 'mission' && e.label === 'King of the Sky');
+  ok(kEntries.reduce((n, e) => n + e.amount, 0) === 10 * g3.getStoneCount(0) && kEntries.length === 1,
+    `no double-pay on a final-act formula (${kEntries.length} entry, ${kEntries.reduce((n, e) => n + e.amount, 0)} favor)`);
+
+  // The estimate the AI weighs is the same formula, floor-valued at
+  // today's count (missionFavorEstimate rides missionFormulaValue now).
+  const g4 = newGame();
+  g4.players[0].skills.knowledge = 4;
+  ok(g4.missionFavorEstimate(0, missionByName('Trust of the Elders')) === 4,
+    'missionFavorEstimate reads the shared formula');
+}
+
 console.log('── 7/24: gold missions PAY · slot stones are POSITIONAL · you choose the duplicate ──');
 {
   // 1 · The Minister's Plan holds Gold ×15 — completing it now SPENDS it.
