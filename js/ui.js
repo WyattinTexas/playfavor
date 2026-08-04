@@ -6973,12 +6973,19 @@ function showScoring() {
     if (window.FTEL && recordThisGame) { try { FTEL.flush(scores, { humans: humansAtTable }); } catch (e) { /* never */ } }
     clearSoloSave();   // the table finished — nothing left to resume
     if (window.FALM && recordThisGame) FALM.commitGame();  // finished games alone unlock almanac entries
+    // The Throne stamp rides into the scoring txn ONLY for a seat its
+    // human actually finished — the AFK fallback's game pays 1× and
+    // banks nothing (§4 completion-required). Read HERE, before
+    // FMP.gameOver() below tears the record down.
+    const throneKey = (mpActive() && FMP.record() && FMP.record().throne
+        && !FMP.myBooted()) ? FMP.record().throne : null;
     if (window.FLB && recordThisGame) {
         // The resolved XP (computed INSIDE the posting transaction) paints
         // the victory chip late and raises the Level 5 ceremony — never a
         // re-read of the row, so it can neither miss nor double-fire.
         window._postGamePromise = FLB.postGameResult(scores, personaPlaces,
-            { ratings: tableRatings, myChar: myHeroId, humans: humansAtTable })
+            { ratings: tableRatings, myChar: myHeroId, humans: humansAtTable,
+              throne: throneKey })
             .then(xp => { if (xp) paintVictoryXp(xp); })
             .catch(() => { /* offline — no track moved, no chip */ });
     }

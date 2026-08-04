@@ -91,6 +91,15 @@
         return (whole || !frac) ? `${whole}${frac}` : frac;
     }
 
+    // Throne night payouts (§4, defaults for Wyatt to veto): a FINISHED
+    // Throne seat triples its whole Stars payout — placement and
+    // fellowship alike — and the table's winner (place 0 among ALL
+    // seats) takes the purse on top. An AI taking 1st keeps it: nobody
+    // collects for the court's own. Every leg rides the same whole-row
+    // txn as the quarters — never a second write.
+    const THRONE_STARS_MULT = 3;
+    const THRONE_PURSE = 100;
+
     // ── Persona rivals (defaults for Wyatt to veto) ──────────────────
     // Five PERMANENT leaderboard citizens — real favor/players rows with
     // fixed persona_* uids, seeded ONCE at staggered ratings and NEVER
@@ -1156,7 +1165,12 @@
             const place = scores.findIndex(s => s.name === 'You');
             if (place < 0) return null;
             const mine = scores[place];
-            const starsWon = gameStars(place, scores.length, ctx && ctx.humans);
+            // Throne night triples the WHOLE payout — base and fellowship
+            // alike. ctx.throne never rides for a seat the AFK fallback
+            // finished (ui.js gates on FMP.myBooted()), so a booted seat
+            // pays exactly like an ordinary game: 1×, no points below.
+            const starsWon = gameStars(place, scores.length, ctx && ctx.humans)
+                * (ctx && ctx.throne ? THRONE_STARS_MULT : 1);
             // ⚠ `won` has THREE consumers below — the wins count, the
             // streak/bestStreak pair, and (through the streak) the gain
             // boost. It is no longer `place === 0`: a top-40% finish is a
@@ -1211,6 +1225,11 @@
                         games: (th.games || 0) + 1,
                         purses: (th.purses || 0) + (place === 0 ? 1 : 0),
                     };
+                    // The winner's purse lands on the SAME commit as the
+                    // purses count above — split writes let a dropped tab
+                    // count a crown the Stars never paid, or pay Stars the
+                    // board never counted.
+                    if (place === 0) out.stars = (out.stars || 0) + THRONE_PURSE;
                 }
                 // Court Standing: rungs this game crosses pay into the same
                 // stars total the txn writes — games is monotonic, so a rung
@@ -1263,6 +1282,17 @@
                 xpOut = pendingXp || (pendingPl ? {} : null);
                 if (xpOut && pendingPl) xpOut.pl = pendingPl;
                 if (txnRes.value) _me = txnRes.value;
+                // The court kneels: the purse celebration rides the
+                // msgQueue congrats rail so a winner who closes the tab
+                // still gets the moment on next boot (drainMsgs). Pushed
+                // only after COMMIT — the message must never outrun the
+                // Stars it announces — and never inside the txn fn, where
+                // a retry would push twice.
+                if (ctx && ctx.throne && place === 0) {
+                    await dbPush(`players/${uid()}/msgQueue`, {
+                        type: 'throne_purse', dateKey: ctx.throne, stars: THRONE_PURSE,
+                    }).catch(() => { /* Stars landed; only the overlay is lost */ });
+                }
             }
 
             // Daily board: best single-game Favor score in this window. ROUNDED
@@ -1428,6 +1458,10 @@
                     await showStarsCelebration(m.stars);
                     shown++;
                 }
+                // ⚠ the loop DELETES every entry it visits, matched or not
+                // — a new queue type must land its branch here in the same
+                // commit as its first push, or it is swallowed unseen.
+                else if (m && m.type === 'throne_purse') { await showThronePurse(m); shown++; }
                 await dbSet(`players/${uid()}/msgQueue/${k}`, null);
             }
             renderProfileChip();
@@ -3084,6 +3118,31 @@
             document.getElementById('champSub').innerHTML = `★ ${stars} Stars join your purse`;
             const art = document.getElementById('champArt');
             if (art) art.innerHTML = '<div class="champ-place gold champ-star">★</div>';
+            ov.classList.add('active');
+            const done = () => {
+                ov.classList.remove('active');
+                if (art) art.innerHTML = '';
+                resolve();
+            };
+            ov.onclick = done;
+            document.getElementById('champBtn').onclick = (e) => { e.stopPropagation(); done(); };
+        });
+    }
+
+    // The Throne purse — "The court kneels." The whole-row txn already
+    // paid the 100★; this is the royal moment, delivered wherever the
+    // winner next stands (the same rail as the Mint and the daily
+    // crowns, so a tab closed at the victory sheet loses nothing).
+    function showThronePurse(m) {
+        return new Promise(resolve => {
+            const ov = document.getElementById('champOverlay');
+            if (!ov) { resolve(); return; }
+            document.getElementById('champTitle').textContent = 'The Court Kneels.';
+            document.getElementById('champSub').innerHTML =
+                `You won your table in the Throne Room — <b>+${m.stars || THRONE_PURSE} ★</b>`
+                + (m.dateKey ? ` · ${m.dateKey}` : '');
+            const art = document.getElementById('champArt');
+            if (art) art.innerHTML = '<div class="champ-place gold champ-star">⚜</div>';
             ov.classList.add('active');
             const done = () => {
                 ov.classList.remove('active');

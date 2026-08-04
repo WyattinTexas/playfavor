@@ -4304,18 +4304,21 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   // Favor breaks ties. The node rides the same whole-row transaction as
   // everything else, and only ctx.throne games move it.
 
-  // Empty era: nobody in the realm CAN have played a Throne game yet (the
-  // lobby/draw is ship 2), so the tab opens on its empty copy.
-  // ⚠ SHIP-3 NOTE: this assert dies the day real Throne rows exist —
-  // replace it with the payout probe when the mode goes live.
+  // The tab renders its era honestly. Before ship 3 went live this HAD
+  // to be the empty copy; real Throne rows exist now (the mode pays), so
+  // a populated board is just as lawful — either way the tab must land
+  // on something, never a blank pane.
   await page.evaluate(() => FLB.openLeaderboard('throne'));
   await sleep(700);
   const thrEmpty = await page.evaluate(() => ({
+    rows: document.querySelectorAll('#lbBody .lb-row').length,
     copy: (document.querySelector('#lbBody .lb-loading') || {}).textContent || '',
     tabLit: ((document.querySelector('.lb-tab.on') || {}).dataset || {}).tab || '',
   }));
-  ok(/court has yet to convene/i.test(thrEmpty.copy),
-    `before any Throne game the board says so ("${thrEmpty.copy.trim()}")`);
+  ok(thrEmpty.rows > 0 || /court has yet to convene/i.test(thrEmpty.copy),
+    thrEmpty.rows > 0
+      ? `the Throne board holds the court's real rows (${thrEmpty.rows})`
+      : `an empty era says so ("${thrEmpty.copy.trim()}")`);
   ok(thrEmpty.tabLit === 'throne', 'the Throne tab lights when open');
 
   // Fake posts prove the TXN: a Throne 1st (purse + 4 quarters), a Throne
@@ -7067,7 +7070,7 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
   }
 }
 
-// ═══ THE THRONE ROOM (ship 2): door → hall → 9:18 draw → sealed table ═══
+// ═══ THE THRONE ROOM (ships 2+3): door → hall → draw → the table PAYS ═══
 // A REAL two-client Throne night on a FAKE date. window._throneNow is the
 // time machine (js/mp.js reads it in place of server time): both clients
 // stand in the hall of 2031-01-05 at 9:17:5x PM ET, the bar arrives in
@@ -7108,6 +7111,20 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
         window.CINEMATIC_SPEED = 0.05;
         FMP._T.pick = 2600; FMP._T.pickGrace = 800;   // the hero clock, shrunk
       });
+      // SHIP 3 pre-seed: saturate both ladders (games and every hero's
+      // fv past the top rung) and pre-grant every achievement EXCEPT
+      // throne_claim. Standing/rung stars and stray grants (the hero
+      // victory, The Master) would otherwise muddy the payout math —
+      // seeded so, the star asserts below are EXACT integers.
+      await pg.evaluate(async (u, n) => {
+        const chars = {}, wins = {};
+        FAVOR_DATA.characters.forEach(c => { chars[c.id] = { fv: 999999 }; wins[c.id] = true; });
+        const ach = {};
+        FACH.defs().forEach(d => { if (d.id !== 'throne_claim') ach[d.id] = 1; });
+        await firebase.database().ref(`favor/players/${u}`).set({
+          name: n, stars: 0, games: 1000, chars, achievements: ach, charWins: wins,
+        });
+      }, uid, name);
       return pg;
     };
     const setClock = (pg, atMs) => pg.evaluate((at) => {
@@ -7257,11 +7274,139 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     ok(tagged.length === 2 && tagged.every(g => g === sA.gid),
       'each lobby row carries its table’s gameId (the hand-off nicety)');
 
+    // ═══ SHIP 3: START-TO-SCORING — the payout night ═══
+    // The rig makes ONE real lockstep round the whole game: act 3, two
+    // inert cards a hand, a favor spread that crowns A. The round then
+    // plays the TRUE pipeline — throws, reveals, final cards, hands
+    // empty → missions → melee → endAct → showScoring — on BOTH
+    // clients, so the 3× txn, the purse, the msgQueue rail and the
+    // achievement fire exactly as they will on a real night. (Rows were
+    // pre-seeded at boot; humans=2 → gameStars pays 1st 15, 2nd 11.)
+    const rigLastAct = (pg) => pg.evaluate(() => {
+      const inert = FAVOR_DATA.cards.filter(c => (c.skills || []).length
+        && !c.special && !(c.requirements || []).length && !c.cost
+        && !Object.keys(c.rewards || {}).length).slice(0, 2);
+      game.currentAct = 3;
+      const spread = [100, 50, 5, 1];   // canon 0=A crowned, 1=B second
+      for (let c = 0; c < 4; c++) {
+        const li = FMP.localIdx(c);
+        game.players[li].hand = inert.map(x => ({ ...x }));
+        game.awardFavor(li, spread[c], 'character', 'Rigged standing');
+      }
+      renderGameState();
+    });
+    await Promise.all([rigLastAct(pA), rigLastAct(pB)]);
+    const hRig = [await pA.evaluate(() => mpStateHash()), await pB.evaluate(() => mpStateHash())];
+    ok(hRig[0] === hRig[1], `LOCKSTEP: the rig lands identically on both (${hRig[0]})`);
+
+    await pA.evaluate(() => throwCard(0));
+    await sleep(250);
+    await pB.evaluate(() => throwCard(0));
+
+    // Answer every chooser (the reveal, then the final card) until
+    // scoring lands. The melee splash auto-plays; no missions exist.
+    const driveToScoring = async (pg) => {
+      const deadline = Date.now() + 90000;
+      while (Date.now() < deadline) {
+        const st = await pg.evaluate(() => ({
+          scoring: document.getElementById('scoring-screen').classList.contains('active'),
+          choice: window._finalChoicePending === true,
+        }));
+        if (st.scoring) return true;
+        if (st.choice) {
+          await pg.evaluate(() => {
+            const b = [...document.querySelectorAll('#actionPanel .action-btn')]
+              .find(x => /discard/i.test(x.textContent) && !x.disabled);
+            if (b) b.click();
+          });
+        }
+        await sleep(400);
+      }
+      return false;
+    };
+    const [scA, scB] = await Promise.all([driveToScoring(pA), driveToScoring(pB)]);
+    ok(scA && scB, `one rigged round runs the whole true pipeline to scoring (A ${scA}, B ${scB})`);
+    const hEnd = [await pA.evaluate(() => mpStateHash()), await pB.evaluate(() => mpStateHash())];
+    ok(hEnd[0] === hEnd[1], `LOCKSTEP: state hashes agree at the end of the night (${hEnd[0]})`);
+    await pA.screenshot({ path: join(SHOTS, 'throne-scoring.png') });
+
+    // The posts commit (the daily write chains behind the whole-row txn).
+    await Promise.all([
+      pA.evaluate(() => Promise.resolve(window._postGamePromise).then(() => true)),
+      pB.evaluate(() => Promise.resolve(window._postGamePromise).then(() => true)),
+    ]);
+
+    // A took the table: "Claim the Throne" fires off the purse — the
+    // sync is chained on the post, never awaited by the ceremony.
+    const achPop = await pA.waitForFunction(() => {
+      const n = document.querySelector('.ach-pop .ach-name');
+      return !!n && /Claim the Throne/i.test(n.textContent);
+    }, { timeout: 15000 }).then(() => true, () => false);
+    ok(achPop, '"Claim the Throne" celebrates on the winner (post-chained, un-awaited)');
+    if (achPop) {
+      await pA.screenshot({ path: join(SHOTS, 'throne-achievement.png') });
+      await pA.evaluate(() => { const b = document.querySelector('.ach-pop .ach-ok'); if (b) b.click(); });
+    }
+
+    // The ledger: 3× Stars, the purse, the quarters — one whole-row txn.
+    const myFv = (pg) => pg.evaluate(() =>
+      Math.round(game.getWinner().find(s => s.name === 'You').finalScore || 0));
+    const fvA = await myFv(pA), fvB = await myFv(pB);
+    const rowOf = (pg, u) => pg.evaluate(async (x) =>
+      (await firebase.database().ref(`favor/players/${x}`).get()).val() || {}, u);
+    const rowA = await rowOf(pA, A_UID), rowB = await rowOf(pB, B_UID);
+    const thA = rowA.throne || {}, thB = rowB.throne || {};
+    ok(thA.q === 4 && thA.games === 1 && thA.purses === 1 && thA.fv === fvA,
+      `A's night banks 4 quarters · 1 purse · fv ${fvA} (${JSON.stringify(thA)})`);
+    ok(thB.q === 2 && thB.games === 1 && thB.purses === 0 && thB.fv === fvB,
+      `B's second banks 2 quarters, no purse, fv ${fvB} (${JSON.stringify(thB)})`);
+    ok(rowA.stars === 195,
+      `A's Stars are EXACT: 15 tripled + 100 purse + 50 achievement = 195 (${rowA.stars})`);
+    ok(rowB.stars === 33,
+      `B's Stars are EXACT: 11 tripled, nothing else = 33 (${rowB.stars})`);
+    ok(!!(rowA.achievements || {}).throne_claim && !(rowB.achievements || {}).throne_claim,
+      'the achievement is the winner’s alone');
+
+    // The purse rides the msgQueue rail — and ONLY the winner's.
+    const qA = Object.values(rowA.msgQueue || {});
+    const qB = Object.values(rowB.msgQueue || {});
+    ok(qA.length === 1 && qA[0].type === 'throne_purse' && qA[0].stars === 100
+      && qA[0].dateKey === FAKE_KEY,
+      `A's msgQueue holds the purse congrats (${JSON.stringify(qA[0] || {})})`);
+    ok(!qB.some(m => m && m.type === 'throne_purse'), 'B’s queue holds no purse');
+
+    // B's sheet names A's crown — the court saw who took the table.
+    const bHead = await pB.evaluate(() =>
+      (document.querySelector('.vs-headline') || {}).textContent || '');
+    ok(/Audit ThroneA Claims the Throne/i.test(bHead),
+      `B's victory sheet crowns A ("${bHead.trim()}")`);
+
+    // THE CLOSED TAB COLLECTS: reload A — a fresh boot drains the rail
+    // and the court kneels on arrival; the message is then SPENT.
+    await pA.goto(URL, { waitUntil: 'networkidle2' });
+    const kneel = await pA.waitForFunction(() => {
+      const ov = document.getElementById('champOverlay');
+      return !!ov && ov.classList.contains('active')
+        && /court kneels/i.test((document.getElementById('champTitle') || {}).textContent || '')
+        && /\+100/.test((document.getElementById('champSub') || {}).textContent || '');
+    }, { timeout: 20000 }).then(() => true, () => false);
+    ok(kneel, '"The Court Kneels. +100★" greets the winner on next boot (drainMsgs)');
+    if (kneel) await pA.screenshot({ path: join(SHOTS, 'throne-purse-overlay.png') });
+    await pA.evaluate(() => { const b = document.getElementById('champBtn'); if (b) b.click(); });
+    await sleep(400);
+    const qAfter = await pA.evaluate(async (u) =>
+      (await firebase.database().ref(`favor/players/${u}/msgQueue`).get()).val(), A_UID);
+    ok(!qAfter, 'the purse message is spent — shown once, never again');
+
     // ── Leave no trace: the fake night, the record, the audit rows. ──
     const swept = await pA.evaluate(async (k, gid, uids) => {
       const db = firebase.database();
       await db.ref(`favor/throne/${k}`).remove();
       if (gid) await db.ref(`favor/mp/games/${gid}`).remove();
+      // Ship 3's posts write today's daily board too — sweep those rows
+      // before the players rows so nothing dangles for the 22:00 settle.
+      const dk = FLB.currentDateKey();
+      for (const u of uids) await db.ref(`favor/daily/${dk}/scores/${u}`).remove();
       for (const u of uids) await db.ref(`favor/players/${u}`).remove();
       const night = (await db.ref(`favor/throne/${k}`).get()).exists();
       const rec = gid ? (await db.ref(`favor/mp/games/${gid}`).get()).exists() : false;

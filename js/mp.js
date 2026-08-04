@@ -1595,6 +1595,12 @@
     function mySeat() { return g ? g.mySeat : 0; }
     function isHost() { return g && g.hostUid === uid(); }
     function record() { return g ? g.rec : null; }
+    // Did the AFK fallback finish MY seat? Scoring reads this: a booted
+    // seat posts 1× Stars and zero Throne points (§4 completion-required).
+    // Normally moot — a booted tab leaves before scoring — but a boot
+    // racing the table's last moves must not triple-pay a seat its human
+    // abandoned.
+    function myBooted() { return !!(g && g.booted.has(g.mySeat)); }
 
     // Canonical seat ↔ local index under the rotation that pins the local
     // human to seat 0: local i = (canon - mySeat + size) % size.
@@ -1910,7 +1916,7 @@
             barLabel: throneBarLabel,
         },
         _thronePartition: thronePartition,   // probe seam (tools/probe-throne-draw.mjs)
-        active, mySeat, isHost, record, localIdx, canonSeat,
+        active, mySeat, myBooted, isHost, record, localIdx, canonSeat,
         publish, waitFor, drain, collectThrows, onBroadcast, markBooted,
         leaveGame, gameOver,
         gid: () => (g ? g.gid : null),
