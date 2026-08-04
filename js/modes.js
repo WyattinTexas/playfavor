@@ -501,7 +501,7 @@
         } else if (ph.phase === 'sealed') {
             line = 'The court is in session.';
         } else {
-            line = 'The court convenes at 9:15 PM';
+            line = 'The court convenes at ' + FMP.throne.openLabel();
             if (ph.msToOpen < 3600 * 1000) clock = thFmt(ph.msToOpen);
         }
         el.innerHTML = `
@@ -533,14 +533,14 @@
                     ? 'The court is in session — tonight’s games are underway.'
                     : 'Once a night, the whole realm plays at once.'}</div>
                 <div class="thr-info-body">
-                    The doors open at <b>9:15 PM</b> Eastern and bar at
-                    <b>9:18</b>, when everyone standing in the hall is drawn
+                    The doors open at <b>${FMP.throne.openLabel()}</b> Eastern and bar at
+                    <b>${FMP.throne.barLabel()}</b>, when everyone standing in the hall is drawn
                     into tables of 4 and 5. Finish your game and every Star it
                     pays is <b>tripled</b>; win your table and you take the
                     <b>+100★ purse</b>. Every result stands on the
                     <b>Throne board</b> — wins first, Favor breaks ties.
                 </div>
-                ${sealed ? '' : `<div class="thr-info-when">Tonight at 9:15 PM
+                ${sealed ? '' : `<div class="thr-info-when">Tonight at ${FMP.throne.openLabel()}
                     ${ph.msToOpen < 3600 * 1000 ? `— <b>${thFmt(ph.msToOpen)}</b>` : ''}</div>`}
                 <div class="ri-actions">
                     <button type="button" class="btn-royal" onclick="FMODES.closeThroneInfo()"><span>Back</span></button>

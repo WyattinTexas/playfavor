@@ -1111,10 +1111,27 @@
     // The door's three states, from server time. ET wall-clock seconds
     // (the once-a-year DST boundary night drifts an hour; nobody is
     // harmed — the same posture as the daily 10 PM window).
+    // Wyatt (8/3): "make the throne room 10 p.m. tonight, but just
+    // tonight." One dateKey gets its own window — this night opens at
+    // 10:00:00 PM ET (bar 10:03, court until 10:45); every other night
+    // reads the TH law above. Self-expiring: the key never matches
+    // again, so there is no revert ship to forget.
+    const TH_NIGHTS = {
+        '2026-08-03': { openMin: 22 * 60, barMin: 22 * 60 + 3, sealEndMin: 22 * 60 + 45 },
+    };
+    function nightTH(key) { return TH_NIGHTS[key] || TH; }
+    function thLabel(min, withMeridiem) {
+        const h = Math.floor(min / 60), m = min % 60;
+        return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')}${withMeridiem ? ' PM' : ''}`;
+    }
+    function throneOpenLabel() { return thLabel(nightTH(etClock(srvNow()).key).openMin, true); }
+    function throneBarLabel() { return thLabel(nightTH(etClock(srvNow()).key).barMin, false); }
+
     function thronePhase(ms) {
         watchSrvOffset();
         const c = etClock(typeof ms === 'number' ? ms : srvNow());
-        const open = TH.openMin * 60, bar = TH.barMin * 60, end = TH.sealEndMin * 60;
+        const W = nightTH(c.key);
+        const open = W.openMin * 60, bar = W.barMin * 60, end = W.sealEndMin * 60;
         if (c.sec >= open && c.sec < bar) {
             return { phase: 'open', key: c.key, msToBar: (bar - c.sec) * 1000 };
         }
@@ -1122,7 +1139,9 @@
             return { phase: 'sealed', key: c.key, msToBar: 0 };
         }
         const toOpen = c.sec < open ? (open - c.sec) * 1000
-            : (24 * 3600 - c.sec + open) * 1000;
+            // Past tonight's window the door counts to TOMORROW, and
+            // tomorrow reads the NORMAL law (specials are one-night).
+            : (24 * 3600 - c.sec + TH.openMin * 60) * 1000;
         return { phase: 'closed', key: c.key, msToOpen: toOpen };
     }
 
@@ -1887,6 +1906,8 @@
             active: () => !!t,
             srvNow,                      // night clock (phase truth)
             srvReal,                     // liveness clock (hb freshness)
+            openLabel: throneOpenLabel,  // tonight's door copy ("10:00 PM" on 8/3 only)
+            barLabel: throneBarLabel,
         },
         _thronePartition: thronePartition,   // probe seam (tools/probe-throne-draw.mjs)
         active, mySeat, isHost, record, localIdx, canonSeat,
