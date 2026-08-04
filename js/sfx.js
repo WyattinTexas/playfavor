@@ -218,15 +218,18 @@
 
     // ── The menu theme (Wyatt, 8/3 eve): one pass, never a loop ──────
     // Favor_Take rides the same first-gesture law as the SFX context,
-    // plays ONCE through at the title, and dies the instant the game
-    // screen arrives — whatever road led there (solo, queue, throne,
-    // private, a rejoin). Each return to the title starts the single
-    // pass over. No DOM element and no #themeMusic id: the old plumbing
-    // stays retired (audit 918 asserts its absence), and a NEW filename
-    // per track is the cache law.
+    // plays ONCE through at the title, and FADES OUT over ~a second the
+    // instant the game screen arrives (Wyatt 8/4: a fade, never a cut) —
+    // whatever road led there (solo, queue, throne, private, a rejoin).
+    // Each return to the title starts the single pass over. No DOM
+    // element and no #themeMusic id: the old plumbing stays retired
+    // (audit 918 asserts its absence), and a NEW filename per track is
+    // the cache law.
     const THEME_SRC = 'assets/audio/favor_take_r2.mp3';
     const THEME_VOL = 0.55;    // dial — the sfx trims were tuned to sit under a theme
+    const THEME_FADE_MS = 900; // the deal's ramp to silence
     let theme = null;
+    let themeFade = null;      // interval handle while a fade-out is dying
     let themeStarted = 0, themeStopped = 0;    // seams for the audit
 
     function themeNode() {
@@ -241,9 +244,13 @@
         const gs = document.getElementById('game-screen');
         return !!(gs && gs.classList.contains('active'));
     }
+    function cancelThemeFade() {
+        if (themeFade) { clearInterval(themeFade); themeFade = null; }
+    }
     function themeStart() {
         if (tableUp()) return;               // never sing over a live table
         const t = themeNode();
+        cancelThemeFade();                   // a fresh title visit outruns a dying fade
         t.volume = THEME_VOL;
         try { t.currentTime = 0; } catch (e) { /* not seekable yet */ }
         themeStarted++;
@@ -252,9 +259,27 @@
     }
     function themeStop() {
         themeStopped++;                      // counted even when already silent
-        if (!theme) return;
-        try { theme.pause(); } catch (e) { /* silence is the goal */ }
-        try { theme.currentTime = 0; } catch (e) { /* best effort */ }
+        if (!theme || themeFade) return;     // nothing playing / already dying
+        if (theme.paused) {                  // the one pass already ended on its own
+            try { theme.currentTime = 0; } catch (e) { /* best effort */ }
+            return;
+        }
+        // Wall-clock based and never rAF: a background tab throttles timers
+        // (and zeroes rAF entirely), but an elapsed-time step still lands
+        // the pause at most a beat late — the table is never sung over.
+        const t0 = performance.now();
+        const from = theme.volume;
+        themeFade = setInterval(() => {
+            const k = (performance.now() - t0) / THEME_FADE_MS;
+            if (k < 1) {
+                try { theme.volume = from * (1 - k); } catch (e) { /* iOS: volume is read-only */ }
+                return;
+            }
+            cancelThemeFade();
+            try { theme.pause(); } catch (e) { /* silence is the goal */ }
+            try { theme.currentTime = 0; } catch (e) { /* best effort */ }
+            try { theme.volume = THEME_VOL; } catch (e) { /* ready for the next pass */ }
+        }, 50);
     }
     ['pointerdown', 'touchstart', 'keydown'].forEach((ev) =>
         document.addEventListener(ev, themeStart, { once: true, passive: true, capture: true }));
@@ -379,6 +404,7 @@
     });
 
     window.FSFX = { play, init, _attempted: attempted, _voiced: voiced,
-                    _theme: () => ({ started: themeStarted, stopped: themeStopped, el: theme }),
+                    _theme: () => ({ started: themeStarted, stopped: themeStopped,
+                                     fading: !!themeFade, el: theme }),
                     get ready() { return ready; } };
 })();

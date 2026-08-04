@@ -2329,6 +2329,28 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
   ok(geo.plaqueTall, 'the rival plaque stands tall in the grid');
   await page.screenshot({ path: join(SHOTS, 'menu-desktop.png') });
 
+  // The Almanac door on the main menu (Wyatt 8/4) — one hit-tested tap
+  // opens the Royal Almanac right off the title, no profile detour.
+  await page.click('.ts-card.ga-alm');
+  await sleep(300);
+  const alm = await page.evaluate(() => {
+    const gal = document.getElementById('almGallery');
+    const mid = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+    return {
+      plaque: (document.querySelector('.ts-card.ga-alm .ts-plaque') || {}).textContent || '',
+      open: gal.classList.contains('open'),
+      title: (gal.querySelector('.alm-title') || {}).textContent || '',
+      onTop: !!(mid && gal.contains(mid)),
+    };
+  });
+  ok(alm.plaque === 'Almanac', 'the quiet row carries the Almanac door (Wyatt 8/4)');
+  ok(alm.open && alm.title === 'Royal Almanac' && alm.onTop,
+    'one tap opens the Royal Almanac over the menu');
+  await page.evaluate(() => FALM.close());
+  await sleep(150);
+  ok(await page.evaluate(() => !document.getElementById('almGallery').classList.contains('open')),
+    'and it closes back to the menu');
+
   // Queue choice persists (segmented tap).
   await page.evaluate(() => { document.querySelector('#queueSeg button[data-q="4"]').click(); });
   ok(await page.evaluate(() => FLB.queueSize()) === 4, 'table picker persists the chosen size');
@@ -4035,6 +4057,31 @@ console.log('── Avatars + boards: crest picker, whole-row post, medals, Powe
   ok(pf.sections.length >= 2, `it has real sections now (${pf.sections.join(' / ')})`);
   ok(pf.crestDoor, 'the standing crest disc is the door into the gallery');
   ok(pf.scrolls, '#profileBody scrolls on its own so the title stays pinned');
+
+  // 1c · The ✦ star beside the purse (Wyatt 8/4: "you click the star and
+  // then you click the background, and it opens" — the ledger was opening
+  // BEHIND the profile, base z 9500 under the panel's 10005, and only the
+  // backdrop click revealed it). One hit-tested click must land it on top.
+  await page.click('#profileBody .pf-deed-btn');
+  await page.waitForFunction(() =>
+    ((document.querySelector('#deedGallery .ach-title') || {}).textContent || '')
+      === 'The Ledger of Deeds', { timeout: 8000 }).catch(() => {});
+  const deed = await page.evaluate(() => {
+    const gal = document.getElementById('deedGallery');
+    const prof = document.getElementById('profilePanel');
+    const zi = (el) => parseInt(getComputedStyle(el).zIndex, 10) || 0;
+    const mid = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+    return { open: !!(gal && gal.classList.contains('open')),
+      above: gal ? zi(gal) > zi(prof) : false,
+      onTop: !!(mid && gal && gal.contains(mid)),
+      title: gal ? (gal.querySelector('.ach-title') || {}).textContent || '' : '' };
+  });
+  ok(deed.open && deed.title === 'The Ledger of Deeds',
+    'the ✦ star opens the Ledger of Deeds in ONE click');
+  ok(deed.above && deed.onTop,
+    'and it stacks ABOVE the profile — no background-click detour (Wyatt 8/4)');
+  await page.evaluate(() => FDEED.closeGallery());
+  await sleep(200);
 
   // Per-hero ledgers — the biggest win, and every field was already in _me.
   await page.evaluate(async (u) => {
@@ -8418,16 +8465,32 @@ console.log('── The menu theme: gesture starts it at the title only; any dea
   // sfx.js absorbs the veto path — so the deterministic truth is the dial:
   ok(home.vol === 0.55, 'volume rides the dial (0.55)');
 
-  // A new deal: the game screen rises — the theme dies no matter what.
+  // A new deal: the game screen rises — the theme FADES to silence over
+  // ~a second (Wyatt 8/4: a fade, never a cut), then rewinds, dial restored.
   const dealt = await page.evaluate(async () => {
     document.getElementById('game-screen').classList.add('active');
-    await new Promise(r => setTimeout(r, 60));
+    await new Promise(r => setTimeout(r, 120));   // observer + the first fade ticks
     const t = FSFX._theme();
-    return t.el ? { stopped: t.stopped, paused: t.el.paused, rewound: t.el.currentTime === 0 }
-      : { stopped: t.stopped, paused: false, rewound: false };
+    const mid = { stopped: t.stopped, fading: t.fading,
+      paused: t.el ? t.el.paused : true, vol: t.el ? t.el.volume : -1 };
+    await new Promise(r => setTimeout(r, 1500));  // let the ~0.9s ramp land
+    const u = FSFX._theme();
+    return { mid, fading: u.fading,
+      paused: u.el ? u.el.paused : false,
+      rewound: u.el ? u.el.currentTime === 0 : false,
+      vol: u.el ? u.el.volume : -1 };
   });
-  ok(dealt.stopped >= 1 && dealt.paused, 'the deal silences it, whatever road led there');
+  // Same rig-dependence as above: where the muted rig genuinely played, the
+  // deal must catch the theme mid-FADE (playing, volume falling); where a
+  // strict policy vetoed play there is nothing to fade and the stop seam
+  // alone fires. Both roads end paused, rewound, dial back at 0.55.
+  ok(dealt.mid.stopped >= 1 && (dealt.mid.fading ? !dealt.mid.paused : dealt.mid.paused),
+    `the deal starts the ~1s fade at once, never a hard cut (fading=${dealt.mid.fading})`);
+  ok(!dealt.mid.fading || dealt.mid.vol < 0.55,
+    `mid-fade the volume is already below the dial (${dealt.mid.vol})`);
+  ok(dealt.paused && !dealt.fading, 'a beat later the theme is silent — the fade landed');
   ok(dealt.rewound, 'and rewinds it home for the next title visit');
+  ok(dealt.vol === 0.55, 'with the dial restored for the next pass');
   await page.close();
 }
 

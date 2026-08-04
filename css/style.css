@@ -141,7 +141,7 @@ html, body {
 }
 
 /* The card grid: PLAY spans the full left column; HOST ROOM & SKIRMISH
-   are the second tier; four quiet minors fill out the right. The grid
+   are the second tier; five quiet minors fill out the right. The grid
    hugs the left/haze side — the hero painting keeps the right. */
 .ts-grid {
     display: grid;
@@ -150,7 +150,7 @@ html, body {
         "play rival lead"
         "play rival store"
         "play rival ach"
-        "play how   how";
+        "play how   alm";
     grid-template-columns: minmax(200px, 300px) minmax(140px, 205px) minmax(140px, 205px);
     grid-template-rows: 1fr auto auto auto auto;
     gap: clamp(8px, 1.8dvh, 16px) clamp(10px, 1.4vw, 18px);
@@ -260,6 +260,7 @@ html, body {
 .ga-store { grid-area: store; }
 .ga-ach { grid-area: ach; }
 .ga-how { grid-area: how; }
+.ga-alm { grid-area: alm; }
 
 /* Footer strip — quiet dev/reference hooks, Wingspan's community line. */
 .ts-footer {
@@ -340,7 +341,7 @@ html, body {
 @media (orientation: portrait), (max-width: 640px) {
     .ts-frame { overflow-y: auto; padding: 20px 6vw; }
     .ts-grid {
-        grid-template-areas: "play play" "skirm host" "rival rival" "lead store" "ach how";
+        grid-template-areas: "play play" "skirm host" "rival rival" "lead store" "ach how" "alm alm";
         grid-template-columns: 1fr 1fr;
         grid-template-rows: auto;
         max-width: 100%;
@@ -8342,8 +8343,10 @@ body:has(#howto-overlay.open) .throw-hint {
 .set-upd-btn:hover { border-color: #c9a542; color: #f0dfb8; }
 
 /* Almanac door on the profile's Standing row: the book beside the purse.
-   While the profile (z 10005) is up, the book + its card zoom must stack
-   ABOVE it — scoped with :has so global overlay order stays untouched. */
+   While the profile (z 10005) is up, the book + its card zoom — and the
+   Ledger of Deeds behind the ✦ on the same row (gallery base z 9500) —
+   must stack ABOVE it, or the tap "opens nothing" until the profile is
+   dismissed. Scoped with :has so global overlay order stays untouched. */
 .pf-alm-btn { background: none; border: none; padding: 0; cursor: pointer; flex: 0 0 auto; }
 .pf-alm-btn img {
     width: 48px; display: block;
@@ -8352,6 +8355,7 @@ body:has(#howto-overlay.open) .throw-hint {
 }
 .pf-alm-btn:hover img, .pf-alm-btn:focus-visible img { transform: scale(1.12) rotate(-3deg); }
 body:has(.profile-panel.active) .alm-gallery { z-index: 10600; }
+body:has(.profile-panel.active) .deed-gallery { z-index: 10600; }
 body:has(.profile-panel.active) .card-zoom { z-index: 10610; }
 
 /* Settings kill-switch for the playable glow — GREEN only (Wyatt 7/23).
