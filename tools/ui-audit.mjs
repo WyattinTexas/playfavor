@@ -2167,8 +2167,16 @@ async function slidePickerFlow(mode) {
   ok(done.ovClosed, 'board closed after the pick');
   await page.close();
 }
-await slidePickerFlow('desktop');
-await slidePickerFlow('phone');
+// Two runs tonight (8/3) died INSIDE this flow on a loaded machine — an
+// uncaught throwAndAwaitChoice timeout at top level killed ~700 downstream
+// checks. Same posture as the MP/throne stories: one ✗, never a dead run.
+for (const form of ['desktop', 'phone']) {
+  try { await slidePickerFlow(form); }
+  catch (e) {
+    ok(false, `slide-picker flow (${form}) crashed — treat as latency-first, rerun`,
+      e.message.slice(0, 160));
+  }
+}
 
 // ═══ DESKTOP: final-card chooser uses the same picker ═══
 console.log('── Desktop: final card slides via the picker, chooser survives the trip');
@@ -7205,7 +7213,11 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     ok(true, 'the ceremony yields to the standard hero pick on both clients');
     const inGame = (pg) => pg.waitForFunction(() => typeof game !== 'undefined' && game
       && game.players.length === 4 && game.players[0].character
-      && FMP.active(), { timeout: 40000 });
+      && FMP.active(), { timeout: 90000 });
+      // 90s, was 40s: the budget spans the FULL pick countdown + txn seal +
+      // lockstep attach on BOTH clients. 40s timed out 2-of-2 full-suite
+      // runs on a loaded machine (8/3) while the standalone night passed
+      // 2-of-2 — the transition is sound; the ceiling was the flake.
     await Promise.all([inGame(pA), inGame(pB)]);
     ok(true, 'the 0:00 auto-pick commits, the txn seal lands, and the table goes LIVE on both');
 
@@ -8058,6 +8070,58 @@ console.log('── Wanted: deterministic pick, drifting bounty, intro plaque, c
   });
   ok(claims.calls.length === 2 && claims.calls.every(c => c.stars === claims.expect),
     `beating the rival claims today's +${claims.expect}★ through the once-a-day gate (${claims.calls.length} claim calls)`);
+  await page.close();
+}
+
+// ═══ THE MENU THEME — one pass at the title, dead at the deal (8/3 eve) ═══
+console.log('── The menu theme: gesture starts it at the title only; any deal kills it');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('theme: ' + m.text()); });
+  page.on('pageerror', e => consoleErrors.push('theme pageerror: ' + e.message));
+  await page.setViewport({ width: 1280, height: 800 });
+  await startGame(page);   // straight to a live table — the hostile case first
+
+  // A first gesture ARRIVING at the table must not sing (the guard law).
+  const atTable = await page.evaluate(() => {
+    document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    const t = FSFX._theme();
+    return { started: t.started, el: !!t.el,
+      noDom: document.getElementsByTagName('audio').length === 0 };
+  });
+  ok(atTable.started === 0 && !atTable.el, 'a gesture at the table starts nothing (guard holds)');
+  ok(atTable.noDom, 'no <audio> element in the DOM — the player lives detached (918 stays true)');
+
+  // The road home: the game screen falls, the title returns → ONE pass begins.
+  const home = await page.evaluate(async () => {
+    document.getElementById('game-screen').classList.remove('active');
+    const ts = document.getElementById('title-screen');
+    ts.classList.remove('hidden'); ts.style.display = '';
+    await new Promise(r => setTimeout(r, 60));   // observer microtask + settle
+    const t = FSFX._theme();
+    return t.el ? { started: t.started, loop: t.el.loop, src: t.el.src,
+      vol: t.el.volume } : { started: t.started };
+  });
+  ok(home.started === 1, "the title's return starts the theme (exactly once)");
+  ok(home.loop === false, 'and it is NOT set to loop — one pass only');
+  ok(/favor_take\.mp3$/.test(home.src || ''),
+    `it plays the new track (${(home.src || '').split('/').pop()})`);
+  // Autoplay is RIG-DEPENDENT here: puppeteer's --mute-audio lets a muted
+  // Chrome genuinely play without a gesture (paused=false) where a strict
+  // policy vetoes (paused=true). Both are silent — the .play() catch in
+  // sfx.js absorbs the veto path — so the deterministic truth is the dial:
+  ok(home.vol === 0.55, 'volume rides the dial (0.55)');
+
+  // A new deal: the game screen rises — the theme dies no matter what.
+  const dealt = await page.evaluate(async () => {
+    document.getElementById('game-screen').classList.add('active');
+    await new Promise(r => setTimeout(r, 60));
+    const t = FSFX._theme();
+    return t.el ? { stopped: t.stopped, paused: t.el.paused, rewound: t.el.currentTime === 0 }
+      : { stopped: t.stopped, paused: false, rewound: false };
+  });
+  ok(dealt.stopped >= 1 && dealt.paused, 'the deal silences it, whatever road led there');
+  ok(dealt.rewound, 'and rewinds it home for the next title visit');
   await page.close();
 }
 

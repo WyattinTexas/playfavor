@@ -216,6 +216,78 @@
     ['pointerdown', 'touchstart', 'keydown'].forEach((ev) =>
         document.addEventListener(ev, init, { once: true, passive: true, capture: true }));
 
+    // ── The menu theme (Wyatt, 8/3 eve): one pass, never a loop ──────
+    // Favor_Take rides the same first-gesture law as the SFX context,
+    // plays ONCE through at the title, and dies the instant the game
+    // screen arrives — whatever road led there (solo, queue, throne,
+    // private, a rejoin). Each return to the title starts the single
+    // pass over. No DOM element and no #themeMusic id: the old plumbing
+    // stays retired (audit 918 asserts its absence), and a NEW filename
+    // per track is the cache law.
+    const THEME_SRC = 'assets/audio/favor_take.mp3';
+    const THEME_VOL = 0.55;    // dial — the sfx trims were tuned to sit under a theme
+    let theme = null;
+    let themeStarted = 0, themeStopped = 0;    // seams for the audit
+
+    function themeNode() {
+        if (!theme) {
+            theme = new Audio(THEME_SRC);
+            theme.loop = false;              // the ask, literally: one pass
+            theme.preload = 'auto';
+        }
+        return theme;
+    }
+    function tableUp() {
+        const gs = document.getElementById('game-screen');
+        return !!(gs && gs.classList.contains('active'));
+    }
+    function themeStart() {
+        if (tableUp()) return;               // never sing over a live table
+        const t = themeNode();
+        t.volume = THEME_VOL;
+        try { t.currentTime = 0; } catch (e) { /* not seekable yet */ }
+        themeStarted++;
+        const p = t.play();
+        if (p && p.catch) p.catch(() => { /* autoplay veto = silence, not an error */ });
+    }
+    function themeStop() {
+        themeStopped++;                      // counted even when already silent
+        if (!theme) return;
+        try { theme.pause(); } catch (e) { /* silence is the goal */ }
+        try { theme.currentTime = 0; } catch (e) { /* best effort */ }
+    }
+    ['pointerdown', 'touchstart', 'keydown'].forEach((ev) =>
+        document.addEventListener(ev, themeStart, { once: true, passive: true, capture: true }));
+
+    // The watchers: #game-screen gains .active on every deal; the title
+    // hides via .hidden (+ a delayed display:none) and returns by
+    // shedding them — watch the visible EDGE, not the mechanism.
+    function armThemeWatchers() {
+        if (!window.MutationObserver) return;
+        const gs = document.getElementById('game-screen');
+        if (gs) {
+            let up = gs.classList.contains('active');
+            new MutationObserver(() => {
+                const now = gs.classList.contains('active');
+                if (now && !up) themeStop();
+                up = now;
+            }).observe(gs, { attributes: true, attributeFilter: ['class'] });
+        }
+        const ts = document.getElementById('title-screen');
+        if (ts) {
+            const vis = () => !ts.classList.contains('hidden') && ts.style.display !== 'none';
+            let seen = vis();
+            new MutationObserver(() => {
+                const now = vis();
+                if (now && !seen) themeStart();
+                seen = now;
+            }).observe(ts, { attributes: true, attributeFilter: ['class', 'style'] });
+        }
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', armThemeWatchers, { once: true });
+    } else { armThemeWatchers(); }
+
     // ── Hooks — wrap the ui.js globals ───────────────────────────────
     function wrap(name, makeWrapper) {
         const orig = window[name];
@@ -307,5 +379,6 @@
     });
 
     window.FSFX = { play, init, _attempted: attempted, _voiced: voiced,
+                    _theme: () => ({ started: themeStarted, stopped: themeStopped, el: theme }),
                     get ready() { return ready; } };
 })();
