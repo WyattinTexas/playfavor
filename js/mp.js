@@ -188,7 +188,19 @@
     //     shared argmax) and the copy's id is a per-player sequence, not
     //     Date.now() (which minted a different id on every client and fed
     //     mpStateHash). All four change resolution state vs v26.
-    const MPV = 27;
+    // 28 (8/3): the CHARACTER DRAFT — the host deals every human seat a
+    //     DISJOINT hand at record birth (Wyatt, from the first Throne
+    //     night: "you should be assigned three characters, and everyone
+    //     should be unable to pick characters other people pick"), the
+    //     pick UI shows only your dealt hand, and the seal VETOES any
+    //     pick outside it (the offer became a constraint, not just a
+    //     straggler fallback). A v27 client publishes whatever its own
+    //     sticky roll showed — legal under its law, silently re-dealt
+    //     under this one — so mixed builds would disagree about who
+    //     plays whom. The bump also cohorts everyone onto the throne
+    //     seal-race fix (same night): a stale sealer's local-guess
+    //     roster could fork the table all by itself.
+    const MPV = 28;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.
@@ -534,6 +546,52 @@
     // The record itself — the queue's formGame and a room's Start both
     // land here: persona/bot fill by the same odds, the rated Emblem, the
     // rank-1 boon, one seed, MPV. humanRows arrive earliest-first.
+    // THE DRAFT (v28): deal every human seat a disjoint hand to pick
+    // from. The published entry offer (the client's sticky roll — always
+    // heroes that player OWNS) is a wish-list; the deal honors it in seat
+    // order (pledge order — the seal's own collision law) and tops the
+    // shortfall up from the unclaimed fill pool, never earnedOnly (the
+    // seal's fill law, computeSealedRoster). Ten heroes cannot hand five
+    // seats three each, so the hand SHRINKS before it overlaps —
+    // min(3, floor(pool / humans)): 3 up to three humans, 2 at four or
+    // five. When the roster grows past twelve the formula hands fours
+    // their three back by itself. AI seats are never dealt: the seal
+    // fills them from whatever stands unclaimed AFTER the picks land (a
+    // dealt-but-unpicked hero returns to the pool), so dealing never
+    // starves the table. Exported as FMP._dealOffers (probe seam, like
+    // _thronePartition) so the audit can assert disjointness at 5p
+    // without five live clients.
+    function dealOffers(roster) {
+        const chars = (window.FAVOR_DATA && FAVOR_DATA.characters) || [];
+        const valid = new Set(chars.map(c => c.id));
+        const fillPool = chars.filter(c => !c.earnedOnly).map(c => c.id);
+        const humans = roster.filter(r => r.human);
+        if (!humans.length) return roster;
+        const handSize = Math.max(1, Math.min(3,
+            Math.floor(fillPool.length / humans.length)));
+        const dealt = new Set();
+        for (const r of humans) {
+            const wish = Array.isArray(r.offer) ? r.offer : [];
+            const hand = [];
+            for (const h of wish) {
+                if (hand.length >= handSize) break;
+                if (valid.has(h) && !dealt.has(h) && !hand.includes(h)) hand.push(h);
+            }
+            if (hand.length < handSize) {
+                // Same seam as the AI-name draw: the audit pins
+                // shuffleArray to identity, so a colliding wish re-deals
+                // deterministically under the rig and randomly in the wild.
+                let free = fillPool.filter(h => !dealt.has(h) && !hand.includes(h));
+                free = typeof window.shuffleArray === 'function'
+                    ? window.shuffleArray(free) : free;
+                while (hand.length < handSize && free.length) hand.push(free.shift());
+            }
+            hand.forEach(h => dealt.add(h));
+            r.offer = hand.length ? hand : null;
+        }
+        return roster;
+    }
+
     async function buildGameRecord(size, humanRows, hardFill = true) {
         const roster = humanRows.slice();
 
@@ -588,6 +646,11 @@
                 if (pick) pick.r.aiLevel = 'hard';
             }
         }
+
+        // The draft: replace every human seat's published wish-list with
+        // its dealt, disjoint hand — from here on the offer IS the law
+        // (the pick UI shows it, the seal enforces it).
+        dealOffers(roster);
 
         // Emblem: highest rating at the table (humans + personas). Ties →
         // humans before personas, then the lower canonical seat.
@@ -754,6 +817,16 @@
             let hero = pk && typeof pk === 'object' ? pk.hero : pk;
             const side = pk && typeof pk === 'object' && pk.side === 'b' ? 'b' : null;
             if (!hero || !allHeroes.includes(hero) || taken.has(hero)) hero = null;
+            // v28: the pick must come from the seat's DEALT hand — the
+            // draft's whole point. A pick outside your three (a stale
+            // build, a forged write) is vetoed here and the fallback
+            // below deals you back into your own hand. Hands are
+            // disjoint by construction, so honest picks can never
+            // collide and the fallback always finds yours unclaimed.
+            // (Rig-built records without dealt hands keep the old
+            // any-valid-hero law — the MPV gate retired real ones.)
+            if (hero && Array.isArray(r.offer) && r.offer.length
+                && !r.offer.includes(hero)) hero = null;
             if (!hero && Array.isArray(r.offer)) {
                 const fromOffer = r.offer.filter(h => allHeroes.includes(h) && !taken.has(h));
                 if (fromOffer.length) hero = fromOffer[0];
@@ -1935,6 +2008,7 @@
             barLabel: throneBarLabel,
         },
         _thronePartition: thronePartition,   // probe seam (tools/probe-throne-draw.mjs)
+        _dealOffers: dealOffers,             // probe seam — 5p disjointness sans five clients
         active, mySeat, myBooted, isHost, record, localIdx, canonSeat,
         publish, waitFor, drain, collectThrows, onBroadcast, markBooted,
         leaveGame, gameOver,

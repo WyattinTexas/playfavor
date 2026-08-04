@@ -437,7 +437,7 @@ function mpQueueEvent(kind, d) {
             pulseQueueChip();
             return;
         case 'picking':
-            enterPickPhase({ mp: true, pickStart: d.pickStart });
+            enterPickPhase({ mp: true, pickStart: d.pickStart, rec: d.rec });
             return;
         case 'live':
             // Sealed! The queue theater retires; the lockstep table builds.
@@ -641,7 +641,7 @@ function declineMatch() {
 // auto-pick (the ringed center hero), Begin commits early. MP measures
 // from the record's server-stamped pickStart so every court hits 0:00
 // together; the host fills true stragglers from their own offers.
-function enterPickPhase({ mp, pickStart }) {
+function enterPickPhase({ mp, pickStart, rec }) {
     if (!_queueUx) return;
     _queueUx.state = 'picking';
     _queueUx.solo = !mp;
@@ -662,6 +662,27 @@ function enterPickPhase({ mp, pickStart }) {
         deadline = Date.now() + Math.max(2500, Math.min(pickMs, remain));
     }
     _queueUx.pick = { mp: !!mp, deadline, committed: false };
+
+    // v28 draft: the RECORD's dealt hand replaces the sticky roll the
+    // moment a real table exists — the host dealt every seat a DISJOINT
+    // hand at record birth, and what this screen shows must be exactly
+    // what the seal will honor. The earliest seat usually keeps its own
+    // roll (the deal honors wishes in pledge order), so most nights
+    // nothing visibly changes; a colliding later seat sees its re-dealt
+    // heroes here instead of three it could never have. The 0:00
+    // auto-pick and its fallback read _queueUx.offer too, so the clock
+    // can only ever commit a hero the seal will keep. No dealt hand
+    // (solo theater, rig-built records) → the sticky roll stands.
+    if (mp && rec && Array.isArray(rec.roster)) {
+        const me = (window.FLB && typeof FLB.uid === 'function') ? FLB.uid() : null;
+        const myRow = rec.roster.find(x => x && x.human && x.uid === me);
+        if (myRow && Array.isArray(myRow.offer) && myRow.offer.length) {
+            const hand = myRow.offer
+                .map(id => window.FAVOR_DATA.characters.find(c => c.id === id))
+                .filter(Boolean);
+            if (hand.length) _queueUx.offer = hand;
+        }
+    }
 
     showCharacterSelect(_queueUx.offer);
 
@@ -735,7 +756,7 @@ function roomPickPhase(d) {
         };
     }
     _queueUx.state = 'picking';
-    enterPickPhase({ mp: true, pickStart: d.pickStart });
+    enterPickPhase({ mp: true, pickStart: d.pickStart, rec: d.rec });
 }
 
 // Exiting the pick phase without a table (decline chains, dissolves).

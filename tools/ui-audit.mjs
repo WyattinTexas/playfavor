@@ -6906,6 +6906,14 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     await Promise.all([acceptRing(pA), acceptRing(pB)]);
     await Promise.all([onPickScreen(pA), onPickScreen(pB)]);
     ok(true, 'both accepts land on the Choose Your Hero clock');
+    // v28 DRAFT: the host deals the two seats DISJOINT hands — A (earliest)
+    // keeps its identity-shuffled wish [0,1,2], B's identical wish collides
+    // and re-deals to [3,4,5]. The screens must show exactly the hands.
+    const gridOf = (pg) => pg.evaluate(() =>
+      [...document.querySelectorAll('#characterGrid .character-card')].map(c => c.dataset.id));
+    const [gridA, gridB] = await Promise.all([gridOf(pA), gridOf(pB)]);
+    ok(gridA.length === 3 && gridB.length === 3 && !gridA.some(id => gridB.includes(id)),
+      `the DRAFT deals disjoint pick screens (A ${gridA.join(',')} | B ${gridB.join(',')})`);
     await pA.screenshot({ path: join(SHOTS, 'mp-pick-hostA.png') });
     await Promise.all([pickAndBegin(pA, 0), pickAndBegin(pB, 2)]);
 
@@ -6920,7 +6928,9 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
       seed: FMP.record().seed,
       hero: game.players[0].character.id,
       hero0: FAVOR_DATA.characters[0].id,
-      hero2: FAVOR_DATA.characters[2].id,
+      // B's index-2 pick reads its DEALT hand (v28: [3,4,5] after its
+      // wish collided with A's), no longer the shared sticky roll.
+      hero2: FAVOR_DATA.characters[5].id,
       names: game.players.map(p => p.name),
       handsCanon: [0, 1, 2].map(cs =>
         game.players[FMP.localIdx(cs)].hand.map(c => c.id).join(',')).join(';'),
@@ -7428,6 +7438,150 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
   } catch (e) {
     ok(false, 'Throne night crashed — treat as latency-first, rerun', e.message.slice(0, 160));
     // Best-effort scrub even on a crash — a page may still be alive.
+    try {
+      const pg = (await browser.pages()).find(p => p.url().includes('localhost'));
+      if (pg) await pg.evaluate(async (k) => {
+        await firebase.database().ref(`favor/throne/${k}`).remove();
+      }, FAKE_KEY);
+    } catch (e2) { /* the next run's sweep gets it */ }
+  }
+}
+
+// ═══ THE CHARACTER DRAFT (v28) — disjoint hands, the forgery veto ═══════
+// Wyatt, from the first Throne night's dup-pick fork: "you should be
+// assigned three characters, and everyone should be unable to pick
+// characters other people pick." The host deals every human seat a
+// DISJOINT hand at record birth; the pick UI shows only your hand; the
+// seal vetoes any pick outside it. Two clients on a fresh fake night
+// prove the whole law: identical wishes collide, the deal re-hands the
+// later seat, a FORGED same-hero pick (a write the UI can never produce)
+// is vetoed back into the forger's own hand, and both clients hold the
+// byte-equal COMMITTED roster. The _dealOffers probe then covers the
+// table shapes five live clients would cost too much to stage.
+{
+  console.log('── The Character Draft: disjoint hands, the forgery veto, one committed roster');
+  const FAKE_KEY = '2031-01-19';
+  const fakeEt = (h, m, s) => Date.UTC(2031, 0, 19, h + 5, m, s);
+  try {
+    const mkContext = async () => (browser.createBrowserContext
+      ? browser.createBrowserContext() : browser.createIncognitoBrowserContext());
+    const ctxA = await mkContext();
+    const ctxB = await mkContext();
+    const A_UID = 'uauditdfa' + Math.random().toString(36).slice(2, 6);
+    const B_UID = 'uauditdfb' + Math.random().toString(36).slice(2, 6);
+    const boot = async (ctx, uid, name) => {
+      const pg = await ctx.newPage();
+      pg.on('console', m => { if (m.type() === 'error') consoleErrors.push(`draft-${name}: ` + m.text()); });
+      pg.on('pageerror', e => consoleErrors.push(`draft-${name} pageerror: ` + e.message));
+      await pg.evaluateOnNewDocument((u, n) => {
+        localStorage.setItem('favorUid', u);
+        localStorage.setItem('favorName', n);
+      }, uid, name);
+      await pg.setViewport({ width: 1280, height: 800 });
+      await pg.goto(URL, { waitUntil: 'networkidle2' });
+      await pg.waitForFunction(() => window.FLB && FLB.mode !== 'connecting'
+        && window.FMP && window.FMODES, { timeout: 15000 });
+      await pg.evaluate(() => {
+        window.shuffleArray = (a) => [...a];
+        window.CINEMATIC_SPEED = 0.05;
+        FMP._T.pick = 2600; FMP._T.pickGrace = 800;
+      });
+      return pg;
+    };
+    const setClock = (pg, atMs) => pg.evaluate((at) => {
+      const t0 = Date.now();
+      window._throneNow = () => at + (Date.now() - t0);
+      FMODES.renderThroneDoor();
+    }, atMs);
+    const pA = await boot(ctxA, A_UID, 'DraftA');
+    const pB = await boot(ctxB, B_UID, 'DraftB');
+    await setClock(pA, fakeEt(21, 17, 47));
+    await pA.evaluate(() => FMODES.openThroneDoor());
+    await sleep(800);
+    await setClock(pB, fakeEt(21, 17, 49));
+    await pB.evaluate(() => FMODES.openThroneDoor());
+
+    const onPick = (pg) => pg.waitForFunction(() =>
+      document.getElementById('character-select').classList.contains('active')
+      && !!document.getElementById('pickClock'), { timeout: 40000 });
+    await Promise.all([onPick(pA), onPick(pB)]);
+    const gridOf = (pg) => pg.evaluate(() =>
+      [...document.querySelectorAll('#characterGrid .character-card')].map(c => c.dataset.id));
+    const [gA, gB] = await Promise.all([gridOf(pA), gridOf(pB)]);
+    ok(gA.length === 3 && gB.length === 3 && !gA.some(id => gB.includes(id)),
+      `disjoint dealt hands on the throne road (A ${gA.join(',')} | B ${gB.join(',')})`);
+    await pA.screenshot({ path: join(SHOTS, 'draft-hands.png') });
+
+    // The forgery: B claims A's center hero; A picks it honestly. (Both
+    // pick explicitly — the rig clock's 2500ms UI floor loses to the
+    // referee under shrunk timers; production's 20s never does.)
+    const dupHero = gA[1];
+    await pB.evaluate((h) => FMP.publishPick(h, 'a'), dupHero);
+    await pA.evaluate((h) => FMP.publishPick(h, 'a'), dupHero);
+    const live = (pg) => pg.waitForFunction(() => typeof game !== 'undefined' && game
+      && game.players && game.players.length === 4 && game.players[0].character
+      && FMP.active(), { timeout: 60000 }).then(() => true, () => false);
+    const [lA, lB] = await Promise.all([live(pA), live(pB)]);
+    ok(lA && lB, `both clients reach LIVE past the dup submission (A ${lA}, B ${lB})`);
+    const snap = (pg) => pg.evaluate(async () => {
+      const rec = FMP.record();
+      const srv = (await firebase.database().ref(`favor/mp/games/${FMP.gid()}`).get()).val() || {};
+      return {
+        gid: FMP.gid(),
+        rosterJson: JSON.stringify(rec.roster),
+        srvRosterJson: JSON.stringify(srv.roster || null),
+        myHero: game.players[0].character.id,
+        offers: (rec.roster || []).every(r => r.offer === undefined),
+        hash: mpStateHash(),
+      };
+    });
+    const sA = await snap(pA), sB = await snap(pB);
+    ok(sA.rosterJson === sB.rosterJson && sA.rosterJson === sA.srvRosterJson,
+      'BYTE-EQUAL rosters on both clients — and both are the COMMITTED one');
+    ok(sA.myHero === dupHero, `A keeps its honest pick (${sA.myHero})`);
+    ok(sB.myHero === gB[0],
+      `B's forged ${dupHero} VETOED — dealt back into its own hand (${sB.myHero})`);
+    ok(sA.hash === sB.hash, `LOCKSTEP hashes agree past the forgery (${sA.hash})`);
+    ok(sA.offers && sB.offers, 'the sealed roster sheds its offer scaffolding');
+
+    // The shapes five clients would cost too much to stage: the probe.
+    const probe = await pA.evaluate(() => {
+      const ids = FAVOR_DATA.characters.map(c => c.id);
+      const out = [];
+      for (const n of [3, 4, 5]) {
+        const roster = Array.from({ length: n }, (_, i) =>
+          ({ uid: 'u' + i, human: true, offer: ids.slice(0, 3) }));
+        roster.push({ name: 'bot', hero: null });
+        FMP._dealOffers(roster);
+        const hands = roster.filter(r => r.human).map(r => r.offer || []);
+        const flat = hands.flat();
+        out.push({ n, sizes: hands.map(h => h.length).join(','),
+          disjoint: new Set(flat).size === flat.length,
+          want: n <= 3 ? 3 : 2,
+          uniform: hands.every(h => h.length === (n <= 3 ? 3 : 2)) });
+      }
+      return out;
+    });
+    for (const r of probe) {
+      ok(r.disjoint && r.uniform,
+        `${r.n} humans → disjoint hands of ${r.want} (${r.sizes})`);
+    }
+
+    // Leave no trace.
+    const swept = await pA.evaluate(async (k, gid, uids) => {
+      const db = firebase.database();
+      await db.ref(`favor/throne/${k}`).remove();
+      if (gid) await db.ref(`favor/mp/games/${gid}`).remove();
+      for (const u of uids) await db.ref(`favor/players/${u}`).remove();
+      const night = (await db.ref(`favor/throne/${k}`).get()).exists();
+      const rec = gid ? (await db.ref(`favor/mp/games/${gid}`).get()).exists() : false;
+      return { night, rec };
+    }, FAKE_KEY, sA.gid, [A_UID, B_UID]);
+    ok(!swept.night && !swept.rec, 'the draft night swept clean');
+    await pA.close(); await pB.close();
+    await ctxA.close(); await ctxB.close();
+  } catch (e) {
+    ok(false, 'Draft flow crashed — treat as latency-first, rerun', e.message.slice(0, 160));
     try {
       const pg = (await browser.pages()).find(p => p.url().includes('localhost'));
       if (pg) await pg.evaluate(async (k) => {
