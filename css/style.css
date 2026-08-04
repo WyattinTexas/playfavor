@@ -141,7 +141,7 @@ html, body {
 }
 
 /* The card grid: PLAY spans the full left column; HOST ROOM & SKIRMISH
-   are the second tier; five quiet minors fill out the right. The grid
+   are the second tier; four quiet minors fill out the right. The grid
    hugs the left/haze side — the hero painting keeps the right. */
 .ts-grid {
     display: grid;
@@ -150,7 +150,7 @@ html, body {
         "play rival lead"
         "play rival store"
         "play rival ach"
-        "play how   alm";
+        "play how   how";
     grid-template-columns: minmax(200px, 300px) minmax(140px, 205px) minmax(140px, 205px);
     grid-template-rows: 1fr auto auto auto auto;
     gap: clamp(8px, 1.8dvh, 16px) clamp(10px, 1.4vw, 18px);
@@ -260,7 +260,6 @@ html, body {
 .ga-store { grid-area: store; }
 .ga-ach { grid-area: ach; }
 .ga-how { grid-area: how; }
-.ga-alm { grid-area: alm; }
 
 /* Footer strip — quiet dev/reference hooks, Wingspan's community line. */
 .ts-footer {
@@ -341,7 +340,7 @@ html, body {
 @media (orientation: portrait), (max-width: 640px) {
     .ts-frame { overflow-y: auto; padding: 20px 6vw; }
     .ts-grid {
-        grid-template-areas: "play play" "skirm host" "rival rival" "lead store" "ach how" "alm alm";
+        grid-template-areas: "play play" "skirm host" "rival rival" "lead store" "ach how";
         grid-template-columns: 1fr 1fr;
         grid-template-rows: auto;
         max-width: 100%;
@@ -8278,6 +8277,24 @@ body:has(#howto-overlay.open) .throw-hint {
     color: #f4e6c8; border-color: #c9a542; outline: none;
     transform: rotate(45deg);
 }
+/* The Almanac's own station — the bare book, riding one gap above the cog
+   and moving with it (top-left on the wide hall, bottom-right on phones).
+   No frame on purpose: Wyatt wants the icon, not another button. */
+.ts-alm {
+    position: absolute; left: 20px; top: 22px; z-index: 6;
+    width: 44px; height: 44px; padding: 0;
+    background: none; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .25s ease;
+}
+.ts-alm img {
+    width: 100%; display: block;
+    /* Two shadows: a tight halo so the book reads over the flower bed, and
+       a soft one for the lift. The corner art is the busiest on the page. */
+    filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.85)) drop-shadow(0 3px 7px rgba(0, 0, 0, 0.6));
+}
+.ts-alm:hover, .ts-alm:focus-visible { outline: none; transform: scale(1.12) rotate(-3deg); }
+
 .set-overlay {
     position: fixed; inset: 0; z-index: 1970; display: none;
     align-items: center; justify-content: center;
@@ -8371,6 +8388,8 @@ body.no-play-glow .hand-card.playable {
     /* Phones: top-left covers the FAVOR title (Wyatt 7/23) — the cog
        goes bottom-right instead, above the edition plate. */
     .ts-cog { left: auto; top: auto; right: 10px; bottom: 28px; width: 36px; height: 36px; font-size: 22px; }
+    /* The book follows the cog to the corner and keeps its station above it. */
+    .ts-alm { left: auto; top: auto; right: 10px; bottom: 70px; width: 36px; height: 36px; }
     .set-inner { max-height: calc(100dvh - 10px); }
     .set-head { padding: 9px 16px 7px; }
     .set-title { font-size: 16px; }

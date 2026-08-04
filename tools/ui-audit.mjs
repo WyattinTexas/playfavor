@@ -2329,21 +2329,29 @@ console.log('── Menu: Play Now / queue / leaderboard / profile / Daily Champ
   ok(geo.plaqueTall, 'the rival plaque stands tall in the grid');
   await page.screenshot({ path: join(SHOTS, 'menu-desktop.png') });
 
-  // The Almanac door on the main menu (Wyatt 8/4) — one hit-tested tap
-  // opens the Royal Almanac right off the title, no profile detour.
-  await page.click('.ts-card.ga-alm');
+  // The Almanac door on the main menu (Wyatt 8/4) — the bare book icon
+  // stationed one gap above the settings cog, NOT a card in the quiet row.
+  // One hit-tested tap opens the Royal Almanac, no profile detour.
+  await page.click('#almanacBtn');
   await sleep(300);
   const alm = await page.evaluate(() => {
     const gal = document.getElementById('almGallery');
     const mid = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+    const b = document.getElementById('almanacBtn').getBoundingClientRect();
+    const c = document.getElementById('settingsBtn').getBoundingClientRect();
     return {
-      plaque: (document.querySelector('.ts-card.ga-alm .ts-plaque') || {}).textContent || '',
+      noCard: !document.querySelector('.ts-card.ga-alm'),
+      icon: (document.querySelector('#almanacBtn img') || {}).naturalWidth > 0,
+      aboveCog: b.bottom <= c.top && c.top - b.bottom < 24
+        && Math.abs((b.left + b.right) / 2 - (c.left + c.right) / 2) < 4,
       open: gal.classList.contains('open'),
       title: (gal.querySelector('.alm-title') || {}).textContent || '',
       onTop: !!(mid && gal.contains(mid)),
     };
   });
-  ok(alm.plaque === 'Almanac', 'the quiet row carries the Almanac door (Wyatt 8/4)');
+  ok(alm.noCard, 'the quiet row is back to four minors — no Almanac card (Wyatt 8/4)');
+  ok(alm.icon, 'the Almanac wears its book icon, not a plaque');
+  ok(alm.aboveCog, 'the book is stationed directly above the settings cog');
   ok(alm.open && alm.title === 'Royal Almanac' && alm.onTop,
     'one tap opens the Royal Almanac over the menu');
   await page.evaluate(() => FALM.close());
