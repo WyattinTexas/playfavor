@@ -7059,6 +7059,220 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
   }
 }
 
+// ═══ THE THRONE ROOM (ship 2): door → hall → 9:18 draw → sealed table ═══
+// A REAL two-client Throne night on a FAKE date. window._throneNow is the
+// time machine (js/mp.js reads it in place of server time): both clients
+// stand in the hall of 2031-01-05 at 9:17:5x PM ET, the bar arrives in
+// seconds, one of them claims the draw, and a 2-human remainder table
+// (2 Hard-AI seats) runs the real pick → txn-seal → lockstep attach on
+// live RTDB. The fake key can never collide with a real night, and the
+// boot-time throne sweep only collects keys BEFORE today, so 2031 rides
+// safely through it. Same crash posture as the MP story: one ✗, never a
+// dead run.
+{
+  console.log('── Throne Room: door states, the hall, the 9:18 draw');
+  // ET winter (EST = UTC-5): base day 5, hour h+5 — Date.UTC normalizes
+  // the evening hours across the UTC midnight (9:17 PM → 02:17 Jan 6 UTC).
+  const FAKE_KEY = '2031-01-05';
+  const fakeEt = (h, m, s) => Date.UTC(2031, 0, 5, h + 5, m, s);   // ET h:m:s → UTC ms
+  try {
+    const mkContext = async () => (browser.createBrowserContext
+      ? browser.createBrowserContext() : browser.createIncognitoBrowserContext());
+    const ctxA = await mkContext();
+    const ctxB = await mkContext();
+    const A_UID = 'uauditthra' + Math.random().toString(36).slice(2, 6);
+    const B_UID = 'uauditthrb' + Math.random().toString(36).slice(2, 6);
+
+    const boot = async (ctx, uid, name) => {
+      const pg = await ctx.newPage();
+      pg.on('console', m => { if (m.type() === 'error') consoleErrors.push(`throne-${name}: ` + m.text()); });
+      pg.on('pageerror', e => consoleErrors.push(`throne-${name} pageerror: ` + e.message));
+      await pg.evaluateOnNewDocument((u, n) => {
+        localStorage.setItem('favorUid', u);
+        localStorage.setItem('favorName', n);
+      }, uid, name);
+      await pg.setViewport({ width: 1280, height: 800 });
+      await pg.goto(URL, { waitUntil: 'networkidle2' });
+      await pg.waitForFunction(() => window.FLB && FLB.mode !== 'connecting'
+        && window.FMP && window.FMODES, { timeout: 15000 });
+      await pg.evaluate(() => {
+        window.shuffleArray = (a) => [...a];
+        window.CINEMATIC_SPEED = 0.05;
+        FMP._T.pick = 2600; FMP._T.pickGrace = 800;   // the hero clock, shrunk
+      });
+      return pg;
+    };
+    const setClock = (pg, atMs) => pg.evaluate((at) => {
+      const t0 = Date.now();
+      window._throneNow = () => at + (Date.now() - t0);
+      FMODES.renderThroneDoor();
+    }, atMs);
+
+    const pA = await boot(ctxA, A_UID, 'Audit ThroneA');
+
+    // ── The door's three states (one client, three moments). ──
+    await setClock(pA, fakeEt(20, 45, 0));   // 35 min out — closed, counting
+    let door = await pA.evaluate(() => ({
+      cls: document.getElementById('throneDoor').className,
+      txt: document.getElementById('throneDoor').textContent,
+      clock: !!document.querySelector('#throneDoor .tsx-clock'),
+    }));
+    ok(!/open|sealed/.test(door.cls) && /convenes at 9:15/i.test(door.txt) && door.clock,
+      'closed door: "convenes at 9:15" + a live countdown under the hour');
+    await pA.evaluate(() => FMODES.openThroneDoor());
+    const info = await pA.evaluate(() => ({
+      on: document.getElementById('throneOv').classList.contains('active'),
+      txt: document.getElementById('throneOv').textContent,
+    }));
+    ok(info.on && /tripled/i.test(info.txt) && /Throne Board/i.test(info.txt),
+      'a closed door opens the modest panel: the pitch + the board button');
+    await pA.evaluate(() => FMODES.closeThroneInfo());
+
+    await setClock(pA, fakeEt(21, 30, 0));   // mid-session — sealed
+    door = await pA.evaluate(() => ({
+      cls: document.getElementById('throneDoor').className,
+      txt: document.getElementById('throneDoor').textContent,
+    }));
+    ok(/sealed/.test(door.cls) && /court is in session/i.test(door.txt),
+      'sealed door: "The court is in session."');
+
+    await setClock(pA, fakeEt(21, 16, 0));   // the doors stand open
+    door = await pA.evaluate(() => ({
+      cls: document.getElementById('throneDoor').className,
+      txt: document.getElementById('throneDoor').textContent,
+    }));
+    ok(/open/.test(door.cls) && /doors stand open/i.test(door.txt),
+      'open door: the glow state and the invitation');
+    await pA.screenshot({ path: join(SHOTS, 'throne-door-open.png') });
+
+    // ── The hall: A enters at 9:17:47, B follows two beats later. ──
+    await setClock(pA, fakeEt(21, 17, 47));
+    await pA.evaluate(() => FMODES.openThroneDoor());
+    await pA.waitForFunction(() =>
+      document.getElementById('throneHall').classList.contains('active')
+      && document.querySelectorAll('#thrFloor .thr-row').length >= 1, { timeout: 10000 });
+    ok(true, 'the open door admits A to the hall (presence row live)');
+
+    const pB = await boot(ctxB, B_UID, 'Audit ThroneB');
+    await setClock(pB, fakeEt(21, 17, 49));
+    await pB.evaluate(() => FMODES.openThroneDoor());
+    await pA.waitForFunction(() =>
+      document.querySelectorAll('#thrFloor .thr-row').length === 2, { timeout: 10000 });
+    const hall = await pA.evaluate(() => ({
+      count: document.getElementById('thrCount').textContent,
+      me: document.querySelectorAll('#thrFloor .thr-row.me').length,
+      names: [...document.querySelectorAll('#thrFloor .thr-name')].map(x => x.textContent),
+      crests: document.querySelectorAll('#thrFloor .thr-row .av-disc').length,
+      ratings: document.querySelectorAll('#thrFloor .thr-row .thr-rating').length,
+      clock: document.getElementById('thrClockline').textContent,
+    }));
+    ok(/2\s+stand before the Throne/i.test(hall.count),
+      `the head-count narrates the hall ("${hall.count.trim()}")`);
+    ok(hall.me === 1, 'exactly one gold-edged .me row — yours');
+    ok(hall.names.some(n => /Audit ThroneB/.test(n)), 'the other noble stands in A’s hall by name');
+    ok(hall.crests === 2 && hall.ratings === 2, 'every row wears crest + rating');
+    ok(/games begin in/i.test(hall.clock), `the big countdown runs ("${hall.clock.trim()}")`);
+    await pA.screenshot({ path: join(SHOTS, 'throne-hall.png') });
+
+    // ── The bar, the draw, the ceremony. ──
+    await pA.waitForFunction(() =>
+      /doors are barred/i.test(document.getElementById('thrClockline').textContent),
+      { timeout: 25000 });
+    ok(true, 'at 9:18 the copy flips: "The doors are barred. The games begin…"');
+
+    const seated = (pg) => pg.waitForFunction(() =>
+      document.getElementById('thrCeremony')
+      && document.getElementById('thrCeremony').classList.contains('on'),
+      { timeout: 30000 }).then(() => true, () => false);
+    const [cerA, cerB] = await Promise.all([seated(pA), seated(pB)]);
+    ok(cerA && cerB, 'the draw seats BOTH clients — the ceremony shows on each');
+    const cer = await pA.evaluate(() => ({
+      txt: document.getElementById('thrCeremony').textContent,
+      mates: document.querySelectorAll('#thrCeremony .thr-cer-mate').length,
+    }));
+    ok(/You are seated/i.test(cer.txt) && /table of 4/i.test(cer.txt),
+      '"You are seated. A table of 4." — the remainder frame');
+    ok(cer.mates === 3, 'tablemates shown: the other noble + two of the court’s own');
+    await pA.screenshot({ path: join(SHOTS, 'throne-ceremony.png') });
+
+    // ── Hero pick (the queue's own theater) → txn seal → LIVE. ──
+    await Promise.all([
+      pA.waitForFunction(() => document.getElementById('character-select').classList.contains('active')
+        && !!document.getElementById('pickClock'), { timeout: 20000 }),
+      pB.waitForFunction(() => document.getElementById('character-select').classList.contains('active')
+        && !!document.getElementById('pickClock'), { timeout: 20000 }),
+    ]);
+    ok(true, 'the ceremony yields to the standard hero pick on both clients');
+    const inGame = (pg) => pg.waitForFunction(() => typeof game !== 'undefined' && game
+      && game.players.length === 4 && game.players[0].character
+      && FMP.active(), { timeout: 40000 });
+    await Promise.all([inGame(pA), inGame(pB)]);
+    ok(true, 'the 0:00 auto-pick commits, the txn seal lands, and the table goes LIVE on both');
+
+    const state = async (pg) => pg.evaluate(() => ({
+      rec: (({ throne, status, hostUid, seed, size }) =>
+        ({ throne, status, hostUid, seed, size }))(FMP.record()),
+      rosterHumans: FMP.record().roster.filter(r => r.human).map(r => r.uid),
+      aiHard: FMP.record().roster.filter(r => !r.human).map(r => r.aiLevel),
+      hash: mpStateHash(),
+      gid: FMP.gid(),
+    }));
+    const sA = await state(pA), sB = await state(pB);
+    ok(sA.rec.throne === '2031-01-05', `the record is stamped throne:${sA.rec.throne}`);
+    ok(sA.rec.size === 4 && sA.rosterHumans.length === 2
+      && sA.rosterHumans.includes(A_UID) && sA.rosterHumans.includes(B_UID),
+      'the remainder table seats both humans in a 4-seat frame');
+    ok(sA.aiHard.length === 2 && sA.aiHard.every(l => l === 'hard'),
+      'and EVERY court seat runs the hard brain (remainder fill law)');
+    ok(sA.rec.hostUid === A_UID, 'the table’s earliest member hosts — not the claimant by office');
+    ok(sA.rec.seed === sB.rec.seed && sA.gid === sB.gid, 'one record, one seed, both clients');
+    ok(sA.hash === sB.hash, `LOCKSTEP: state hashes agree at the deal (${sA.hash})`);
+
+    // ── The draw node is the night's ledger. ──
+    const draw = await pA.evaluate(async (k) =>
+      (await firebase.database().ref(`favor/throne/${k}/draw`).get()).val(), FAKE_KEY);
+    ok(!!draw && Array.isArray(draw.roster) && draw.roster.length === 2,
+      'the draw froze the live hall (roster of 2)');
+    const g1 = draw && draw.games && draw.games.g1;
+    ok(!!g1 && g1.ai === true && g1.size === 4 && g1.gameId === sA.gid
+      && (g1.uids || []).length === 2,
+      'draw.games.g1: the remainder table, ai-flagged, carrying the live gameId');
+    ok(draw.by === A_UID || draw.by === B_UID, `a hall member claimed it (${draw.by === A_UID ? 'A' : 'B'})`);
+    const tagged = await pA.evaluate(async (k) => {
+      const rows = (await firebase.database().ref(`favor/throne/${k}/lobby`).get()).val() || {};
+      return Object.values(rows).map(r => r.gameId);
+    }, FAKE_KEY);
+    ok(tagged.length === 2 && tagged.every(g => g === sA.gid),
+      'each lobby row carries its table’s gameId (the hand-off nicety)');
+
+    // ── Leave no trace: the fake night, the record, the audit rows. ──
+    const swept = await pA.evaluate(async (k, gid, uids) => {
+      const db = firebase.database();
+      await db.ref(`favor/throne/${k}`).remove();
+      if (gid) await db.ref(`favor/mp/games/${gid}`).remove();
+      for (const u of uids) await db.ref(`favor/players/${u}`).remove();
+      const night = (await db.ref(`favor/throne/${k}`).get()).exists();
+      const rec = gid ? (await db.ref(`favor/mp/games/${gid}`).get()).exists() : false;
+      const rows = [];
+      for (const u of uids) rows.push((await db.ref(`favor/players/${u}`).get()).exists());
+      return { night, rec, rows: rows.some(Boolean) };
+    }, FAKE_KEY, sA.gid, [A_UID, B_UID]);
+    ok(!swept.night && !swept.rec && !swept.rows,
+      'the fake night, its record, and the audit rows are gone');
+    await pA.close(); await pB.close();
+    await ctxA.close(); await ctxB.close();
+  } catch (e) {
+    ok(false, 'Throne night crashed — treat as latency-first, rerun', e.message.slice(0, 160));
+    // Best-effort scrub even on a crash — a page may still be alive.
+    try {
+      const pg = (await browser.pages()).find(p => p.url().includes('localhost'));
+      if (pg) await pg.evaluate(async (k) => {
+        await firebase.database().ref(`favor/throne/${k}`).remove();
+      }, FAKE_KEY);
+    } catch (e2) { /* the next run's sweep gets it */ }
+  }
+}
+
 // ═══ ACHIEVEMENTS: grant → celebration → gallery ════════════════════════
 // The DB layer is STUBBED for this flow. FACH.sync() writes to players/{uid},
 // and the real board must never carry an audit account's achievements — the

@@ -465,6 +465,269 @@
         setTimeout(() => b.remove(), 2650);
     }
 
+    // ── THE THRONE ROOM — the door, the hall, the ceremony (ship 2) ──
+    // js/mp.js owns the machinery (presence, the 9:18 draw, the seal);
+    // this owns the three door states on the menu, the full-hall view,
+    // and the seated ceremony. The pick/seal/live pipeline from the
+    // draw onward is the queue's own theater (roomPickPhase and
+    // startMpGame), untouched.
+
+    let _thDoorT = null;     // menu door ticker
+    let _thHallT = null;     // hall countdown ticker
+    let _thRows = {};        // last hall snapshot (the ceremony reads it)
+    const _thSeen = new Set();   // uids already standing (arrivals animate)
+    let _thPickPending = null;   // 'picking' payload held for the ceremony
+    let _thrCeremonyUntil = 0;
+
+    function thFmt(ms) {
+        const s = Math.max(0, Math.ceil(ms / 1000));
+        const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+        return h ? `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+                 : `${m}:${String(ss).padStart(2, '0')}`;
+    }
+
+    // The door — closed (counting), open (glowing, 9:15–9:17:59 ET), or
+    // sealed ("the court is in session"). Server-time truth via FMP.
+    function renderThroneDoor() {
+        const el = $('throneDoor');
+        if (!el || !window.FMP) return;
+        const ph = FMP.throne.phase();
+        el.classList.toggle('open', ph.phase === 'open');
+        el.classList.toggle('sealed', ph.phase === 'sealed');
+        let line, clock = '';
+        if (ph.phase === 'open') {
+            line = 'The doors stand open — enter';
+            clock = thFmt(ph.msToBar);
+        } else if (ph.phase === 'sealed') {
+            line = 'The court is in session.';
+        } else {
+            line = 'The court convenes at 9:15 PM';
+            if (ph.msToOpen < 3600 * 1000) clock = thFmt(ph.msToOpen);
+        }
+        el.innerHTML = `
+            <span class="tsx-fleur">⚜</span>
+            <span class="tsx-name">The Throne Room</span>
+            <span class="tsx-line">${line}</span>
+            ${clock ? `<span class="tsx-clock">${clock}</span>` : ''}
+            <span class="tsx-fleur">⚜</span>`;
+        if (!_thDoorT) _thDoorT = setInterval(renderThroneDoor, 1000);
+    }
+
+    function openThroneDoor() {
+        if (!window.FMP) return;
+        const ph = FMP.throne.phase();
+        if (ph.phase === 'open') { enterThroneHall(); return; }
+        renderThroneInfo(ph);
+    }
+
+    // The modest panel behind a closed (or sealed) door: what the Throne
+    // Room is, tonight's time, and the board it feeds.
+    function renderThroneInfo(ph) {
+        const ov = $('throneOv');
+        const sealed = ph.phase === 'sealed';
+        ov.innerHTML = `
+            <div class="ri-inner thr-info" onclick="event.stopPropagation()">
+                <div class="thr-info-fleur">⚜</div>
+                <div class="ri-title">The Throne Room</div>
+                <div class="ri-stakes">${sealed
+                    ? 'The court is in session — tonight’s games are underway.'
+                    : 'Once a night, the whole realm plays at once.'}</div>
+                <div class="thr-info-body">
+                    The doors open at <b>9:15 PM</b> Eastern and bar at
+                    <b>9:18</b>, when everyone standing in the hall is drawn
+                    into tables of 4 and 5. Finish your game and every Star it
+                    pays is <b>tripled</b>; win your table and you take the
+                    <b>+100★ purse</b>. Every result stands on the
+                    <b>Throne board</b> — wins first, Favor breaks ties.
+                </div>
+                ${sealed ? '' : `<div class="thr-info-when">Tonight at 9:15 PM
+                    ${ph.msToOpen < 3600 * 1000 ? `— <b>${thFmt(ph.msToOpen)}</b>` : ''}</div>`}
+                <div class="ri-actions">
+                    <button type="button" class="btn-royal" onclick="FMODES.closeThroneInfo()"><span>Back</span></button>
+                    <button type="button" class="btn-royal primary"
+                            onclick="FMODES.closeThroneInfo(); FLB.openLeaderboard('throne')">
+                        <span>The Throne Board</span></button>
+                </div>
+            </div>`;
+        ov.classList.add('active');
+        ov.onclick = () => closeThroneInfo();
+    }
+    function closeThroneInfo() { $('throneOv').classList.remove('active'); }
+
+    // ── The hall — everyone standing before the Throne ───────────────
+    function enterThroneHall() {
+        if (FMP.throne.active()) { $('throneHall').classList.add('active'); return; }
+        _thRows = {};
+        _thSeen.clear();
+        _thPickPending = null;
+        _thrCeremonyUntil = 0;
+        $('throneHall').innerHTML = `
+            <div class="thr-stage">
+                <div class="thr-head">
+                    <div class="thr-title"><span>⚜</span> The Throne Room <span>⚜</span></div>
+                    <div class="thr-clockline" id="thrClockline"></div>
+                    <div class="thr-count" id="thrCount"></div>
+                </div>
+                <div class="thr-floor" id="thrFloor"></div>
+                <div class="thr-foot">
+                    <button type="button" class="menu-link thr-leave" id="thrLeave"
+                            onclick="FMODES.closeThroneHall()">← Leave the Hall</button>
+                </div>
+                <div class="thr-ceremony" id="thrCeremony"></div>
+            </div>`;
+        $('throneHall').classList.add('active');
+        FMP.throne.join({
+            offer: rollStickyOffer().map(c => c.id),
+            onState: throneEvent,
+        });
+        thHallTick();
+        clearInterval(_thHallT);
+        _thHallT = setInterval(thHallTick, 1000);
+    }
+
+    // Countdown + the barred flip. The last minute runs hot; past the
+    // bar the copy turns — "the games begin…" while the draw claims.
+    function thHallTick() {
+        const el = $('thrClockline');
+        if (!el || !window.FMP) return;
+        const ph = FMP.throne.phase();
+        if (ph.phase === 'open') {
+            el.classList.toggle('hot', ph.msToBar <= 60 * 1000);
+            el.innerHTML = `The games begin in <b class="thr-clock">${thFmt(ph.msToBar)}</b>`;
+        } else {
+            el.classList.add('hot');
+            el.innerHTML = `The doors are barred. <b>The games begin…</b>`;
+            const leave = $('thrLeave');
+            if (leave) leave.style.visibility = 'hidden';   // you are seated, period
+        }
+    }
+
+    function renderThroneHall(rows) {
+        _thRows = rows || {};
+        const floor = $('thrFloor');
+        if (!floor) return;
+        const me = FLB.uid();
+        const sNow = FMP.throne.srvReal();   // hb liveness — real clock, never the night seam
+        const freshMs = ((FMP._T && FMP._T.fresh) || 15000) + 10000;   // display slack
+        const standing = Object.entries(_thRows)
+            .filter(([, r]) => r && (typeof r.hb !== 'number' || sNow - r.hb < freshMs))
+            .sort((a, b) => ((a[1].at || 0) - (b[1].at || 0)) || (a[0] < b[0] ? -1 : 1));
+        const count = $('thrCount');
+        if (count) count.innerHTML =
+            `<b>${standing.length}</b> ${standing.length === 1 ? 'stands' : 'stand'} before the Throne`;
+        floor.innerHTML = standing.map(([u, r]) => `
+            <div class="thr-row${u === me ? ' me' : ''}${_thSeen.has(u) ? '' : ' arrive'}">
+                ${FLB.avatarDisc(r.crest, 'thr-crest')}
+                <span class="thr-name">${r.name || 'A Noble'}${u === me ? '<i class="thr-you">you</i>' : ''}</span>
+                ${FLB.ratingSpan(r.rating || 1000, 'thr-rating')}
+            </div>`).join('');
+        standing.forEach(([u]) => _thSeen.add(u));
+    }
+
+    function throneEvent(kind, d) {
+        if (kind === 'hall') { renderThroneHall(d.rows); return; }
+        if (kind === 'seated') { throneCeremony(d); return; }
+        if (kind === 'picking') {
+            // Hold the pick behind the ceremony's two seconds, then the
+            // queue's own hero-pick theater takes it (server-anchored
+            // clock — the moment eaten here is honest).
+            _thPickPending = d;
+            const wait = Math.max(0, _thrCeremonyUntil - Date.now());
+            setTimeout(() => {
+                if (!_thPickPending) return;
+                const p = _thPickPending;
+                _thPickPending = null;
+                closeThroneUi();
+                window._gameMode = null;
+                if (typeof roomPickPhase === 'function') roomPickPhase(p);
+            }, wait);
+            return;
+        }
+        if (kind === 'live') {
+            _thPickPending = null;
+            closeThroneUi();
+            if (window._mpConsumed) return;
+            window._mpConsumed = true;
+            localStorage.removeItem('favorOffer');
+            if (typeof leavePickPhase === 'function') leavePickPhase({ keepScreen: true });
+            startMpGame(d);
+            return;
+        }
+        if (kind === 'missed') { renderThroneMissed(); return; }
+        if (kind === 'closed') {
+            const why = {
+                sealed: 'The doors are barred — the court is in session.',
+                closed: 'The doors stand closed — the court convenes at 9:15 PM.',
+                gone: 'The court has adjourned — the table was lost.',
+            }[d.reason] || 'The Throne Room is closed.';
+            showNotification(why, 'info');
+            closeThroneUi();
+            return;
+        }
+    }
+
+    // "You are seated. A table of N." — your tablemates' crests, two
+    // seconds of court before the hero pick.
+    function throneCeremony(d) {
+        const cer = $('thrCeremony');
+        if (!cer) return;
+        _thrCeremonyUntil = Date.now() + 2200;
+        const me = FLB.uid();
+        const mates = (d.uids || []).filter(u => u !== me);
+        const aiSeats = Math.max(0, (d.size || 4) - (d.uids || []).length);
+        cer.innerHTML = `
+            <div class="thr-cer-inner">
+                <div class="thr-cer-fleur">⚜</div>
+                <div class="thr-cer-title">You are seated.</div>
+                <div class="thr-cer-sub">A table of ${d.size}</div>
+                <div class="thr-cer-mates">
+                    ${mates.map(u => {
+                        const r = _thRows[u] || {};
+                        return `<div class="thr-cer-mate">
+                            ${FLB.avatarDisc(r.crest, 'thr-crest')}
+                            <span>${r.name || 'A Noble'}</span>
+                        </div>`;
+                    }).join('')}
+                    ${Array.from({ length: aiSeats }, () => `
+                        <div class="thr-cer-mate ai">
+                            <span class="av-disc av-empty thr-crest"><img src="assets/icons/prestige.png" alt=""></span>
+                            <span>The court’s own</span>
+                        </div>`).join('')}
+                </div>
+            </div>`;
+        cer.classList.add('on');
+    }
+
+    function renderThroneMissed() {
+        const floor = $('thrFloor');
+        const count = $('thrCount');
+        const line = $('thrClockline');
+        if (line) { line.classList.remove('hot'); line.innerHTML = 'The court has moved on.'; }
+        if (count) count.innerHTML = '';
+        if (floor) floor.innerHTML = `
+            <div class="thr-missed">
+                <div class="thr-cer-fleur">⚜</div>
+                <div>The games began without you — return tomorrow.</div>
+                <button type="button" class="btn-royal" onclick="FMODES.closeThroneHall()"><span>Return</span></button>
+            </div>`;
+        const leave = $('thrLeave');
+        if (leave) leave.style.visibility = 'hidden';
+    }
+
+    // Walking out (or the missed-night Return): the row goes with you.
+    function closeThroneHall() {
+        if (window.FMP && FMP.throne.active()) FMP.throne.leave();
+        closeThroneUi();
+    }
+
+    function closeThroneUi() {
+        clearInterval(_thHallT);
+        _thHallT = null;
+        const hall = $('throneHall');
+        if (hall) { hall.classList.remove('active'); hall.innerHTML = ''; }
+        closeThroneInfo();
+    }
+
     // ── Public surface ───────────────────────────────────────────────
     window.FMODES = {
         openSkirmish, beginSkirmish, closeSkirmishPick,
@@ -473,6 +736,7 @@
         openPrivateRoom, closePrivateRoom, hostRoom, joinRoom,
         roomSetSize, roomSetHard, startRoomGame,
         skirmishDiff,
+        openThroneDoor, closeThroneInfo, closeThroneHall, renderThroneDoor,
         attachEmotes, detachEmotes, toggleEmoteTray, emote,
         EMOTES,
     };
@@ -484,4 +748,6 @@
     // appear on a slow connection. renderProfileChip now calls back into this
     // the moment _me is assigned, however long that takes.
     renderRivalPlaque();
+    // The Throne door too — its ticker owns it from the first paint.
+    renderThroneDoor();
 })();

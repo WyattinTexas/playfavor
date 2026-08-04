@@ -731,8 +731,9 @@
     // hero collisions (two offers CAN share a hero — the earlier seat keeps
     // it, the later seat falls back to its own offer, then the free pool);
     // personas take their signature when it survived; everyone left draws
-    // from the unclaimed shuffle.
-    async function sealRoster(gid, rec, picks) {
+    // from the unclaimed shuffle. The COMPUTE half stands alone so the
+    // Throne's transactional seal resolves rosters by the same law.
+    function computeSealedRoster(rec, picks) {
         // ⚠ allHeroes does TWO jobs — it VALIDATES a human's published pick
         // and (via botPool below) FILLS empty seats. It must stay WHOLE for
         // validation: strip the earned hero from it and a human who owns it
@@ -779,6 +780,11 @@
             delete r.offer;      // the sealed roster carries no scaffolding
             delete r.sigHero;    // (r.side survives — the table needs it)
         });
+        return roster;
+    }
+
+    async function sealRoster(gid, rec, picks) {
+        const roster = computeSealedRoster(rec, picks || {});
         await gameRef(gid).update({ status: 'live', roster });
     }
 
@@ -1019,6 +1025,474 @@
                 roomRef(code).child(`seats/${uid()}`).onDisconnect().cancel();
                 roomRef(code).child(`seats/${uid()}`).remove();
             }
+        } catch (e) { /* best effort */ }
+    }
+
+    // ── THE THRONE ROOM — the nightly hall (ship 2 of 3) ─────────────
+    // One moment a night when everyone plays at once. The menu door
+    // opens 9:15:00–9:17:59 PM America/New_York; everyone inside stands
+    // in ONE lobby:
+    //
+    //   favor/throne/{dateKey}/lobby/{uid} = { name, rating, crest,
+    //                                          offer, at, hb, ver }
+    //   favor/throne/{dateKey}/draw = { at, by, roster:[uid…],
+    //       games: { g1: { uids:[…], size, ai?, gameId }, … } }
+    //
+    // At 9:18 the pool is partitioned into tables of 4 and 5. No server
+    // process — the settleDue pattern: the first live client past the
+    // bar claims the draw with a create-once transaction; everyone else
+    // just reads it. The partition is DETERMINISTIC from a dateKey-
+    // seeded mulberry32 (the engine's own PRNG — the lockstep
+    // no-unseeded-RNG law), so racing claimants name the same tables.
+    //
+    // There is NO propose/decline — standing in the hall at the bar IS
+    // the accept (the private-room precedent, minus even the popup).
+    // Records are born at status 'picking' (never 'proposed'): no
+    // accept referee, no abort path, nobody can sink a table for the
+    // other three. The standard hero-pick → seal → live pipeline runs
+    // from there and the attach is exactly a sealed queue match. The
+    // throne seal is a TRANSACTION (unlike the queue's plain update):
+    // the claimant referees every table it dealt, any member's watchdog
+    // referees its own if the claimant died, and only one seal commits.
+    //
+    // Device clocks lie, so every gate reads RTDB server time:
+    // estimated server now = Date.now() + .info/serverTimeOffset.
+
+    const THNS = 'favor/throne';
+    const TH = {
+        openMin: 21 * 60 + 15,   // 9:15:00 PM ET — the doors open
+        barMin:  21 * 60 + 18,   // 9:18:00 — doors barred, the draw
+        sealEndMin: 22 * 60,     // court in session until 10 PM, then
+                                 // the door counts to tomorrow's 9:15
+    };
+
+    let t = null;   // hall controller — see throneJoin
+    let _srvOff = 0, _srvOffOn = false;
+
+    function watchSrvOffset() {
+        if (_srvOffOn || !fdb()) return;
+        _srvOffOn = true;
+        try {
+            fdb().ref('.info/serverTimeOffset').on('value',
+                s => { _srvOff = s.val() || 0; });
+        } catch (e) { _srvOffOn = false; }
+    }
+
+    // Server-estimated now, two flavors. srvNow answers "what time of
+    // night is it" — every PHASE gate reads it, and window._throneNow
+    // (the audit suite's time machine) bends it to force whole fake
+    // nights. srvReal answers "is this heartbeat alive" — hb stamps are
+    // REAL server timestamps, so liveness must never read the bent
+    // clock (under a fake night every row would look years stale and
+    // the draw would seat nobody).
+    function srvReal() { return now() + _srvOff; }
+    function srvNow() {
+        if (typeof window._throneNow === 'function') return window._throneNow();
+        return srvReal();
+    }
+
+    const _etFmt = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/New_York', hourCycle: 'h23',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+    function etClock(ms) {
+        const p = {};
+        _etFmt.formatToParts(new Date(ms)).forEach(x => { p[x.type] = x.value; });
+        return {
+            key: `${p.year}-${p.month}-${p.day}`,   // the night's dateKey:
+            // the plain ET calendar date — NOT the daily board's 10 PM
+            // rollover key; a Throne night never crosses its own boundary.
+            sec: (parseInt(p.hour, 10) % 24) * 3600
+                + parseInt(p.minute, 10) * 60 + parseInt(p.second, 10),
+        };
+    }
+
+    // The door's three states, from server time. ET wall-clock seconds
+    // (the once-a-year DST boundary night drifts an hour; nobody is
+    // harmed — the same posture as the daily 10 PM window).
+    function thronePhase(ms) {
+        watchSrvOffset();
+        const c = etClock(typeof ms === 'number' ? ms : srvNow());
+        const open = TH.openMin * 60, bar = TH.barMin * 60, end = TH.sealEndMin * 60;
+        if (c.sec >= open && c.sec < bar) {
+            return { phase: 'open', key: c.key, msToBar: (bar - c.sec) * 1000 };
+        }
+        if (c.sec >= bar && c.sec < end) {
+            return { phase: 'sealed', key: c.key, msToBar: 0 };
+        }
+        const toOpen = c.sec < open ? (open - c.sec) * 1000
+            : (24 * 3600 - c.sec + open) * 1000;
+        return { phase: 'closed', key: c.key, msToOpen: toOpen };
+    }
+
+    // dateKey → deterministic seed (the menu's own 31-hash grammar).
+    function throneHash(s) {
+        let h = 0;
+        for (let i = 0; i < s.length; i++) h = ((h * 31) + s.charCodeAt(i)) >>> 0;
+        return h;
+    }
+    // mulberry32 — byte-identical to engine setSeed's generator.
+    function throneRng(seed) {
+        let s = (seed >>> 0) || 1;
+        return () => {
+            s |= 0; s = (s + 0x6D2B79F5) | 0;
+            let x = Math.imul(s ^ (s >>> 15), 1 | s);
+            x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+            return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    /**
+     * Partition the hall into tables — PURE and deterministic from the
+     * dateKey (a claim-txn retry, or two clients racing, must name the
+     * same tables). Sort, seeded shuffle, then pop 4 or 5 at a time:
+     *
+     *   - while ≥ 5 remain: pop 4 or 5, seeded coin — except at EXACTLY
+     *     5, which always seats one full human table (never strand a
+     *     human at an AI table when a clean all-human split exists);
+     *   - exactly 4 left is a game;
+     *   - a 1–3 leftover becomes the REMAINDER table: 4 seats, humans +
+     *     Hard-AI fill (ai: true → buildGameRecord hardFill 'all').
+     *
+     * An empty hall partitions to no games and the night settles quiet.
+     */
+    function thronePartition(uids, dateKey) {
+        const rand = throneRng(throneHash(String(dateKey)));
+        const pool = (uids || []).slice().sort();
+        for (let i = pool.length - 1; i > 0; i--) {
+            const j = Math.floor(rand() * (i + 1));
+            [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        const games = [];
+        while (pool.length >= 5) {
+            const take = pool.length === 5 ? 5 : (rand() < 0.5 ? 4 : 5);
+            games.push({ uids: pool.splice(0, take), size: take });
+        }
+        if (pool.length === 4) {
+            games.push({ uids: pool.splice(0, 4), size: 4 });
+        } else if (pool.length) {
+            games.push({ uids: pool.splice(0, pool.length), size: 4, ai: true });
+        }
+        return games;
+    }
+
+    function emitT(kind, d) {
+        if (!t || !t.onState) return;
+        try { t.onState(kind, d || {}); } catch (e) { /* UI's problem */ }
+    }
+
+    /**
+     * Enter the hall. Only while the doors stand open (server time) —
+     * the UI narrates through onState(kind, detail):
+     *
+     *   'hall'    {rows}                 — everyone standing, live
+     *   'seated'  {gid, uids, size, ai}  — the draw named my table
+     *   'picking' {gid, rec, pickStart}  — hero pick is open (queue UI)
+     *   'live'    {game, gid, mySeat}    — sealed; lockstep attached
+     *   'missed'  {}                     — the games began without me
+     *   'closed'  {reason}               — refused/dissolved ('sealed',
+     *              'closed' = door state; 'gone' = table lost)
+     */
+    function throneJoin({ offer, onState }) {
+        if (!available()) { try { onState('closed', { reason: 'gone' }); } catch (e) {} return; }
+        const ph = thronePhase();
+        if (ph.phase !== 'open') { try { onState('closed', { reason: ph.phase }); } catch (e) {} return; }
+        if (t) throneLeave();
+        const me = uid();
+        const key = ph.key;
+        const e = buildEntry(offer);
+        t = { key, me, onState, rows: {}, adopted: false, missed: false };
+        t.ref = fdb().ref(`${THNS}/${key}/lobby/${me}`);
+        // The spec row (+ offer and ver, queue-grammar): offer feeds the
+        // seal's straggler fallback; ver keeps mixed builds from sharing
+        // a table they would fork at the first move.
+        t.ref.set({
+            name: e.name, rating: e.rating, crest: e.avatar || null,
+            offer: e.offer, at: e.at, hb: e.hb, ver: MPV,
+        });
+        // Closing the tab or backing out removes you: a dead heartbeat
+        // at draw time means you are not seated — never locked into a
+        // game you left before it started.
+        t.ref.onDisconnect().remove();
+        t.hbTimer = setInterval(() => {
+            if (t) t.ref.child('hb').set(firebase.database.ServerValue.TIMESTAMP);
+        }, T.hb);
+
+        const lobRef = fdb().ref(`${THNS}/${key}/lobby`);
+        const onLob = (snap) => {
+            if (!t || t.key !== key) return;
+            t.rows = snap.val() || {};
+            emitT('hall', { rows: t.rows });
+        };
+        lobRef.on('value', onLob);
+        t.lobbyOff = () => lobRef.off('value', onLob);
+
+        const dRef = fdb().ref(`${THNS}/${key}/draw`);
+        const onDraw = (snap) => { if (t && t.key === key) throneDrawLanded(snap.val()); };
+        dRef.on('value', onDraw);
+        t.drawOff = () => dRef.off('value', onDraw);
+
+        armThroneDraw();
+    }
+
+    // Everyone races the claim at the bar; the create-once txn picks one
+    // winner. A touch of jitter keeps a full hall from hammering the txn
+    // in the same millisecond.
+    function armThroneDraw() {
+        if (!t) return;
+        clearTimeout(t.drawTimer);
+        const ph = thronePhase();
+        if (ph.phase === 'sealed' && ph.key === t.key) { attemptThroneDraw(); return; }
+        if (ph.phase !== 'open' || ph.key !== t.key) return;   // night moved on
+        t.drawTimer = setTimeout(attemptThroneDraw,
+            ph.msToBar + 250 + Math.random() * 1500);
+    }
+
+    async function attemptThroneDraw() {
+        if (!t || t.adopted || t.missed || t.claiming) return;
+        const ph = thronePhase();
+        if (ph.phase === 'open' && ph.key === t.key) { armThroneDraw(); return; }
+        if (ph.key !== t.key || ph.phase === 'closed') return;
+        t.claiming = true;
+        const key = t.key;
+        const myUid = t.me;
+        const made = [];   // records I created — mine to delete if I lose
+        try {
+            // A read is cheaper than a transaction — someone may have
+            // claimed while this tab slept.
+            const cur = (await fdb().ref(`${THNS}/${key}/draw`).get()).val();
+            if (!t || t.key !== key || t.adopted || t.missed) return;
+            if (cur) { throneDrawLanded(cur); return; }
+
+            // Freeze the live hall: fresh heartbeats only (a dead hb at
+            // the bar means not seated), one build only (the ver gate).
+            const rows = (await fdb().ref(`${THNS}/${key}/lobby`).get()).val() || {};
+            if (!t || t.key !== key || t.adopted || t.missed) return;
+            const sNow = srvReal();   // liveness — never the bent clock
+            const fresh = Object.entries(rows).filter(([, e]) => e && e.ver === MPV
+                && (typeof e.hb !== 'number' || sNow - e.hb < T.fresh));
+            const byUid = Object.fromEntries(fresh);
+            const groups = thronePartition(fresh.map(([u]) => u), key);
+
+            // Build EVERY table before claiming: a claim that lands is
+            // always complete, so a claimant dying mid-write can never
+            // brick the night. A losing racer's records are limbo
+            // wreckage sweepStale already collects.
+            const games = {};
+            for (let i = 0; i < groups.length; i++) {
+                const grp = groups[i];
+                const humanRows = grp.uids
+                    .map(u => [u, byUid[u]])
+                    .sort((a, b) => ((a[1].at || 0) - (b[1].at || 0)) || (a[0] < b[0] ? -1 : 1))
+                    .map(([u, r]) => ({
+                        uid: u, name: r.name || 'A Noble', hero: null,
+                        offer: Array.isArray(r.offer) && r.offer.length ? r.offer : null,
+                        rating: r.rating || 0, avatar: r.crest || null, human: true,
+                    }));
+                // Full tables carry the queue's silent single hard seat
+                // rule (moot with zero AI seats); the remainder table
+                // fills EVERY empty seat with the sharp brain — §7's
+                // "1 player → remainder table vs 3 Hard AI".
+                const rec = await buildGameRecord(grp.size, humanRows, grp.ai ? 'all' : true);
+                if (!t || t.key !== key) break;
+                rec.status = 'picking';   // no proposal — the hall was the accept
+                rec.pickStart = firebase.database.ServerValue.TIMESTAMP;
+                rec.throne = key;         // ship 3's scoring stamp (3×, purse, points)
+                rec.hostUid = humanRows[0].uid;   // its own earliest member,
+                // not the claimant — the claimant may sit at another table.
+                const gid = fdb().ref(`${NS}/games`).push().key;
+                await fdb().ref(`${NS}/games/${gid}`).set(rec);
+                made.push({ gid, rec });
+                games[`g${i + 1}`] = {
+                    uids: grp.uids, size: grp.size, gameId: gid,
+                    ...(grp.ai ? { ai: true } : {}),
+                };
+            }
+            if (!t || t.key !== key || t.adopted || t.missed) {
+                made.forEach(m => gameRef(m.gid).remove().catch(() => {}));
+                return;
+            }
+
+            // The claim — settleDue's create-once shape: null commits my
+            // draw, an existing value aborts and I adopt the winner's.
+            const res = await fdb().ref(`${THNS}/${key}/draw`).transaction(cur2 => {
+                if (cur2) return;   // beaten to it — abort
+                return { at: now(), by: myUid, roster: fresh.map(([u]) => u), games };
+            });
+            const val = res && res.snapshot ? res.snapshot.val() : null;
+            if (res && res.committed && val && val.by === myUid) {
+                // Won. The spec's hand-off nicety: each row learns its
+                // table (clients read the draw node either way).
+                for (const gm of Object.values(games)) {
+                    for (const u of gm.uids) {
+                        fdb().ref(`${THNS}/${key}/lobby/${u}/gameId`)
+                            .set(gm.gameId).catch(() => {});
+                    }
+                }
+                // Referee every table's pick window. The seal is a txn,
+                // so a member watchdog can referee too if this tab dies.
+                made.forEach(m => throneReferee(m.gid, m.rec));
+                if (t && t.key === key) throneDrawLanded(val);
+            } else {
+                made.forEach(m => gameRef(m.gid).remove().catch(() => {}));
+                if (t && t.key === key && val) throneDrawLanded(val);
+            }
+        } catch (e) {
+            console.warn('[FMP] throne draw failed:', e.message);
+            if (t && t.key === key && !t.adopted && !t.missed) {
+                clearTimeout(t.drawTimer);
+                t.drawTimer = setTimeout(attemptThroneDraw, 4000 + Math.random() * 3000);
+            }
+        } finally {
+            if (t) t.claiming = false;
+        }
+    }
+
+    // The draw is down — find my table, or learn the games began
+    // without me. Idempotent: the watcher AND the claim path both land
+    // here, in any order.
+    function throneDrawLanded(draw) {
+        if (!t || t.adopted || t.missed || !draw) return;
+        const mine = Object.entries(draw.games || {}).map(([, g]) => g)
+            .find(gm => Array.isArray(gm.uids) && gm.uids.includes(t.me) && gm.gameId);
+        if (!mine) {
+            // My heartbeat died between the bar and the claim, or the
+            // court never saw me — honest, and tomorrow exists.
+            t.missed = true;
+            clearTimeout(t.drawTimer);
+            emitT('missed', {});
+            return;
+        }
+        t.adopted = true;
+        clearTimeout(t.drawTimer);
+        emitT('seated', {
+            gid: mine.gameId, uids: mine.uids.slice(),
+            size: mine.size, ai: !!mine.ai,
+        });
+        throneAdopt(mine.gameId);
+    }
+
+    // Ride the record to the table — adoptRoomGame minus the accept
+    // write (nothing to accept; the hall already was).
+    function throneAdopt(gid) {
+        const key = t.key;
+        const recRef = gameRef(gid);
+        const onRec = (snap) => {
+            if (!t || t.key !== key) { recRef.off('value', onRec); return; }
+            const rec = snap.val();
+            if (!rec || rec.status === 'aborted') {
+                recRef.off('value', onRec);
+                const fire = t.onState;
+                throneTeardown();
+                _roomPickGid = null;
+                try { fire('closed', { reason: 'gone' }); } catch (e) {}
+                return;
+            }
+            if (rec.status === 'picking' && !t.picking) {
+                t.picking = true;
+                _roomPickGid = gid;   // publishPick targets the throne table
+                // If the claimant died, the first member past the pick
+                // deadline referees the seal itself (txn — idempotent).
+                const wait = T.pick + T.pickGrace + 4000;
+                t.sealT = setTimeout(() => { throneSeal(gid); }, wait);
+                // And if even that can't land, dissolve honestly.
+                t.watchdogT = setTimeout(() => {
+                    if (!t || t.key !== key) return;
+                    const fire = t.onState;
+                    throneTeardown();
+                    _roomPickGid = null;
+                    try { fire('closed', { reason: 'gone' }); } catch (e) {}
+                }, wait + 8000);
+                emitT('picking', { gid, rec, pickStart: rec.pickStart || now() });
+                return;
+            }
+            if (rec.status === 'live') {
+                recRef.off('value', onRec);
+                const fire = t.onState;
+                throneTeardown();
+                _roomPickGid = null;
+                const res = attachGame(gid, rec);
+                if (res) try { fire('live', res); } catch (e) {}
+                return;
+            }
+        };
+        recRef.on('value', onRec);
+        t.recOff = () => recRef.off('value', onRec);
+    }
+
+    // The claimant's per-table pick referee — refereePicks with the
+    // transactional seal (and no queue entries to consume).
+    function throneReferee(gid, rec) {
+        const humans = (rec.roster || []).filter(r => r.human).map(r => r.uid);
+        const picksRef = gameRef(gid).child('picks');
+        let sealed = false;
+        const trySeal = () => {
+            if (sealed) return;
+            sealed = true;
+            picksRef.off('value', onPicks);
+            clearTimeout(deadline);
+            throneSeal(gid);
+        };
+        const onPicks = (snap) => {
+            const picks = snap.val() || {};
+            if (humans.every(u => picks[u])) trySeal();
+        };
+        const deadline = setTimeout(trySeal, T.pick + T.pickGrace);
+        picksRef.on('value', onPicks);
+    }
+
+    /**
+     * Seal a throne table: picking → live, exactly once, whoever asks.
+     * The roster is computed INSIDE the transaction from the record's
+     * own picks (a straggler pick that lands mid-seal still counts on
+     * retry), and a second sealer aborts on the status check.
+     */
+    async function throneSeal(gid) {
+        try {
+            const cur = (await gameRef(gid).get()).val();
+            if (!cur || cur.status !== 'picking') return;   // sealed or gone
+            await gameRef(gid).transaction(rec => {
+                if (rec === null) {
+                    // Null first-guess on an uncached ref (the RTDB txn
+                    // trap): return a sweepable stub — the server compare
+                    // rejects it whenever the record exists and re-runs
+                    // with truth; against a genuinely-deleted record it
+                    // commits limbo wreckage sweepStale collects.
+                    return { created: now(), status: 'aborted' };
+                }
+                if (rec.status !== 'picking') return;   // lost the race — fine
+                return { ...rec, status: 'live',
+                         roster: computeSealedRoster(rec, rec.picks || {}) };
+            });
+        } catch (e) { /* the members' watchdogs cover a dead seal */ }
+    }
+
+    function throneTeardown() {
+        if (!t) return;
+        try {
+            clearInterval(t.hbTimer);
+            clearTimeout(t.drawTimer);
+            clearTimeout(t.sealT);
+            clearTimeout(t.watchdogT);
+            if (t.lobbyOff) t.lobbyOff();
+            if (t.drawOff) t.drawOff();
+            if (t.recOff) t.recOff();
+        } catch (e) { /* best effort */ }
+        t = null;
+    }
+
+    // Backing out of the hall. Seated players keep their row (it wears
+    // the gameId and dies with the tab's onDisconnect); a walk-out
+    // before the bar removes it — nobody is dealt in absentia.
+    function throneLeave() {
+        if (!t) return;
+        const ref = t.ref, adopted = t.adopted;
+        throneTeardown();
+        if (adopted) return;   // the game record owns the flow now
+        try {
+            ref.onDisconnect().cancel();
+            ref.remove();
         } catch (e) { /* best effort */ }
     }
 
@@ -1382,6 +1856,15 @@
                     await fdb().ref(`${NS}/rooms/${code}`).remove();
                 }
             }
+            // Spent Throne nights: the lobby and the draw are one-night
+            // artifacts (their game records live — and sweep — under
+            // favor/mp/games). Any key before today's ET date is done.
+            const thSnap = await fdb().ref(THNS).get();
+            const nights = thSnap.val() || {};
+            const today = etClock(srvNow()).key;
+            for (const k of Object.keys(nights)) {
+                if (k < today) await fdb().ref(`${THNS}/${k}`).remove();
+            }
         } catch (e) { /* non-fatal */ }
     }
     if (document.readyState === 'loading') {
@@ -1398,6 +1881,14 @@
         queuePhase: () => (q ? q.state : null),
         queueStartedAt: () => (q ? q.startedAt : 0),
         hostRoom, joinRoom, leaveRoom, roomSetSize, roomSetHard, roomStart,
+        throne: {
+            phase: thronePhase,          // door states tick on this
+            join: throneJoin, leave: throneLeave,
+            active: () => !!t,
+            srvNow,                      // night clock (phase truth)
+            srvReal,                     // liveness clock (hb freshness)
+        },
+        _thronePartition: thronePartition,   // probe seam (tools/probe-throne-draw.mjs)
         active, mySeat, isHost, record, localIdx, canonSeat,
         publish, waitFor, drain, collectThrows, onBroadcast, markBooted,
         leaveGame, gameOver,

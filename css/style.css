@@ -8508,3 +8508,295 @@ body.no-play-glow .hand-card.playable {
 /* Board rows now open the noble's public profile */
 .lb-row { cursor: pointer; }
 .pub-name { font-family: 'Cinzel', serif; font-weight: 900; font-size: 17px; letter-spacing: 1px; }
+
+/* ═══ THE THRONE ROOM (ship 2) — the door, the hall, the ceremony ═══ */
+
+/* The door — a lintel strip between the menu grid and the footer.
+   Closed it sits dim; OPEN it glows and breathes (9:15–9:17:59 ET);
+   sealed it holds a crimson "court in session" hush. */
+.ts-throne {
+    display: flex; align-items: center; justify-content: center;
+    gap: clamp(8px, 1.2vw, 14px);
+    width: 100%; max-width: min(780px, 64vw);
+    margin-top: clamp(6px, 1.4dvh, 12px);
+    padding: clamp(7px, 1.4dvh, 11px) clamp(14px, 2vw, 22px);
+    border: 2px solid rgba(201, 168, 76, 0.4);
+    border-radius: 12px;
+    background: linear-gradient(160deg, rgba(30, 17, 8, 0.88), rgba(16, 8, 4, 0.92));
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+    transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.ts-throne:hover, .ts-throne:focus-visible {
+    transform: translateY(-1px);
+    border-color: var(--gold-light);
+    box-shadow: 0 0 20px rgba(201, 168, 76, 0.3), 0 8px 22px rgba(0, 0, 0, 0.55);
+    outline: none;
+}
+.ts-throne .tsx-fleur {
+    font-size: clamp(13px, 2dvh, 17px);
+    color: rgba(201, 168, 76, 0.5);
+    transition: color 0.3s ease, text-shadow 0.3s ease;
+}
+.ts-throne .tsx-name {
+    font-family: 'Cinzel', serif; font-weight: 700;
+    font-size: clamp(12px, 2.1dvh, 15px);
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--parchment-dark);
+    transition: color 0.3s ease;
+}
+.ts-throne .tsx-line {
+    font-family: 'EB Garamond', serif; font-style: italic;
+    font-size: clamp(11px, 1.9dvh, 13.5px);
+    color: rgba(232, 217, 181, 0.62);
+}
+.ts-throne .tsx-clock {
+    font-family: 'Cinzel', serif; font-weight: 700;
+    font-size: clamp(11px, 1.9dvh, 13.5px);
+    letter-spacing: 1px;
+    color: var(--gold-light);
+    font-variant-numeric: tabular-nums;
+}
+/* OPEN — the beat of the night; the door itself is the beacon. */
+.ts-throne.open {
+    border-color: var(--gold-light);
+    background: linear-gradient(160deg, rgba(64, 40, 12, 0.95), rgba(34, 18, 6, 0.96));
+    animation: throneBreathe 2.2s ease-in-out infinite;
+}
+.ts-throne.open .tsx-fleur {
+    color: var(--gold-light);
+    text-shadow: 0 0 12px rgba(232, 212, 139, 0.8);
+}
+.ts-throne.open .tsx-name { color: var(--gold-light); }
+.ts-throne.open .tsx-line { color: var(--parchment); opacity: 0.95; font-style: normal; }
+@keyframes throneBreathe {
+    0%, 100% { box-shadow: 0 0 14px rgba(201, 168, 76, 0.35), 0 6px 18px rgba(0, 0, 0, 0.5); }
+    50%      { box-shadow: 0 0 30px rgba(232, 212, 139, 0.6), 0 6px 22px rgba(0, 0, 0, 0.55); }
+}
+/* SEALED — the court sits; the hush is crimson. */
+.ts-throne.sealed {
+    border-color: rgba(139, 26, 26, 0.75);
+    background: linear-gradient(160deg, rgba(38, 12, 10, 0.92), rgba(18, 6, 5, 0.94));
+}
+.ts-throne.sealed .tsx-fleur { color: rgba(200, 90, 80, 0.6); }
+.ts-throne.sealed .tsx-line { color: rgba(228, 180, 168, 0.7); }
+
+/* The info panel behind a closed door rides .ri-inner; these dress it. */
+.thr-info { max-width: min(470px, 94vw); }
+.thr-info-fleur {
+    font-size: 30px; line-height: 1;
+    color: var(--gold);
+    text-shadow: 0 0 16px rgba(201, 168, 76, 0.5);
+}
+.thr-info-body {
+    font-family: 'EB Garamond', serif; font-size: 14.5px; line-height: 1.55;
+    color: var(--parchment); opacity: 0.88;
+    text-align: center;
+}
+.thr-info-body b { color: var(--gold-light); }
+.thr-info-when {
+    font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 1px;
+    color: var(--gold-light);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── The hall — the show itself. One room, every player standing. ── */
+#throneHall {
+    position: fixed; inset: 0; z-index: 10560;
+    display: none;
+    background:
+        radial-gradient(ellipse 120% 90% at 50% -20%, rgba(122, 84, 24, 0.32), transparent 55%),
+        radial-gradient(ellipse 90% 70% at 50% 115%, rgba(70, 20, 12, 0.5), transparent 60%),
+        linear-gradient(175deg, #1a0e05 0%, #120803 48%, #0b0502 100%);
+}
+#throneHall.active { display: block; }
+.thr-stage {
+    display: flex; flex-direction: column; align-items: center;
+    height: 100%; box-sizing: border-box;
+    padding: clamp(10px, 3dvh, 30px) clamp(14px, 3vw, 40px) clamp(8px, 2dvh, 18px);
+}
+.thr-head { text-align: center; flex: none; }
+.thr-title {
+    font-family: 'Cinzel', serif; font-weight: 900;
+    font-size: clamp(17px, 3.6dvh, 28px);
+    letter-spacing: clamp(2px, 0.5vw, 5px); text-transform: uppercase;
+    color: var(--gold-light);
+    text-shadow: 0 0 24px rgba(201, 168, 76, 0.45), 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+.thr-title span {
+    font-size: 0.8em; color: rgba(201, 168, 76, 0.7);
+    margin: 0 clamp(4px, 0.8vw, 10px);
+}
+.thr-clockline {
+    margin-top: clamp(2px, 0.8dvh, 8px);
+    font-family: 'EB Garamond', serif;
+    font-size: clamp(13px, 2.4dvh, 17px);
+    color: var(--parchment); opacity: 0.85;
+}
+.thr-clockline .thr-clock {
+    font-family: 'Cinzel', serif; font-weight: 900;
+    font-size: clamp(19px, 4.2dvh, 34px);
+    letter-spacing: 2px;
+    color: var(--gold-light);
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 18px rgba(232, 212, 139, 0.5);
+    vertical-align: middle; margin-left: 6px;
+}
+.thr-clockline.hot .thr-clock { color: #ffd76a; animation: thrHot 1s ease-in-out infinite; }
+.thr-clockline.hot b { color: #ffd76a; }
+@keyframes thrHot {
+    0%, 100% { text-shadow: 0 0 14px rgba(255, 215, 106, 0.5); }
+    50%      { text-shadow: 0 0 30px rgba(255, 215, 106, 0.95); }
+}
+.thr-count {
+    margin-top: clamp(1px, 0.5dvh, 5px);
+    font-family: 'EB Garamond', serif; font-style: italic;
+    font-size: clamp(12px, 2.1dvh, 15px);
+    color: rgba(232, 217, 181, 0.75);
+}
+.thr-count b {
+    font-family: 'Cinzel', serif; font-style: normal;
+    color: var(--gold-light); font-size: 1.15em;
+}
+
+/* The great seal — a faint fleur watermark over a pool of torchlight,
+   so the floor reads as a hall even before the crowd fills it. */
+.thr-stage { position: relative; }
+.thr-stage::before {
+    content: '⚜';
+    position: absolute; left: 50%; top: 52%;
+    transform: translate(-50%, -50%);
+    font-size: clamp(180px, 52dvh, 420px); line-height: 1;
+    color: rgba(201, 168, 76, 0.055);
+    text-shadow: 0 0 90px rgba(201, 168, 76, 0.12);
+    pointer-events: none;
+}
+.thr-head, .thr-floor, .thr-foot { position: relative; z-index: 1; }
+
+/* The floor — every noble a small plaque: crest, name, rating. A
+   CENTERED crowd, not a spreadsheet: two nobles stand together in the
+   torchlight; thirty fill the hall shoulder to shoulder. */
+.thr-floor {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    width: min(980px, 100%);
+    margin-top: clamp(8px, 2dvh, 20px);
+    display: flex; flex-wrap: wrap;
+    justify-content: center; align-content: center;
+    gap: clamp(6px, 1.2dvh, 12px) clamp(8px, 1.2vw, 14px);
+    padding: 2px 4px 10px;
+}
+.thr-row { width: clamp(180px, 24vw, 230px); box-sizing: border-box; }
+.thr-row {
+    display: flex; align-items: center; gap: 9px;
+    padding: clamp(5px, 1.1dvh, 9px) clamp(8px, 1.2vw, 13px);
+    border: 1.5px solid rgba(201, 168, 76, 0.3);
+    border-radius: 11px;
+    background: linear-gradient(160deg, rgba(44, 26, 11, 0.82), rgba(24, 13, 6, 0.88));
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+    min-width: 0;
+}
+.thr-row .thr-crest { width: clamp(28px, 4.6dvh, 36px); height: clamp(28px, 4.6dvh, 36px); }
+.thr-row .thr-name {
+    flex: 1 1 auto; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: 'Cinzel', serif; font-weight: 700;
+    font-size: clamp(11.5px, 1.9dvh, 13.5px);
+    color: var(--parchment);
+}
+.thr-row .thr-you {
+    font-family: 'EB Garamond', serif; font-weight: 400; font-style: italic;
+    font-size: 0.82em; color: var(--gold-light); opacity: 0.85;
+    margin-left: 6px;
+}
+.thr-row .thr-rating { font-size: clamp(11px, 1.8dvh, 13px); flex: none; }
+/* Your own plaque wears the gold edge — the leaderboard's .me grammar. */
+.thr-row.me {
+    border-color: var(--gold-light);
+    background: linear-gradient(160deg, rgba(66, 42, 14, 0.9), rgba(36, 20, 8, 0.92));
+    box-shadow: 0 0 14px rgba(201, 168, 76, 0.4), 0 3px 10px rgba(0, 0, 0, 0.5);
+}
+/* New arrivals step into the hall. */
+.thr-row.arrive { animation: thrArrive 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+@keyframes thrArrive {
+    from { opacity: 0; transform: translateY(10px) scale(0.86); }
+    to   { opacity: 1; transform: none; }
+}
+
+.thr-foot { flex: none; padding-top: clamp(4px, 1dvh, 10px); }
+.thr-leave { font-size: clamp(12px, 2dvh, 14px); }
+
+/* The missed night — honest, and tomorrow exists. */
+.thr-missed {
+    width: 100%;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    font-family: 'EB Garamond', serif;
+    font-size: clamp(14px, 2.6dvh, 18px);
+    color: var(--parchment); opacity: 0.92;
+    text-align: center;
+}
+
+/* ── The seated ceremony — two seconds of court. ── */
+.thr-ceremony {
+    position: absolute; inset: 0; z-index: 3;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(8, 4, 2, 0.82);
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
+.thr-ceremony.on { display: flex; }
+.thr-cer-inner {
+    display: flex; flex-direction: column; align-items: center;
+    gap: clamp(4px, 1.2dvh, 10px);
+    padding: clamp(18px, 4dvh, 34px) clamp(26px, 5vw, 52px);
+    border: 1px solid rgba(212, 175, 55, 0.6);
+    border-radius: 16px;
+    background: linear-gradient(160deg, rgba(50, 30, 12, 0.97), rgba(26, 14, 6, 0.98));
+    box-shadow: 0 0 60px rgba(201, 168, 76, 0.25), 0 22px 60px rgba(0, 0, 0, 0.8);
+    animation: thrArrive 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+    max-width: min(560px, 92vw);
+}
+.thr-cer-fleur {
+    font-size: clamp(24px, 4.5dvh, 34px); line-height: 1;
+    color: var(--gold);
+    text-shadow: 0 0 18px rgba(201, 168, 76, 0.6);
+}
+.thr-cer-title {
+    font-family: 'Cinzel', serif; font-weight: 900;
+    font-size: clamp(18px, 3.6dvh, 27px); letter-spacing: 2px;
+    color: var(--gold-light);
+    text-shadow: 0 0 20px rgba(232, 212, 139, 0.4);
+}
+.thr-cer-sub {
+    font-family: 'EB Garamond', serif; font-style: italic;
+    font-size: clamp(13px, 2.3dvh, 16px);
+    color: var(--parchment); opacity: 0.85;
+}
+.thr-cer-mates {
+    display: flex; flex-wrap: wrap; justify-content: center;
+    gap: clamp(8px, 1.6dvh, 14px) clamp(12px, 2vw, 22px);
+    margin-top: clamp(4px, 1.2dvh, 10px);
+}
+.thr-cer-mate {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    font-family: 'Cinzel', serif; font-size: clamp(10px, 1.7dvh, 12px);
+    color: var(--parchment); max-width: 96px; text-align: center;
+}
+.thr-cer-mate .thr-crest { width: clamp(34px, 6dvh, 46px); height: clamp(34px, 6dvh, 46px); }
+.thr-cer-mate.ai { opacity: 0.75; }
+.thr-cer-mate .av-disc.ai {
+    align-items: center; justify-content: center;
+    font-size: 19px; color: rgba(201, 168, 76, 0.8);
+}
+
+/* Landscape phones (the game's home turf): tighter head, denser floor. */
+@media (max-height: 480px) {
+    .thr-stage { padding: 8px 12px 6px; }
+    .thr-floor { gap: 5px 7px; }
+    .thr-row { width: 172px; }
+    .thr-cer-inner { padding: 12px 24px; }
+    .ts-throne { margin-top: 4px; padding: 5px 12px; }
+}
+/* Portrait / narrow: the strip matches the grid's full width and the
+   line wraps under the name instead of squeezing off-screen. */
+@media (orientation: portrait), (max-width: 640px) {
+    .ts-throne { max-width: 100%; flex-wrap: wrap; row-gap: 2px; }
+}
