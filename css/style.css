@@ -7627,6 +7627,42 @@ body.ios-shell .st-stars-btn, body.ios-shell #mintPanel { display: none !importa
     margin: 12px 4px 4px; text-align: left;
     border-top: 1px solid rgba(201,168,76,0.14); padding-top: 12px;
 }
+/* ── The Real Table — the physical 1st Edition, at the Corkscrew shop ── */
+.st-real {
+    display: flex; align-items: center; gap: 16px;
+    margin: 18px 4px 6px; padding: 12px 14px;
+    border: 1px solid rgba(201, 168, 76, 0.35); border-radius: 12px;
+    background: linear-gradient(165deg, rgba(60, 38, 14, 0.55), rgba(23, 14, 6, 0.85));
+    text-decoration: none;
+}
+.st-real:hover {
+    border-color: rgba(232, 195, 75, 0.6);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+.st-real-box {
+    width: 76px; height: auto; flex: none;
+    filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55));
+}
+.st-real-copy {
+    display: flex; flex-direction: column; align-items: flex-start;
+    gap: 6px; min-width: 0;
+}
+.st-real-head {
+    font-family: 'Cinzel', serif; font-weight: 700;
+    font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--gold); opacity: 0.8;
+}
+.st-real-line { font-size: 13px; color: #e6d9bd; opacity: 0.85; line-height: 1.4; }
+.st-real-btn {
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: 11px;
+    letter-spacing: 1.4px; text-transform: uppercase;
+    color: #2a1810;
+    background: linear-gradient(165deg, #f7ecd2, #e2cd9d);
+    border: 1px solid #a98d54; border-radius: 999px;
+    padding: 5px 12px;
+}
+.st-real:hover .st-real-btn { box-shadow: 0 3px 10px rgba(232, 195, 75, 0.4); }
+
 /* Compact strip (Wyatt 7/17): the Table Maker used to wrap four big cards
    and swallow the shop — now one tidy horizontal scroll row so the hero
    shelf stays the focus and the whole store is easy to navigate. */
