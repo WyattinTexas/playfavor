@@ -433,5 +433,8 @@
     window.FDEED = {
         sync, seatSnapshot, evaluate, openGallery, closeGallery,
         defs: DEFS, _showNag: showNag, _celebrate: celebrate,
+        // Lent to achievements.js so the two failure achievements toll with
+        // the same crack as a deed ruin, rather than growing a second copy.
+        _playSting: playSting,
     };
 })();

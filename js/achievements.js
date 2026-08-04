@@ -177,23 +177,29 @@
     function showOne(def) {
         return new Promise((resolve) => {
             const t = tier(def.stars);
+            // A failure still pays its stars, but it is remembered rather than
+            // celebrated: same card, ash frame, borrowed from the Ledger.
+            const ruin = !!def.ruin;
             const ov = document.createElement('div');
             ov.className = 'ach-pop';
             ov.innerHTML = `
-                <div class="ach-card ach-${t}" role="dialog" aria-label="Achievement unlocked">
+                <div class="ach-card ach-${t} ${ruin ? 'ach-ruined' : ''}" role="dialog"
+                     aria-label="${ruin ? 'A ruin remembered' : 'Achievement unlocked'}">
                     <div class="ach-tier">${TIER_LABEL[t]}</div>
                     <div class="ach-seal"><span>★</span></div>
-                    <div class="ach-kicker">Achievement Unlocked</div>
+                    <div class="ach-kicker">${ruin ? 'A Ruin Remembered' : 'Achievement Unlocked'}</div>
                     <h2 class="ach-name"></h2>
                     <p class="ach-desc"></p>
                     <div class="ach-stars">+${def.stars} ★</div>
-                    <button class="btn-royal primary ach-ok"><span>Claim</span></button>
+                    <button class="btn-royal primary ach-ok"><span>${ruin ? 'So Be It' : 'Claim'}</span></button>
                 </div>`;
             // Names/descriptions are data, not markup — set as text.
             ov.querySelector('.ach-name').textContent = def.name;
             ov.querySelector('.ach-desc').textContent = def.desc;
             document.body.appendChild(ov);
             requestAnimationFrame(() => ov.classList.add('in'));
+            // Gold stays silent as it always has; only the ruin tolls.
+            if (ruin && window.FDEED && FDEED._playSting) FDEED._playSting(true);
 
             const done = () => {
                 ov.classList.remove('in');
@@ -267,5 +273,6 @@
         if (ov) ov.classList.remove('open');
     }
 
-    window.FACH = { sync, seatSnapshot, evaluate, tier, openGallery, closeGallery, defs: DEFS };
+    window.FACH = { sync, seatSnapshot, evaluate, tier, openGallery, closeGallery, defs: DEFS,
+                    _celebrate: celebrate };
 })();

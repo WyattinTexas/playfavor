@@ -157,6 +157,7 @@ window.FAVOR_DATA.achievements = [
         name: 'Best-Laid Plans',
         desc: 'Fail five missions in a single game.',
         stars: 20,                               // Silver
+        ruin: true,                              // remembered, not celebrated
         check: (s) => (s.missionsFailed || 0) >= 5,
     },
 
@@ -185,6 +186,7 @@ window.FAVOR_DATA.achievements = [
         desc: 'Fail The Labyrinth while the Fortune Teller sits on your field.',
         stars: 50,                               // Platinum
         secret: true,
+        ruin: true,                              // remembered, not celebrated
         check: (s) => s.foretoldDoom,
     },
 ];
