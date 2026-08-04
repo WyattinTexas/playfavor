@@ -2647,6 +2647,9 @@ async function mpEndActStages(borrowsPendingLocal) {
             if (ids.length) {
                 const nDone = game.discardPlayedCards(li, c => ids.includes(c.id));
                 p.prestige += PROMISE_PRESTIGE * nDone;
+                // Deeds tally (The Price of a Promise) — mirrors the engine's
+                // own tally on the AI path.
+                p._promisePrestige = (p._promisePrestige || 0) + PROMISE_PRESTIGE * nDone;
                 addLogEntry(`${p.name} honors A Promise: ${nDone} card(s), +${PROMISE_PRESTIGE * nDone} Prestige`);
             }
             renderGameState();
@@ -6630,6 +6633,9 @@ function showPromiseDiscardPicker() {
                     const picked = [...chosen].map(i => player.playedCards[i]);
                     const n = game.discardPlayedCards(0, c => picked.includes(c));
                     player.prestige += PROMISE_PRESTIGE * n;
+                    // Deeds tally (The Price of a Promise) — the SOLO human's
+                    // path; the MP human and the AI tally at their own sites.
+                    player._promisePrestige = (player._promisePrestige || 0) + PROMISE_PRESTIGE * n;
                     showNotification(`A Promise: sacrificed ${n} card${n > 1 ? 's' : ''} for +${PROMISE_PRESTIGE * n} Prestige`, 'melee');
                     addLogEntry(`You sacrifice ${n} card(s) to A Promise: +${PROMISE_PRESTIGE * n} Prestige`);
                 }
@@ -7005,7 +7011,34 @@ function showScoring() {
         // INSTANTLY with the function object, so the achievements sync raced
         // the row write it depends on (duplicate-award report, 7/22). Now it
         // chains on the ACTUAL post captured above.
-        if (snap) Promise.resolve(window._postGamePromise).then(() => FACH.sync(snap));
+        if (snap) window._achSyncPromise = Promise.resolve(window._postGamePromise)
+            .then(() => FACH.sync(snap));
+    }
+
+    // The Ledger of Deeds — the second, unpaid trophy system (js/deeds.js).
+    // Chained AFTER the achievements sync, which awaits its own ceremony:
+    // the two systems each celebrate with a full-screen overlay, and running
+    // them side by side would stack two cards so one click killed both.
+    if (window.FDEED && window.FLB && recordThisGame) {
+        const meFirst = scores.length && scores[0].name === 'You';
+        // Beating the day's WANTED rival is a deed; the plaque pays its own
+        // Stars separately (FMODES above) and neither knows about the other.
+        const rivalDef = (window._gameMode === 'rival') ? window._rivalDef : null;
+        const myPlace = scores.findIndex(s => s.name === 'You');
+        const rivalPlace = rivalDef ? scores.findIndex(s => s.name === rivalDef.name) : -1;
+        const dsnap = FDEED.seatSnapshot(game, scores, {
+            won: !!meFirst,
+            humans: humansAtTable,
+            beatRival: myPlace >= 0 && rivalPlace >= 0 && myPlace < rivalPlace,
+        });
+        // One id per finished table, so a retried transaction cannot count
+        // the same game twice toward The Regulars.
+        const gameId = `${Date.now()}:${scores.map(s => s.finalScore).join(',')}`;
+        if (dsnap) {
+            Promise.resolve(window._achSyncPromise || window._postGamePromise)
+                .catch(() => {})
+                .then(() => FDEED.sync(dsnap, gameId));
+        }
     }
 
     document.getElementById('game-screen').classList.remove('active');
