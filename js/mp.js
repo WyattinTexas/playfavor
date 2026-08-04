@@ -1427,6 +1427,13 @@
                 return;
             }
             if (rec.status === 'live') {
+                // Only a COMPLETE seal seats anyone: every roster row must
+                // carry its hero. A provisional or half-written record must
+                // never seat a client on scaffolding — better to wait (the
+                // watchdog dissolves honestly) than to improvise a table
+                // the other clients aren't playing at.
+                if (!(rec.roster || []).length
+                    || !rec.roster.every(r => r && r.hero)) return;
                 recRef.off('value', onRec);
                 const fire = t.onState;
                 throneTeardown();
@@ -1483,7 +1490,15 @@
                 if (rec.status !== 'picking') return;   // lost the race — fine
                 return { ...rec, status: 'live',
                          roster: computeSealedRoster(rec, rec.picks || {}) };
-            });
+            // ⚠ applyLocally MUST be false. The default fires this txn's
+            // LOCAL GUESS at the sealer's own listeners: with two racing
+            // sealers, each attached to its OWN provisional roster (its own
+            // picks view, its own Math.random fills) and unsubscribed before
+            // the committed truth arrived — two different tables, one game.
+            // Every client must see only the COMMITTED seal. (Root cause of
+            // the 8/3 first-night desync: hash mismatch at act 1, and the
+            // hash-blind hero-swap variant the deal check can't even see.)
+            }, undefined, false);
         } catch (e) { /* the members' watchdogs cover a dead seal */ }
     }
 
@@ -1886,7 +1901,11 @@
             // favor/mp/games). Any key before today's ET date is done.
             const thSnap = await fdb().ref(THNS).get();
             const nights = thSnap.val() || {};
-            const today = etClock(srvNow()).key;
+            // srvReal, NEVER srvNow: under the audit's time machine the bent
+            // clock called 2031 "today" and this sweep collected the REAL
+            // night's ledger (8/3). Deletion gates read the wall clock —
+            // the same law as the hb liveness split above.
+            const today = etClock(srvReal()).key;
             for (const k of Object.keys(nights)) {
                 if (k < today) await fdb().ref(`${THNS}/${k}`).remove();
             }

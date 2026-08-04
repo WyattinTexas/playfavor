@@ -7275,59 +7275,66 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
       'each lobby row carries its table’s gameId (the hand-off nicety)');
 
     // ═══ SHIP 3: START-TO-SCORING — the payout night ═══
-    // The rig makes ONE real lockstep round the whole game: act 3, two
-    // inert cards a hand, a favor spread that crowns A. The round then
-    // plays the TRUE pipeline — throws, reveals, final cards, hands
-    // empty → missions → melee → endAct → showScoring — on BOTH
-    // clients, so the 3× txn, the purse, the msgQueue rail and the
-    // achievement fire exactly as they will on a real night. (Rows were
-    // pre-seeded at boot; humans=2 → gameStars pays 1st 15, 2nd 11.)
-    const rigLastAct = (pg) => pg.evaluate(() => {
-      const inert = FAVOR_DATA.cards.filter(c => (c.skills || []).length
-        && !c.special && !(c.requirements || []).length && !c.cost
-        && !Object.keys(c.rewards || {}).length).slice(0, 2);
-      game.currentAct = 3;
-      const spread = [100, 50, 5, 1];   // canon 0=A crowned, 1=B second
-      for (let c = 0; c < 4; c++) {
-        const li = FMP.localIdx(c);
-        game.players[li].hand = inert.map(x => ({ ...x }));
-        game.awardFavor(li, spread[c], 'character', 'Rigged standing');
-      }
-      renderGameState();
-    });
-    await Promise.all([rigLastAct(pA), rigLastAct(pB)]);
-    const hRig = [await pA.evaluate(() => mpStateHash()), await pB.evaluate(() => mpStateHash())];
-    ok(hRig[0] === hRig[1], `LOCKSTEP: the rig lands identically on both (${hRig[0]})`);
-
+    // One REAL lockstep round with the dealt hands (never re-hand a
+    // table whose throw collector is already armed — the AI seats
+    // stream their throws the instant the deal lands, and a swapped
+    // hand strands those moves unresolvable). Then a favor spread by
+    // canonical seat at the clean round boundary, and showScoring() on
+    // BOTH clients — the victory flow's own rig precedent — so the 3×
+    // txn, the purse, the rail and the achievement fire for real.
+    // (Rows pre-seeded at boot; humans=2 → gameStars pays 1st 15, 2nd 11.)
+    const startLen = await pA.evaluate(() => game.players[0].hand.length);
     await pA.evaluate(() => throwCard(0));
     await sleep(250);
     await pB.evaluate(() => throwCard(0));
-
-    // Answer every chooser (the reveal, then the final card) until
-    // scoring lands. The melee splash auto-plays; no missions exist.
-    const driveToScoring = async (pg) => {
-      const deadline = Date.now() + 90000;
+    // Answer whatever chooser appears (reveals resolve in seat order —
+    // B may be asked while A still holds the stage) until the cond holds.
+    const answerUntil = async (pg, cond, ms) => {
+      const deadline = Date.now() + ms;
       while (Date.now() < deadline) {
-        const st = await pg.evaluate(() => ({
-          scoring: document.getElementById('scoring-screen').classList.contains('active'),
-          choice: window._finalChoicePending === true,
-        }));
-        if (st.scoring) return true;
-        if (st.choice) {
-          await pg.evaluate(() => {
-            const b = [...document.querySelectorAll('#actionPanel .action-btn')]
-              .find(x => /discard/i.test(x.textContent) && !x.disabled);
-            if (b) b.click();
-          });
-        }
+        if (await pg.evaluate(cond)) return true;
+        await pg.evaluate(() => {
+          if (window._finalChoicePending !== true) return;
+          const b = [...document.querySelectorAll('#actionPanel .action-btn')]
+            .find(x => /discard/i.test(x.textContent) && !x.disabled);
+          if (b) b.click();
+        });
         await sleep(400);
       }
       return false;
     };
-    const [scA, scB] = await Promise.all([driveToScoring(pA), driveToScoring(pB)]);
-    ok(scA && scB, `one rigged round runs the whole true pipeline to scoring (A ${scA}, B ${scB})`);
-    const hEnd = [await pA.evaluate(() => mpStateHash()), await pB.evaluate(() => mpStateHash())];
-    ok(hEnd[0] === hEnd[1], `LOCKSTEP: state hashes agree at the end of the night (${hEnd[0]})`);
+    const atBoundary = new Function('return game.phase === \'gameplay\''
+      + ` && game.pendingActivations[0] === null`
+      + ` && game.players[0].hand.length === ${startLen - 1}`);
+    const [rdA, rdB] = await Promise.all([
+      answerUntil(pA, atBoundary, 45000), answerUntil(pB, atBoundary, 45000)]);
+    ok(rdA && rdB, `one real lockstep round plays out on the throne table (A ${rdA}, B ${rdB})`);
+    const hRound = [await pA.evaluate(() => mpStateHash()), await pB.evaluate(() => mpStateHash())];
+    ok(hRound[0] === hRound[1], `LOCKSTEP: hashes agree at the round boundary (${hRound[0]})`);
+
+    // The spread that crowns A — identical mutation by CANONICAL seat on
+    // both tables (the MP rig rule), through the ledger, never raw favor.
+    const rigFavor = (pg) => pg.evaluate(() => {
+      const spread = [100, 50, 5, 1];   // canon 0=A crowned, 1=B second
+      for (let c = 0; c < 4; c++) {
+        game.awardFavor(FMP.localIdx(c), spread[c], 'character', 'Rigged standing');
+      }
+      renderGameState();
+    });
+    await Promise.all([rigFavor(pA), rigFavor(pB)]);
+    const hRig = [await pA.evaluate(() => mpStateHash()), await pB.evaluate(() => mpStateHash())];
+    ok(hRig[0] === hRig[1], `LOCKSTEP: the favor rig lands identically on both (${hRig[0]})`);
+
+    // The night ends — both clients run the real scoring path.
+    await Promise.all([
+      pA.evaluate(() => { showScoring(); }),
+      pB.evaluate(() => { showScoring(); }),
+    ]);
+    const scOn = (pg) => pg.waitForFunction(() =>
+      document.getElementById('scoring-screen').classList.contains('active'),
+      { timeout: 10000 }).then(() => true, () => false);
+    const [scA, scB] = await Promise.all([scOn(pA), scOn(pB)]);
+    ok(scA && scB, `the victory sheet rises on both clients (A ${scA}, B ${scB})`);
     await pA.screenshot({ path: join(SHOTS, 'throne-scoring.png') });
 
     // The posts commit (the daily write chains behind the whole-row txn).
