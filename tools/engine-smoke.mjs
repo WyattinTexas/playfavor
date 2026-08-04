@@ -313,17 +313,22 @@ console.log('── Mission favor audit (7/9): phantom favorValues gone, per-ass
   ok(p.scorn === s1 + 10, `Alchemic Seige success stings 10 Scorn (+${p.scorn - s1})`);
 }
 
-console.log("── The Shadow Guide: art-true requirements + 5 Favor per Mind's Eye reward");
+console.log("── The Shadow Guide: stats OR the A Hidden Door Map — either road opens (7/31)");
 {
+  // reqMapsAll dropped 7/31: the left-side map banner is the standard
+  // "... OR [X] Map" clause (same placement as Defend the Throne and King
+  // of the Sky), not one MORE requirement. Both roads must go through.
   const g = newGame();
   const p = g.players[0];
   const sg = { ...missionByName('The Shadow Guide') };
   p.skills.knowledge = 4; p.skills.prospecting = 3; p.bonusMindsEye = 2;
-  ok(g.probeMissionRequirements(0, sg).success === false,
-     'stats alone are NOT enough — A Hidden Door Map is a hard requirement');
-  ok(g.missionBorrowPlan(0, sg) === null, 'the missing map cannot be borrowed');
-  p.playedCards.push({ ...cardByName('A Hidden Door') });
-  ok(g.probeMissionRequirements(0, sg).success === true, 'stats + A Hidden Door Map → success');
+  ok(g.probeMissionRequirements(0, sg).success === true,
+     'stats alone complete it — the map is a road, not a toll');
+  const g2 = newGame();
+  g2.players[0].playedCards.push({ ...cardByName('A Hidden Door') });
+  ok(g2.probeMissionRequirements(0, sg).success === true, 'A Hidden Door Map alone completes it');
+  const g3 = newGame();
+  ok(g3.probeMissionRequirements(0, sg).success === false, 'no stats, no map: still unmet');
   const me = g.getMindsEyeCount(0);
   const f0 = p.favor;
   g.applyMissionRewards(0, sg);
@@ -2302,16 +2307,26 @@ console.log('\n— Map chains: cards free missions, missions free cards (tester 
   g2.activateCard(0, 'al1', 'play');
   ok(p2.playedCards.some(c => c.id === 'al1'), 'and the card actually lands on the table');
 
-  // AND-form: The Shadow Guide needs stats AND the A Hidden Door map.
+  // The shipped Shadow Guide is OR-form since 7/31 — stats alone pass, and
+  // no shipping mission is AND-gated behind a map any more.
   const g3 = newGame();
   const p3 = g3.players[0];
   g3.currentAct = 2;
   p3.skills.knowledge = 4; p3.skills.prospecting = 3;
-  p3.playedCards = [{ ...cardByName('Faded Treasure Map'), id: 'me1' }];   // any Mind's Eye source
+  // ('Faded Treasure Map' was a card that never existed — cardByName gave
+  // undefined and the spread minted a blank, so the old rig's "eye source"
+  // was imaginary. A real one:)
+  p3.playedCards = [{ ...cardByName('Fortune Teller'), id: 'me1' }];
   const sg = { ...missionByName('The Shadow Guide') };
-  const noMap = g3.probeMissionRequirements(0, sg);
-  ok(!noMap.success && noMap.details.missing.some(m => /A Hidden Door/.test(m)),
-    `reqMapsAll: stats alone leave the map missing (${noMap.details.missing.join(', ')})`);
+  ok(g3.probeMissionRequirements(0, sg).success === true,
+    'The Shadow Guide: stats alone succeed (OR-form)');
+  ok(!window.FAVOR_DATA.missions.some(m => m.reqMapsAll),
+    'no shipping mission carries reqMapsAll');
+  // The engine BRANCH stays for a future card that genuinely prints an AND.
+  const sgAnd = { ...missionByName('The Shadow Guide'), reqMapsAll: true };
+  const andProbe = g3.probeMissionRequirements(0, sgAnd);
+  ok(!andProbe.success && andProbe.details.missing.some(m => /A Hidden Door/.test(m)),
+    `reqMapsAll (synthetic): stats alone leave the map missing (${andProbe.details.missing.join(', ')})`);
 }
 
 console.log('\n— Philosopher\'s Stones STACK (Wyatt 7/18: "we had 3 and it registered as 1") —');
