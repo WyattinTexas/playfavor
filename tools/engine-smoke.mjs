@@ -1004,6 +1004,43 @@ console.log('── Multiplayer lockstep: seeded engines deal identical worlds')
         'act-2 redeal stays canonical too');
 }
 
+console.log('── Multiplayer lockstep: The Midnight Crash deals Act-3 missions by CANONICAL seat');
+{
+    // 8/4 live desync: the failSpecial drew missionDecks[3] in LOCAL seat
+    // order, so every client's deck-top landed on its OWN human — both
+    // players reported drawing the SAME Act 3 mission, held missions
+    // forked, and the act sentinel split the table into two realms with
+    // two winners. The draw must ride the hand deal's canonical-seat law.
+    const roster = [{ characterId: 'explorer', playerName: 'A' },
+        { characterId: 'knight', playerName: 'B' }, { characterId: 'bandit', playerName: 'C' }];
+    const clients = [0, 1, 2].map(k => {
+        const g = new FavorGame(3);
+        g.setSeed(4141); g.setDealOffset(k); g.loadDecks();
+        g.initPlayers(roster.slice(k).concat(roster.slice(0, k)));
+        return g;
+    });
+    const local = (g, k, cs) => g.players[((cs - k) + 3) % 3];
+    const deckIds3 = (g) => g.missionDecks[3].map(m => m.id).join(',');
+    ok(clients.every(g => deckIds3(g) === deckIds3(clients[0])),
+        'same seed → identical Act-3 mission decks before the crash');
+    // Canonical seat 1 fails it — a different LOCAL index on every client.
+    const mc = missionByName('The Midnight Crash');
+    clients.forEach((g, k) => g.resolveMissionFailSpecial(((1 - k) + 3) % 3, mc));
+    ok(clients.every(g => g.players.every(p => p.missions.length === 1)),
+        'every player draws exactly one Act 3 mission');
+    [0, 1, 2].forEach(cs => {
+        const got = clients.map((g, k) => local(g, k, cs).missions[0].id);
+        ok(got.every(id => id === got[0]),
+            `canonical seat ${cs} draws the SAME mission on every client (${got.join(' / ')})`);
+    });
+    ok(clients.every(g => deckIds3(g) === deckIds3(clients[0])),
+        'deck remainders stay identical after the draw');
+    // The live fingerprint: two clients' LOCAL seat 0 — each its own
+    // human — must NOT both hold the old deck-top mission.
+    ok(clients[0].players[0].missions[0].id !== clients[1].players[0].missions[0].id,
+        'two different humans no longer draw the same "top" mission');
+}
+
 console.log('── Remote humans: decisions DEFER (never auto-decided by another client)');
 {
     // A remote human's borrowable mission must WAIT for their streamed

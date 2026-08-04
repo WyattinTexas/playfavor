@@ -207,7 +207,13 @@
     //     at the final tally when Act 3 closes (settleFormulaMissions;
     //     Wyatt: 12 Knowledge ⇒ 12 Favor, "like the Fiddle"). Both move
     //     mission records and favor totals, so one law per table.
-    const MPV = 29;
+    // 30 (8/4): The Midnight Crash's failure deals its Act-3 missions in
+    //     CANONICAL seat order (it iterated this.players — LOCAL order —
+    //     so every client's deck-top landed on its own human; held
+    //     missions forked and the act sentinel split the 8/4 morning
+    //     table into two realms, two winners). Old builds still deal
+    //     that draw locally, so one law per table.
+    const MPV = 30;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

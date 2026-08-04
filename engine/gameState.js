@@ -3060,15 +3060,26 @@ class FavorGame {
                 // appeared in your hand and the only trace was one line in the
                 // log (Wyatt: "let the player SEE what mission they got").
                 // Record the deal so the ceremony can give it a real beat.
+                // Deal in CANONICAL seat order, never this.players order:
+                // every client rotates the shared roster so ITS human sits
+                // at local seat 0 (see setDealOffset), so iterating locally
+                // hands the shared deck's top card to a DIFFERENT player on
+                // every client — the 8/4 live fork (both humans drew the
+                // same mission, held missions diverged, the act sentinel
+                // split the table into two realms with two winners).
+                // Canonical seat c takes deck card c — the hand deal's law.
+                const deck = this.missionDecks[3] || [];
+                const off = this._dealOffset || 0;
                 const drawn = [];
-                this.players.forEach(p => {
-                    const m = (this.missionDecks[3] || []).shift();
+                for (let cs = 0; cs < this.playerCount; cs++) {
+                    const p = this.players[((cs - off) + this.playerCount) % this.playerCount];
+                    const m = deck.shift();
                     if (m) {
                         p.missions.push(m);
                         drawn.push({ playerIndex: p.index, mission: m });
                         this.addLog(`${p.name} draws an Act 3 mission: ${m.name}`);
                     }
-                });
+                }
                 if (drawn.length) {
                     if (!this._missionDraws) this._missionDraws = [];
                     this._missionDraws.push({ source: mission.name, drawn });
