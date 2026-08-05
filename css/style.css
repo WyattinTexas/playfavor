@@ -10120,3 +10120,47 @@ body.no-play-glow .hand-card.playable {
         bottom: 200px;
     }
 }
+
+/* ── Desktop table, pass 3 (Wyatt 8/5) ──────────────────────────────────
+   Four things, all consequences of scaling pieces independently:
+
+   1. The missions were sitting ON the player board. The rail grows downward
+      from top:10 and the board's top was 86 — with 66px cards (92px tall at
+      46/64) the rail already reached 102. Now the cards are bigger AND the
+      board starts below where the rail ends, so they cannot meet.
+   2. Missions bigger: 66 -> 92px wide.
+   3. Seats a little bigger: 64 -> 78px.
+   4. The purse (favor/prestige/gold/scorn) read as a different UI from the
+      skills below it — 34px icons against chips up to 112px tall. They now
+      meet in the middle: the purse comes UP to 52px icons, the skill chips
+      come DOWN to a 78px ceiling. Neither is the other's size; both are
+      recognisably the same family.
+
+   The skill rail's top follows the taller purse, and its bottom clears the
+   taller hand strip — otherwise the lowest chip hides under the cards.      */
+@media (min-width: 1000px) and (min-height: 600px) {
+
+    /* 4 · the purse comes up */
+    .tv-purse { top: 10px; gap: 8px; }
+    .tv-purse-chip { gap: 9px; padding: 6px 14px 6px 7px; border-radius: 24px; }
+    .tv-purse-chip img { width: 52px; height: 52px; }
+    .tv-purse-chip b { font-size: 38px; }
+
+    /* 4 · and the skills come down to meet it */
+    .tv-skills {
+        top: 158px;
+        bottom: 215px;
+        --tvChipH: min(78px, calc((100dvh - 380px - (var(--railRows) - 1) * 8px) / var(--railRows)));
+    }
+
+    /* 3 · the other seats */
+    .tv-seats .pmat.seat-chip { width: 78px; height: 78px; border-radius: 16px; }
+
+    /* 1 + 2 · bigger missions, and the board out from under them */
+    .tv-mission-rail { top: 12px; gap: 9px; }
+    .tv-mission-rail .tv-mission { width: 92px; border-radius: 8px; }
+    .tv-board-thumb { top: 158px; }
+
+    /* the stage only has to clear the seats, which sit left of the board */
+    .tv-stage { top: 102px; }
+}
