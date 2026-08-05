@@ -3035,6 +3035,131 @@
     // daily crowns, and any purchase made on the web (same favorUid account).
     const IOS_SHELL = /FavorShell-(iOS|Steam|Android)/.test(navigator.userAgent);
 
+    // ═══ Apple Star Shipments — StoreKit through the shell bridge ═══
+    // The gate is the message handler EXACTLY: builds ≤20 (no bridge),
+    // Steam, Android and the open web all lack it and keep their own
+    // rails. Never gate on UA or __FAVORSHELL flags — a store that can't
+    // sell must not exist. (GVT 0097's law, worn FAVOR's way.)
+    const APPLE_IAP = !!(window.webkit && window.webkit.messageHandlers
+        && window.webkit.messageHandlers.favorIAP);
+
+    // SKUs are quantity-neutral (a pack-size tweak is a display edit,
+    // never an id migration); quantities and names mirror the Mint.
+    const APPLE_PACKS = [
+        { sku: 'com.corkscrewgames.favor.stars.s',  stars: 50,   name: 'Pouch of Stars' },
+        { sku: 'com.corkscrewgames.favor.stars.m',  stars: 100,  name: 'Purse of Stars' },
+        { sku: 'com.corkscrewgames.favor.stars.l',  stars: 500,  name: 'Chest of Stars' },
+        { sku: 'com.corkscrewgames.favor.stars.xl', stars: 1000, name: 'Royal Treasury' },
+    ];
+    const IAP_LEDGER_CAP = 100;
+    let _iapPrices = null;     // sku → storefront displayPrice (escaped at stash)
+    let _iapBusy = false;      // one payment sheet at a time (shell guards too)
+    let _iapNote = '';         // pending/fail line under the packs
+
+    function iapEsc(s) {
+        return String(s).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        })[c]);
+    }
+    function iapPost(msg) {
+        try { window.webkit.messageHandlers.favorIAP.postMessage(msg); } catch (e) { /* shell gone */ }
+    }
+    function iapAskProducts() {
+        if (APPLE_IAP) iapPost({ cmd: 'products' });   // doubles as the page-ready signal
+    }
+
+    function _iapProducts(list) {
+        _iapPrices = {};
+        (list || []).forEach(p => { if (p && p.sku) _iapPrices[p.sku] = iapEsc(p.price || ''); });
+        renderStore();
+    }
+
+    function askBuyApple(sku) {
+        if (!APPLE_IAP || _iapBusy) return;
+        _confirmingPack = sku;
+        renderStore();
+    }
+    function buyApple(sku) {
+        if (!APPLE_IAP || _iapBusy) return;
+        if (!(_iapPrices && _iapPrices[sku])) return;   // never sell what the storefront didn't price
+        _confirmingPack = null;
+        _iapBusy = true;
+        _iapNote = '';
+        iapPost({ cmd: 'buy', sku });
+        renderStore();
+    }
+    function _iapResult(r) {
+        _iapBusy = false;
+        const state = r && r.state;
+        if (state === 'pending') {
+            _iapNote = 'Awaiting approval — your Stars arrive the moment it clears.';
+        } else if (state === 'fail') {
+            _iapNote = 'The purchase could not complete. Nothing was charged — try again.';
+        } else {
+            _iapNote = '';   // cancel: quiet, the player changed their mind
+        }
+        renderStore();
+    }
+
+    // A verified transaction arrives (fresh purchase, relaunch replay,
+    // Ask-to-Buy approval — the bridge funnels them all here, repeatedly
+    // until acked). The ledger and the stars ride ONE transaction on the
+    // player row, so no crash can split them; ack goes back only after
+    // the ledger entry is re-read off the wire — on BOTH paths.
+    async function creditAppleTx(m) {
+        const tx = m && m.tx, sku = m && m.sku;
+        const pack = APPLE_PACKS.find(p => p.sku === sku);
+        if (!tx || !pack) return;                 // not ours — never ack
+        if (mode !== 'firebase') return;          // offline: stay unacked, redelivery is the mechanism
+        const txKey = `apple_${String(tx).replace(/[^A-Za-z0-9_]/g, '')}`;
+        let fresh = false;
+        try {
+            const res = await dbTxn(`players/${uid()}`, p => {
+                // p is null on a cold cache even when the row exists —
+                // NEVER abort on null (that ends the txn without asking
+                // the server). Build optimistically; a stale base fails
+                // the hash check and this fn re-runs with real data.
+                const base = p || {};
+                if (base.iap && base.iap[txKey]) return undefined;   // already credited → re-ack path
+                const iap = { ...(base.iap || {}) };
+                const keys = Object.keys(iap);
+                if (keys.length >= IAP_LEDGER_CAP) {
+                    keys.sort((a, b) => (iap[a].at || 0) - (iap[b].at || 0));
+                    keys.slice(0, keys.length - IAP_LEDGER_CAP + 1).forEach(k => delete iap[k]);
+                }
+                iap[txKey] = { sku, stars: pack.stars, at: Date.now() };
+                return { ...base, stars: (base.stars || 0) + pack.stars, iap };
+            });
+            fresh = res.committed;
+            if (!res.committed && !(res.value && res.value.iap && res.value.iap[txKey])) {
+                return;   // aborted for a reason other than "already there" — retry later
+            }
+            // The disk re-read: the entry must come back over the wire
+            // before finish() is allowed to burn the transaction.
+            const onDisk = await dbGet(`players/${uid()}/iap/${txKey}`);
+            if (!onDisk) return;
+        } catch (e) {
+            return;       // wire hiccup — the bridge re-delivers
+        }
+        iapPost({ cmd: 'ack', tx: String(tx) });
+        if (fresh) {
+            try {
+                const s = await dbGet(`players/${uid()}/stars`);
+                _me = { ...(_me || {}), stars: (s == null ? ((_me && _me.stars) || 0) + pack.stars : s) };
+            } catch (e) { _me = { ...(_me || {}), stars: ((_me && _me.stars) || 0) + pack.stars }; }
+            renderStore();
+            renderProfileChip();
+            // Bookkeeping mirror beside the PayPal box's records — the
+            // player row's ledger is the authority, this is the overview.
+            // Written BEFORE the celebration: that overlay resolves on a
+            // TAP, and an app backgrounded there must not lose the record.
+            dbSet(`purchases/${txKey}`, {
+                uid: uid(), sku, stars: pack.stars, at: Date.now(), via: 'apple',
+            }).catch(() => { /* mirror only */ });
+            showStarsCelebration(pack.stars);   // resolves on tap — never awaited here
+        }
+    }
+
     let _confirmingPack = null;
     let _starsWatch = null;    // { baseline } while a PayPal tab may be paying
 
@@ -3192,6 +3317,7 @@
     function renderStorePacks() {
         const row = document.getElementById('storePacks');
         if (!row) return;
+        if (APPLE_IAP) { renderApplePacks(row); return; }
         if (IOS_SHELL) { row.innerHTML = ''; return; }
         const online = mode === 'firebase';
         row.innerHTML = STAR_PACKS.map(p => {
@@ -3208,6 +3334,34 @@
             </div>`;
         }).join('') + (_starsWatch
             ? '<div class="st-pack-wait" id="storeWait">Complete the payment in the PayPal tab — your Stars arrive here on their own within a minute.</div>'
+            : '');
+    }
+
+    // The same pack cards, sold through Apple's sheet. Price text is the
+    // storefront's displayPrice verbatim (escaped at the stash): '···'
+    // until products arrive, UNAVAILABLE (dead card) if they never do —
+    // a hardcoded dollar string is a lie in 174 other storefronts, so we
+    // never write one.
+    function renderApplePacks(row) {
+        const online = mode === 'firebase';
+        row.innerHTML = APPLE_PACKS.map(p => {
+            const price = _iapPrices === null ? '···' : (_iapPrices[p.sku] || '');
+            const confirming = _confirmingPack === p.sku;
+            const dead = !online || _iapBusy || (_iapPrices !== null && !price);
+            const btn = (_iapPrices !== null && !price)
+                ? '<button class="st-pack-buy poor" disabled>UNAVAILABLE</button>'
+                : dead
+                    ? `<button class="st-pack-buy poor" disabled>${price}</button>`
+                    : confirming
+                        ? `<button class="st-pack-buy confirm" onclick="event.stopPropagation(); FLB.buyApple('${p.sku}')">Buy — ${price}?</button>`
+                        : `<button class="st-pack-buy" onclick="event.stopPropagation(); FLB.askBuyApple('${p.sku}')">${price}</button>`;
+            return `<div class="st-pack${confirming ? ' confirming' : ''}" data-pack="${p.sku}">
+                <div class="st-pack-stars">★ ${p.stars.toLocaleString()}</div>
+                <div class="st-pack-name">${p.name}</div>
+                ${btn}
+            </div>`;
+        }).join('') + (_iapNote
+            ? `<div class="st-pack-wait" id="storeWait">${_iapNote}</div>`
             : '');
     }
 
@@ -3242,6 +3396,7 @@
 
     async function boot() {
         if (IOS_SHELL) document.body.classList.add('ios-shell');
+        iapAskProducts();      // no-op without the bridge; doubles as page-ready
         bindQueuePicker();
         await connect();
         await readPlayer();
@@ -3389,6 +3544,9 @@
         _dbGet: dbGet, _dbPush: dbPush,  // telemetry seam (js/telemetry.js) — NS 'favor'
         askBuyStars, buyStars, starCheckoutUrl, watchForStars,
         starPacks: () => STAR_PACKS,
+        askBuyApple, buyApple,
+        _iapProducts, _iapTx: creditAppleTx, _iapResult,
+        applePacks: () => APPLE_PACKS,   // rig/verify seam
         setAvatar, myAvatar, avatarDisc, buyTable,
         openCrestPicker, crestTap, askBuyCrest, confirmBuyCrest,
         crests: () => CRESTS, ownsCrest,

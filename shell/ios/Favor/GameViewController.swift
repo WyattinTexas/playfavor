@@ -17,6 +17,7 @@ class GameViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     private var webView: WKWebView!
     private var retryOverlay: UIView?
     private let signBridge = FavorSignBridge()
+    private let iapBridge = FavorIAPBridge()
 
     override var prefersStatusBarHidden: Bool { true }
     override var prefersHomeIndicatorAutoHidden: Bool { true }
@@ -40,9 +41,12 @@ class GameViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         // alphabet on write, and re-filtered here before interpolation.
         let ucc = WKUserContentController()
         ucc.add(signBridge, name: "favorSign")
+        ucc.add(iapBridge, name: "favorIAP")
         let kcUid = (FavorKeychain.get("favorUid") ?? "").filter { $0.isLetter || $0.isNumber }
+        // iap is informational — the page's gate is the favorIAP handler itself
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
         let boot = """
-        window.__FAVORSHELL = { platform: 'ios', build: 18, apple: true };
+        window.__FAVORSHELL = { platform: 'ios', build: \(build), apple: true, iap: true };
         try {
             if (!localStorage.getItem('favorUid') && '\(kcUid)') {
                 localStorage.setItem('favorUid', '\(kcUid)');
@@ -69,6 +73,7 @@ class GameViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
 
         signBridge.webView = webView
         signBridge.host = self
+        iapBridge.webView = webView
 
         webView.load(URLRequest(url: gameURL))
     }
@@ -118,6 +123,7 @@ class GameViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         retryOverlay?.removeFromSuperview()
         retryOverlay = nil
+        iapBridge.pageReady()
     }
 
     private func showRetry() {
