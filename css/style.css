@@ -9012,17 +9012,30 @@ body.no-play-glow .hand-card.playable {
 }
 .deed-tabs::-webkit-scrollbar { display: none; }
 .deed-tab {
-    flex: 0 0 auto; min-width: 58px;
+    flex: 0 0 auto; min-width: 64px;
     display: flex; flex-direction: column; align-items: center; gap: 3px;
     background: #1c150c; border: 1px solid #4a3a1c; border-radius: 8px;
     padding: 6px 8px 5px; cursor: pointer;
 }
+/* One box, two fillings. A–H wear a painted medallion; All and Unearned are
+   FILTERS rather than chapters, so they keep the struck ring and a glyph —
+   looking different is the point. Both are 44px so the labels line up. */
 .deed-tab-art {
-    width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto;
+    width: 44px; height: 44px; border-radius: 50%; flex: 0 0 auto;
     display: flex; align-items: center; justify-content: center;
     border: 2px solid #6a5220; background: radial-gradient(#332712, #1a1309);
     box-shadow: inset 0 0 8px rgba(0,0,0,.7), 0 2px 6px rgba(0,0,0,.5);
-    font-family: 'Cinzel', serif; font-size: 14px; font-weight: 700; color: #b39a6a;
+    font-family: 'Cinzel', serif; font-size: 17px; font-weight: 700; color: #b39a6a;
+}
+/* The chapter art IS a gold medallion already — a ring around it would be a
+   frame inside a frame, so the chrome comes off and the painting fills. */
+.deed-tab-art.painted {
+    border: none; background: none; box-shadow: none; border-radius: 0;
+}
+.deed-tab-art.painted img {
+    width: 100%; height: 100%; object-fit: contain; display: block;
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,.65));
+    transition: filter .15s ease;
 }
 .deed-tab-lbl { font-size: 10px; color: #c3ae86; letter-spacing: .02em; white-space: nowrap; }
 .deed-tab-n { font-size: 9.5px; color: #8a7550; font-variant-numeric: tabular-nums; }
@@ -9033,6 +9046,15 @@ body.no-play-glow .hand-card.playable {
 .deed-tab.cur .deed-tab-art {
     border-color: #f0d78a; color: #f0dfb8;
     box-shadow: inset 0 0 8px rgba(0,0,0,.5), 0 0 10px rgba(201,165,66,.55);
+}
+/* The painted ones have no ring to light, so the medallion itself catches
+   the gold instead. */
+.deed-tab-art.painted { box-shadow: none !important; }
+.deed-tab:hover .deed-tab-art.painted img {
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,.65)) drop-shadow(0 0 6px rgba(201,165,66,.5));
+}
+.deed-tab.cur .deed-tab-art.painted img {
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,.65)) drop-shadow(0 0 9px rgba(240,215,138,.85));
 }
 .deed-tab.cur .deed-tab-lbl { color: #f4e6c8; }
 .deed-tab.cur .deed-tab-n { color: #c9a542; }

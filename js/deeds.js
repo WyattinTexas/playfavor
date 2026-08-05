@@ -378,12 +378,19 @@
     }
 
     // ── The gallery, off the Profile ─────────────────────────────────
-    // [letter, chapter title, short label for the tab]
+    // [letter, chapter title, short tab label, painted medallion]
+    // The label stays under every medallion on purpose — the painting says
+    // which chapter at a glance, the word says it for certain.
+    const ICON_V = '?v=1';
     const CHAPTERS = [
-        ['A', 'The Almanac', 'Almanac'],          ['B', 'Rituals of the Hand', 'Rituals'],
-        ['C', 'Ruin & Comedy', 'Ruin'],           ['D', 'Mastery', 'Mastery'],
-        ['E', 'Service to the Realm', 'Service'], ['F', 'Heroes & Boards', 'Heroes'],
-        ['G', 'The Table', 'Table'],              ['H', 'Sealed Deeds', 'Sealed'],
+        ['A', 'The Almanac',          'Almanac', 'assets/ui/deed-chap-a.png'],
+        ['B', 'Rituals of the Hand',  'Rituals', 'assets/ui/deed-chap-b.png'],
+        ['C', 'Ruin & Comedy',        'Ruin',    'assets/ui/deed-chap-c.png'],
+        ['D', 'Mastery',              'Mastery', 'assets/ui/deed-chap-d.png'],
+        ['E', 'Service to the Realm', 'Service', 'assets/ui/deed-chap-e.png'],
+        ['F', 'Heroes & Boards',      'Heroes',  'assets/ui/deed-chap-f.png'],
+        ['G', 'The Table',            'Table',   'assets/ui/deed-chap-g.png'],
+        ['H', 'Sealed Deeds',         'Sealed',  'assets/ui/deed-chap-h.png'],
     ];
 
     // 'all' | a chapter letter | 'unearned'. Deliberately kept between opens:
@@ -439,15 +446,24 @@
         const tabsEl = ov.querySelector('.deed-tabs');
         const pageEl = ov.querySelector('.deed-page');
 
-        function makeTab(key, art, label, count) {
+        // `art` is either a painted medallion's path or a glyph to strike in
+        // the ring — chapters get the first, All/Unearned the second.
+        function makeTab(key, art, label, count, painted) {
             const b = document.createElement('button');
             b.type = 'button';
             b.className = 'deed-tab' + (curFilter === key ? ' cur' : '');
             b.title = label;
             b.setAttribute('aria-label', label);
             const a = document.createElement('span');
-            a.className = 'deed-tab-art';
-            a.textContent = art;
+            a.className = 'deed-tab-art' + (painted ? ' painted' : '');
+            if (painted) {
+                const img = document.createElement('img');
+                img.src = art + ICON_V;
+                img.alt = '';
+                a.appendChild(img);
+            } else {
+                a.textContent = art;
+            }
             const l = document.createElement('span');
             l.className = 'deed-tab-lbl';
             l.textContent = label;
@@ -462,11 +478,11 @@
         function drawTabs() {
             tabsEl.innerHTML = '';
             tabsEl.appendChild(makeTab('all', '✦', 'All', got + '/' + defs.length));
-            CHAPTERS.forEach(([L, , short]) => {
+            CHAPTERS.forEach(([L, , short, icon]) => {
                 const mine = defs.filter(d => (d.num || '')[0] === L);
                 if (!mine.length) return;
                 const n = mine.filter(d => have[d.id]).length;
-                tabsEl.appendChild(makeTab(L, L, short, n + '/' + mine.length));
+                tabsEl.appendChild(makeTab(L, icon || L, short, n + '/' + mine.length, !!icon));
             });
             tabsEl.appendChild(makeTab('unearned', '?', 'Unearned', String(defs.length - got)));
         }
