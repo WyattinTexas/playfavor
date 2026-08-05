@@ -247,11 +247,25 @@
     function cancelThemeFade() {
         if (themeFade) { clearInterval(themeFade); themeFade = null; }
     }
+    // The theme is an <audio> element, so the WebAudio gain the effects run
+    // through cannot touch it — it has to read the mixer itself. It did not,
+    // which is why Settings appeared to do nothing: every effect obeyed and
+    // the one loud thing on the title screen ignored them both.
+    function themeVolume() {
+        const v = sfxVol();
+        return v > 0 ? THEME_VOL * v : 0;
+    }
+    // Live re-sync, called by FSET whenever a slider moves or a switch flips.
+    function applyVolume() {
+        if (!theme || themeFade) return;     // a dying fade owns the volume
+        try { theme.volume = themeVolume(); } catch (e) { /* iOS: read-only */ }
+    }
     function themeStart() {
         if (tableUp()) return;               // never sing over a live table
+        if (sfxVol() <= 0) return;           // the mixer says silence
         const t = themeNode();
         cancelThemeFade();                   // a fresh title visit outruns a dying fade
-        t.volume = THEME_VOL;
+        t.volume = themeVolume();
         try { t.currentTime = 0; } catch (e) { /* not seekable yet */ }
         themeStarted++;
         const p = t.play();
@@ -278,7 +292,9 @@
             cancelThemeFade();
             try { theme.pause(); } catch (e) { /* silence is the goal */ }
             try { theme.currentTime = 0; } catch (e) { /* best effort */ }
-            try { theme.volume = THEME_VOL; } catch (e) { /* ready for the next pass */ }
+            // Reset to the MIXER's level, not the raw dial — otherwise the
+            // next pass comes back at full volume however low the sliders are.
+            try { theme.volume = themeVolume(); } catch (e) { /* ready anyway */ }
         }, 50);
     }
     ['pointerdown', 'touchstart', 'keydown'].forEach((ev) =>
@@ -403,7 +419,8 @@
         return orig.apply(this, arguments);
     });
 
-    window.FSFX = { play, init, _attempted: attempted, _voiced: voiced,
+    window.FSFX = { play, init, applyVolume, _attempted: attempted, _voiced: voiced,
+                    _themeVolume: themeVolume,
                     _theme: () => ({ started: themeStarted, stopped: themeStopped,
                                      fading: !!themeFade, el: theme }),
                     get ready() { return ready; } };

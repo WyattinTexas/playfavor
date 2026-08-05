@@ -8,12 +8,17 @@
  * + Get Latest Version button (the stale-cache fix: phones kept serving
  * old css/js after deploys until a hard refresh).
  *
- * Device-level, not account-level — one localStorage blob 'favor_settings'.
- * Volumes are 0-100 sliders. The theme music was removed entirely (Wyatt
- * 8/3) — the Music channel went with it; older blobs may still carry
- * music keys and they're simply ignored. sfx.js plays every effect at
- * FSET.sfxVolume() gain, read live at each play, so the mixer governs
- * them without a push. ambient.js honors 'favor_ambient_off' at boot.
+ * Stored in localStorage 'favor_settings' AND, for a player with a linked
+ * identity, on their row as `settings` — so a choice made here follows them
+ * to the next device instead of dying with the browser (Wyatt 8/5). The
+ * device copy is always written first: it is what makes the panel correct
+ * before the network answers, and what holds when there is no account.
+ *
+ * Volumes are 0-100 sliders. sfx.js plays every EFFECT at FSET.sfxVolume()
+ * gain, read live at each play, so the mixer governs that layer with no
+ * push. The menu THEME is an <audio> element and cannot be reached by that
+ * gain, so it reads the mixer itself and applyAudio() re-syncs it live.
+ * ambient.js honors 'favor_ambient_off' at boot.
  */
 (function () {
     'use strict';
@@ -34,14 +39,68 @@
         try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* play on */ }
     }
 
+    // ── The account copy ─────────────────────────────────────────────
+    // A player with an identity carries their settings between devices. No
+    // identity, no push — the device blob is the whole story then.
+    let adopted = false;    // the account's copy has been taken this session
+    let touched = false;    // the player has changed something on THIS device
+
+    function hasAccount() {
+        try {
+            const ids = (window.FLB && FLB.myIdentities && FLB.myIdentities()) || {};
+            return Object.keys(ids).length > 0;
+        } catch (e) { return false; }
+    }
+
+    // Dragging a slider fires oninput continuously; without this the row
+    // would write once per pixel.
+    let pushTimer = null, pushChain = Promise.resolve();
+    function pushToAccount() {
+        if (!hasAccount() || !window.FLB || !FLB.mergeRow) return;
+        clearTimeout(pushTimer);
+        pushTimer = setTimeout(() => {
+            const snap = { ...S };
+            pushChain = pushChain
+                .then(() => FLB.mergeRow(cur => ({ ...(cur || {}), settings: snap })))
+                .catch(() => { /* offline: the device copy still holds */ });
+        }, 600);
+    }
+
+    async function pullFromAccount() {
+        if (adopted || touched || !hasAccount() || !window.FLB || !FLB.readRow) return;
+        try {
+            const row = await FLB.readRow();
+            // touched can flip while the read is in flight — a choice made
+            // here and now outranks the copy we asked for before it.
+            if (touched) return;
+            const remote = row && row.settings;
+            if (!remote || typeof remote !== 'object') return;
+            adopted = true;
+            S = { ...DEF, ...remote };
+            save();
+            applyAll();
+            const ov = document.getElementById('setOverlay');
+            if (ov && ov.classList.contains('open')) open();   // redraw the controls
+        } catch (e) { /* the device copy stands */ }
+    }
+
+    // Every change goes through here: device first, then the account.
+    function commit() {
+        touched = true;
+        save();
+        pushToAccount();
+    }
+
     // ── Application ──────────────────────────────────────────────────
     function sfxVolume() {
         return S.masterOn && S.sfxOn
             ? (S.master / 100) * (S.sfx / 100) : 0;
     }
     function applyAudio() {
-        // Nothing to push — sfx.js reads FSET.sfxVolume() live at each
-        // play. Kept as the mixer's change hook (volRow calls it).
+        // Effects need no push — sfx.js reads FSET.sfxVolume() live at each
+        // play. The menu theme is an <audio> element outside that gain, so
+        // it has to be told.
+        try { if (window.FSFX && FSFX.applyVolume) FSFX.applyVolume(); } catch (e) { /* silence is cosmetic */ }
     }
     function applyGlow() {
         document.body.classList.toggle('no-play-glow', !S.glow);
@@ -84,10 +143,10 @@
             row.classList.toggle('off', !S[onKey]);
             range.disabled = !S[onKey];
         };
-        cb.onchange = () => { S[onKey] = cb.checked; save(); applyAudio(); sync(); };
+        cb.onchange = () => { S[onKey] = cb.checked; commit(); applyAudio(); sync(); };
         range.oninput = () => {
             S[volKey] = +range.value; pct.textContent = range.value + '%';
-            save(); applyAudio();
+            commit(); applyAudio();
         };
         sync();
         row.append(cb, lbl, range, pct);
@@ -130,6 +189,7 @@
         const ov = document.getElementById('setOverlay');
         if (!ov) return;
         S = load();   // another tab may have written
+        pullFromAccount();   // and another DEVICE may have
 
         ov.innerHTML = `
             <div class="set-inner">
@@ -153,7 +213,7 @@
         // Gameplay
         const gp = section('Gameplay');
         gp.appendChild(checkRow('Glow on cards you can play', S.glow, v => {
-            S.glow = v; save(); applyGlow();
+            S.glow = v; commit(); applyGlow();
         }, 'You might not be able to play the card, if changes happen before your turn.'));
         let tipsOn = false;
         try { tipsOn = localStorage.getItem('favor_prompt_test') === '1'; } catch (e) { /* fine */ }
@@ -166,7 +226,7 @@
         // Menu
         const menu = section('Menu');
         menu.appendChild(checkRow('Ambient life — birds, petals & butterflies', S.ambient, v => {
-            S.ambient = v; save(); applyAmbient();
+            S.ambient = v; commit(); applyAmbient();
         }));
         body.appendChild(menu);
 
@@ -220,5 +280,12 @@
 
     applyAll();   // deferred script: body exists, saved settings take effect at boot
 
-    window.FSET = { open, close, sfxVolume, applyAll };
+    // The device copy is already live above; this only upgrades it if the
+    // account holds a newer choice. Identity usually lands after boot, so
+    // try once now and again shortly after.
+    pullFromAccount();
+    setTimeout(pullFromAccount, 2500);
+
+    window.FSET = { open, close, sfxVolume, applyAll,
+                    _hasAccount: hasAccount, _pull: pullFromAccount, _state: () => ({ ...S }) };
 })();
