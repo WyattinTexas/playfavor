@@ -10074,3 +10074,49 @@ body.no-play-glow .hand-card.playable {
     .tv-stage       { --tvStackCardH: clamp(96px, 22dvh, 168px); }
     .tv-stage.dense { --tvStackCardH: clamp(80px, 18dvh, 132px); }
 }
+
+/* ── Desktop table: fill the room ────────────────────────────────────────
+   The promoted rules carry the phone's literal pixel sizes — seat chips and
+   mission cards at 37px, hand cards at 86x120 — which are right for a 390px
+   viewport and lost on a desktop. These are the same elements at desktop
+   scale (Wyatt 8/5: "everything should be bigger without ruining the
+   gameplay").
+
+   The hand is the single biggest win: it is the thing you actually touch, and
+   growing the strip both enlarges the cards and closes the dead band above
+   them. Overlaps are kept honest — the strip's top edge still sits well clear
+   of the play zone, and the skill rail's bottom chip is never covered.      */
+@media (min-width: 1000px) and (min-height: 600px) {
+
+    /* the other seats, across the top */
+    .tv-seats { top: 10px; gap: 12px; }
+    .tv-seats .pmat.seat-chip { width: 64px; height: 64px; border-radius: 14px; }
+
+    /* the missions of the realm, top right */
+    .tv-mission-rail { top: 10px; gap: 7px; }
+    .tv-mission-rail .tv-mission { width: 66px; border-radius: 7px; }
+
+    /* your hand */
+    .tv-hand-strip { height: 244px; bottom: -40px; }
+    .tv-hand { padding-bottom: 10px; }
+    .tv-hand .hand-card { width: 144px; height: 201px; margin: 0 -16px; border-radius: 9px; }
+}
+
+/* ── Desktop table: the last of the phone's ceilings ─────────────────────
+   .tv-board-thumb caps at 236px and --tvChipH at 84, so both bind on a big
+   screen. The stage's right edge deliberately tracks the board thumb's clamp
+   — the source comment says change them together, so they change together
+   here. Its bottom also clears the taller hand strip, and its left the wider
+   skill rail.                                                              */
+@media (min-width: 1000px) and (min-height: 600px) {
+    .tv-skills { --tvChipH: min(112px, calc((100dvh - 300px - (var(--railRows) - 1) * 8px) / var(--railRows))); }
+
+    .tv-board-thumb { top: 86px; width: clamp(236px, 21vw, 430px); }
+
+    .tv-stage {
+        left: 320px;
+        right: calc(clamp(236px, 21vw, 430px) + 28px);
+        top: 86px;
+        bottom: 200px;
+    }
+}
