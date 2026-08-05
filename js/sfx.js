@@ -255,14 +255,24 @@
         const v = sfxVol();
         return v > 0 ? THEME_VOL * v : 0;
     }
+    // Set when the mixer turned the theme away at its one chance to sing.
+    // The first-gesture listener below is {once:true} and is already spent by
+    // then, so without this nothing ever asks again and switching sound back
+    // on does nothing until a reload (Wyatt 8/5).
+    let themeOwed = false;
+
     // Live re-sync, called by FSET whenever a slider moves or a switch flips.
     function applyVolume() {
+        // Sound coming back up pays the debt — and this runs inside the click
+        // that flipped the switch, so play() still has its user gesture.
+        if (themeOwed && sfxVol() > 0 && !tableUp()) { themeStart(); return; }
         if (!theme || themeFade) return;     // a dying fade owns the volume
         try { theme.volume = themeVolume(); } catch (e) { /* iOS: read-only */ }
     }
     function themeStart() {
         if (tableUp()) return;               // never sing over a live table
-        if (sfxVol() <= 0) return;           // the mixer says silence
+        if (sfxVol() <= 0) { themeOwed = true; return; }   // muted: still owed a pass
+        themeOwed = false;
         const t = themeNode();
         cancelThemeFade();                   // a fresh title visit outruns a dying fade
         t.volume = themeVolume();
@@ -422,6 +432,6 @@
     window.FSFX = { play, init, applyVolume, _attempted: attempted, _voiced: voiced,
                     _themeVolume: themeVolume,
                     _theme: () => ({ started: themeStarted, stopped: themeStopped,
-                                     fading: !!themeFade, el: theme }),
+                                     fading: !!themeFade, owed: themeOwed, el: theme }),
                     get ready() { return ready; } };
 })();
