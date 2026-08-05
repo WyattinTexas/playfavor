@@ -158,6 +158,29 @@
         } catch (e) { /* private mode — the row + txn guards still hold */ }
     }
 
+    // ── The door's green mark ────────────────────────────────────────
+    // Same language as the Almanac's: green means there is something new
+    // behind this door. A count rather than a flag, and per-device, because
+    // the glow says "you haven't looked at this yet on THIS screen".
+    // FLB may not exist yet on a cold title screen, hence the guards.
+    const newKey = () => 'favorDeedsNew_' + window.FLB.uid();
+    function newCount() {
+        try { return parseInt(localStorage.getItem(newKey()) || '0', 10) || 0; }
+        catch (e) { return 0; }
+    }
+    function addNew(n) {
+        if (!n) return;
+        try { localStorage.setItem(newKey(), String(newCount() + n)); } catch (e) { /* cosmetic */ }
+        refreshDoor();
+    }
+    function clearNew() {
+        try { localStorage.removeItem(newKey()); } catch (e) { /* it just stays lit */ }
+        refreshDoor();
+    }
+    function refreshDoor() {
+        if (document.body) document.body.classList.toggle('deed-new', newCount() > 0);
+    }
+
     let _syncChain = Promise.resolve();
     function sync(gameSnap, gameId) {
         const run = _syncChain.then(() => doSync(gameSnap, gameId));
@@ -213,6 +236,7 @@
 
             if (ids.length) addClaimedMirror(ids);
             if (earned.length) {
+                addNew(earned.length);   // light the door
                 celebrate(earned);
                 maybeNag();
             }
@@ -376,6 +400,7 @@
         }
         ov.innerHTML = '<div class="ach-inner"><div class="lb-loading">Unrolling the ledger…</div></div>';
         ov.classList.add('open');
+        clearNew();          // the ledger has been read
 
         let row = {};
         try { row = (await window.FLB.readRow()) || {}; } catch (e) { /* all locked */ }
@@ -476,10 +501,6 @@
                     // A ruin is recorded, never ticked in triumph.
                     tick.textContent = unlocked ? (d.ruin ? '✕' : '✓') : '';
 
-                    const no = document.createElement('span');
-                    no.className = 'deed-no';
-                    no.textContent = d.num || '';
-
                     const txt = document.createElement('span');
                     txt.className = 'deed-text';
                     const nm = document.createElement('b');
@@ -492,7 +513,7 @@
                     rk.className = 'deed-rank ' + d.rank;
                     rk.textContent = RANK_LABEL[d.rank] || d.rank;
 
-                    r.append(tick, no, txt, rk);
+                    r.append(tick, txt, rk);
                     pageEl.appendChild(r);
                     shown++;
                 });
@@ -520,10 +541,18 @@
     }
 
     window.FDEED = {
-        sync, seatSnapshot, evaluate, openGallery, closeGallery,
+        sync, seatSnapshot, evaluate, openGallery, closeGallery, refreshDoor,
         defs: DEFS, _showNag: showNag, _celebrate: celebrate,
         // Lent to achievements.js so the two failure achievements toll with
         // the same crack as a deed ruin, rather than growing a second copy.
         _playSting: playSting,
+        _newCount: newCount, _addNew: addNew,
     };
+
+    // Light the door on boot if the last session left a deed unread.
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', refreshDoor);
+    } else {
+        refreshDoor();
+    }
 })();

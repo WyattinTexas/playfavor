@@ -45,6 +45,7 @@
     }
     const KEY = () => 'favor_almanac_' + uid();
     const PENDING_KEY = () => 'favor_almanac_pending_' + uid();
+    const NEW_KEY = () => 'favor_almanac_new_' + uid();
 
     function loadJson(key, fallback) {
         try { return JSON.parse(localStorage.getItem(key)) || fallback; }
@@ -93,15 +94,43 @@
     function commitGame() {
         const p = loadPending();
         const d = load();
+        // A name that had no row before is a genuinely NEW page in the book —
+        // that, and not a replay of something already collected, is what marks
+        // the door green.
+        let fresh = 0;
         ['cards', 'missions'].forEach(bucket => {
             Object.keys(p[bucket]).forEach(name => {
                 const row = d[bucket][name];
                 if (row) row.n += p[bucket][name];
-                else d[bucket][name] = { n: p[bucket][name], first: today() };
+                else { d[bucket][name] = { n: p[bucket][name], first: today() }; fresh++; }
             });
         });
         saveJson(KEY(), d);
+        addNew(fresh);
         beginGame();   // buffer spent
+    }
+
+    // ── The door's green mark ────────────────────────────────────────
+    // A count, not a flag, so two new cards in one game still read as new
+    // if something clears half of it. Per-device on purpose: the glow says
+    // "you haven't looked at this yet on THIS screen".
+    // mergeBook deliberately does NOT mark — pages arriving from another
+    // device were already seen there.
+    function newCount() {
+        try { return parseInt(localStorage.getItem(NEW_KEY()) || '0', 10) || 0; }
+        catch (e) { return 0; }
+    }
+    function addNew(n) {
+        if (!n) return;
+        try { localStorage.setItem(NEW_KEY(), String(newCount() + n)); } catch (e) { /* glow is cosmetic */ }
+        refreshDoor();
+    }
+    function clearNew() {
+        try { localStorage.removeItem(NEW_KEY()); } catch (e) { /* it just stays lit */ }
+        refreshDoor();
+    }
+    function refreshDoor() {
+        if (document.body) document.body.classList.toggle('alm-new', newCount() > 0);
     }
 
     // ── The book, for the Ledger of Deeds (js/deeds.js) ──────────────
@@ -260,6 +289,7 @@
     function open() {
         const ov = document.getElementById('almGallery');
         if (!ov) return;
+        clearNew();          // the book has been looked at
         const d = load();
 
         const cardRoster = roster('act1').concat(roster('act2'), roster('act3'));
@@ -327,5 +357,13 @@
     }
 
     window.FALM = { recordCard, recordMission, beginGame, commitGame, open, close,
-        stats, exportBook, mergeBook };
+        stats, exportBook, mergeBook, refreshDoor,
+        _newCount: newCount, _addNew: addNew, _clearNew: clearNew };
+
+    // Light the door on boot if the last session left something unread.
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', refreshDoor);
+    } else {
+        refreshDoor();
+    }
 })();
