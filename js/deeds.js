@@ -421,6 +421,7 @@
         const pct = defs.length ? got / defs.length : 0;
         ov.innerHTML = `
             <div class="ach-inner">
+                <button class="ach-x" aria-label="Close">✕</button>
                 <div class="ach-head">
                     <div class="deed-progress">
                         <svg viewBox="0 0 54 54" width="54" height="54" aria-hidden="true">
@@ -437,7 +438,6 @@
                         <div class="ach-title">The Ledger of Deeds</div>
                         <div class="ach-sub">${got} of ${defs.length} recorded</div>
                     </div>
-                    <button class="ach-x" aria-label="Close">✕</button>
                 </div>
                 <div class="deed-tabs"></div>
                 <div class="deed-page"></div>
@@ -544,8 +544,16 @@
             }
         }
 
-        function draw() { drawTabs(); drawPage(); pageEl.scrollTop = 0; }
+        function draw() { drawTabs(); drawPage(); pageEl.scrollTop = 0; ov.classList.remove('deed-scrolled'); }
         draw();
+
+        // On a phone the title bar and the tab rail eat more of the panel
+        // than the entries do. Reading the ledger folds the title away; coming
+        // back to the top brings it back. The threshold is a few pixels of
+        // slack so a rubber-band bounce cannot flap it.
+        pageEl.addEventListener('scroll', () => {
+            ov.classList.toggle('deed-scrolled', pageEl.scrollTop > 12);
+        }, { passive: true });
 
         ov.querySelector('.ach-x').onclick = closeGallery;
         ov.onclick = (e) => { if (e.target === ov) closeGallery(); };
