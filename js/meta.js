@@ -2235,7 +2235,9 @@
                 <button class="pf-alm-btn" onclick="window.FALM && FALM.open()" title="Royal Almanac" aria-label="Royal Almanac">
                     <img src="assets/ui/almanac-book.png?v=2" alt="">
                 </button>
-                <button class="pf-deed-btn" onclick="window.FDEED && FDEED.openGallery()" title="The Ledger of Deeds" aria-label="The Ledger of Deeds">✦</button>
+                <button class="pf-deed-btn" onclick="window.FDEED && FDEED.openGallery()" title="The Ledger of Deeds" aria-label="The Ledger of Deeds">
+                    <img src="assets/ui/deed-scroll.png?v=1" alt="">
+                </button>
                 <div class="pf-purse">
                     <span title="Stars">★ ${p.stars || 0}</span>
                     <span title="Daily Championships" class="pf-champs">${CROWN_SVG} ${ch.gold || 0}</span>

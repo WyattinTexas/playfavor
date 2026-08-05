@@ -8923,22 +8923,158 @@ body.no-play-glow .hand-card.playable {
     background: linear-gradient(135deg, rgba(140,146,150,.15), rgba(140,146,150,.05));
 }
 
-/* ── Gallery: chapter rules, and a ruin's cracked seal ── */
-.deed-chap {
-    flex: 1 1 100%; margin: 12px 2px 0; padding-bottom: 5px;
-    display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
-    font-family: 'Cinzel', serif; font-size: 11.5px; font-weight: 700;
-    letter-spacing: 2.4px; text-transform: uppercase; color: #b39a6a;
-    border-bottom: 1px solid #3a2d17;
+/* ══ THE LEDGER OF DEEDS ═══════════════════════════════════════════════
+   The Ledger used to be the achievements grid with different data in it —
+   same dark cells, same universal star, no identity of its own. It is now a
+   bound book: the dark tooled cover keeps continuity with the game, and the
+   entries sit on a vellum PAGE, ruled, numbered in the margin, ticked by a
+   clerk. Unearned deeds are not dimmed cards; they are ink not yet written.
+
+   Rows are flex, deliberately NOT css grid — same pre-fontload row-track
+   trap the achievements grid hit (Overlap.jpg, 7/20).                      */
+
+/* ── Head: a wax progress seal beside the title ── */
+.deed-gallery .ach-head { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; }
+.deed-gallery .deed-progress {
+    width: 54px; height: 54px; flex: 0 0 auto; position: relative;
+    display: grid; place-items: center;
 }
+.deed-gallery .deed-progress svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+.deed-gallery .deed-progress b {
+    font-family: 'Cinzel', serif; font-size: 14px; color: #f0dfb8;
+    font-variant-numeric: tabular-nums;
+}
+/* .ach-x is absolutely positioned top-right, so it reserves no flex space —
+   hold a lane open for it or a long title runs underneath the ✕. */
+.deed-gallery .deed-heading { flex: 1 1 auto; min-width: 0; padding-right: 26px; }
+.deed-gallery .ach-title { font-family: 'Cinzel', serif; }
+
+/* ── Chapter tabs: the Almanac's medallion language, scrollable for 10 ── */
+/* flex:0 0 auto — .ach-inner is a flex column and would otherwise crush this
+   row to nothing, clipping the labels and counts away. */
+.deed-tabs {
+    flex: 0 0 auto;
+    display: flex; gap: 6px; padding: 10px 14px;
+    border-bottom: 1px solid #3a2d17; overflow-x: auto; scrollbar-width: none;
+}
+.deed-tabs::-webkit-scrollbar { display: none; }
+.deed-tab {
+    flex: 0 0 auto; min-width: 58px;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    background: #1c150c; border: 1px solid #4a3a1c; border-radius: 8px;
+    padding: 6px 8px 5px; cursor: pointer;
+}
+.deed-tab-art {
+    width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid #6a5220; background: radial-gradient(#332712, #1a1309);
+    box-shadow: inset 0 0 8px rgba(0,0,0,.7), 0 2px 6px rgba(0,0,0,.5);
+    font-family: 'Cinzel', serif; font-size: 14px; font-weight: 700; color: #b39a6a;
+}
+.deed-tab-lbl { font-size: 10px; color: #c3ae86; letter-spacing: .02em; white-space: nowrap; }
+.deed-tab-n { font-size: 9.5px; color: #8a7550; font-variant-numeric: tabular-nums; }
+.deed-tab:hover { border-color: #8a6a1f; }
+.deed-tab:hover .deed-tab-art { border-color: #c9a542; }
+.deed-tab:hover .deed-tab-lbl { color: #f0dfb8; }
+.deed-tab.cur { background: linear-gradient(#3a2c14, #2a1f0e); border-color: #c9a542; }
+.deed-tab.cur .deed-tab-art {
+    border-color: #f0d78a; color: #f0dfb8;
+    box-shadow: inset 0 0 8px rgba(0,0,0,.5), 0 0 10px rgba(201,165,66,.55);
+}
+.deed-tab.cur .deed-tab-lbl { color: #f4e6c8; }
+.deed-tab.cur .deed-tab-n { color: #c9a542; }
+
+/* ── The page itself ── */
+.deed-page {
+    flex: 1 1 auto; overflow-y: auto; position: relative;
+    margin: 12px; padding: 2px 0 10px; border-radius: 7px;
+    background:
+        radial-gradient(120% 80% at 12% 0%, rgba(255,248,224,.10), transparent 60%),
+        radial-gradient(90% 60% at 88% 100%, rgba(120,90,40,.16), transparent 55%),
+        linear-gradient(#e9dcbd, #ddcda6);
+    box-shadow: inset 6px 0 14px -8px rgba(60,40,15,.75),
+                inset -3px 0 10px -8px rgba(60,40,15,.5);
+}
+/* the binding shadow, so it reads as a page in a bound book */
+.deed-page::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 34px;
+    background: linear-gradient(90deg, rgba(90,62,24,.22), transparent);
+    pointer-events: none;
+}
+.deed-empty { padding: 34px 20px; text-align: center; color: #8d7442; font-size: 13.5px; }
+
+/* ── Chapter rule, in ink rather than gold ── */
+.deed-chap {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 15px 16px 6px 50px; margin: 0;
+    font-family: 'Cinzel', serif; font-size: 11px; font-weight: 700;
+    letter-spacing: 2.2px; text-transform: uppercase; color: #7a5f2e;
+    border: none;
+}
+.deed-chap hr { flex: 1 1 auto; border: none; border-top: 1px solid rgba(122,95,46,.32); margin: 0; }
 .deed-chap i {
     font-family: 'EB Garamond', serif; font-style: normal; font-weight: 400;
-    letter-spacing: 0; color: #8d7c5d; font-variant-numeric: tabular-nums;
+    letter-spacing: 0; font-size: 11.5px; color: #8d7442;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
 }
-.deed-gallery .ach-cell.deed-ruin .ach-cell-seal { position: relative; overflow: hidden; }
-.deed-gallery .ach-cell.deed-ruin .ach-cell-seal::after {
-    content: ''; position: absolute; inset: 0; background: rgba(0,0,0,.45);
-    clip-path: polygon(52% 0, 58% 0, 43% 55%, 58% 100%, 52% 100%, 37% 55%);
+
+/* ── One entry ── */
+.deed-row {
+    display: flex; align-items: center; gap: 9px;
+    padding: 9px 14px 9px 8px;
+    border-bottom: 1px solid rgba(122,95,46,.18);
+}
+.deed-row:last-child { border-bottom: none; }
+.deed-tick { flex: 0 0 16px; text-align: center; font-size: 14px; color: #8c2f22; line-height: 1; }
+.deed-no {
+    flex: 0 0 30px; text-align: center; font-size: 10.5px; color: #a98f5c;
+    font-variant-numeric: tabular-nums; letter-spacing: .04em;
+}
+.deed-text { flex: 1 1 auto; min-width: 0; }
+.deed-text b { display: block; font-size: 14.5px; color: #3a2c14; font-weight: 700; line-height: 1.25; }
+.deed-text i {
+    display: block; font-style: normal; font-size: 12.5px; color: #6d5a37;
+    line-height: 1.35; margin-top: 2px;
+}
+.deed-rank {
+    flex: 0 0 auto; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+    font-weight: 700; padding: 3px 7px; border-radius: 3px; white-space: nowrap;
+    border: 1px solid; font-family: system-ui, sans-serif;
+}
+/* Ink-on-vellum ranks. The --tc tier vars are tuned for a dark card and read
+   as highlighter on paper, so these are their own values. */
+.deed-rank.bronze    { color:#8a4c17; border-color:rgba(138,76,23,.42);  background:rgba(196,120,45,.16); }
+.deed-rank.silver    { color:#5c6068; border-color:rgba(92,96,104,.38);  background:rgba(140,146,158,.16); }
+.deed-rank.gold      { color:#8a6a10; border-color:rgba(160,124,20,.45); background:rgba(214,170,42,.20); }
+.deed-rank.platinum  { color:#166b6b; border-color:rgba(22,107,107,.40); background:rgba(40,168,160,.16); }
+.deed-rank.legendary { color:#6a2a8c; border-color:rgba(106,42,140,.38); background:rgba(150,70,190,.16); }
+
+/* ── Earned: the clerk has written it in ── */
+.deed-row.got { background: linear-gradient(90deg, rgba(255,240,200,.34), transparent 55%); }
+.deed-row.got .deed-no { color: #8a6a2c; }
+
+/* ── Unearned: ink not yet written, rather than a dimmed card ── */
+.deed-row.locked .deed-tick { opacity: 0; }
+.deed-row.locked .deed-no { color: #b9a67e; }
+.deed-row.locked .deed-text b { color: #9a8659; font-weight: 600; }
+.deed-row.locked .deed-text i { color: #a89263; }
+.deed-row.locked .deed-rank { opacity: .42; }
+.deed-row.secret .deed-text b { letter-spacing: .12em; }
+
+/* ── A ruin: recorded, but never ticked in triumph — an ash cross instead ── */
+.deed-row.ruin.got .deed-tick { color: #6f6157; font-size: 12px; }
+.deed-row.ruin.got .deed-text b { color: #5d4a3d; }
+.deed-row.ruin.got { background: linear-gradient(90deg, rgba(120,110,100,.16), transparent 55%); }
+
+/* ── Phone: the glyph column is the first thing to go ── */
+@media (max-width: 460px) {
+    .deed-page { margin: 8px; }
+    .deed-chap { padding-left: 34px; }
+    .deed-mark { display: none; }
+    .deed-no { flex-basis: 26px; font-size: 10px; }
+    .deed-text b { font-size: 13.5px; }
+    .deed-text i { font-size: 11.5px; }
+    .deed-rank { font-size: 8.5px; padding: 2px 5px; letter-spacing: .06em; }
 }
 
 /* ── "This court is unsaved" ── */
@@ -8977,16 +9113,17 @@ body.no-play-glow .hand-card.playable {
     color: #6e5f45; margin-top: 3px;
 }
 
-/* The Profile's door to the ledger — twin of .pf-alm-btn beside it. */
-.pf-deed-btn {
-    width: 44px; height: 44px; flex: 0 0 auto; padding: 0;
-    display: grid; place-items: center; cursor: pointer;
-    background: none; border: 1px solid rgba(201,168,76,0.45); border-radius: 9px;
-    color: var(--gold-light); font-size: 21px; line-height: 1;
+/* The Profile's door to the ledger — now a true twin of .pf-alm-btn beside it:
+   a painted object, not a glyph in a box. Same 48px, same shadow, same tilt on
+   hover, so the sealed deed and the book read as one set. */
+.pf-deed-btn { background: none; border: none; padding: 0; cursor: pointer; flex: 0 0 auto; }
+.pf-deed-btn img {
+    width: 48px; display: block;
+    filter: drop-shadow(0 4px 10px rgba(0,0,0,.55));
+    transition: transform .15s ease;
 }
-.pf-deed-btn:hover, .pf-deed-btn:focus-visible {
-    border-color: var(--gold-light); background: rgba(201,168,76,0.12); outline: none;
-}
+.pf-deed-btn:hover img, .pf-deed-btn:focus-visible img { transform: scale(1.12) rotate(-3deg); }
+.pf-deed-btn:focus-visible { outline: none; }
 @media (prefers-reduced-motion: reduce) {
     .deed-nag, .deed-nag .nag-card { transition: none; }
 }

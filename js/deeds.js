@@ -354,11 +354,17 @@
     }
 
     // ── The gallery, off the Profile ─────────────────────────────────
+    // [letter, chapter title, short label for the tab]
     const CHAPTERS = [
-        ['A', 'The Almanac'], ['B', 'Rituals of the Hand'], ['C', 'Ruin & Comedy'],
-        ['D', 'Mastery'], ['E', 'Service to the Realm'], ['F', 'Heroes & Boards'],
-        ['G', 'The Table'], ['H', 'Sealed Deeds'],
+        ['A', 'The Almanac', 'Almanac'],          ['B', 'Rituals of the Hand', 'Rituals'],
+        ['C', 'Ruin & Comedy', 'Ruin'],           ['D', 'Mastery', 'Mastery'],
+        ['E', 'Service to the Realm', 'Service'], ['F', 'Heroes & Boards', 'Heroes'],
+        ['G', 'The Table', 'Table'],              ['H', 'Sealed Deeds', 'Sealed'],
     ];
+
+    // 'all' | a chapter letter | 'unearned'. Deliberately kept between opens:
+    // a player hunting the last few wants Unearned still chosen next time.
+    let curFilter = 'all';
 
     async function openGallery() {
         let ov = document.getElementById('deedGallery');
@@ -377,49 +383,132 @@
         const defs = DEFS();
         const got = defs.filter(d => have[d.id]).length;
 
-        let cells = '';
-        CHAPTERS.forEach(([letter, title]) => {
-            const mine = defs.filter(d => (d.num || '')[0] === letter);
-            if (!mine.length) return;
-            const n = mine.filter(d => have[d.id]).length;
-            cells += `<div class="deed-chap"><span>${title}</span><i>${n}/${mine.length}</i></div>`;
-            mine.forEach(d => {
-                const unlocked = !!have[d.id];
-                const hidden = d.secret && !unlocked;
-                cells += `
-                    <div class="ach-cell deed-${d.rank} ${unlocked ? 'got' : 'locked'} ${hidden ? 'secret' : ''} ${d.ruin ? 'deed-ruin' : ''}">
-                        <div class="ach-cell-seal">${unlocked ? '★' : (hidden ? '?' : '✦')}</div>
-                        <div class="ach-cell-body"><b></b><span></span></div>
-                        <div class="ach-cell-stars">
-                            <span class="ach-cell-tier">${RANK_LABEL[d.rank] || d.rank}</span>
-                        </div>
-                    </div>`;
-            });
-        });
-
+        // The shell. Everything here is static text or a number we computed —
+        // no deed data reaches innerHTML; that all goes in as textContent below.
+        const R = 24, CIRC = 2 * Math.PI * R;
+        const pct = defs.length ? got / defs.length : 0;
         ov.innerHTML = `
             <div class="ach-inner">
                 <div class="ach-head">
-                    <div class="ach-title">The Ledger of Deeds</div>
-                    <div class="ach-sub">${got} of ${defs.length} recorded</div>
+                    <div class="deed-progress">
+                        <svg viewBox="0 0 54 54" width="54" height="54" aria-hidden="true">
+                            <circle cx="27" cy="27" r="${R}" fill="none"
+                                    stroke="rgba(201,168,76,.20)" stroke-width="4"/>
+                            <circle cx="27" cy="27" r="${R}" fill="none" stroke="#c9a84c"
+                                    stroke-width="4" stroke-linecap="round"
+                                    stroke-dasharray="${CIRC}"
+                                    stroke-dashoffset="${CIRC * (1 - pct)}"/>
+                        </svg>
+                        <b>${got}</b>
+                    </div>
+                    <div class="deed-heading">
+                        <div class="ach-title">The Ledger of Deeds</div>
+                        <div class="ach-sub">${got} of ${defs.length} recorded</div>
+                    </div>
                     <button class="ach-x" aria-label="Close">✕</button>
                 </div>
-                <div class="ach-grid">${cells}</div>
+                <div class="deed-tabs"></div>
+                <div class="deed-page"></div>
             </div>`;
 
-        // Text as text — deed names and descriptions are data.
-        const cellEls = ov.querySelectorAll('.ach-cell');
-        let i = 0;
-        CHAPTERS.forEach(([letter]) => {
-            defs.filter(d => (d.num || '')[0] === letter).forEach(d => {
-                const el = cellEls[i++];
-                if (!el) return;
-                const hidden = d.secret && !have[d.id];
-                el.querySelector('b').textContent = hidden ? '???' : d.name;
-                el.querySelector('span').textContent = hidden
-                    ? 'A secret, still unfound.' : d.desc;
+        const tabsEl = ov.querySelector('.deed-tabs');
+        const pageEl = ov.querySelector('.deed-page');
+
+        function makeTab(key, art, label, count) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'deed-tab' + (curFilter === key ? ' cur' : '');
+            b.title = label;
+            b.setAttribute('aria-label', label);
+            const a = document.createElement('span');
+            a.className = 'deed-tab-art';
+            a.textContent = art;
+            const l = document.createElement('span');
+            l.className = 'deed-tab-lbl';
+            l.textContent = label;
+            const c = document.createElement('span');
+            c.className = 'deed-tab-n';
+            c.textContent = count;
+            b.append(a, l, c);
+            b.onclick = () => { curFilter = key; draw(); };
+            return b;
+        }
+
+        function drawTabs() {
+            tabsEl.innerHTML = '';
+            tabsEl.appendChild(makeTab('all', '✦', 'All', got + '/' + defs.length));
+            CHAPTERS.forEach(([L, , short]) => {
+                const mine = defs.filter(d => (d.num || '')[0] === L);
+                if (!mine.length) return;
+                const n = mine.filter(d => have[d.id]).length;
+                tabsEl.appendChild(makeTab(L, L, short, n + '/' + mine.length));
             });
-        });
+            tabsEl.appendChild(makeTab('unearned', '?', 'Unearned', String(defs.length - got)));
+        }
+
+        function drawPage() {
+            pageEl.innerHTML = '';
+            let shown = 0;
+            CHAPTERS.forEach(([L, title]) => {
+                if (curFilter !== 'all' && curFilter !== 'unearned' && curFilter !== L) return;
+                const all = defs.filter(d => (d.num || '')[0] === L);
+                if (!all.length) return;
+                const n = all.filter(d => have[d.id]).length;
+                const mine = curFilter === 'unearned' ? all.filter(d => !have[d.id]) : all;
+                if (!mine.length) return;
+
+                const head = document.createElement('div');
+                head.className = 'deed-chap';
+                const ht = document.createElement('span'); ht.textContent = title;
+                const cnt = document.createElement('i'); cnt.textContent = n + ' of ' + all.length;
+                head.append(ht, document.createElement('hr'), cnt);
+                pageEl.appendChild(head);
+
+                mine.forEach(d => {
+                    const unlocked = !!have[d.id];
+                    const hidden = d.secret && !unlocked;
+                    const r = document.createElement('div');
+                    r.className = 'deed-row ' + (unlocked ? 'got' : 'locked')
+                                + (hidden ? ' secret' : '') + (d.ruin ? ' ruin' : '');
+
+                    const tick = document.createElement('span');
+                    tick.className = 'deed-tick';
+                    // A ruin is recorded, never ticked in triumph.
+                    tick.textContent = unlocked ? (d.ruin ? '✕' : '✓') : '';
+
+                    const no = document.createElement('span');
+                    no.className = 'deed-no';
+                    no.textContent = d.num || '';
+
+                    const txt = document.createElement('span');
+                    txt.className = 'deed-text';
+                    const nm = document.createElement('b');
+                    nm.textContent = hidden ? '———' : d.name;
+                    const ds = document.createElement('i');
+                    ds.textContent = hidden ? 'A secret, still unfound.' : d.desc;
+                    txt.append(nm, ds);
+
+                    const rk = document.createElement('span');
+                    rk.className = 'deed-rank ' + d.rank;
+                    rk.textContent = RANK_LABEL[d.rank] || d.rank;
+
+                    r.append(tick, no, txt, rk);
+                    pageEl.appendChild(r);
+                    shown++;
+                });
+            });
+            if (!shown) {
+                const e = document.createElement('div');
+                e.className = 'deed-empty';
+                e.textContent = curFilter === 'unearned'
+                    ? 'Nothing left unearned. The ledger is full.'
+                    : 'No deeds in this chapter yet.';
+                pageEl.appendChild(e);
+            }
+        }
+
+        function draw() { drawTabs(); drawPage(); pageEl.scrollTop = 0; }
+        draw();
 
         ov.querySelector('.ach-x').onclick = closeGallery;
         ov.onclick = (e) => { if (e.target === ov) closeGallery(); };
