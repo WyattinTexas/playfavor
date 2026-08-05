@@ -9290,3 +9290,787 @@ body.no-play-glow .hand-card.playable {
     padding: 0 14px;
 }
 .thr-timed b { color: #e0cb97; font-style: normal; }
+
+/* ══ DESKTOP TABLE ═══════════════════════════════════════════════════════
+   Wyatt 8/5: the phone's table reads better than the desktop's. It is not
+   a scaled version of the same design — it is a DIFFERENT layout. The
+   markup for it (#table-view, .tv-*, the seat mats) is always in the page;
+   only the CSS was gated behind the landscape-phone query, so a desktop
+   fell back to the old sidebar-and-empty-table arrangement.
+
+   These are the TABLE rules from that block, re-emitted for a desktop.
+   Title-screen, profile and character-select rules are deliberately NOT
+   copied: the front hall is staying exactly as it is.
+
+   FIRST CUT — proportions are still the phone's and want tuning for a
+   900px-tall canvas.                                                    */
+@media (min-width: 1000px) and (min-height: 600px) {
+
+        /* Swap desktop layout for the table view. */
+        .game-layout { display: none !important; }
+        #table-view {
+            display: block;
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            height: 100dvh;
+            overflow: hidden;
+        }
+
+        /* The table is a positioning canvas; mats seat around the center. */
+        .tv-table { position: relative; height: 100dvh; }
+
+        /* Scene depth (Wingspan-style): a warm pool of light on the play area
+           and a soft vignette at the edges, breathing very slowly. */
+        .tv-table::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 62% 55% at 50% 44%, rgba(255,196,110,0.10), transparent 70%),
+                radial-gradient(ellipse 130% 120% at 50% 50%, transparent 55%, rgba(0,0,0,0.42) 100%);
+            pointer-events: none;
+            z-index: 1;
+            animation: tvGlowBreathe 16s ease-in-out infinite;
+        }
+
+        /* ── Z8 · Phase pill — slim, top-center just under the seat chips ── */
+        .phase-bar {
+            top: 52px;
+            padding: 2px 12px;
+            gap: 6px;
+            border-width: 1px;
+            z-index: 6;
+        }
+        .phase-bar .act-tag { font-size: 9px; }
+        .phase-bar .phase-text { font-size: 9px; letter-spacing: 1.5px; }
+
+        /* The TEST REALM badge would sit on the mission rail — park it
+           bottom-left, out of every zone's way (build stamp stays legible). */
+        #testRealmBadge {
+            top: auto !important;
+            right: auto !important;
+            bottom: 0;
+            left: 0;
+            border-radius: 0 8px 0 0 !important;
+            padding: 2px 8px !important;
+            opacity: 0.7 !important;
+        }
+
+        /* ── Z1 · Purse — your four currencies, top-left, 2×2 grid of big
+           table-token chips (juicy pass: icons 34px, numbers 26px). ── */
+        .tv-purse {
+            position: absolute;
+            top: 6px;
+            left: max(8px, env(safe-area-inset-left));
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 5px;
+            z-index: 6;
+        }
+        .tv-purse-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px 4px 5px;
+            border-radius: 17px;
+            background: rgba(10,6,3,0.68);
+            border: 1px solid rgba(201,168,76,0.25);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            cursor: pointer;
+        }
+        .tv-purse-chip img {
+            width: 34px; height: 34px;
+            object-fit: contain;
+            filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6));
+        }
+        .tv-purse-chip.prestige img { border-radius: 50%; object-fit: cover; }
+        .tv-purse-chip b {
+            font-family: 'Cinzel', serif;
+            font-weight: 900;
+            font-size: 26px;
+            color: var(--gold-light);
+            line-height: 1;
+        }
+        .tv-purse-chip.scorn b { color: #f0a0a0; }
+        .tv-purse-chip.favor b { color: #a9d4ff; }
+        /* Tap-a-chip name label (phones have no hover) */
+        #tvChipTip {
+            position: fixed;
+            z-index: 10500;
+            font-family: 'Cinzel', serif;
+            font-size: 10px;
+            letter-spacing: 1px;
+            color: var(--gold-light);
+            background: rgba(14,7,2,0.92);
+            border: 1px solid var(--gold-dark);
+            border-radius: 8px;
+            padding: 4px 10px;
+            pointer-events: none;
+            white-space: nowrap;
+            transition: opacity 0.25s;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.5);
+        }
+        #tvChipTip.out { opacity: 0; }
+
+        /* ── Z3 · Seat chips — every player in one top-center row, YOU first.
+           Chips keep .pmat + data-pi so the delta FX and coach-marks that
+           target #table-view .pmat[data-pi] keep landing. ── */
+        .tv-seats {
+            position: absolute;
+            top: 3px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 7px;
+            z-index: 6;
+        }
+        .tv-seats .pmat.seat-chip {
+            position: relative;
+            width: 37px; height: 37px;
+            border-radius: 9px;
+            border: 2px solid var(--gold-dark);
+            background: var(--wood-deepest);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.55);
+            cursor: pointer;
+            transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+        }
+        .tv-seats .pmat.seat-chip:hover { border-color: var(--gold); }
+        .tv-seats .pmat.seat-chip.active {
+            border-color: var(--gold-light);
+            box-shadow: 0 0 12px rgba(201,168,76,0.65), 0 2px 8px rgba(0,0,0,0.55);
+            transform: translateY(1px) scale(1.07);
+        }
+        .chip-art {
+            position: absolute;
+            inset: 0;
+            width: 100%; height: 100%;
+            object-fit: cover;
+            border-radius: 7px;
+            display: block;
+        }
+        .chip-crown {
+            position: absolute;
+            top: -8px; right: -6px;
+            pointer-events: none;
+        }
+        .chip-crown .emblem-badge {
+            width: 15px;
+            height: 15px;
+            vertical-align: 0;
+            border-color: var(--gold);
+        }
+        .chip-you {
+            position: absolute;
+            bottom: -7px; left: 50%;
+            transform: translateX(-50%);
+            font-family: 'Cinzel', serif;
+            font-size: 6px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: var(--gold-light);
+            background: rgba(14,7,2,0.85);
+            border: 1px solid rgba(201,168,76,0.4);
+            border-radius: 4px;
+            padding: 0 4px;
+            pointer-events: none;
+        }
+        .chip-count {
+            position: absolute;
+            bottom: -5px; right: -5px;
+            min-width: 13px; height: 13px;
+            border-radius: 7px;
+            background: rgba(14,7,2,0.88);
+            border: 1px solid rgba(201,168,76,0.35);
+            color: var(--gold-dark);
+            font-family: 'Cinzel', serif;
+            font-size: 7px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 2px;
+            pointer-events: none;
+        }
+
+        /* ── Z2 · Skill rail — always-visible icon+number chips, left edge,
+           TWO columns under the purse (juicy pass). --railRows counts GRID
+           rows (set by renderTvSkills = ceil(chips/2)); --tvChipH derives
+           the chip height from the space between purse (104) and hand strip
+           (106), and icon/number sizes scale off it, so everything fits a
+           390px screen and degrades gracefully as flex/special chips appear. */
+        .tv-skills {
+            position: absolute;
+            top: 104px;
+            bottom: 106px;
+            left: max(8px, env(safe-area-inset-left));
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            align-content: start;
+            gap: 4px;
+            z-index: 5;
+            --railRows: 3;
+            --tvChipH: min(56px, calc((100dvh - 210px - (var(--railRows) - 1) * 4px) / var(--railRows)));
+        }
+        .tv-skill-chip {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 0 8px 0 5px;
+            border-radius: 14px;
+            background: rgba(10,6,3,0.68);
+            border: 1px solid rgba(201,168,76,0.25);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            height: var(--tvChipH);
+            cursor: pointer;
+        }
+        .tv-skill-chip .skill-svg {
+            width: calc(var(--tvChipH) * 0.7);
+            height: calc(var(--tvChipH) * 0.7);
+            min-width: calc(var(--tvChipH) * 0.7);
+            object-fit: contain;
+        }
+        .tv-skill-chip b {
+            font-family: 'Cinzel', serif;
+            font-weight: 900;
+            font-size: calc(var(--tvChipH) * 0.52);
+            color: var(--gold-light);
+            min-width: calc(var(--tvChipH) * 0.4);
+            text-align: center;
+            line-height: 1;
+        }
+        .tv-skill-chip.zero { opacity: 0.38; }
+        .tv-skill-chip.flex {
+            border-style: dashed;
+            border-color: rgba(201,168,76,0.5);
+        }
+        /* The flex chip wears BOTH faces of its either/or pair, slightly
+           overlapped — one icon read as a duplicate of the fixed chip. */
+        .tv-skill-chip.flex .flex-pair { display: inline-flex; align-items: center; }
+        .tv-skill-chip.flex .flex-pair .skill-svg {
+            width: calc(var(--tvChipH) * 0.58);
+            height: calc(var(--tvChipH) * 0.58);
+            min-width: calc(var(--tvChipH) * 0.58);
+        }
+        .tv-skill-chip.flex .flex-pair .skill-svg + .skill-svg { margin-left: -4px; }
+        .tv-skill-chip.special { border-color: rgba(176,138,255,0.45); }
+
+        /* ── Z4 · Mission rail — Missions of the Realm + My Missions, top-right ── */
+        .tv-mission-rail {
+            position: absolute;
+            top: 6px;
+            right: max(8px, env(safe-area-inset-right));
+            display: flex;
+            align-items: stretch;
+            gap: 4px;
+            z-index: 6;
+        }
+        .tv-mission-rail .tv-mission {
+            width: 37px;
+            aspect-ratio: 46 / 64;
+            height: auto;
+            border-radius: 4px;
+            object-fit: cover;
+            border: 1px solid rgba(201,168,76,0.35);
+            box-shadow: 0 3px 8px rgba(0,0,0,0.5);
+            cursor: pointer;
+            transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+        }
+        .tv-mission-rail .tv-mission:hover {
+            transform: translateY(-2px) scale(1.05);
+            border-color: var(--gold);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.55), 0 0 10px rgba(201,168,76,0.3);
+        }
+        /* Ghost seat (Wingspan): an empty mission slot still reads as a place. */
+        .tv-mission-rail .tv-mission.ghost {
+            display: inline-block;
+            background: rgba(201,168,76,0.045);
+            border: 1.5px dashed rgba(201,168,76,0.3);
+            box-shadow: inset 0 0 16px rgba(0,0,0,0.35);
+            cursor: default;
+        }
+        .tv-mission-rail .tv-mission.ghost:hover { transform: none; border-color: rgba(201,168,76,0.3); }
+        .tv-mym {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1px;
+            padding: 2px 6px;
+            border-radius: 8px;
+            background: rgba(10,6,3,0.68);
+            border: 1px solid rgba(201,168,76,0.25);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            cursor: pointer;
+            font-family: 'Cinzel', serif;
+            line-height: 1.1;
+        }
+        .tv-mym:hover { border-color: var(--gold); }
+        .tv-mym .mym-icon { width: 16px; height: 16px; object-fit: contain; }
+        .tv-mym .mym-label {
+            font-size: 6px; font-weight: 700; letter-spacing: 0.5px;
+            text-transform: uppercase; color: var(--gold-dark);
+        }
+        .tv-mym .mym-count { font-size: 12px; font-weight: 900; color: var(--gold-light); }
+
+        /* ── Z5 · Your board, small — right column under the missions.
+           The ring rides the same %-track as the big overlay. ── */
+        .tv-board-thumb {
+            position: absolute;
+            top: 64px;
+            right: max(8px, env(safe-area-inset-right));
+            /* 2× the original 118px on standard phones (Wyatt 7/8); eases
+               down on narrow viewports so the stage keeps its floor. The
+               stage's right edge tracks this same clamp — change together. */
+            width: clamp(150px, 28vw, 236px);
+            border: 2px solid var(--gold-dark);
+            border-radius: 6px;
+            overflow: hidden;
+            background: var(--wood-deepest);
+            box-shadow: 0 3px 10px rgba(0,0,0,0.55);
+            cursor: pointer;
+            z-index: 5;
+            transition: border-color 0.2s;
+        }
+        .tv-board-thumb:hover { border-color: var(--gold); }
+        .tv-board-thumb .tv-thumb-board {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+        .tv-board-thumb .thumb-ring {
+            position: absolute;
+            width: 11%;
+            aspect-ratio: 1;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+        }
+
+        /* ── Z6 · Center stage — YOUR played cards as tucked skill stacks.
+           Every focus moment (overlays, action panel, FX) lands over this. ── */
+        .tv-stage {
+            position: absolute;
+            left: 206px;   /* clears the two-column juicy skill rail */
+            right: calc(clamp(150px, 28vw, 236px) + 20px);   /* clears the 2× board thumb */
+            top: 62px;
+            bottom: 100px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 10px;
+            z-index: 2;
+            --tvStackCardH: clamp(64px, 24dvh, 96px);
+            /* Many piles must never slide under the board thumb — the strip
+               scrolls instead (Wyatt 7/23: every pile observable, tappable). */
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+        }
+        .tv-stage::-webkit-scrollbar { display: none; }
+        /* 5+ families: thinner cards, left-anchored so the scroll start is
+           always reachable (a centered overflow clips its own head). */
+        .tv-stage.dense {
+            --tvStackCardH: clamp(56px, 19dvh, 80px);
+            justify-content: flex-start;
+            gap: 8px;
+        }
+        .tv-stack {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            flex: none;
+        }
+        .tv-stack-card {
+            width: calc(var(--tvStackCardH) * 0.666);
+            height: var(--tvStackCardH);
+            border-radius: 4px;
+            object-fit: cover;
+            border: 1px solid rgba(201,168,76,0.3);
+            box-shadow: 0 3px 10px rgba(0,0,0,0.55);
+        }
+        .tv-stack-card + .tv-stack-card {
+            margin-top: calc(var(--tvPeek, 20px) - var(--tvStackCardH));
+        }
+        .tv-stack-card.doubled {
+            box-shadow: 0 0 0 2px rgba(255,200,80,0.9), 0 0 12px rgba(255,190,60,0.5), 0 3px 10px rgba(0,0,0,0.55);
+        }
+        .tv-stack-label {
+            font-family: 'Cinzel', serif;
+            font-size: 6.5px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: var(--typeC, var(--gold-dark));
+            opacity: 0.95;
+            margin-top: 3px;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+        }
+        .tv-stage-empty {
+            font-family: 'EB Garamond', serif;
+            font-style: italic;
+            font-size: 12px;
+            color: var(--gold-dark);
+            opacity: 0.55;
+            align-self: center;
+            letter-spacing: 1px;
+        }
+
+        /* ── Popovers (gear menu / My Missions) ── */
+        .tv-popover-host { display: none; }
+        .tv-popover-host.active {
+            display: block;
+            position: absolute;
+            inset: 0;
+            z-index: 70;
+            background: rgba(8,4,2,0.45);
+        }
+        .tv-pop {
+            position: absolute;
+            background: linear-gradient(160deg, var(--wood-darker) 0%, var(--wood-deepest) 100%);
+            border: 2px solid var(--gold-dark);
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            padding: 8px;
+            max-height: calc(100dvh - 60px);
+            overflow-y: auto;
+        }
+        .tv-pop.mym {
+            top: 58px;
+            right: max(8px, env(safe-area-inset-right));
+            width: 216px;
+        }
+        .tv-pop-title {
+            font-family: 'Cinzel', serif;
+            font-size: 9px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--gold);
+            text-align: center;
+            margin-bottom: 6px;
+        }
+
+        /* The floating music/log buttons relocate into the ⚙ popover here.
+           The in-game selector must repeat: `body:has(#game-screen.active)
+           .log-toggle { display:flex }` (the desktop slide-aside rule) beats a
+           bare class by specificity, so without it the log button REAPPEARS
+           on phones mid-game — floating over the seat row and eating taps. */
+        .music-toggle, .log-toggle,
+        body:has(#game-screen.active) .music-toggle,
+        body:has(#game-screen.active) .log-toggle { display: none; }
+
+        /* ── Z7 · Hand strip — ALWAYS visible, card bottoms cropped ~18%.
+           The strip hangs 28px past the screen edge and #table-view's
+           overflow:hidden does the cropping — never overflow on the strip
+           itself, or it would clip the bloom. ── */
+        .tv-hand-strip {
+            position: absolute;
+            left: 0; right: 0;
+            bottom: -28px;
+            height: 148px;
+            z-index: 45;
+            /* Only the cards are interactive — the full-width band must not
+               eat taps aimed at the skill rail's bottom chip or the table. */
+            pointer-events: none;
+        }
+        .tv-hand-strip .hand-card { pointer-events: auto; }
+        .tv-hand-strip::before {
+            content: '';
+            position: absolute; inset: 0;
+            background: linear-gradient(0deg,
+                rgba(22,10,3,0.95) 0%, rgba(35,18,7,0.8) 50%, rgba(42,22,10,0) 100%);
+            box-shadow: inset 0 6px 18px rgba(0,0,0,0.3);
+            z-index: 0;
+        }
+        /* "Your turn" pulse along the strip's top edge (replaces the
+           auto-opening drawer as the signal that you're up). */
+        .tv-hand-strip.your-turn::after {
+            content: '';
+            position: absolute;
+            left: 8%; right: 8%; top: 24px;
+            height: 2px;
+            border-radius: 2px;
+            background: linear-gradient(90deg, transparent, rgba(240,210,120,0.85), transparent);
+            animation: tvTurnPulse 2.2s ease-in-out infinite;
+            pointer-events: none;
+        }
+        .tv-hand {
+            position: relative;
+            z-index: 1;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            padding-bottom: 6px;
+        }
+        .tv-hand .hand-arc { display: flex; align-items: flex-end; }
+        .tv-hand .hand-card {
+            width: 86px; height: 120px;
+            margin: 0 -11px;
+            border-radius: 6px;
+            /* Transform is the only animated property, in AND out, and margins
+               never change — so gliding across the fan is pure GPU and the tray
+               itself never reflows under the finger. */
+            transition: transform 0.15s cubic-bezier(0.33, 1, 0.68, 1), opacity 0.2s;
+            touch-action: none;          /* the gesture owns the touch — no browser pan / pointercancel */
+            -webkit-touch-callout: none; /* long-press must not summon the image save sheet */
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .tv-hand .hand-card img { -webkit-user-drag: none; }
+        /* Drag-up (Hearthstone pull): the card rides the finger via inline
+           transform — transition off so it tracks 1:1 — while the rest of
+           the fan dims to make room for the decision. */
+        .tv-hand .hand-card.dragging {
+            transition: none !important;
+            z-index: 70;
+            filter: drop-shadow(0 14px 26px rgba(0,0,0,0.65)) drop-shadow(0 0 16px rgba(240,210,120,0.4));
+        }
+        .tv-hand-strip.drag-from .hand-card:not(.dragging) { opacity: 0.45; }
+        /* Touch or hover BLOOMS the card in place — the Battlegrounds tray feel.
+           Slide along the fan and each card blooms in turn (JS .bloom).
+           --bloomScale fits the card to the actual screen height and
+           --bloomShift walks edge cards inward so nothing is ever cut off;
+           both are set by _tvBloomLayout() in ui.js. Touch gets ONLY the
+           JS-managed .bloom — sticky mobile :hover next to it showed two
+           bloomed cards at once. */
+        /* The strip crops the resting card's bottom ~18% below the screen
+           edge, so the bloom lifts 28px: 22px to clear the crop + the old
+           6px of breathing room. _tvBloomLayout()'s breathe stays honest. */
+        .tv-hand .hand-card.bloom {
+            transform: translateX(var(--bloomShift, 0px)) translateY(-28px) scale(var(--bloomScale, 2.8)) !important;
+            transform-origin: bottom center;
+            z-index: 60;
+        }
+        @media (hover: hover) {
+            .tv-hand-strip .tv-hand .hand-card:hover {
+                transform: translateX(var(--bloomShift, 0px)) translateY(-28px) scale(var(--bloomScale, 2.8)) !important;
+                transform-origin: bottom center;
+                z-index: 60;
+            }
+        }
+        /* Selected keeps a modest lift — the action sheet already shows it big. */
+        .tv-hand .hand-card.selected {
+            transform: translateY(-38px) scale(1.16) !important;
+            z-index: 30;
+            filter: drop-shadow(0 0 10px rgba(240,210,120,0.65));
+        }
+        /* Battlegrounds-style playable glow: these you can act on right now. */
+        .tv-hand .hand-card.playable {
+            box-shadow: 0 0 0 2px rgba(140,225,125,0.95), 0 0 18px 4px rgba(120,220,120,0.55);
+            animation: playableBreathe 2.2s ease-in-out infinite;
+        }
+        .tv-hand-waiting {
+            color: var(--gold); opacity: 0.4;
+            font-family: 'Cinzel', serif;
+            font-size: 11px; letter-spacing: 2px;
+            align-self: center;
+        }
+
+        /* ── Action sheet: the selected card sits big and readable beside its
+           actions (Battlegrounds "the card is the dialog") instead of a menu
+           floating over a hidden card. ── */
+        .action-panel {
+            bottom: 10px;
+            padding: 10px 16px;
+            min-width: 0;
+            max-width: 96vw;
+            max-height: calc(100dvh - 16px);
+            flex-direction: row;
+            align-items: center;
+            gap: 16px;
+        }
+        .action-panel .action-card-img {
+            /* !important: outranks the desktop-default display:none that sits
+               later in the sheet (same specificity, later source order). */
+            display: block !important;
+            height: clamp(150px, 54dvh, 214px);
+            width: auto;
+            border-radius: 8px;
+            box-shadow: 0 8px 22px rgba(0,0,0,0.65);
+        }
+        .action-panel .action-body {
+            align-items: stretch;
+            min-width: 216px;
+            max-width: 52vw;
+            overflow-y: auto;
+            max-height: calc(100dvh - 40px);
+        }
+        .action-panel .action-header { margin-bottom: 2px; }
+        /* No text summaries — the card image IS the description. The PRICE
+           line is the deliberate exception: costs must show before commit. */
+        .action-panel .action-card-name,
+        .action-panel .action-card-type,
+        .action-panel .action-skills,
+        .action-panel .action-special,
+        .action-panel .action-rewards { display: none; }
+        .action-panel .action-price { font-size: 11px; margin-top: 0; }
+        .action-panel .action-buttons { gap: 6px; margin-top: 4px; }
+        .action-panel .action-btn { padding: 8px 14px !important; font-size: 11px !important; }
+
+
+
+        /* ── FX layer (token drops / card tucks / mission reveals) ── */
+        #tvFx {
+            position: absolute; inset: 0;
+            pointer-events: none;
+            z-index: 60;
+            overflow: hidden;
+        }
+
+        /* ── Card-play reveal on a short screen: read it left-to-right —
+           who (head) | the card BIG | name + chips. No scroll; the card
+           takes nearly the full height. (.mc-chip compact sizing lives in
+           the ceremony's landscape block — same media condition.) ── */
+        .spl-inner {
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            gap: 22px;
+            max-width: 96vw;
+        }
+        .spl-head {
+            flex-direction: column;
+            text-align: center;
+            gap: 7px;
+            width: clamp(150px, 24vw, 220px);
+            flex-shrink: 0;
+        }
+        .spl-head-text { text-align: center; }
+        .spl-avatar { width: 52px; height: 52px; }
+        .spl-title { font-size: 16px; letter-spacing: 1px; }
+        .spl-char { font-size: 11px; }
+        .spotlight-card { height: min(78dvh, 340px); }
+        .spl-payoff {
+            width: clamp(170px, 30vw, 300px);
+            flex-shrink: 0;
+            gap: 8px;
+        }
+        .spl-payoff .spotlight-name { font-size: 17px; letter-spacing: 1px; }
+        .spl-chips { gap: 5px; }
+        .spl-special { font-size: 12px; }
+        .spotlight-dismiss { font-size: 9px; bottom: 8px; }
+        /* Human's own quick banner clears the hand strip. */
+        .mini-spotlight { bottom: 128px; }
+
+        /* ── Opponent inspect: header, then their full purse + summed skills
+           as one HUD-language chip rail (the same chips you read your own
+           stats in on phones), then board (ring on its track) + played-card
+           stacks side by side. No stat pills, no reveal toggle. ── */
+        .opp-ov-inner {
+            gap: 6px;
+            max-height: 100dvh;
+            max-width: 96vw;
+            padding: 6px 0;
+        }
+        .opp-ov-header { justify-content: center; gap: 10px; margin-bottom: 0; }
+        .opp-ov-avatar { width: 40px; height: 40px; }
+        .opp-ov-name { font-size: 18px; letter-spacing: 2px; }
+        .opp-ov-stats { display: none; }
+        .opp-ov-panel { display: none; }
+        .opp-ov-chips {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 4px 6px;
+            max-width: 94vw;
+            --tvChipH: 30px;
+            animation: ovZoom 0.4s cubic-bezier(0.16,1,0.3,1);
+        }
+        /* Overlay-sized chips: the rail's purse chips are HUD-large — trim
+           them so purse and skills read as one row here. */
+        .opp-ov-chips .tv-purse-chip { padding: 2px 8px 2px 4px; gap: 4px; }
+        .opp-ov-chips .tv-purse-chip img { width: 22px; height: 22px; }
+        .opp-ov-chips .tv-purse-chip b { font-size: 17px; }
+        .opp-ov-chips .tv-purse-chip.emblem img { border-radius: 50%; object-fit: cover; }
+        .opp-ov-chips .tv-purse-chip.emblem b {
+            font-size: 11px;
+            letter-spacing: 1px;
+        }
+        .opp-ov-mid {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            margin-bottom: 0;
+        }
+        .opp-ov-boardwrap {
+            display: block;
+            position: relative;
+            flex-shrink: 0;
+            animation: ovZoom 0.45s cubic-bezier(0.16,1,0.3,1);
+        }
+        .opp-ov-board {
+            display: block;
+            max-width: 50vw;
+            max-height: 56dvh;
+            width: auto;
+            margin-bottom: 0;
+            animation: none;   /* the wrapper animates so the ring rides along */
+        }
+        .opp-ov-ring {
+            display: block;
+            position: absolute;
+            width: 11%;
+            aspect-ratio: 1;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+        }
+        .opp-ov-stacks {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            max-width: 40vw;
+            max-height: 74dvh;
+            overflow-x: auto;
+            padding: 4px 2px;
+            --tvStackCardH: clamp(76px, 24dvh, 112px);
+            animation: ovFan 0.45s cubic-bezier(0.16,1,0.3,1);
+        }
+        .opp-ov-toggle,
+        .opp-ov-cards-panel { display: none; }
+
+        /* ── Mission browser on phones: slimmer edge nav, cards fill height ── */
+        .mb-title { margin-bottom: 0; }
+        .mb-card img { height: 64dvh; }
+        .mb-track { padding: 12px 50vw; }
+        .mb-nav { width: 40px; height: 40px; font-size: 26px; }
+        .mb-nav.prev { left: max(8px, env(safe-area-inset-left)); }
+        .mb-nav.next { right: max(8px, env(safe-area-inset-right)); }
+        .mission-lb-label { bottom: 8px; font-size: 12px; letter-spacing: 2px; }
+        .mission-lb-action { bottom: 30px; }
+        .mission-lb-action .btn-royal { padding: 7px 18px; font-size: 11px; }
+
+        /* ── Mission Journal on phones: near-fullscreen ledger ── */
+        .mj-scroll { width: 96vw; max-height: 96dvh; }
+        .mj-head { padding: 6px 14px 5px; }
+        .mj-title { font-size: 13px; letter-spacing: 4px; }
+        .mj-body { padding: 8px 14px 10px; }
+        .mj-section + .mj-section { margin-top: 8px; }
+        .mj-section-title { font-size: 9px; margin-bottom: 8px; }
+        .mj-grid { gap: 10px; }
+        .mj-card img { height: 42dvh; }
+        .mj-due { font-size: 11px; margin-top: 3px; }
+        .mj-roller { height: 9px; }
+}
+
+
+/* ── Desktop table: raise the ceilings ───────────────────────────────────
+   The promoted rules size themselves off dvh but cap in px for a phone:
+   --tvChipH tops out at 56 and --tvStackCardH at 96, so on a 900px-tall
+   screen both hit their ceiling and the table floats small in the middle of
+   the canvas — the same cap-binding the front hall had.
+
+   Raising the ceilings is deliberately all this does. `zoom` on #table-view
+   was tried first and is WRONG: the layout is viewport-anchored (one fixed
+   and twenty absolute rules) and zooming the container drops the hand strip
+   off the bottom entirely.                                                */
+@media (min-width: 1000px) and (min-height: 600px) {
+    .tv-skills {
+        --tvChipH: min(84px, calc((100dvh - 260px - (var(--railRows) - 1) * 8px) / var(--railRows)));
+        gap: 8px;
+    }
+    .tv-stage       { --tvStackCardH: clamp(96px, 22dvh, 168px); }
+    .tv-stage.dense { --tvStackCardH: clamp(80px, 18dvh, 132px); }
+}
