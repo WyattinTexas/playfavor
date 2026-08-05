@@ -6889,6 +6889,10 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
       await pg.evaluate((cfg) => {
         window.shuffleArray = (a) => [...a];
         window.CINEMATIC_SPEED = 0.05;      // fast spotlights for the audit
+        // The turn clock idles while the suite drives by hand — a slow
+        // Chrome 40 minutes in must never let 30s expire mid-assert.
+        // Beat 3.5 shrinks these LIVE to prove the clock itself.
+        window.TT_MS = { throw: 9e9, choice: 9e9, decide: 9e9 };
         FMP._T.windowMin = 30000;           // never fall solo mid-beat
         FMP._T.windowSpread = 1;
         Object.assign(FMP._T, cfg || {});
@@ -7070,6 +7074,60 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     ok(slotA.pos === slid.pos, `and it is the slot A chose (slot ${slid.pos + 1})`);
     ok(/pays 5 Gold to slide/i.test(bLog), "B's log narrates A's paid slide");
 
+    // ── Beat 3.5: THE TURN CLOCK (Wyatt 8/5) — shrink A's clocks live and
+    //    let them expire: the 30s throw tier must put in the LAST CARD A
+    //    TOUCHED, the 20s reveal tier must take the basic door, and both
+    //    auto-moves must stream so the lockstep hashes still agree. ──
+    const clockRig = await pA.evaluate(() => {
+      window.TT_MS.throw = 2600; window.TT_MS.choice = 2200;
+      const hand = game.players[0].hand.map(c => c.id);
+      // A REAL pointerdown on the third fan card — the same touch a finger
+      // makes — so the "last card you touched" memory records through the
+      // real path, not a test seam.
+      const el = document.querySelectorAll('#handZone .hand-card')[2];
+      el.dispatchEvent(new PointerEvent('pointerdown',
+        { bubbles: true, button: 0, clientX: 10, clientY: 10 }));
+      // This round's clock armed while TT_MS was inflated — re-arm so the
+      // shrunk window (and its pill) start counting from HERE.
+      ttArmThrow();
+      return { hand, touched: hand[2] };
+    });
+    await sleep(400);   // mid-countdown — the pill must be up and honest
+    const pill = await pA.evaluate(() => {
+      const el = document.getElementById('turnClock');
+      return { on: el.classList.contains('on'), txt: el.textContent };
+    });
+    ok(pill.on && /^0:0[123]$/.test(pill.txt),
+      `the turn clock pill runs the countdown (showing "${pill.txt}")`);
+    await pA.waitForFunction(() => game.pendingActivations[0] !== null, { timeout: 12000 });
+    const thrown = await pA.evaluate(() => {
+      const p = game.pendingActivations[0];
+      return { id: (Array.isArray(p) ? p[0] : p).id,
+        logged: /Your time ran out/i.test(document.getElementById('logEntries').innerText) };
+    });
+    ok(thrown.id === clockRig.touched,
+      `0:00 throws the LAST CARD TOUCHED (card ${thrown.id}, the third in the fan)`);
+    ok(thrown.logged, 'and the log says so: "Your time ran out — the simplest choice was made"');
+    // B throws by hand (its clocks stay idle) and answers its own reveal;
+    // A never lifts a finger again — the 20s tier answers for it.
+    const bAnswered35 = answerDiscard(pB);
+    await pB.evaluate(() => throwCard(0));
+    await pA.waitForFunction(() => window._finalChoicePending === true, { timeout: 30000 });
+    await pA.waitForFunction(() => window._finalChoicePending === false, { timeout: 12000 });
+    ok(true, "A's reveal chooser expired into the basic door (play if it plays, else +3g discard)");
+    await bAnswered35;
+    const gate35 = (pg) => pg.waitForFunction(() => game.phase === 'gameplay'
+      && game.pendingActivations[0] === null
+      && game.players[0].hand.length === 5, { timeout: 30000 }).then(() => true, () => false);
+    const [g35A, g35B] = await Promise.all([gate35(pA), gate35(pB)]);
+    ok(g35A && g35B, 'the auto-played round completes on both clients');
+    const [h35A, h35B] = await Promise.all([
+      pA.evaluate(() => mpStateHash()), pB.evaluate(() => mpStateHash())]);
+    ok(h35A === h35B, `LOCKSTEP HOLDS under the clock: auto-moves streamed (${h35A} vs ${h35B})`);
+    await pA.evaluate(() => {   // the clock idles again for the AFK beat
+      window.TT_MS.throw = 9e9; window.TT_MS.choice = 9e9;
+    });
+
     // ── Beat 4: A throws, B goes silent — the 2-minute boot (shrunk to
     //    4.5s NOW; the collector's clock reads it live) converts B's seat
     //    to AI everywhere and kicks B out. ──
@@ -7083,7 +7141,7 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     await answerDiscard(pA);
     const round2 = await pA.waitForFunction(() => game.phase === 'gameplay'
       && game.pendingActivations[0] === null
-      && game.players[0].hand.length === 5, { timeout: 30000 })
+      && game.players[0].hand.length === 4, { timeout: 30000 })
       .then(() => true, () => false);
     const aLog = await pA.evaluate(() => document.getElementById('logEntries').innerText);
     ok(round2, 'the table plays on with the AI in the empty seat');
@@ -7109,6 +7167,25 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     }
     ok(bBooted, 'the booted player is told and returned to the menu path');
     await pB.screenshot({ path: join(SHOTS, 'mp-afk-booted.png') });
+
+    // ── Beat 4.5: the 10-SECOND DECIDER tier, driven directly (B is gone,
+    //    A is the only human left — a rigged mission can't fork a table).
+    //    The attempt/hold chooser must expire into its basic door: Hold. ──
+    const probe45 = await pA.evaluate(async () => {
+      window.TT_MS.decide = 1300;
+      const m = { ...FAVOR_DATA.missions[0] };
+      game.players[0].missions.push(m);
+      const t0 = Date.now();
+      const attempt = await showEarlyMissionChoice(m);
+      game.players[0].missions.pop();   // the rig leaves with us
+      window.TT_MS.decide = 9e9;
+      return {
+        attempt, ms: Date.now() - t0,
+        closed: !document.getElementById('promisePicker').classList.contains('active'),
+      };
+    });
+    ok(probe45.attempt === false && probe45.closed && probe45.ms >= 1100 && probe45.ms < 9000,
+      `the 10s decider expires into Hold — the basic door (${probe45.ms}ms, chooser closed)`);
 
     // ── Leave no trace: THIS game, any prior crashed run's orphans, and
     //    the queue — then prove nothing uaudit remains. ──
@@ -7174,6 +7251,7 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
       await pg.evaluate(() => {
         window.shuffleArray = (a) => [...a];
         window.CINEMATIC_SPEED = 0.05;
+        window.TT_MS = { throw: 9e9, choice: 9e9, decide: 9e9 };   // the turn clock idles under suite driving
         FMP._T.pick = 2600; FMP._T.pickGrace = 800;   // the hero clock, shrunk
       });
       // SHIP 3 pre-seed: saturate both ladders (games and every hero's
@@ -7216,6 +7294,8 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     }));
     ok(info.on && /tripled/i.test(info.txt) && /Throne Board/i.test(info.txt),
       'a closed door opens the modest panel: the pitch + the board button');
+    ok(/Turns are timed/i.test(info.txt) && /last card you touched/i.test(info.txt),
+      'the panel carries the turn-clock disclaimer (30s throw / 20s fate / 10s calls)');
     await pA.evaluate(() => FMODES.closeThroneInfo());
 
     await setClock(pA, fakeEt(21, 30, 0));   // mid-session — sealed
@@ -7258,6 +7338,10 @@ console.log('── Multiplayer: queue chip, MATCH FOUND, timed pick, 2-client h
     }));
     ok(/2\s+stand before the Throne/i.test(hall.count),
       `the head-count narrates the hall ("${hall.count.trim()}")`);
+    ok(await pA.evaluate(() => {
+      const t = document.querySelector('#throneHall .thr-timed');
+      return !!t && /Turns are timed/i.test(t.textContent);
+    }), 'the hall itself warns: turns are timed, the game moves for you');
     ok(hall.me === 1, 'exactly one gold-edged .me row — yours');
     ok(hall.names.some(n => /Audit ThroneB/.test(n)), 'the other noble stands in A’s hall by name');
     ok(hall.crests === 2 && hall.ratings === 2, 'every row wears crest + rating');

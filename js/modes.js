@@ -540,6 +540,9 @@
                     <b>+100★ purse</b>. Every result stands on the
                     <b>Throne board</b> — wins first, Favor breaks ties.
                 </div>
+                <div class="thr-timed"><b>Turns are timed.</b> 30 seconds to throw a card,
+                    20 to choose its fate, 10 for any other call — run out and the game
+                    moves for you: the most basic option, or the last card you touched.</div>
                 ${sealed ? '' : `<div class="thr-info-when">Tonight at ${FMP.throne.openLabel()}
                     ${ph.msToOpen < 3600 * 1000 ? `— <b>${thFmt(ph.msToOpen)}</b>` : ''}</div>`}
                 <div class="ri-actions">
@@ -567,6 +570,8 @@
                     <div class="thr-title"><span>⚜</span> The Throne Room <span>⚜</span></div>
                     <div class="thr-clockline" id="thrClockline"></div>
                     <div class="thr-count" id="thrCount"></div>
+                    <div class="thr-timed"><b>Turns are timed</b> — linger and the game
+                        moves for you: the most basic option, or the last card you touched.</div>
                 </div>
                 <div class="thr-floor" id="thrFloor"></div>
                 <div class="thr-foot">

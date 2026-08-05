@@ -8990,3 +8990,58 @@ body.no-play-glow .hand-card.playable {
 @media (prefers-reduced-motion: reduce) {
     .deed-nag, .deed-nag .nag-card { transition: none; }
 }
+
+/* ═══ THE TURN CLOCK — multiplayer decisions are timed ═══
+   One small pill, top center: seconds left on the current decision.
+   Above the pp overlay (10550) so the 10s deciders keep their clock in
+   view; below the MATCH FOUND ring (10560). Never takes a tap. */
+#turnClock {
+    position: fixed;
+    top: max(10px, env(safe-area-inset-top));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10555;
+    display: none;
+    font-family: 'Cinzel', serif;
+    font-weight: 700;
+    font-size: 17px;
+    letter-spacing: 1.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--gold-light);
+    background: rgba(26, 15, 8, 0.92);
+    border: 1px solid rgba(201, 168, 76, 0.55);
+    border-radius: 999px;
+    padding: 3px 14px 4px;
+    pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+#turnClock.on { display: block; }
+#turnClock.hot {
+    color: #ff7a5c;
+    border-color: rgba(255, 122, 92, 0.75);
+    animation: ttPulse 0.9s ease-in-out infinite;
+}
+@keyframes ttPulse {
+    0%, 100% { transform: translateX(-50%) scale(1); }
+    50%      { transform: translateX(-50%) scale(1.14); }
+}
+/* Compact landscape: the seat chips own the very top — sit just under. */
+@media (max-height: 480px) {
+    #turnClock { top: 52px; font-size: 14px; padding: 2px 11px 3px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    #turnClock.hot { animation: none; }
+}
+
+/* The hall's word of warning — turns run on a clock once the court sits. */
+.thr-timed {
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    font-size: 13.5px;
+    color: #b9a273;
+    margin-top: 6px;
+    text-align: center;
+    padding: 0 14px;
+}
+.thr-timed b { color: #e0cb97; font-style: normal; }

@@ -2046,7 +2046,7 @@ function showBoonPicker() {
                     <span>${cap(s)}</span>
                 </div>`).join('');
             ov.innerHTML = `
-                <div class="pp-inner boon">
+                <div class="pp-inner boon" data-tt="boon">
                     <div class="pp-title">The Realm's Favorite</div>
                     <div class="pp-sub">You sit first upon the all-time board \u2014 the Queen grants <b>+1 of one skill</b>, yours for the whole game</div>
                     <div class="boon-tiles">${tiles}</div>
@@ -2077,6 +2077,16 @@ function showBoonPicker() {
         };
         render();
         ov.classList.add('active');
+        // 10s (multiplayer): your selection stands; none made, the first
+        // skill serves \u2014 the Queen doesn't wait.
+        ttArmPick(ov, 'boon', () => {
+            const cf = ov.querySelector('#boonConfirm:not([disabled])');
+            if (cf) { cf.click(); return; }
+            const first = ov.querySelector('.boon-tile');
+            if (first) first.click();
+            const cf2 = ov.querySelector('#boonConfirm:not([disabled])');
+            if (cf2) cf2.click();
+        });
     });
 }
 
@@ -4659,6 +4669,100 @@ function closeAllOverlays() {
     }
 }
 
+// ─── THE TURN CLOCK — multiplayer decisions are timed (Wyatt 8/5) ────
+// A live table can't be held hostage: 30s to throw a card in (the final
+// two-card round included — the throw IS the order pick), 20s to choose
+// your revealed card's fate, 10s for any other decision screen. Run out
+// and the court moves for you: the most basic option — play if the card
+// can be played, else the 3-gold discard; Hold; Keep; Let it Fail — or,
+// picking out of hand, the last card you touched (never touched one? the
+// card all the way to the left). Every auto-move rides the SAME tap path
+// a finger would take, so multiplayer streams it like any human act and
+// no MPV bump is needed. Solo tables are never timed. Values are read
+// LIVE so the audit suite can shrink or freeze them mid-run.
+window.TT_MS = { throw: 30000, choice: 20000, decide: 10000 };
+
+let _tt = null;   // the one armed clock: { kind, deadline, alive, fire, iv }
+
+function ttClear() {
+    if (_tt) { clearInterval(_tt.iv); _tt = null; }
+    const el = document.getElementById('turnClock');
+    if (el) el.classList.remove('on', 'hot');
+}
+
+function ttPaint(msLeft) {
+    const el = document.getElementById('turnClock');
+    if (!el) return;
+    const s = Math.max(0, Math.ceil(msLeft / 1000));
+    el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    el.classList.add('on');
+    el.classList.toggle('hot', msLeft <= 5000);
+}
+
+// Arm the clock over a decision surface. alive() must hold while the
+// surface still owns the stage — the tick self-clears the moment it
+// closes, so resolve paths never need to know the clock exists. fire()
+// makes the basic choice through the same path a tap would take. Only
+// one clock ever runs: arming replaces whatever was armed before.
+function ttArm(kind, alive, fire) {
+    ttClear();
+    if (!mpActive()) return;
+    if (window.FMP && FMP.myBooted && FMP.myBooted()) return;   // the AI has my seat
+    // TT_MS is read LIVE each tick, same law as the AFK clock's T.afk —
+    // the audit suite shrinks and restores these mid-run.
+    const t = { kind, t0: Date.now(), alive, fire };
+    t.iv = setInterval(() => {
+        if (_tt !== t) { clearInterval(t.iv); return; }
+        let ok = false;
+        try { ok = !!t.alive() && mpActive(); } catch (e) { ok = false; }
+        if (!ok) { ttClear(); return; }
+        const ms = (window.TT_MS && TT_MS[t.kind]) || 10000;
+        const left = t.t0 + ms - Date.now();
+        if (left > 0) { ttPaint(left); return; }
+        ttClear();
+        showNotification('Time — the court moves for you.', 'act');
+        addLogEntry('Your time ran out — the simplest choice was made');
+        try { t.fire(); } catch (e) { console.error('[TT] auto-move failed', e); }
+    }, 250);
+    _tt = t;
+    ttPaint((window.TT_MS && TT_MS[kind]) || 10000);
+}
+
+// The throw clock: 30 seconds to put a card in. The last card you
+// touched goes; never touched one, the leftmost goes. Re-armed by a
+// take-back — undoing puts the decision back on your side of the table.
+function ttArmThrow() {
+    ttArm('throw',
+        () => game && game.phase === 'gameplay' && !(_throwUx && _throwUx.locked)
+            && game.pendingActivations[0] === null && game.players[0].hand.length > 0,
+        () => {
+            const hand = game.players[0].hand;
+            let idx = hand.findIndex(c => c.id === window._ttLastTouchId);
+            if (idx < 0) idx = 0;
+            throwCard(idx);
+        });
+}
+
+// The 10-second deciders: every other decision screen arms through this —
+// alive while the picker overlay is up showing this chooser's own marker,
+// fire = that chooser's basic door (Hold, Keep, Let it Fail, or the
+// current selection confirmed).
+function ttArmPick(ov, marker, fire) {
+    ttArm('decide',
+        () => ov.classList.contains('active') && !!ov.querySelector(`[data-tt="${marker}"]`),
+        fire);
+}
+
+// "The last card you were looking at and touched" — recorded off the same
+// pointerdowns and fan-glide blooms that drive browsing, per throw round.
+function ttTouchHand(el) {
+    if (!el || !game || game.phase !== 'gameplay') return;
+    if (el.classList.contains('facedown')) return;
+    const i = parseInt(el.getAttribute('data-hand-i'), 10);
+    const c = !isNaN(i) && game.players[0] && game.players[0].hand[i];
+    if (c) window._ttLastTouchId = c.id;
+}
+
 // ─── THE THROW PHASE — throw first, decide at the reveal ──────────
 // The physical flow (rulebook p.3–4): every player picks a card and
 // places it FACE DOWN on their board; hands pass; then, starting with
@@ -4706,6 +4810,7 @@ function beginThrowPhase() {
     saveSoloCheckpoint();   // regular + Skirmish + Rival tables survive minimizing (Wyatt 7/17)
     _throwClearTimers();
     _throwUx = { round: throwRoundId(), locked: false, timers: [], mpThrown: null, seen: new Set() };
+    window._ttLastTouchId = null;   // fresh round, fresh "last touched" memory
 
     if (mpActive()) { mpBeginThrowPhase(); return; }
 
@@ -4744,6 +4849,7 @@ function throwCard(index) {
     window._uxThrownOnce = true;
 
     game.pickCard(0, index);
+    ttClear();   // the clock's job is done — your card is in
     mpPub('throw', { r: _throwUx ? _throwUx.round : 0, cardId: card.id });
     addLogEntry('You throw a card in, face down');
     renderGameState();
@@ -4776,6 +4882,7 @@ function undoThrow() {
     mpPub('unthrow', { r: _throwUx.round });
     addLogEntry('You take your card back');
     renderGameState();
+    if (mpActive()) ttArmThrow();   // the decision is back in your hands — so is the clock
 }
 
 // Solo lock: the engine state is the whole truth. (Multiplayer locks off
@@ -4924,6 +5031,7 @@ async function mpBeginThrowPhase() {
     renderGameState();
     maybeShowThrowHint();
     if (typeof coachTick === 'function') coachTick();
+    ttArmThrow();
 
     const seats = [];
     for (let i = 0; i < game.playerCount; i++) {
@@ -5064,6 +5172,8 @@ function showCardChoice(card, cardIdx) {
 
         const finish = (act) => {
             window._cardChoiceRerender = null;
+            window._ttArmChoice = null;
+            ttClear();
             window._finalChoicePending = false;
             panel.classList.remove('active', 'final-choice');
             clearTargetHighlights();
@@ -5174,11 +5284,16 @@ function showCardChoice(card, cardIdx) {
                     }
                     // Borrow is two beats here too: pick the lender first.
                     // The panel steps aside directly (the pending guard
-                    // stays armed); cancel re-surfaces it.
+                    // stays armed); cancel re-surfaces it — and re-arms
+                    // the choice clock the lender screen replaced.
                     if (b.dataset.act === 'borrow_play') {
                         panel.classList.remove('active');
                         showBorrowChooser(card).then(chosen => {
-                            if (!chosen) { panel.classList.add('active'); return; }
+                            if (!chosen) {
+                                panel.classList.add('active');
+                                if (window._ttArmChoice) window._ttArmChoice();
+                                return;
+                            }
                             window._finalBorrowChoice = chosen;
                             finish('borrow_play');
                         });
@@ -5191,6 +5306,26 @@ function showCardChoice(card, cardIdx) {
 
         window._cardChoiceRerender = () => render(false);
         render(true);
+
+        // 20 seconds to choose the revealed card's fate. The basic door:
+        // Play when the card can be played, else the 3-gold discard — a
+        // mission letter auto-discards too (its primary opens a SECOND
+        // decision, and the clock never walks you into one). The board
+        // excursion (pay-to-slide, pick-a-slot) folds back under the
+        // chooser first; sub-screens with their own stakes (the lender
+        // pick, a slot's chooser) arm their own 10s clock instead and
+        // re-arm this one when they cancel back.
+        const armClock = () => ttArm('choice',
+            () => window._finalChoicePending,
+            () => {
+                const bo = document.getElementById('boardOverlay');
+                if (bo && bo.classList.contains('active')) closeBoardOverlay();
+                const target = panel.querySelector('.action-btn[data-act="play"]')
+                    || panel.querySelector('.action-btn[data-act="discard"]');
+                if (target) target.click();
+            });
+        window._ttArmChoice = armClock;
+        armClock();
     });
 }
 
@@ -5323,8 +5458,11 @@ async function payToSlide(direction) {
         }
 
         // The slide can change what the revealed card needs — refresh the
-        // chooser so Play/Need and the purse line tell the truth.
+        // chooser so Play/Need and the purse line tell the truth. A slot
+        // chooser above ran on its own 10s clock; the choice clock comes
+        // back fresh with the rerender.
         if (window._cardChoiceRerender) window._cardChoiceRerender();
+        if (window._ttArmChoice) window._ttArmChoice();
     } else {
         showNotification(result.error, 'error');
     }
@@ -5589,6 +5727,14 @@ function showMissionSelectAsync() {
     return new Promise((resolve) => {
         window._missionSelectResolve = resolve;
         showMissionSelectUI();
+        // 10s: the card all the way to the left is taken.
+        const ov = document.getElementById('missionSelect');
+        ttArm('decide',
+            () => ov.classList.contains('active'),
+            () => {
+                const first = ov.querySelector('.mission-option');
+                if (first) first.click();
+            });
     });
 }
 
@@ -5969,7 +6115,7 @@ function showBorrowChooser(card) {
             // outgrow a phone screen (Wyatt 7/8: the second lender and
             // the buttons sat unreachable below the fold).
             ov.innerHTML = `
-                <div class="pp-inner bw">
+                <div class="pp-inner bw" data-tt="bw">
                     <div class="pp-title">Borrow &amp; Play</div>
                     <div class="pp-sub"><b>${card.name}</b> needs <b>${needTxt}</b> —
                         ${single ? `tap the ${wide ? 'player' : 'neighbor'} who lends it` : 'pick a lender for each skill'}.
@@ -6007,6 +6153,14 @@ function showBorrowChooser(card) {
 
         render();
         ov.classList.add('active');
+        // 10s: lenders already assembled confirm as they stand; an
+        // unfinished pick cancels back to the chooser (whose own clock
+        // then takes the basic door).
+        ttArmPick(ov, 'bw', () => {
+            const cf = ov.querySelector('#bwConfirm:not([disabled])');
+            if (cf) { cf.click(); return; }
+            ov.querySelector('#bwCancel').click();
+        });
     });
 }
 
@@ -6119,7 +6273,7 @@ function showEarlyMissionChoice(mission) {
                 : 'Requirements <b>not met</b> — attempting it now would FAIL it.';
 
         ov.innerHTML = `
-            <div class="pp-inner">
+            <div class="pp-inner" data-tt="em">
                 <div class="pp-title">${mission.name}</div>
                 <div class="pp-sub">Due at the end of <b>Act ${due}</b> — you may attempt it in any act until then. ${verdict}</div>
                 <div class="pp-cards"><div class="pp-card" style="cursor:default">
@@ -6157,6 +6311,8 @@ function showEarlyMissionChoice(mission) {
         };
         ov.querySelector('#emHold').onclick = () => close(false);
         ov.classList.add('active');
+        // 10s: holding is the basic door — you'll be asked again next act.
+        ttArmPick(ov, 'em', () => ov.querySelector('#emHold').click());
     });
 }
 
@@ -6319,7 +6475,7 @@ function showMissionBorrowChooser(mission) {
             // neighbour boards + the fail door sit up top beside it — the whole
             // decision fits one screen, no scrolling to reach "Let it Fail".
             ov.innerHTML = `
-                <div class="pp-inner bw mb-due">
+                <div class="pp-inner bw mb-due" data-tt="mb">
                     <div class="pp-title">Mission Due: ${mission.name}</div>
                     <div class="mb-layout">
                         <div class="mb-mission">
@@ -6365,6 +6521,13 @@ function showMissionBorrowChooser(mission) {
 
         render();
         ov.classList.add('active');
+        // 10s: lenders already assembled confirm as they stand; otherwise
+        // the mission goes the way it was already going — Let it Fail.
+        ttArmPick(ov, 'mb', () => {
+            const cf = ov.querySelector('#mbConfirm:not([disabled])');
+            if (cf) { cf.click(); return; }
+            ov.querySelector('#mbFail').click();
+        });
     });
 }
 
@@ -6385,7 +6548,7 @@ function showPenaltyDiscardPicker(n) {
                 </div>`).join('');
             const ready = chosen.size === mustPick;
             ov.innerHTML = `
-                <div class="pp-inner">
+                <div class="pp-inner" data-tt="pen">
                     <div class="pp-title">The Price of Failure</div>
                     <div class="pp-sub">Choose <b>${mustPick}</b> played card${mustPick > 1 ? 's' : ''} to discard (${chosen.size}/${mustPick})</div>
                     <div class="pp-cards">${cards}</div>
@@ -6416,6 +6579,16 @@ function showPenaltyDiscardPicker(n) {
         };
         render();
         ov.classList.add('active');
+        // 10s: what you marked stays marked; the rest fills from the left.
+        ttArmPick(ov, 'pen', () => {
+            for (let g = 0; g < 24; g++) {
+                const cf = ov.querySelector('#ppConfirm:not([disabled])');
+                if (cf) { cf.click(); return; }
+                const next = ov.querySelector('.pp-card:not(.chosen)');
+                if (!next) return;
+                next.click();
+            }
+        });
     });
 }
 
@@ -6448,7 +6621,7 @@ function showWeaponDiscardPicker(mustPick) {
                 </div>`).join('');
             const ready = chosen.size === need;
             ov.innerHTML = `
-                <div class="pp-inner">
+                <div class="pp-inner" data-tt="wp">
                     <div class="pp-title">Archeus Demands a Blade</div>
                     <div class="pp-sub">Choose <b>${need}</b> weapon${need > 1 ? 's' : ''} to discard (${chosen.size}/${need})</div>
                     <div class="pp-cards">${cards}</div>
@@ -6479,6 +6652,16 @@ function showWeaponDiscardPicker(mustPick) {
         };
         render();
         ov.classList.add('active');
+        // 10s: marked blades stay marked; the rest fills from the left.
+        ttArmPick(ov, 'wp', () => {
+            for (let g = 0; g < 24; g++) {
+                const cf = ov.querySelector('#ppConfirm:not([disabled])');
+                if (cf) { cf.click(); return; }
+                const next = ov.querySelector('.pp-card:not(.chosen)');
+                if (!next) return;
+                next.click();
+            }
+        });
     });
 }
 
@@ -6582,7 +6765,7 @@ function showDuplicatePicker() {
                     <img src="assets/cards/regular/${c.filename}" alt="${c.name}">
                 </div>`).join('');
             ov.innerHTML = `
-                <div class="pp-inner">
+                <div class="pp-inner" data-tt="dup">
                     <div class="pp-title">Duplicate ${fam === 'artifact' ? 'an Artifact' : 'a Potion'}</div>
                     <div class="pp-sub">The mission duplicates <b>one ${famName} you own</b> for the rest of the game${fam === 'potion' ? ' — and it fires again now' : ''}. Choose which.</div>
                     <div class="pp-cards">${cards}</div>
@@ -6612,6 +6795,15 @@ function showDuplicatePicker() {
         };
         render();
         ov.classList.add('active');
+        // 10s: your selection stands; none made, the first copy serves.
+        ttArmPick(ov, 'dup', () => {
+            const cf = ov.querySelector('#dupConfirm:not([disabled])');
+            if (cf) { cf.click(); return; }
+            const first = ov.querySelector('.pp-card');
+            if (first) first.click();
+            const cf2 = ov.querySelector('#dupConfirm:not([disabled])');
+            if (cf2) cf2.click();
+        });
     });
 }
 
@@ -6629,7 +6821,7 @@ function showPromiseDiscardPicker() {
                     <span class="pp-x">✕</span>
                 </div>`).join('');
             ov.innerHTML = `
-                <div class="pp-inner">
+                <div class="pp-inner" data-tt="pr">
                     <div class="pp-title">A Promise Broken</div>
                     <div class="pp-sub">Sacrifice any of your played cards — <b>+${PROMISE_PRESTIGE} Prestige each</b></div>
                     <div class="pp-cards">${cards}</div>
@@ -6669,6 +6861,11 @@ function showPromiseDiscardPicker() {
         };
         render();
         ov.classList.add('active');
+        // 10s: cards already marked are sacrificed as marked; none marked,
+        // the basic door — Keep All.
+        ttArmPick(ov, 'pr', () => {
+            ov.querySelector(chosen.size ? '#ppConfirm' : '#ppKeep').click();
+        });
     });
 }
 
@@ -6698,7 +6895,7 @@ function showChemYPicker() {
                 </div>`).join('');
             const pick = player.playedCards[chosen];
             ov.innerHTML = `
-                <div class="pp-inner chemy">
+                <div class="pp-inner chemy" data-tt="chy">
                     <div class="pp-title">Chemical Y</div>
                     <div class="pp-sub">Choose an Adventure card — its Favor is <b>multiplied by 2</b></div>
                     <div class="pp-cards">${cards}</div>
@@ -6725,6 +6922,8 @@ function showChemYPicker() {
         };
         render();
         ov.classList.add('active');
+        // 10s: the selection on screen (first card by default) doubles.
+        ttArmPick(ov, 'chy', () => ov.querySelector('#chemYConfirm').click());
     });
 }
 
@@ -6742,6 +6941,17 @@ function showChemXPicker() {
         const player = game.players[0];
         if (!player.character || !player.character.slots) { player._pendingSliderMove = false; resolve(); return; }
         showNotification('Chemical X — move your ring to any slot', 'play');
+        // 10s: the move is mandatory — the clock lands the ring where the
+        // engine's own fallback would (the same slot every client computes
+        // for a seat whose pick never arrives).
+        ttArm('decide',
+            () => !!(_slidePick && _slidePick.mode === 'free'),
+            () => {
+                const pick = _slidePick;
+                _slidePick = null;
+                closeBoardOverlay();
+                pick.onPick(game.aiFreeSliderPos(0));
+            });
         openSlidePickerFree((pos) => {
             // Publish BEFORE mutating: every client applies the same move through
             // the same engine call, in stream order.
@@ -6794,7 +7004,7 @@ function showConvertChoice() {
         };
 
         ov.innerHTML = `
-            <div class="pp-inner">
+            <div class="pp-inner" data-tt="cv">
                 <div class="pp-title">The Merchant's Counting House</div>
                 <div class="pp-sub">Convert your <b>${gold} Gold</b> into <b>${gold} Prestige</b>? You <i>may</i> — or keep your purse for slides and borrows.</div>
                 <div class="pp-actions">
@@ -6805,6 +7015,8 @@ function showConvertChoice() {
         ov.querySelector('#convDo').onclick = () => decide(true);
         ov.querySelector('#convKeep').onclick = () => decide(false);
         ov.classList.add('active');
+        // 10s: "may" means may — the basic door keeps the purse.
+        ttArmPick(ov, 'cv', () => ov.querySelector('#convKeep').click());
     });
 }
 
@@ -6841,7 +7053,7 @@ function showSlotSkillPicker() {
                 </div>`;
             }).join('');
             ov.innerHTML = `
-                <div class="pp-inner chemy">
+                <div class="pp-inner chemy" data-tt="sp">
                     <div class="pp-title">Pick One</div>
                     <div class="pp-sub">Your board grants <b>one skill</b> — choose which</div>
                     <div class="pp-cards skills">${tiles}</div>
@@ -6868,6 +7080,8 @@ function showSlotSkillPicker() {
         };
         render();
         ov.classList.add('active');
+        // 10s: the selection on screen (first option by default) is taken.
+        ttArmPick(ov, 'sp', () => ov.querySelector('#slotPickConfirm').click());
     });
 }
 
@@ -6890,7 +7104,7 @@ function showLifeEssencePicker() {
                 </div>`).join('');
             const pick = missions[chosen];
             ov.innerHTML = `
-                <div class="pp-inner chemy">
+                <div class="pp-inner chemy" data-tt="le">
                     <div class="pp-title">Life Essence</div>
                     <div class="pp-sub">Choose one of your <b>active missions</b> — it will no longer have any requirement</div>
                     <div class="pp-cards">${cards}</div>
@@ -6916,6 +7130,8 @@ function showLifeEssencePicker() {
         };
         render();
         ov.classList.add('active');
+        // 10s: the selection on screen (first mission by default) is blessed.
+        ttArmPick(ov, 'le', () => ov.querySelector('#leConfirm').click());
     });
 }
 
@@ -7786,7 +8002,7 @@ function _bloomSet(el) {
     if (_bloomEl === el) return;
     if (_bloomEl) _bloomEl.classList.remove('bloom');
     _bloomEl = el;
-    if (el) el.classList.add('bloom');
+    if (el) { el.classList.add('bloom'); ttTouchHand(el); }
 }
 
 // Drag-up state: how far the finger must climb before the bloom hands
@@ -7806,6 +8022,7 @@ document.addEventListener('pointerdown', (e) => {
     _bloomStartEl = card;
     _handDrag = { startX: e.clientX, startY: e.clientY, active: false, card: null, baseTransform: '' };
     _bloomSet(card);
+    ttTouchHand(card);
 }, { passive: true });
 
 // The card detaches from the fan and rides the finger (straightened,
@@ -7922,6 +8139,7 @@ document.addEventListener('pointerdown', (e) => {
     if (isCompactLandscape() || e.button !== 0) return;
     const card = e.target.closest && e.target.closest('#handZone .hand-card');
     if (!card) return;
+    ttTouchHand(card);
     // One throw per round; the reveal-phase hand is face down and inert.
     if (!game || game.phase !== 'gameplay' || game.pendingActivations[0] !== null
         || card.classList.contains('facedown')) return;
