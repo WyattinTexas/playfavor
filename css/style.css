@@ -159,6 +159,35 @@ html, body {
     margin-block: auto;
 }
 
+/* ── DESKTOP ─────────────────────────────────────────────────────────────
+   The hall was drawn to landscape-phone proportions and then simply capped
+   for anything larger: on 844x390 the grid takes 64vw = 540px and fills the
+   frame, but on 1440x900 min(780px, 64vw) resolves to 780px — a narrow
+   column hugging the left with the right third of the painting left empty.
+   Every size here is clamp(..dvh..), so the type hits its ceiling long
+   before the canvas does and the whole composition reads small.
+
+   So a desktop gets its own proportions rather than the phone's leftovers:
+   the grid takes its width back and the type grows with it. The phone
+   breakpoint is untouched — that layout is the one being copied, not
+   changed (Wyatt 8/5).
+
+   Sizes lean on vw rather than fixed pixel ceilings: a fixed cap only moves
+   the problem up the range — 1180px looks right at 1440 and huddles again at
+   1920. Columns are fr so the three keep their ratio at any width.        */
+@media (min-width: 1000px) and (min-height: 600px) {
+    .ts-grid {
+        max-width: min(1560px, 84vw);
+        grid-template-columns: minmax(280px, 1.5fr) minmax(190px, 1fr) minmax(190px, 1fr);
+        gap: clamp(12px, 1.8dvh, 24px) clamp(14px, 1.4vw, 26px);
+    }
+    .ts-play { min-height: clamp(240px, 44dvh, 560px); }
+    .ts-title { font-size: clamp(56px, 6.2vw, 132px); }
+    .ts-sub   { font-size: clamp(14px, 1.35vw, 26px); letter-spacing: 0.46em; }
+    .ts-plaque { font-size: clamp(13px, 1.15vw, 22px); padding: 8px 20px; }
+    .ts-play .ts-plaque { font-size: clamp(20px, 2.1vw, 38px); padding: 11px 40px; }
+}
+
 .ts-card {
     position: relative; overflow: hidden;
     display: flex; flex-direction: column;
