@@ -49,12 +49,13 @@ PACKS = [
 QTY = {"s": "50", "m": "100", "l": "500", "xl": "1000"}
 
 REVIEW_NOTE = (
-    "The Star packs live inside the in-game store (the Emporium): from the "
-    "title screen open the store, and the packs are the top row. Stars are "
-    "FAVOR's existing spendable currency (earned by playing and by daily "
-    "crowns); a pack simply adds to the same account balance, which follows "
-    "the player across devices. Purchases are optional and nothing in the "
-    "game requires them."
+    "The Star packs live inside the in-game store (the Royal Emporium): from "
+    "the title screen open the store, then tap the 'Purchase Stars' button at "
+    "the top right — the four packs appear in a sheet called The Royal Mint. "
+    "Stars are FAVOR's existing spendable currency (earned by playing and by "
+    "daily crowns); a pack simply adds to the same account balance, which "
+    "follows the player across devices. Purchases are optional and nothing "
+    "in the game requires them."
 )
 
 # name ≤30 chars, description ≤45 chars; numbers stay ASCII digits;
