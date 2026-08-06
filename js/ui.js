@@ -2424,7 +2424,7 @@ async function mpActivateRemote(pi, card, cardIdx) {
             target = advs.reduce((a, b) => (val(b) > val(a) ? b : a));
         }
         if (target) {
-            target._favorDoubled = true;
+            target._favorDoubled = game.chemYCount(target) + 1;
             addLogEntry(`${p.name}'s Chemical Y doubles ${target.name}`);
         }
     }
@@ -2741,6 +2741,13 @@ function mpCompareSync(act, theirs) {
     showNotification('The connection to the table slipped \u2014 the realm plays on.', 'error');
     game.players.forEach(p => { p._remoteHuman = false; });
     FMP.leaveGame();
+    // The realm must ACTUALLY play on. leaveGame released every in-flight
+    // wait with null \u2014 the activation paths fall back to AI moves \u2014 but a
+    // round awaiting collectThrows just returns dead. Re-open it on the
+    // solo path (mpActive is false now): same round id, thrown cards keep
+    // their pendingActivations, the rivals pick on solo timers. On 8/5 the
+    // detached clients froze at exactly this point, hand up, forever.
+    if (game && game.phase === 'gameplay' && _throwUx && !_throwUx.locked) beginThrowPhase();
 }
 
 // ─── GAME SCREEN ───────────────────────────────────────────
@@ -3209,7 +3216,7 @@ function renderCardStacks(state) {
         html += `<div class="stack-label">${label}</div>`;
         cards.forEach(card => {
             const doubled = card._favorDoubled ? ' doubled' : '';
-            const doubledTip = card._favorDoubled ? ` — Chemical Y: worth ${game.scoredCardFavor(0, card)} Favor (×2)` : '';
+            const doubledTip = card._favorDoubled ? ` — Chemical Y: worth ${game.scoredCardFavor(0, card)} Favor (×${2 ** game.chemYCount(card)})` : '';
             html += `<img class="stack-card${doubled}" src="assets/cards/regular/${card.filename}"
                         alt="${card.name}" title="${card.name}${doubledTip}"
                         onclick="zoomCard('assets/cards/regular/${card.filename}')">`;
@@ -4839,6 +4846,11 @@ function beginThrowPhase() {
 // no popup — the decision comes at your reveal.
 function throwCard(index) {
     if (!game || game.phase !== 'gameplay') return;
+    // MP start awaits the boon pick with the hand already rendered and
+    // tappable; a throw landing before beginThrowPhase arms the round
+    // would splice the hand AHEAD of the act baseline and publish r:0 —
+    // the 8/5 throne table death. No armed round, no throw.
+    if (mpActive() && !_throwUx) return;
     if (_throwUx && _throwUx.locked) return;
     if (game.pendingActivations[0] !== null) return;   // already in — take it back first
     const card = game.players[0].hand[index];
@@ -6885,7 +6897,7 @@ function showChemYPicker() {
             .filter(x => cands.has(x.c));
         if (!ov || !advs.length) { resolve(); return; }
 
-        const baseFav = (c) => game.scoredCardFavor(0, c);   // un-doubled: candidates never carry the mark
+        const baseFav = (c) => game.scoredCardFavor(0, c);   // CURRENT value — a stacked pick shows its next doubling from here
         let chosen = advs[0].i;
         const render = () => {
             const cards = advs.map(({ c, i }) => `
@@ -6912,7 +6924,7 @@ function showChemYPicker() {
                 const card = player.playedCards[chosen];
                 const added = baseFav(card);   // read BEFORE the mark doubles it
                 mpPub('chemy', { cardId: card.id });
-                card._favorDoubled = true;
+                card._favorDoubled = game.chemYCount(card) + 1;
                 addLogEntry(`Chemical Y doubles ${card.name} (+${added} Favor at scoring)`);
                 showNotification(`${card.name} is now worth ${added * 2} Favor`, 'play');
                 ov.classList.remove('active');
@@ -7668,7 +7680,7 @@ function showScoreBreakdown(pi, cat) {
             const v = cardFav(c);
             if (!belongs(c.type, v)) return;
             items.push({ img: `assets/cards/regular/${c.filename}`,
-                label: c.name + (c._favorDoubled ? ' (×2)' : ''), val: v });
+                label: c.name + (c._favorDoubled ? ` (×${2 ** game.chemYCount(c)})` : ''), val: v });
             total += v;
         });
         // Card-sourced ledger payments — the Lost North + Lost South map

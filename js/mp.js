@@ -213,7 +213,10 @@
     //     missions forked and the act sentinel split the 8/4 morning
     //     table into two realms, two winners). Old builds still deal
     //     that draw locally, so one law per table.
-    const MPV = 30;
+    // 31 (8/6): Chemical Z pays its Philosopher's Stone (design call) and
+    //     the AI weighs it — old builds grant no stone and pick
+    //     differently, so mixed tables would fork at the next baseline.
+    const MPV = 31;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.
@@ -229,6 +232,7 @@
         afk: 120000,        // 2 min without a required input → boot
         presence: 10000,    // in-game presence heartbeat period
         staleBoot: 45000,   // presence older than this → fast boot
+        goneGrace: 60000,   // no 'gone' boots this early in a game's life
         cleanupAge: 6 * 3600 * 1000, // abandoned game records sweep
         limboAge: 10 * 60 * 1000,    // proposed/aborted records sweep
         roomEmpty: 120000,  // a private room alone this long folds (Wyatt)
@@ -1635,6 +1639,8 @@
                                 // buffered so a collector armed late (still
                                 // animating the prior round) misses nothing
             throwFeeds: [],     // live collectThrows folds
+            collectAborts: [],  // finish(null) hooks — leaveGame fires them
+            presMiss: {},       // uid → consecutive sweeps without presence
             presenceTimer: null,
             afkTimer: null,
             ended: false,
@@ -1828,9 +1834,12 @@
                 if (g) {
                     const i = g.throwFeeds.indexOf(feed);
                     if (i >= 0) g.throwFeeds.splice(i, 1);
+                    const a = g.collectAborts.indexOf(abort);
+                    if (a >= 0) g.collectAborts.splice(a, 1);
                 }
                 resolve(val);
             };
+            const abort = () => finish(null);
 
             // The 2-minute clock runs from the round's start and reads
             // T.afk LIVE each tick (the audit suite shrinks it mid-run).
@@ -1882,6 +1891,7 @@
             g.throwLog.forEach(feed);
             if (!done) {
                 g.throwFeeds.push(feed);
+                g.collectAborts.push(abort);
                 live.forEach(s => { if (!active[s]) armAfk(s); });
                 check();
             }
@@ -1897,10 +1907,22 @@
             const pres = snap.val() || {};
             const tNow = now();
             if (isHost()) {
+                // 'gone' is a verdict, not a glance. A single empty read
+                // proves nothing: rows are only rewritten every T.presence,
+                // so a socket blip's onDisconnect leaves a hole that long,
+                // and a detaching client DELETES its row on the way out —
+                // on 8/5 the first sweep (attach+10s) read exactly that
+                // hole and executed two live players. Boot only when a row
+                // stays missing/stale across consecutive sweeps, and never
+                // in a game's opening minute (slow clients are still
+                // attaching; the 2-minute AFK clock covers real absence).
+                const graceOver = tNow - (g.rec.created || 0) > T.goneGrace;
                 g.rec.roster.forEach((r, seat) => {
                     if (!r.human || seat === g.mySeat || g.booted.has(seat)) return;
                     const last = pres[r.uid];
-                    if (!last || tNow - last > T.staleBoot) {
+                    const missing = !last || tNow - last > T.staleBoot;
+                    g.presMiss[r.uid] = missing ? (g.presMiss[r.uid] || 0) + 1 : 0;
+                    if (missing && graceOver && g.presMiss[r.uid] >= 2) {
                         publish('afk_boot', { target: seat, why: 'gone' });
                     }
                 });
@@ -1939,8 +1961,19 @@
             clearInterval(g.presenceTimer);
             fdb().ref(`${NS}/games/${g.gid}/presence/${uid()}`).remove();
         } catch (e) { /* best effort */ }
+        // A teardown mid-wait must not strand the table: every waiter
+        // resolves null (its caller's AI fallback) and every live throw
+        // collector finishes. The 8/5 detached forks froze exactly here —
+        // promises awaiting a stream that had just been switched off.
+        const waiters = g.waiters.splice(0);
+        const aborts = g.collectAborts.splice(0);
         g.ended = true;
         g = null;
+        waiters.forEach(w => {
+            clearTimeout(w.timer);
+            try { w.resolve(null); } catch (e) { /* caller gone */ }
+        });
+        aborts.forEach(fn => { try { fn(); } catch (e) { /* already done */ } });
     }
 
     // Scoring reached: the host tidies the record after a grace period so

@@ -181,9 +181,9 @@ window.FAVOR_DATA.cards = [
     requirements: ["alchemy", "alchemy", "alchemy", "alchemy", "alchemy", "prospecting", "prospecting", "prospecting", "prospecting", "prospecting"],
     // AUDIT FIX 2026-07-13: the card (and this row's own audit text) says OTHERS
     // receive 15 Scorn; only the special said 5. You still take 5 yourself.
-    // NOTE: the art also prints a Philosopher's Stone shield the data has never
-    // carried — but it's drawn with a SILVER (requirement) oval in a GRANT
-    // position, so the art contradicts itself. Left alone pending a design call.
+    // DESIGN CALL (Wyatt 8/6): the art's Philosopher's Stone shield IS a grant
+    // (its silver oval notwithstanding) — others_15_scorn now also pays the
+    // stone in the engine, matching this row's audit text.
     rewards: { scorn: 5 }, special: "others_15_scorn" },
 
   { id: cid(), name: "Duplicating Goo", audit: "Gain gold equal to the amount of gold you have, Req: 3 Alchemy & 1 Philosopher's Stone, Act 2", filename: "Liquid Gold Card.jpg", act: 2, type: "potion",

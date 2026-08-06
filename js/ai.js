@@ -166,7 +166,7 @@
         gold_to_prestige: (g, pi) => (g.players[pi].gold || 0) * (1 - gr(g)),
         multiply_gold_x2: (g, pi) => (g.players[pi].gold || 0) * gr(g),
         remove_13_scorn: (g, pi) => Math.min(13, (g.players[pi].scorn || 0) + 2),
-        others_15_scorn: (g, pi) => 15 * (g.playerCount - 1) * rival(),
+        others_15_scorn: (g, pi) => 15 * (g.playerCount - 1) * rival() + (PB().stoneValue || 3.5),
         gold_2_per_alchemy_triangle: (g, pi) => {
             const n = g.playerCount, L = (pi + n - 1) % n, R = (pi + 1) % n;
             return 2 * ((g.players[pi].skills.alchemy || 0) + (g.players[L].skills.alchemy || 0)

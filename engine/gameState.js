@@ -1772,8 +1772,8 @@ class FavorGame {
                         // Fang's Truce as the human picker was (Wyatt 7/21).
                         const val = (c) => this.scoredCardFavor(playerIndex, c);
                         const best = advs.reduce((a, b) => (val(b) > val(a) ? b : a));
-                        const added = val(best);
-                        best._favorDoubled = true;
+                        const added = val(best);   // current value — a re-double adds it again
+                        best._favorDoubled = this.chemYCount(best) + 1;
                         this.addLog(`${player.name}'s Chemical Y doubles ${best.name} (+${added} Favor at scoring)`);
                     }
                 }
@@ -1811,6 +1811,13 @@ class FavorGame {
                 // Chemical Z: all other players gain 15 Scorn. The art and the
                 // card's own audit text both read 15 — the old `others_5_scorn`
                 // was the outlier (you still take 5 yourself, via rewards.scorn).
+                // Design call (Wyatt 8/6): the art's stone shield is a GRANT —
+                // the card also pays 1 Philosopher's Stone, as its audit text
+                // always claimed. Granted here, not via a renamed special:
+                // saved hands serialize the special string, and a rename would
+                // silently void the card in every checkpoint that holds it.
+                player.philosopherStone = (player.philosopherStone || 0) + 1;
+                this.addLog(`${player.name} gains a Philosopher's Stone`);
                 for (let i = 0; i < this.playerCount; i++) {
                     if (i !== playerIndex) {
                         this.players[i].scorn += 15;
@@ -3506,23 +3513,32 @@ class FavorGame {
         }
     }
 
+    // Chemical Y stack depth. _favorDoubled is a COUNT now (Wyatt 8/6:
+    // a duplicated Chemical Y — Wild Experiments — may re-pick the SAME
+    // card, ×2 per doubling, so twice on Reunited pays ×4). The boolean
+    // era's `true` still rides in old saves and means one doubling.
+    chemYCount(card) {
+        return card._favorDoubled === true ? 1 : (card._favorDoubled || 0);
+    }
+
     // TOTAL Favor a played card pays: printed + dynamic formula, doubled as
-    // ONE amount when Chemical Y marked it. The card says "multiply its
+    // ONE amount per Chemical Y mark. The card says "multiply its
     // Favor amount by 2", and a dynamic card's amount IS its formula —
     // doubling only the printed number scored Fang's Truce (2 per Survival,
     // printed 0) at ×1 and hid it from every picker (Wyatt 7/21).
     scoredCardFavor(playerIndex, card) {
         const base = (card.favor || 0) + this.dynamicCardFavor(playerIndex, card);
-        return card._favorDoubled ? base * 2 : base;
+        return base * Math.pow(2, this.chemYCount(card));
     }
 
     // The adventures Chemical Y may choose from: any played adventure whose
     // Favor amount can be nonzero — printed, or a favor_per_* formula. A
     // formula can read 0 right now and still pay at scoring (Survival grows),
     // so the formula's PRESENCE is what qualifies it, never today's value.
+    // Already-doubled cards STAY eligible — stacking is legal (Wyatt 8/6).
     chemYCandidates(playerIndex) {
         return this.players[playerIndex].playedCards.filter(c =>
-            c.type === 'adventure' && !c._favorDoubled
+            c.type === 'adventure'
             && ((c.favor || 0) > 0 || String(c.special || '').indexOf('favor_per_') === 0));
     }
 
