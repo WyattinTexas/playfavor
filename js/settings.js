@@ -230,6 +230,27 @@
         }));
         body.appendChild(menu);
 
+        // The Throne Room rehearsal (Wyatt 8/6): run a whole fake night
+        // on demand — hall, draw, seating, game — to prove the flow
+        // without waiting for 9:15. FMODES owns the mechanics; a
+        // rehearsal table pays like an ordinary game (no 3×, no purse,
+        // no Throne standing), so the button is safe in plain sight.
+        const thr = section('The Throne Room');
+        const trow = document.createElement('div');
+        trow.className = 'set-build';
+        const tlabel = document.createElement('span');
+        tlabel.textContent = 'Rehearse a Throne night';
+        const tbtn = document.createElement('button');
+        tbtn.className = 'set-upd-btn';
+        tbtn.textContent = 'Enter the Hall';
+        tbtn.onclick = () => {
+            close();
+            if (window.FMODES && FMODES.testThroneRoom) FMODES.testThroneRoom();
+        };
+        trow.append(tlabel, tbtn);
+        thr.appendChild(trow);
+        body.appendChild(thr);
+
         // Rules — the illustrated reference deck. It used to BE "How to Play";
         // that button now opens the guided game, so the deck lives here as the
         // thing you consult rather than the thing you're taught by (Wyatt 7/29).

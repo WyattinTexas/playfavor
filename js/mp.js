@@ -216,7 +216,11 @@
     // 31 (8/6): Chemical Z pays its Philosopher's Stone (design call) and
     //     the AI weighs it — old builds grant no stone and pick
     //     differently, so mixed tables would fork at the next baseline.
-    const MPV = 31;
+    // 32 (8/6): give_1_gold_each pays CLOCKWISE from the giver and stops
+    //     when the purse runs dry — gold can no longer go negative (the
+    //     broke Duchess). Old builds pay every seat unconditionally, so
+    //     a broke giver forks the gold ledger: one law per table.
+    const MPV = 32;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.
@@ -1235,6 +1239,47 @@
         return { phase: 'closed', key: c.key, msToOpen: toOpen };
     }
 
+    // ── The rehearsal seam (Settings → "Test the Throne Room") ───────
+    // Bends the night clock through the audit suite's own _throneNow
+    // seam to a fake PAST night, so the whole real pipeline — hall,
+    // bar, draw, seal — runs on demand. Each real-world minute maps to
+    // its own 1970s dateKey: repeat tests never collide, testers who
+    // press within the same minute share a hall, and sweepStale
+    // collects the spent key (k < today) once its heartbeats go quiet.
+    // A rehearsal table is a real MP game in every way but one:
+    // rec.throne is never stamped, so no 3× Stars, no purse, no
+    // Throne-board rows — the board can't be farmed from a button
+    // anyone can press.
+    let _thTest = false, _thTestFn = null;
+
+    function throneTestEnter() {
+        watchSrvOffset();
+        const real = srvReal();
+        const minuteStart = Math.floor(real / 60000) * 60000;
+        const dayIdx = Math.floor(real / 60000) % 3650;   // a 1970s date
+        // Aim the minute's start at 21:17:00 ET on the fake night — the
+        // bar (21:18) lands within the real minute, so the wait is
+        // 1–60s of genuine hall countdown. Guess EST (+5h), then let
+        // etClock correct the DST hour.
+        let target = dayIdx * 86400000 + (((21 * 60 + 17) * 60) + 5 * 3600) * 1000;
+        target += (((21 * 60 + 17) * 60) - etClock(target).sec) * 1000;
+        const off = target - minuteStart;
+        _thTest = true;
+        _thTestFn = () => srvReal() + off;
+        window._throneNow = _thTestFn;
+    }
+
+    function throneTestClear() {
+        if (!_thTest) return;
+        _thTest = false;
+        // Only unbend a clock this seam owns — the audit suite's own
+        // time machine must never be snatched from under it.
+        if (window._throneNow === _thTestFn) {
+            try { delete window._throneNow; } catch (e) { window._throneNow = undefined; }
+        }
+        _thTestFn = null;
+    }
+
     // dateKey → deterministic seed (the menu's own 31-hash grammar).
     function throneHash(s) {
         let h = 0;
@@ -1304,9 +1349,9 @@
      *              'closed' = door state; 'gone' = table lost)
      */
     function throneJoin({ offer, onState }) {
-        if (!available()) { try { onState('closed', { reason: 'gone' }); } catch (e) {} return; }
+        if (!available()) { throneTestClear(); try { onState('closed', { reason: 'gone' }); } catch (e) {} return; }
         const ph = thronePhase();
-        if (ph.phase !== 'open') { try { onState('closed', { reason: ph.phase }); } catch (e) {} return; }
+        if (ph.phase !== 'open') { throneTestClear(); try { onState('closed', { reason: ph.phase }); } catch (e) {} return; }
         if (t) throneLeave();
         const me = uid();
         const key = ph.key;
@@ -1407,7 +1452,10 @@
                 if (!t || t.key !== key) break;
                 rec.status = 'picking';   // no proposal — the hall was the accept
                 rec.pickStart = firebase.database.ServerValue.TIMESTAMP;
-                rec.throne = key;         // ship 3's scoring stamp (3×, purse, points)
+                // Ship 3's scoring stamp (3×, purse, points) — WITHHELD on
+                // a rehearsal night: the table plays for real but pays like
+                // an ordinary game.
+                if (!_thTest) rec.throne = key;
                 rec.hostUid = humanRows[0].uid;   // its own earliest member,
                 // not the claimant — the claimant may sit at another table.
                 const gid = fdb().ref(`${NS}/games`).push().key;
@@ -1604,6 +1652,9 @@
             if (t.recOff) t.recOff();
         } catch (e) { /* best effort */ }
         t = null;
+        // A rehearsal ends wherever the hall flow ends — live, missed,
+        // closed, or a walk-out — and the night clock unbends with it.
+        throneTestClear();
     }
 
     // Backing out of the hall. Seated players keep their row (it wears
@@ -2026,7 +2077,14 @@
             // the same law as the hb liveness split above.
             const today = etClock(srvReal()).key;
             for (const k of Object.keys(nights)) {
-                if (k < today) await fdb().ref(`${THNS}/${k}`).remove();
+                if (k >= today) continue;
+                // A spent-looking key can be a LIVE rehearsal (the Settings
+                // Throne test runs whole fake nights on 1970s dateKeys): a
+                // fresh lobby heartbeat holds the sweep off that night.
+                const rows = (nights[k] && nights[k].lobby) || {};
+                const rehearsing = Object.values(rows).some(r => r
+                    && typeof r.hb === 'number' && tNow - r.hb < 10 * 60 * 1000);
+                if (!rehearsing) await fdb().ref(`${THNS}/${k}`).remove();
             }
         } catch (e) { /* non-fatal */ }
     }
@@ -2048,6 +2106,8 @@
             phase: thronePhase,          // door states tick on this
             join: throneJoin, leave: throneLeave,
             active: () => !!t,
+            testEnter: throneTestEnter,  // Settings' rehearsal night
+            testing: () => _thTest,
             srvNow,                      // night clock (phase truth)
             srvReal,                     // liveness clock (hb freshness)
             openLabel: throneOpenLabel,  // tonight's door copy ("10:00 PM" on 8/3 only)

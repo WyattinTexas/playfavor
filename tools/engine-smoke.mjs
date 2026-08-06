@@ -2402,6 +2402,38 @@ console.log('\n— Philosopher\'s Stones STACK (Wyatt 7/18: "we had 3 and it reg
   ok(g2.getStoneCount(0) === 3, `slot (2, while parked) + card (1) stones sum (got ${g2.getStoneCount(0)})`);
 }
 
+console.log('\n— give_1_gold_each: clockwise until the purse runs dry (Wyatt 8/6) —');
+{
+  // The broke-Duchess rule: the slot pays clockwise from the giver, one
+  // coin at a time, and STOPS at zero — gold never goes negative, seats
+  // past the last coin get nothing, and the landing still stands.
+  const g = newGame();
+  g.players[1].gold = 5;
+  g.players[0].gold = 0;
+  g.players[2].gold = 0;
+  g.resolveSlotSpecial(g.players[1], 'give_1_gold_each', {});
+  ok(g.players[1].gold === 3 && g.players[0].gold === 1 && g.players[2].gold === 1,
+    `a full purse pays every seat (giver 5→${g.players[1].gold}, others ${g.players[0].gold}/${g.players[2].gold})`);
+
+  const g2 = newGame();
+  g2.players[1].gold = 1;
+  g2.players[0].gold = 0;
+  g2.players[2].gold = 0;
+  g2.resolveSlotSpecial(g2.players[1], 'give_1_gold_each', {});
+  ok(g2.players[1].gold === 0,
+    `one coin leaves the giver at exactly zero (got ${g2.players[1].gold})`);
+  ok(g2.players[2].gold === 1 && g2.players[0].gold === 0,
+    `the coin lands CLOCKWISE first — seat 2 paid, seat 0 dry (got ${g2.players[2].gold}/${g2.players[0].gold})`);
+
+  const g3 = newGame();
+  g3.players[1].gold = 0;
+  g3.players[0].gold = 0;
+  g3.players[2].gold = 0;
+  g3.resolveSlotSpecial(g3.players[1], 'give_1_gold_each', {});
+  ok(g3.players[1].gold === 0 && g3.players[0].gold === 0 && g3.players[2].gold === 0,
+    `an empty purse pays nobody and stays at zero (got ${g3.players[1].gold}/${g3.players[0].gold}/${g3.players[2].gold})`);
+}
+
 console.log('\n— The resolution ledger: WHICH cards, WHO else, and gates that MISSED —');
 {
   // Wyatt 7/18: "we never got to see which cards he discarded, which is

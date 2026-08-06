@@ -1381,12 +1381,19 @@ class FavorGame {
                 break;
 
             case 'give_1_gold_each':
-                for (let i = 0; i < this.playerCount; i++) {
-                    if (i !== player.index) {
-                        this.players[i].gold += 1;
-                        player.gold -= 1;
-                        this.addLog(`${player.name} gives 1 Gold to ${this.players[i].name}`);
+                // Clockwise from the giver, one coin at a time, until the
+                // purse runs dry (Wyatt 8/6, the broke-Duchess rule): gold
+                // can never go negative. Seats past the last coin receive
+                // nothing — and the landing itself still stands.
+                for (let s = 1; s < this.playerCount; s++) {
+                    const i = (player.index + s) % this.playerCount;
+                    if (player.gold <= 0) {
+                        this.addLog(`${player.name} has no Gold left to give`);
+                        break;
                     }
+                    player.gold -= 1;
+                    this.players[i].gold += 1;
+                    this.addLog(`${player.name} gives 1 Gold to ${this.players[i].name}`);
                 }
                 break;
 

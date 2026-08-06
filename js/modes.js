@@ -557,6 +557,16 @@
     }
     function closeThroneInfo() { $('throneOv').classList.remove('active'); }
 
+    // Settings → "Test the Throne Room": a rehearsal night on the spot.
+    // FMP bends the night clock to a private fake night; the hall, the
+    // bar, the draw and the seal all run for real — the table just pays
+    // like an ordinary game (no 3×, no purse, no Throne standing).
+    function testThroneRoom() {
+        if (!window.FMP || !FMP.throne.testEnter) return;
+        FMP.throne.testEnter();
+        enterThroneHall();
+    }
+
     // ── The hall — everyone standing before the Throne ───────────────
     function enterThroneHall() {
         if (FMP.throne.active()) { $('throneHall').classList.add('active'); return; }
@@ -572,6 +582,10 @@
                     <div class="thr-count" id="thrCount"></div>
                     <div class="thr-timed"><b>Turns are timed</b> — linger and the game
                         moves for you: the most basic option, or the last card you touched.</div>
+                    ${FMP.throne.testing && FMP.throne.testing() ? `
+                    <div class="thr-timed"><b>A rehearsal</b> — the table plays for real,
+                        but pays like an ordinary game: no tripled Stars, no purse,
+                        no Throne standing.</div>` : ''}
                 </div>
                 <div class="thr-floor" id="thrFloor"></div>
                 <div class="thr-foot">
@@ -742,6 +756,7 @@
         roomSetSize, roomSetHard, startRoomGame,
         skirmishDiff,
         openThroneDoor, closeThroneInfo, closeThroneHall, renderThroneDoor,
+        testThroneRoom,
         attachEmotes, detachEmotes, toggleEmoteTray, emote,
         EMOTES,
     };
