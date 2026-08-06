@@ -10209,56 +10209,7 @@ body.no-play-glow .hand-card.playable {
        against the phone's 120px-tall card (3.15 x 120 = 378px). Our desktop
        card is 201px, so the same multiplier throws a 633px card up the
        screen — which is why it read as too big. Capping the multiplier here
-       lands it near 440px instead. The card size itself is untouched.     */
-    .tv-hand .hand-card.bloom {
-        transform: translateX(var(--bloomShift, 0px)) translateY(-28px)
-                   scale(min(var(--bloomScale, 2.8), 2.2)) !important;
-    }
-    @media (hover: hover) {
-        .tv-hand-strip .tv-hand .hand-card:hover {
-            transform: translateX(var(--bloomShift, 0px)) translateY(-28px)
-                       scale(min(var(--bloomScale, 2.8), 2.2)) !important;
-        }
-    }
-}
-
-/* ── Desktop table, pass 5 (Wyatt 8/5) ──────────────────────────────────
-   Bigger seats, bigger missions, bigger player board, smaller hover bloom.
-
-   Seats and missions are CLAMPED TO THE VIEWPORT rather than given flat
-   pixel sizes. The seats are centre-anchored and the mission rail is right-
-   anchored, so both grow toward each other: at flat sizes (125 / 150) they
-   collide on a 1440 screen with a five-player table. Clamped, they take the
-   room on a wide monitor and hold their present size where there isn't any.
-
-   The board's top and the stage's top are expressed as CALCULATIONS off
-   those clamps, so they track whatever the clamps resolve to instead of
-   needing a new magic number every pass.                                  */
-@media (min-width: 1000px) and (min-height: 600px) {
-
-    /* the other players, across the top */
-    .tv-seats .pmat.seat-chip {
-        width: clamp(101px, 6vw, 126px);
-        height: clamp(101px, 6vw, 126px);
-        border-radius: 24px;
-    }
-
-    /* the missions of the realm */
-    .tv-mission-rail .tv-mission { width: clamp(120px, 7.2vw, 150px); }
-
-    /* your own board, and it starts below wherever the rail ends
-       (rail height = card width x 64/46 = x1.391) */
-    .tv-board-thumb {
-        width: clamp(360px, 31vw, 640px);
-        top: calc(clamp(120px, 7.2vw, 150px) * 1.391 + 30px);
-    }
-
-    .tv-stage {
-        right: calc(clamp(360px, 31vw, 640px) + 28px);
-        top: calc(clamp(101px, 6vw, 126px) + 25px);
-    }
-
-    /* the hover bloom, smaller again: 2.2 -> 1.85, about 372px tall */
+       lands it near 372px instead. The card size itself is untouched.     */
     .tv-hand .hand-card.bloom {
         transform: translateX(var(--bloomShift, 0px)) translateY(-28px)
                    scale(min(var(--bloomScale, 2.8), 1.85)) !important;
