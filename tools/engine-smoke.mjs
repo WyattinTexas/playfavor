@@ -758,9 +758,17 @@ console.log('── Chemical Y: choose ONE adventure card, its favor doubles at 
   ok(after === before + 7, `scoring pays the double once (+7: ${before} → ${after})`);
   ok(p.favor === 0 || true, 'no immediate favor dump');
 
-  // A second Chemical Y picks a DIFFERENT card.
+  // Stacking is legal (Wyatt 8/6): a second Chemical Y — e.g. a Wild
+  // Experiments duplicate firing the copy — may re-pick the SAME card.
+  // The AI's argmax re-picks the doubled leader (14 > 3); scoring pays ×4.
   g.resolveSpecial(2, { name: 'Chemical Y', special: 'double_adventure_favor' });
-  ok(p.playedCards.every(c => c._favorDoubled), 'second dose doubles the other card');
+  const bond = p.playedCards.find(c => c.name === 'Forming a Bond');
+  ok(g.chemYCount(bond) === 2, `second dose stacks on the same card (count ${g.chemYCount(bond)})`);
+  const after2 = g.calculateFinalScores().find(s => s.playerIndex === 2).cardFavor;
+  ok(after2 === before + 21, `scoring pays ×4 on the stacked card (${before} → ${after2})`);
+  // Boolean-era saves carry `true` — still exactly ONE doubling.
+  bond._favorDoubled = true;
+  ok(g.scoredCardFavor(2, bond) === 14, 'boolean-era mark still scores ×2 (save compat)');
 
   // Discarding the doubled card takes the doubling with it.
   const g2 = newGame();
@@ -801,7 +809,7 @@ console.log("── Chemical Y sees DYNAMIC favor: Fang's Truce (Wyatt 7/21)");
   g.resolveSpecial(1, { name: 'Chemical Y', special: 'double_adventure_favor' });
   const qFang = q.playedCards.find(c => c.name === "Fang's Truce");
   const qCorr = q.playedCards.find(c => c.name === 'Finding the Lost Corridor');
-  ok(qFang._favorDoubled === true && !qCorr._favorDoubled,
+  ok(g.chemYCount(qFang) === 1 && g.chemYCount(qCorr) === 0,
     'AI doubles the 12-Favor formula over the printed 10');
 
   // Doubling pays double the FORMULA — live favor and the score sheet agree.
@@ -3199,6 +3207,12 @@ console.log('── free_potion_per_round: one Potion per round plays FREE (reqs
   const r1 = playCard(g, 0, 'Chemical Z');
   ok(r1 && r1.success === true, 'Chemical Z plays with 0 Alchemy/Prospecting');
   ok(you._freePotionRound === true, 'the round’s waiver is spent');
+  // Design call (Wyatt 8/6): the card pays its printed Philosopher's Stone
+  // and the scorn falls exactly as the audit text reads — 5 yours, 15 theirs.
+  ok((you.philosopherStone || 0) === 1, 'Chemical Z grants 1 Philosopher’s Stone');
+  ok(you.scorn === 5, `you take 5 Scorn (got ${you.scorn})`);
+  ok(g.players[1].scorn === 15 && g.players[2].scorn === 15,
+    `others take 15 Scorn each (got ${g.players[1].scorn}/${g.players[2].scorn})`);
 
   // A second req-failing potion the SAME round is refused.
   const doom2 = { ...chemZ, id: (chemZ.id || 'chemz') + '_second' };
