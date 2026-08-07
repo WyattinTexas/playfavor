@@ -3043,6 +3043,16 @@
     const APPLE_IAP = !!(window.webkit && window.webkit.messageHandlers
         && window.webkit.messageHandlers.favorIAP);
 
+    // ═══ Play Star Shipments — Google Play Billing, same shape ═══
+    // Same law, different handler: 'favorPlay', deliberately NOT 'favorIAP'.
+    // Naming it favorIAP would light APPLE_IAP above and route Android
+    // through StoreKit's ack path and the apple_<tx> ledger namespace —
+    // the same tx credited twice under two keys. The Android shell shims
+    // window.webkit.messageHandlers.favorPlay.postMessage onto its
+    // @JavascriptInterface bridge so the page-side gate stays one shape.
+    const PLAY_IAP = !!(window.webkit && window.webkit.messageHandlers
+        && window.webkit.messageHandlers.favorPlay);
+
     // SKUs are quantity-neutral (a pack-size tweak is a display edit,
     // never an id migration); quantities and names mirror the Mint.
     const APPLE_PACKS = [
@@ -3051,10 +3061,69 @@
         { sku: 'com.corkscrewgames.favor.stars.l',  stars: 500,  name: 'Chest of Stars' },
         { sku: 'com.corkscrewgames.favor.stars.xl', stars: 1000, name: 'Royal Treasury' },
     ];
+    // Play's catalogue mirrors Apple's ids and quantities exactly (one
+    // brain for "what a pack IS"). Prices live in Play Console ONLY — a
+    // hardcoded dollar string is a lie in every other currency, and Play
+    // shows local tax-inclusive prices the page cannot compute.
+    const PLAY_PACKS = [
+        { sku: 'com.corkscrewgames.favor.stars.s',  stars: 50,   name: 'Pouch of Stars' },
+        { sku: 'com.corkscrewgames.favor.stars.m',  stars: 100,  name: 'Purse of Stars' },
+        { sku: 'com.corkscrewgames.favor.stars.l',  stars: 500,  name: 'Chest of Stars' },
+        { sku: 'com.corkscrewgames.favor.stars.xl', stars: 1000, name: 'Royal Treasury' },
+    ];
     const IAP_LEDGER_CAP = 100;
+    // Shared by both rails on purpose: a build carries the Apple handler
+    // or the Play handler, never both, and renderStorePacks picks exactly
+    // one branch. Two copies of "is a sheet open" would be two ways to be
+    // wrong. iapEsc/renderStore stay the single dressing path.
     let _iapPrices = null;     // sku → storefront displayPrice (escaped at stash)
-    let _iapBusy = false;      // one payment sheet at a time (shell guards too)
+    let _iapBusy = false;      // the SKU whose payment sheet is open, else false
     let _iapNote = '';         // pending/fail line under the packs
+
+    // The truthful line for a purchase the page took but could not bank yet.
+    // Both storefronts keep holding an unacked purchase and re-deliver it
+    // (page-ready, foreground, next launch), so this is a wait and not a
+    // loss — but the player has to SEE that: a charge with no Stars and no
+    // message reads as theft. Plain text on purpose — it rides innerHTML in
+    // renderApplePacks/renderPlayPacks. One string for both rails: the note
+    // is dressing, and two copies of the same sentence only drift.
+    const IAP_HELD_NOTE = 'Payment received — your Stars arrive the moment we reach the court again. Nothing is lost.';
+
+    // Lowering the sheet lock — ONE place decides it, for both rails,
+    // because there is only ever one lock and one sheet. buyApple/buyPlay
+    // raise it WITH the sku they opened, so a delivery can be asked the only
+    // question that matters: is this the sheet you are looking at? A replay
+    // of some older purchase can land at any moment (page-ready, foreground,
+    // an Ask-to-Buy approval), and one arriving mid-sheet must not reopen
+    // the buttons under a live payment flow — that is a second tap into a
+    // second charge. With no sheet open the compare simply does nothing, so
+    // a stray delivery still cannot brick the store on its way past. And
+    // nothing can strand the lock: every sheet ends in either its OWN
+    // delivery (same sku) or an _iapResult/_playResult, and those clear it
+    // outright — the shells send one or the other on every path.
+    function iapRelease(sku, note) {
+        if (_iapBusy === sku) _iapBusy = false;
+        if (note != null) _iapNote = note;
+        renderStore();
+    }
+
+    // ⚠ Firebase does not FAIL while the socket is down — it QUEUES. A
+    // transaction awaited offline (or inside connect()'s optimistic
+    // 'firebase' window, before the 6s probe has answered) never settles, so
+    // a credit riding one hangs forever: no ack, no note, and the sheet lock
+    // never lowers — exactly the bricked store the release path was written
+    // to end, reached by a hang instead of a return. So every await on the
+    // credit path rides this bound instead. Losing the race THROWS, which
+    // lands in the credit fn's existing catch: held note, NO ack, and the
+    // storefront re-delivers. No new exit, no new state, nothing to unwind —
+    // a late txn that commits anyway is found by the next replay and re-acked.
+    const WIRE_MS = 8000;      // longer than connect()'s 6s probe: a slow-but-live wire still wins
+    function wireRace(p) {
+        // The loser's timer is left to fire into a settled race — harmless,
+        // and cheaper than a handle to clear.
+        return Promise.race([p, new Promise((_, rej) =>
+            setTimeout(() => rej(new Error('wire timeout')), WIRE_MS))]);
+    }
 
     function iapEsc(s) {
         return String(s).replace(/[&<>"']/g, c => ({
@@ -3064,13 +3133,26 @@
     function iapPost(msg) {
         try { window.webkit.messageHandlers.favorIAP.postMessage(msg); } catch (e) { /* shell gone */ }
     }
+    function playPost(msg) {
+        try { window.webkit.messageHandlers.favorPlay.postMessage(msg); } catch (e) { /* shell gone */ }
+    }
     function iapAskProducts() {
         if (APPLE_IAP) iapPost({ cmd: 'products' });   // doubles as the page-ready signal
+        // Same signal for Play. It is also the REPLAY trigger: Play
+        // auto-refunds a purchase that goes 3 days unacknowledged, so
+        // every page-ready must give the shell a chance to re-deliver
+        // whatever it is still holding unacked.
+        if (PLAY_IAP) playPost({ cmd: 'products' });
     }
 
     function _iapProducts(list) {
         _iapPrices = {};
         (list || []).forEach(p => { if (p && p.sku) _iapPrices[p.sku] = iapEsc(p.price || ''); });
+        // The Mint door opens only when Apple actually priced something —
+        // see the boot() comment. Toggle, not add: a storefront that goes
+        // dry heals shut on the next products answer.
+        document.body.classList.toggle('iap-shell',
+            APPLE_PACKS.some(p => _iapPrices[p.sku]));
         renderStore();
     }
 
@@ -3083,7 +3165,7 @@
         if (!APPLE_IAP || _iapBusy) return;
         if (!(_iapPrices && _iapPrices[sku])) return;   // never sell what the storefront didn't price
         _confirmingPack = null;
-        _iapBusy = true;
+        _iapBusy = sku;          // the lock names the sheet it is holding
         _iapNote = '';
         iapPost({ cmd: 'buy', sku });
         renderStore();
@@ -3109,12 +3191,27 @@
     async function creditAppleTx(m) {
         const tx = m && m.tx, sku = m && m.sku;
         const pack = APPLE_PACKS.find(p => p.sku === sku);
-        if (!tx || !pack) return;                 // not ours — never ack
-        if (mode !== 'firebase') return;          // offline: stay unacked, redelivery is the mechanism
+        // ONE way out, and it is this one. buyApple() raises the _iapBusy
+        // sheet-lock, and a SUCCESSFUL StoreKit purchase comes back as _iapTx
+        // and NOTHING else — FavorIAPBridge sends _iapResult only when its
+        // `state` is non-nil, which the success case never sets, so
+        // _iapResult can never lower that lock for a buy that WORKED. Without
+        // this, one good purchase left all four packs rendering `dead`
+        // (renderApplePacks reads _iapBusy) for the rest of the page session,
+        // and every failure exit below became a charged player staring at a
+        // store they cannot tap, with no note. The Play twin is identical.
+        const release = (note) => iapRelease(sku, note);
+        // Not ours — never ack, and deliberately no note: a sku we do not
+        // sell is NOT "your Stars are coming" (nothing here will ever credit
+        // it), and a comforting lie is worse than silence.
+        if (!tx || !pack) return release();
+        // Offline: stay unacked, redelivery is the mechanism. boot() re-arms
+        // that replay the instant Firebase answers, so this really is a wait.
+        if (mode !== 'firebase') return release(IAP_HELD_NOTE);
         const txKey = `apple_${String(tx).replace(/[^A-Za-z0-9_]/g, '')}`;
         let fresh = false;
         try {
-            const res = await dbTxn(`players/${uid()}`, p => {
+            const res = await wireRace(dbTxn(`players/${uid()}`, p => {
                 // p is null on a cold cache even when the row exists —
                 // NEVER abort on null (that ends the txn without asking
                 // the server). Build optimistically; a stale base fails
@@ -3129,22 +3226,27 @@
                 }
                 iap[txKey] = { sku, stars: pack.stars, at: Date.now() };
                 return { ...base, stars: (base.stars || 0) + pack.stars, iap };
-            });
+            }));
             fresh = res.committed;
             if (!res.committed && !(res.value && res.value.iap && res.value.iap[txKey])) {
-                return;   // aborted for a reason other than "already there" — retry later
+                return release(IAP_HELD_NOTE);   // aborted for a reason other than "already there" — retry later
             }
             // The disk re-read: the entry must come back over the wire
             // before finish() is allowed to burn the transaction.
-            const onDisk = await dbGet(`players/${uid()}/iap/${txKey}`);
-            if (!onDisk) return;
+            const onDisk = await wireRace(dbGet(`players/${uid()}/iap/${txKey}`));
+            if (!onDisk) return release(IAP_HELD_NOTE);
         } catch (e) {
-            return;       // wire hiccup — the bridge re-delivers
+            return release(IAP_HELD_NOTE);       // wire hiccup (or the bound above) — the bridge re-delivers
         }
         iapPost({ cmd: 'ack', tx: String(tx) });
+        // Banked and acked: the sheet is over and the note has nothing left
+        // to say. Lowered HERE, before the celebration block — that block
+        // awaits a read and hands off to an overlay that resolves on a TAP,
+        // and the store must never sit locked behind either.
+        release('');
         if (fresh) {
             try {
-                const s = await dbGet(`players/${uid()}/stars`);
+                const s = await wireRace(dbGet(`players/${uid()}/stars`));
                 _me = { ...(_me || {}), stars: (s == null ? ((_me && _me.stars) || 0) + pack.stars : s) };
             } catch (e) { _me = { ...(_me || {}), stars: ((_me && _me.stars) || 0) + pack.stars }; }
             renderStore();
@@ -3155,6 +3257,141 @@
             // TAP, and an app backgrounded there must not lose the record.
             dbSet(`purchases/${txKey}`, {
                 uid: uid(), sku, stars: pack.stars, at: Date.now(), via: 'apple',
+            }).catch(() => { /* mirror only */ });
+            showStarsCelebration(pack.stars);   // resolves on tap — never awaited here
+        }
+    }
+
+    // ── The Play rail — same contract, its own namespace ──────────────
+
+    function _playProducts(list) {
+        _iapPrices = {};
+        (list || []).forEach(p => { if (p && p.sku) _iapPrices[p.sku] = iapEsc(p.price || ''); });
+        // Same door law as _iapProducts: only a PRICED pack opens the Mint.
+        // Play returns nothing for unapproved products too (vc2 will boot
+        // against an unreviewed catalog its first days).
+        document.body.classList.toggle('iap-shell',
+            PLAY_PACKS.some(p => _iapPrices[p.sku]));
+        renderStore();
+    }
+
+    function askBuyPlay(sku) {
+        if (!PLAY_IAP || _iapBusy) return;
+        _confirmingPack = sku;
+        renderStore();
+    }
+    function buyPlay(sku) {
+        if (!PLAY_IAP || _iapBusy) return;
+        if (!(_iapPrices && _iapPrices[sku])) return;   // never sell what the storefront didn't price
+        _confirmingPack = null;
+        _iapBusy = sku;          // the lock names the sheet it is holding
+        _iapNote = '';
+        playPost({ cmd: 'buy', sku });
+        renderStore();
+    }
+    function _playResult(r) {
+        _iapBusy = false;
+        const state = r && r.state;
+        if (state === 'pending') {
+            // Play's PENDING (cash/carrier billing) — the shell does NOT
+            // credit these; the purchase arrives later as a real tx.
+            _iapNote = 'Awaiting approval — your Stars arrive the moment it clears.';
+        } else if (state === 'fail') {
+            _iapNote = 'The purchase could not complete. Nothing was charged — try again.';
+        } else {
+            _iapNote = '';   // cancel: quiet, the player changed their mind
+        }
+        renderStore();
+    }
+
+    // Google's half of creditAppleTx, cloned deliberately rather than
+    // shared: the two ledgers must never be able to drift into each
+    // other. Everything that makes the Apple path safe is load-bearing
+    // here too — ONE dbTxn carrying ledger key and stars together, built
+    // optimistically from {} (a null cache is not an abort), and ack only
+    // after a fresh dbGet proves the entry is on the wire.
+    // ⚠ Play differs from StoreKit in one way that matters: an
+    // unacknowledged purchase is AUTO-REFUNDED after 3 days. So the ack
+    // has to fire on BOTH paths — fresh credit and already-credited —
+    // or a replay that finds the ledger entry already present would
+    // never consume, and Google would claw the money back.
+    async function creditPlayTx(m) {
+        const tx = m && m.tx, sku = m && m.sku;
+        const pack = PLAY_PACKS.find(p => p.sku === sku);
+        // ONE way out, and it is this one. buyPlay() raises the _iapBusy
+        // sheet-lock, and a SUCCESSFUL Play purchase comes back as _playTx
+        // and nothing else — FavorBilling.deliver() sends no _playResult on
+        // the happy path (the StoreKit twin does the same), so _playResult
+        // can never lower that lock for a buy that WORKED. The audit caught
+        // this fn lowering it on no path at all: one good purchase left all
+        // four packs rendering `dead` (renderPlayPacks reads _iapBusy) for
+        // the rest of the page session, and every failure exit below became
+        // a charged player staring at a store they cannot tap, with no note.
+        // GVT clears IAP_STATE.busy the same way, inside iapCredit after the
+        // ack. iapRelease decides WHETHER the lock may drop — see it for why
+        // a replay landing mid-sheet is not allowed to open the buttons.
+        const release = (note) => iapRelease(sku, note);
+        // Not ours — never ack, and deliberately no note: a sku we do not
+        // sell is NOT "your Stars are coming" (nothing here will ever credit
+        // it), and a comforting lie is worse than silence.
+        if (!tx || !pack) return release();
+        // Offline: stay unacked, redelivery is the mechanism. boot() re-arms
+        // that replay the instant Firebase answers, so this really is a wait.
+        if (mode !== 'firebase') return release(IAP_HELD_NOTE);
+        // Own namespace: play_ vs apple_. Same sanitizer — Firebase keys
+        // cannot hold . # $ [ ] / and a GPA.1234-… order id sanitizes to
+        // a still-unique GPA1234…. ⚠ tx is the order id by contract, NEVER
+        // the purchaseToken: tokens share long prefixes and anything that
+        // truncates them can collide two purchases into one ledger key.
+        const txKey = `play_${String(tx).replace(/[^A-Za-z0-9_]/g, '')}`;
+        let fresh = false;
+        try {
+            const res = await wireRace(dbTxn(`players/${uid()}`, p => {
+                // p is null on a cold cache even when the row exists —
+                // NEVER abort on null (that ends the txn without asking
+                // the server). Build optimistically; a stale base fails
+                // the hash check and this fn re-runs with real data.
+                const base = p || {};
+                if (base.iap && base.iap[txKey]) return undefined;   // already credited → re-ack path
+                const iap = { ...(base.iap || {}) };
+                const keys = Object.keys(iap);
+                if (keys.length >= IAP_LEDGER_CAP) {
+                    keys.sort((a, b) => (iap[a].at || 0) - (iap[b].at || 0));
+                    keys.slice(0, keys.length - IAP_LEDGER_CAP + 1).forEach(k => delete iap[k]);
+                }
+                iap[txKey] = { sku, stars: pack.stars, at: Date.now() };
+                return { ...base, stars: (base.stars || 0) + pack.stars, iap };
+            }));
+            fresh = res.committed;
+            if (!res.committed && !(res.value && res.value.iap && res.value.iap[txKey])) {
+                return release(IAP_HELD_NOTE);   // aborted for a reason other than "already there" — retry later
+            }
+            // The disk re-read: the entry must come back over the wire
+            // before the ack is allowed to consume the purchase.
+            const onDisk = await wireRace(dbGet(`players/${uid()}/iap/${txKey}`));
+            if (!onDisk) return release(IAP_HELD_NOTE);
+        } catch (e) {
+            return release(IAP_HELD_NOTE);       // wire hiccup (or the bound above) — the bridge re-delivers
+        }
+        playPost({ cmd: 'ack', tx: String(tx) });
+        // Banked and acked: the sheet is over and the note has nothing left
+        // to say. Lowered HERE, before the celebration block — that block
+        // awaits a read and hands off to an overlay that resolves on a TAP,
+        // and the store must never sit locked behind either.
+        release('');
+        if (fresh) {
+            try {
+                const s = await wireRace(dbGet(`players/${uid()}/stars`));
+                _me = { ...(_me || {}), stars: (s == null ? ((_me && _me.stars) || 0) + pack.stars : s) };
+            } catch (e) { _me = { ...(_me || {}), stars: ((_me && _me.stars) || 0) + pack.stars }; }
+            renderStore();
+            renderProfileChip();
+            // Bookkeeping mirror beside the PayPal box's records — the
+            // player row's ledger is the authority, this is the overview.
+            // Written BEFORE the celebration: that overlay resolves on a
+            // TAP, and an app backgrounded there must not lose the record.
+            dbSet(`purchases/${txKey}`, {
+                uid: uid(), sku, stars: pack.stars, at: Date.now(), via: 'play',
             }).catch(() => { /* mirror only */ });
             showStarsCelebration(pack.stars);   // resolves on tap — never awaited here
         }
@@ -3317,7 +3554,16 @@
     function renderStorePacks() {
         const row = document.getElementById('storePacks');
         if (!row) return;
+        // Precedence is the whole safety story. Apple first, then Play —
+        // mutually exclusive, so a build that somehow carried both
+        // handlers still sells through exactly one sheet and one ledger
+        // namespace. IOS_SHELL last of the shell branches: any shell
+        // WITHOUT a billing bridge (Steam, iOS ≤20, Android vc1) still
+        // gets an empty Mint, never the PayPal cards. That empty branch
+        // is the Apple 3.1.1 / Play payments guard — do not reorder it
+        // above the two bridges, and never let PayPal fall through here.
         if (APPLE_IAP) { renderApplePacks(row); return; }
+        if (PLAY_IAP)  { renderPlayPacks(row);  return; }
         if (IOS_SHELL) { row.innerHTML = ''; return; }
         const online = mode === 'firebase';
         row.innerHTML = STAR_PACKS.map(p => {
@@ -3365,6 +3611,33 @@
             : '');
     }
 
+    // The same cards again, through Play's sheet. Price text is
+    // getFormattedPrice() verbatim (escaped at the stash) — Play returns
+    // it already local and tax-inclusive, which is why the page must
+    // never compute or hardcode one.
+    function renderPlayPacks(row) {
+        const online = mode === 'firebase';
+        row.innerHTML = PLAY_PACKS.map(p => {
+            const price = _iapPrices === null ? '···' : (_iapPrices[p.sku] || '');
+            const confirming = _confirmingPack === p.sku;
+            const dead = !online || _iapBusy || (_iapPrices !== null && !price);
+            const btn = (_iapPrices !== null && !price)
+                ? '<button class="st-pack-buy poor" disabled>UNAVAILABLE</button>'
+                : dead
+                    ? `<button class="st-pack-buy poor" disabled>${price}</button>`
+                    : confirming
+                        ? `<button class="st-pack-buy confirm" onclick="event.stopPropagation(); FLB.buyPlay('${p.sku}')">Buy — ${price}?</button>`
+                        : `<button class="st-pack-buy" onclick="event.stopPropagation(); FLB.askBuyPlay('${p.sku}')">${price}</button>`;
+            return `<div class="st-pack${confirming ? ' confirming' : ''}" data-pack="${p.sku}">
+                <div class="st-pack-stars">★ ${p.stars.toLocaleString()}</div>
+                <div class="st-pack-name">${p.name}</div>
+                ${btn}
+            </div>`;
+        }).join('') + (_iapNote
+            ? `<div class="st-pack-wait" id="storeWait">${_iapNote}</div>`
+            : '');
+    }
+
     // ── Queue picker persistence (3/4/5-player queues) ───────────────
 
     function queueSize() {
@@ -3396,6 +3669,20 @@
 
     async function boot() {
         if (IOS_SHELL) document.body.classList.add('ios-shell');
+        // .ios-shell hides the Mint door with !important — the two rules are
+        // `.ios-shell .mint-link` and `body.ios-shell .st-stars-btn` in
+        // css/style.css (grep those selectors, they are unique; bare line
+        // numbers rot the moment anyone inserts a line above them, and this
+        // comment already cited two stale ones once).
+        // A shell that CAN sell needs that door back, so mark it
+        // positively — the CSS re-shows only under .ios-shell.iap-shell.
+        // The DOOR is granted in _iapProducts/_playProducts, and only once
+        // the storefront actually PRICES a pack — a bridge whose products
+        // are unapproved (agreement pending, review not done) returns an
+        // empty list, and a door to four dead UNAVAILABLE cards is
+        // reviewer bait and a broken store. Builds ≤20, Steam and the
+        // plain web have no bridge, never hear products, and stay
+        // byte-identical. The RAILS below stay gated on the handlers.
         iapAskProducts();      // no-op without the bridge; doubles as page-ready
         bindQueuePicker();
         await connect();
@@ -3412,6 +3699,21 @@
         // A store opened during the 'connecting' window painted browse-only
         // — repaint now that the backend verdict is in.
         renderStore();
+        // ⚠ Re-arm the purchase replay, for the same reason. The
+        // iapAskProducts() above fires BEFORE connect(), so on the exact
+        // launch that matters — a crash-recovery relaunch, where the shell
+        // re-delivers everything still unacked at page-ready — every
+        // _playTx lands while mode is still 'connecting' and creditPlayTx
+        // drops it ('offline: stay unacked'). Nothing page-side remembers
+        // it, and the only other trigger is a real background/foreground
+        // the player may never perform. Play AUTO-REFUNDS an unacked
+        // purchase at 3 days, so that launch is precisely the one that
+        // cannot miss. Asking twice is idempotent: products just overwrite
+        // the same prices, and a replayed tx that is already in the ledger
+        // takes the re-ack path instead of crediting again. StoreKit rides
+        // the same call — its transactions never expire, but the same
+        // window dropped them just as silently.
+        if (mode === 'firebase') iapAskProducts();
         tableSeed();           // prefetch the game-start seed (emblem/personas/boon)
         await settleDue();     // pay out any boundary that passed while we were away
         await drainMsgs();     // then deliver congratulations
@@ -3547,6 +3849,11 @@
         askBuyApple, buyApple,
         _iapProducts, _iapTx: creditAppleTx, _iapResult,
         applePacks: () => APPLE_PACKS,   // rig/verify seam
+        // Play's three native→page doors + the two the cards call.
+        // Names must match the shell's evaluateJavascript exactly.
+        askBuyPlay, buyPlay,
+        _playProducts, _playTx: creditPlayTx, _playResult,
+        playPacks: () => PLAY_PACKS,     // rig/verify seam
         setAvatar, myAvatar, avatarDisc, buyTable,
         openCrestPicker, crestTap, askBuyCrest, confirmBuyCrest,
         crests: () => CRESTS, ownsCrest,

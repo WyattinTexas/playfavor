@@ -20,8 +20,11 @@ android {
         applicationId "com.corkscrewgames.favor"
         minSdk 28
         targetSdk 35
-        versionCode 1
-        versionName "1.0"
+        // vc1 is BURNED — it is the AAB that went to production 2026-07-30 and is
+        // what the store serves today. Play rejects a re-upload of a used
+        // versionCode, so every future build steps this by one.
+        versionCode 2
+        versionName "1.0.1"
     }
 
     signingConfigs {
@@ -53,4 +56,9 @@ android {
 
 dependencies {
     implementation 'androidx.webkit:webkit:1.12.1'
+    // Play Billing (Star Shipments). 8.x satisfies Play's Aug 2026 minimum of
+    // Billing 8+; the AAR merges com.android.vending.BILLING and the two
+    // ProxyBillingActivity entries into our hand-written manifest, which is
+    // why that manifest still lists only INTERNET.
+    implementation 'com.android.billingclient:billing:8.3.0'
 }

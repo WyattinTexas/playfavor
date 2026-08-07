@@ -2,12 +2,25 @@
 /**
  * Google Play screenshots for FAVOR — the Android twin of
  * shell/store/capture-shots.mjs (same seven scenes, same dressing), shot in
- * Play's three 16:9 profiles with the FavorShell-Android UA so the PayPal
- * Mint is hidden in every frame (store-safe on every rail — and a standing
- * proof the widened meta.js gate works).
+ * Play's three 16:9 profiles under the FavorShell-Android UA *and* the
+ * shell's real document-start shim, so every frame shows what a Play device
+ * actually shows. No PayPal rail ever reaches a frame — that is asserted,
+ * not assumed (a PayPal button in a Play listing shot is a payments-policy
+ * flag before the AAB is even opened).
  *
  *   cd ~/playfavor && python3 -m http.server 8891 &
- *   node shell/android/store/play_shots.mjs
+ *   node shell/android/store/play_shots.mjs           # non-billing build
+ *   PLAY_BILLING=1 node shell/android/store/play_shots.mjs   # billing build
+ *
+ * PLAY_BILLING=1 injects a fake `favorPlay` handler at document start, which
+ * is the exact gate the page reads — so the frames grow the in-store
+ * ★ Purchase Stars door the billing AAB really has. Shoot with it ONLY when
+ * the AAB you are uploading carries the billing bridge; a listing that shows
+ * a purchase door the build does not have is a false listing.
+ * ⚠ Prices never reach a frame (the pack row lives inside the closed
+ * #mintPanel easel). If a scene is ever added that OPENS the easel, the
+ * prices in it are this rig's strings, not the storefront's, and Play
+ * localises price per country — do not ship such a frame.
  *
  * Shots land OUTSIDE the repo: ~/Desktop/favor-googleplay-1.0/store-shots/
  * {phone,tablet7,tablet10}/. Play caps a set at 8; this takes 7.
@@ -34,6 +47,12 @@ const FORMS = [
 const DROID_UA = 'Mozilla/5.0 (Linux; Android 15; Pixel 8) AppleWebKit/537.36 '
   + '(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 FavorShell-Android/1.0';
 
+// Shoot the billing build's store (the ★ Purchase Stars door) or the
+// non-billing one. The page gates on the HANDLER exactly, never the UA, so
+// this flag is the only thing that moves the store — which is also what
+// makes the assertion below able to tell the two builds apart.
+const PLAY_BILLING = process.env.PLAY_BILLING === '1';
+
 const browser = await puppeteer.launch({
   executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   headless: 'new',
@@ -59,14 +78,65 @@ async function boot(form) {
     localStorage.setItem('favorTelemetryOff', '1');
     window._noSoloSave = true;
   });
+  // MainActivity.installBootScript, faithfully: __FAVORSHELL decoration plus
+  // a FAKE window.webkit carrying favorSign. Pre-parse, because meta.js reads
+  // the handler once at module scope — a post-load injection is inert.
+  // Without the shim these frames were shot against a page that had no
+  // messageHandlers object at all, which is not what a Play device runs.
+  await page.evaluateOnNewDocument((wantPlay) => {
+    window.__FAVORSHELL = { platform: 'android', build: 1 };   // decoration, never the gate
+    const mh = { favorSign: { postMessage() {} } };
+    if (wantPlay) mh.favorPlay = { postMessage() {} };         // products/buy/ack go nowhere in a shot
+    window.webkit = { messageHandlers: mh };
+  }, PLAY_BILLING);
   await page.goto(URL, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 20000 });
   // The version stamp is honest in-game but noise in marketing shots.
   await page.evaluate(() => { const v = document.getElementById('buildVersion'); if (v) v.remove(); });
-  // The shell gate, asserted before a single frame is taken.
-  const gated = await page.evaluate(() => document.body.classList.contains('ios-shell'));
-  if (!gated) throw new Error('FavorShell-Android UA did not gate the Mint — DO NOT SHIP THESE SHOTS');
+  await assertGate(page);
   return page;
+}
+
+// The shell gate, asserted before a single frame is taken. Two states now,
+// because the billing page gates on the favorPlay HANDLER:
+//   default        → no handler: every purchase rail hidden, exactly the
+//                    shipped vc1 build. A rail appearing here means the gate
+//                    widened past the handler.
+//   PLAY_BILLING=1 → the ★ Purchase Stars door is back, priced by Play.
+// The half that must hold in BOTH: no PayPal, ever. That is the Play
+// payments-policy guard (same teeth as Apple 3.1.1), not a formality.
+// ⚠ The store has to be OPENED first: renderStorePacks only runs on
+// openStore, so an unopened #storePacks reads '' no matter what the gate
+// says — checking it closed would make the PayPal guard a no-op.
+async function assertGate(page) {
+  await page.evaluate(() => { FLB.openStore(); });
+  await page.waitForFunction(() => document.querySelectorAll('.st-card').length >= 1, { timeout: 15000 });
+  const g = await page.evaluate(() => {
+    const row = document.getElementById('storePacks');
+    const disp = (sel) => { const el = document.querySelector(sel); return el ? getComputedStyle(el).display : 'absent'; };
+    return {
+      shell: document.body.classList.contains('ios-shell'),
+      iap: document.body.classList.contains('iap-shell'),
+      mintLink: disp('.mint-link'),
+      starsBtn: disp('.st-stars-btn'),
+      html: row ? row.innerHTML : '',
+    };
+  });
+  const die = (why) => { throw new Error(why + ' — DO NOT SHIP THESE SHOTS'); };
+  if (!g.shell) die('FavorShell-Android UA did not reach the page');
+  if (/buyStars|askBuyStars|paypal/i.test(g.html) || /data-pack="favor\.stars/.test(g.html)) {
+    die('a PayPal rail rendered under the shell UA');
+  }
+  if (g.mintLink !== 'none') die(`the menu ★ Get Stars link is showing (${g.mintLink})`);
+  if (PLAY_BILLING) {
+    if (!g.iap || g.starsBtn === 'none') {
+      die('PLAY_BILLING=1 but the Mint stayed hidden — this build has no favorPlay branch');
+    }
+  } else if (g.iap || g.starsBtn !== 'none' || g.html !== '') {
+    die(`a purchase rail showed with NO billing handler (iap-shell ${g.iap}, btn ${g.starsBtn})`);
+  }
+  await page.evaluate(() => { if (window.closeMint) closeMint(); FLB.closeStore(); });
+  await sleep(300);
 }
 
 async function shot(page, form, name) {
@@ -189,7 +259,9 @@ for (const form of FORMS) {
   await shot(page, form, '6-leaderboard');
   await page.evaluate(() => FLB.closeLeaderboard());
 
-  // 7 · The Royal Emporium (hero shelf; Mint hidden by the shell UA)
+  // 7 · The Royal Emporium (hero shelf). The ★ Purchase Stars door appears
+  // here only under PLAY_BILLING=1; the pack row stays inside the closed
+  // easel either way, so no price string can reach this frame.
   await page.evaluate(() => FLB.openStore());
   await page.waitForFunction(() => document.querySelectorAll('.st-card').length === 10, { timeout: 10000 });
   await shot(page, form, '7-emporium');

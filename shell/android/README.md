@@ -33,6 +33,62 @@ PayPal — a Google Play payments-policy rejection (the same teeth as Apple
 3.1.1). tools/ui-audit.mjs carries an "Android shell gate" section that
 asserts the gate under this exact UA; run it before shipping either side.
 
+## Star Shipments (Google Play Billing)
+
+`FavorBilling.java` — the Android twin of `shell/ios/Favor/FavorIAPBridge.swift`,
+on `com.android.billingclient:billing:8.3.0` (Play requires Billing 8+ from
+Aug 2026).
+
+**The handler name is the gate, and it is `favorPlay` — never `favorIAP`.**
+The page lights `APPLE_IAP` off the literal string `favorIAP` (`js/meta.js`);
+reusing it on Android would route Play purchases through the Apple SKU table
+and the `apple_<txid>` ledger namespace. `MainActivity.installBootScript()`
+declares `favorPlay` beside `favorSign` in the one `webkit.messageHandlers`
+literal; billing rides its own JS interface (`FavorPlayAndroid`) so the two
+rails can never cross. A build with no BillingClient must never declare the
+handler — plain web, Steam and iOS stay byte-identical.
+
+Vocabulary, both directions, complete:
+
+| page → native | native → page (`window.FLB`) |
+| --- | --- |
+| `{cmd:'products'}` (also the page-ready signal) | `FLB._playProducts([{sku, price}])` |
+| `{cmd:'buy', sku}` | `FLB._playTx({tx, sku})` |
+| `{cmd:'ack', tx}` | `FLB._playResult({sku, state, err})` — `pending`/`cancel`/`fail` |
+
+Four SKUs (`com.corkscrewgames.favor.stars.s|m|l|xl`). The shell knows the SKU
+ids and nothing else: quantities are the page's, prices are the storefront's
+(`getFormattedPrice()`).
+
+Traps this file already pays for — read before touching it:
+
+1. **`tx` is `getOrderId()`, never the purchaseToken.** Tokens are hundreds of
+   chars with shared prefixes and page ledgers truncate; a truncation collision
+   reads a fresh purchase as already-credited — an ack with no stars. Test and
+   pending purchases can have no order id, so the fallback is
+   `"pt_" + sha256(token)[:48]`. `unacked` keeps `tx → Purchase` so the ack
+   consumes the right one.
+2. **Consume only on the page's ack.** `consumeAsync` runs in `ack()` and
+   nowhere else — the page acks only after the stars are confirmed on the
+   Firebase wire, which is what stops a failed save from orphaning a purchase.
+3. **Play auto-refunds anything unconsumed after 3 days** — unlike StoreKit,
+   an unfinished purchase does not wait forever. Hence replay on every connect,
+   every page-ready and every `onResume`. Re-delivery is the mechanism; the
+   page ledger dedupes on `tx`.
+4. **`@JavascriptInterface` runs on a binder thread.** `launchBillingFlow` hops
+   to the UI thread with a live Activity; every push to JS goes through
+   `webView.post(...evaluateJavascript)` with `org.json`-built payloads (a
+   storefront price string is untrusted input). `onDestroy` calls
+   `billing.detach()` so a late callback can't touch a dead view.
+5. `ITEM_ALREADY_OWNED` is a **replay**, not a failure — telling the player it
+   failed while holding their money is the worst outcome on this rail.
+6. The AAR merges `com.android.vending.BILLING`, `ACCESS_NETWORK_STATE` and the
+   two `ProxyBillingActivity` entries into the hand-written manifest — which is
+   why that manifest still lists only INTERNET. Verify the merged manifest
+   (`app/build/intermediates/merged_manifests/...`), never assume.
+7. `minifyEnabled false` on release. If that ever flips, `@JavascriptInterface`
+   methods need explicit keep rules or the bridge silently disappears.
+
 ## The four load-bearing WebView settings
 
 Each of these is a silent total failure if missed (see MainActivity):

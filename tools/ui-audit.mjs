@@ -9304,43 +9304,124 @@ console.log('── Court Seal: preview names the row; claim takes the seat');
   await page.close();
 }
 
-// ═══ ANDROID SHELL GATE: the Play build must never show the PayPal Mint ═══
-// The Android shell's UA carries "FavorShell-Android" (shell/android/); the
-// widened IOS_SHELL regex must hide every purchase rail for it exactly as it
-// does for iOS and Steam — an unmodified WebView would ship a PayPal Stars
-// rail inside a Google Play app (Play payments policy, the same teeth as
-// Apple 3.1.1). Asserted here so the gate can never silently narrow again.
+// ═══ ANDROID SHELL GATE: the Play build sells through Play, never PayPal ═══
+// TWO states, both asserted, because the gate is the HANDLER exactly. The
+// IOS_SHELL UA regex (js/meta.js) is what HIDES rails; it is never what
+// opens one. Widening the open-gate to a UA, __FAVORSHELL, or any
+// decoration flag lights a store that cannot sell on every build that
+// lacks a bridge — that is the whole reason this section exists.
+//
+//   A · FavorShell-Android UA, NO favorPlay handler → every purchase rail
+//       stays hidden, byte-identical to the shipped vc1 build. This half
+//       protects LIVE phones: the web deploys long before the billing AAB
+//       exists, and a shipped build must never grow a dead store.
+//   B · same UA WITH webkit.messageHandlers.favorPlay → the in-store
+//       ★ Purchase Stars door, the Mint easel and the pack row come back,
+//       priced by Play.
+//
+// The half that survives BOTH states: NO PayPal. FLB.buyStars/askBuyStars
+// must not appear in any shell's pack row and the web pack ids must not
+// render — a PayPal button inside a Google Play app is a payments-policy
+// rejection with the same teeth as Apple 3.1.1. That is the guard, not a
+// formality; do not "simplify" it away when this section next changes.
+//
+// ⚠ The real Android shell FAKES window.webkit (MainActivity's
+// installBootScript shims favorSign into it), so favorPlay lives at the
+// same address the iOS bridge uses. State A therefore injects a
+// messageHandlers object that EXISTS but holds no billing handler — the
+// exact trap GVT names at index.html:12046. A gate that checks only
+// `window.webkit` would pass state A and ship a dead store.
 {
-  const page = await browser.newPage();
-  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('droid-shell: ' + m.text()); });
-  page.on('pageerror', e => consoleErrors.push('droid-shell pageerror: ' + e.message));
   console.log('\n── Android shell gate (FavorShell-Android UA) ──');
-  await page.setViewport({ width: 960, height: 540, deviceScaleFactor: 2 });
-  await page.setUserAgent(await browser.userAgent() + ' FavorShell-Android/1.0');
-  await page.goto(URL, { waitUntil: 'networkidle2' });
-  await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
-  await page.evaluate(() => { FLB.openStore(); });
-  await page.waitForFunction(() => document.querySelectorAll('.st-card').length >= 1, { timeout: 10000 });
-  const gate = await page.evaluate(() => {
+  // The Play SKUs, from the bridge contract. Deliberately NOT the Apple
+  // ids and NOT the web pack ids: a page that answered on `favorIAP` here
+  // would light APPLE_IAP and file the credit under apple_<txid> in the
+  // shared RTDB ledger, which is the same account the iOS build writes.
+  const PLAY_SKUS = [
+    'com.corkscrewgames.favor.stars.s',
+    'com.corkscrewgames.favor.stars.m',
+    'com.corkscrewgames.favor.stars.l',
+    'com.corkscrewgames.favor.stars.xl',
+  ];
+  const PLAY_PRICES = ['$3.99', '$5.99', '$24.99', '$39.99'];
+
+  const boot = async (tag, { droid = true, handler = false } = {}) => {
+    const page = await browser.newPage();
+    page.on('console', m => { if (m.type() === 'error') consoleErrors.push(tag + ': ' + m.text()); });
+    page.on('pageerror', e => consoleErrors.push(tag + ' pageerror: ' + e.message));
+    await page.setViewport({ width: 960, height: 540, deviceScaleFactor: 2 });
+    if (droid) {
+      await page.setUserAgent(await browser.userAgent() + ' FavorShell-Android/1.0');
+      // MUST be pre-parse: meta.js reads the handler ONCE at module scope
+      // (the APPLE_IAP const), so a post-load injection is inert.
+      await page.evaluateOnNewDocument((wantPlay) => {
+        window.__FAVORSHELL = { platform: 'android', build: 1 };   // decoration, never the gate
+        window.__playPosts = [];
+        const mh = { favorSign: { postMessage() {} } };
+        if (wantPlay) mh.favorPlay = { postMessage(m) { window.__playPosts.push(m); } };
+        window.webkit = { messageHandlers: mh };
+      }, handler);
+    }
+    await page.goto(URL, { waitUntil: 'networkidle2' });
+    await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 15000 });
+    await page.evaluate(() => { FLB.openStore(); });
+    await page.waitForFunction(() => document.querySelectorAll('.st-card').length >= 1, { timeout: 10000 });
+    return page;
+  };
+
+  // One reading, three pages. #mintPanel is display:none until .active on
+  // the OPEN WEB too, so the easel is read both closed and opened — a rig
+  // that only read it closed would call the plain-web page "gated".
+  const read = (page) => page.evaluate(() => {
     const disp = sel => { const el = document.querySelector(sel); return el ? getComputedStyle(el).display : 'absent'; };
+    const closed = disp('#mintPanel');
+    if (window.openMint) openMint();
+    const row = document.getElementById('storePacks');
     return {
-      bodyClass: document.body.classList.contains('ios-shell'),
+      iosShell: document.body.classList.contains('ios-shell'),
+      iapShell: document.body.classList.contains('iap-shell'),
       mintLink: disp('.mint-link'),
       starsBtn: disp('.st-stars-btn'),
+      easelClosed: closed,
       mintPanel: disp('#mintPanel'),
-      packs: (document.getElementById('storePacks') || { innerHTML: '' }).innerHTML,
+      packs: disp('#storePacks'),
+      html: row ? row.innerHTML : 'absent',
+      skus: [...document.querySelectorAll('#storePacks .st-pack')].map(c => c.dataset.pack),
+      bridge: ['_playProducts', '_playTx', '_playResult']
+        .filter(k => typeof (window.FLB || {})[k] === 'function'),
+      posts: window.__playPosts || [],
     };
   });
-  ok(gate.bodyClass, 'FavorShell-Android UA gets the ios-shell body class');
-  ok(gate.mintLink === 'none', `menu ★ Get Stars link is hidden (${gate.mintLink})`);
-  ok(gate.starsBtn === 'none', `store ★ Purchase Stars button is hidden (${gate.starsBtn})`);
-  ok(gate.mintPanel === 'none', `the Royal Mint easel is hidden (${gate.mintPanel})`);
-  ok(gate.packs === '', 'no PayPal packs are rendered into #storePacks');
+  // The PayPal guard, one predicate, applied to every state below.
+  const noPayPal = (g) => !/buyStars|askBuyStars|paypal/i.test(g.html)
+    && !/data-pack="favor\.stars/.test(g.html);
+
+  // ── Baseline: the rails' REAL plain-web display values ──────────────
+  // Measured, never guessed. The shell fix has to restore these exact
+  // values, and `display:block` on #mintPanel would kill the easel's flex
+  // centering while still passing a naive "not none" check.
+  const webPage = await boot('droid-web', { droid: false });
+  const web = await read(webPage);
+  await webPage.close();
+  ok(!web.iosShell && web.starsBtn !== 'none' && web.mintPanel !== 'none' && web.packs !== 'none',
+    `plain web sells Stars (btn ${web.starsBtn}, easel ${web.mintPanel}, row ${web.packs})`);
+
+  // ── State A: shell UA, no billing handler → sells nothing ───────────
+  const aPage = await boot('droid-shell');
+  const a = await read(aPage);
+  ok(a.iosShell, 'FavorShell-Android UA gets the ios-shell body class');
+  ok(!a.iapShell, 'no billing handler ⇒ no iap-shell class (the gate is the handler, not the UA)');
+  ok(a.mintLink === 'none', `menu ★ Get Stars link is hidden (${a.mintLink})`);
+  ok(a.starsBtn === 'none', `store ★ Purchase Stars button is hidden (${a.starsBtn})`);
+  ok(a.mintPanel === 'none', `the Royal Mint easel stays hidden even after openMint() (${a.mintPanel})`);
+  ok(a.packs === 'none' && a.html === '', `no packs are rendered into #storePacks (${a.packs})`);
+  ok(noPayPal(a), 'state A: no PayPal rail under a shell UA');
   await sleep(400);
-  await page.screenshot({ path: join(SHOTS, 'droid-shell-store.png') });
+  await aPage.screenshot({ path: join(SHOTS, 'droid-shell-store.png') });
   // The sign-in door: an honest note, never a dead GIS button (Google's
   // OAuth refuses embedded WebViews with disallowed_useragent).
-  const door = await page.evaluate(() => {
+  const door = await aPage.evaluate(() => {
+    if (window.closeMint) closeMint();
     FLB.closeStore();
     FLB.openProfile();
     const sec = document.getElementById('pfSignin');
@@ -9349,8 +9430,53 @@ console.log('── Court Seal: preview names the row; claim takes the seat');
   ok(/Account linking arrives/.test(door.html), 'Android door shows the honest update note');
   ok(!door.gsi, 'no GIS button is mounted under a FavorShell-Android UA');
   await sleep(300);
-  await page.screenshot({ path: join(SHOTS, 'droid-shell-door.png') });
-  await page.close();
+  await aPage.screenshot({ path: join(SHOTS, 'droid-shell-door.png') });
+  await aPage.close();
+
+  // ── State B: same UA + favorPlay handler → the Play Mint is back ─────
+  const bPage = await boot('droid-play', { handler: true });
+  const b = await read(bPage);
+  ok(b.iosShell && b.iapShell, 'favorPlay lights iap-shell BESIDE ios-shell (positive class, .ios-shell rules intact)');
+  ok(b.starsBtn === web.starsBtn, `★ Purchase Stars is back at its plain-web display (${b.starsBtn}, web ${web.starsBtn})`);
+  ok(b.easelClosed === 'none', `the easel is still shut until it is opened (${b.easelClosed})`);
+  ok(b.mintPanel === web.mintPanel, `the Mint easel opens at its plain-web display (${b.mintPanel}, web ${web.mintPanel})`);
+  ok(b.packs === web.packs, `the pack row is back at its plain-web display (${b.packs}, web ${web.packs})`);
+  // .mint-link stays shut on purpose: the menu door predates the shells and
+  // the contract keeps the shell's only door the in-store button.
+  ok(b.mintLink === 'none', `the menu ★ Get Stars link STAYS hidden in a shell (${b.mintLink})`);
+  ok(JSON.stringify(b.skus) === JSON.stringify(PLAY_SKUS),
+    `the four Play SKUs render, not Apple's and not the web's (${b.skus.join(', ') || 'none'})`);
+  ok(noPayPal(b), 'state B: still no PayPal rail — Play payments policy, the rejection guard');
+  // Native calls these three blind. A rename here is not a crash, it is a
+  // purchase that vanishes with the player's money already taken.
+  ok(b.bridge.length === 3, `FLB exposes _playProducts/_playTx/_playResult (${b.bridge.join(', ') || 'none'})`);
+  ok(b.posts.some(m => m && m.cmd === 'products'),
+    `boot posts {cmd:'products'} through favorPlay — the page-ready signal replay depends on (${JSON.stringify(b.posts)})`);
+  if (b.bridge.includes('_playProducts')) {
+    // A storefront price string is UNTRUSTED input (bridge contract). Push
+    // the real prices, then a hostile one, and prove nothing executes.
+    const priced = await bPage.evaluate((skus, prices) => {
+      FLB._playProducts(skus.map((sku, i) => ({ sku, price: prices[i] })));
+      const row = document.getElementById('storePacks');
+      return row ? row.innerHTML : '';
+    }, PLAY_SKUS, PLAY_PRICES);
+    ok(PLAY_PRICES.every(p => priced.includes(p)),
+      'the storefront\'s own price strings are what the cards show (no hardcoded $)');
+    await sleep(300);
+    await bPage.screenshot({ path: join(SHOTS, 'droid-play-store.png') });
+    const hostile = await bPage.evaluate((skus) => {
+      FLB._playProducts(skus.map((sku, i) => ({
+        sku, price: i === 0 ? '$3.99<img src=x onerror="window.__pwned=1">' : '$9.99',
+      })));
+      const row = document.getElementById('storePacks');
+      return { pwned: !!window.__pwned, img: !!(row && row.querySelector('img')), text: row ? row.textContent : '' };
+    }, PLAY_SKUS);
+    ok(!hostile.pwned && !hostile.img, 'a hostile storefront price is inert (escaped at the stash)');
+    ok(hostile.text.includes('$3.99'), `the escaped price still reads back as text (${hostile.text.slice(0, 40)})`);
+  } else {
+    ok(false, 'FLB._playProducts is missing — cannot prove the price string is escaped');
+  }
+  await bPage.close();
 }
 
 // ═══ FINAL INTEGRITY GATE: no audit run may leave a mark on a REAL row ═══

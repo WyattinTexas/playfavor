@@ -333,6 +333,9 @@ html, body {
 .menu-link.mint-link { color: #ffd97a; text-shadow: 0 0 8px rgba(240, 200, 110, 0.35); }
 .menu-link.mint-link:hover { color: #ffe9ad; }
 /* iOS shell: no external purchase rail anywhere (Apple 3.1.1) */
+/* .st-mint is un-hidden again for billing-bridge builds — see the
+   body.ios-shell.iap-shell block by .st-stars-btn. .mint-link is NOT:
+   that link opens the PayPal Mint, which no shell may ever show. */
 .ios-shell .mint-link, .ios-shell .st-mint { display: none !important; }
 
 /* Portrait / narrow: single column, scrollable — the rotate-gate handles
@@ -7530,6 +7533,25 @@ body:has(#game-screen.active) .emote-btn.on { display: flex; }
 /* iOS/Steam shell: meta.js already empties the Mint (App Store 3.1.1) —
    the door to it must vanish too, or the shell shows an empty easel */
 body.ios-shell .st-stars-btn, body.ios-shell #mintPanel { display: none !important; }
+
+/* …but a shell WITH a billing bridge sells Stars through the store's own
+   sheet, so the door has to come back. meta.js sets .iap-shell beside
+   .ios-shell only when a favorIAP/favorPlay handler exists, so this is
+   inert on the plain web, on Steam, and on every shipped build ≤20.
+   Without it the bridge is unreachable: the packs render into #storePacks
+   and then the two !important rules above hide the whole easel. That was
+   the live iOS bug.
+   These values are the measured plain-web computed displays, not guesses:
+   .st-stars-btn = block (a <button> blockified by position:absolute),
+   .st-mint = flex. ⚠ #mintPanel is .st-inspect — none at rest, flex only
+   with .active. Restoring it to flex unconditionally would weld the Mint
+   easel open on top of the store, so the resting state stays none and
+   only .active re-shows. Specificity (three classes) beats the hide rules
+   above, and every one of these needs !important to answer theirs. */
+body.ios-shell.iap-shell .st-stars-btn      { display: block !important; }
+body.ios-shell.iap-shell .st-mint           { display: flex !important; }
+body.ios-shell.iap-shell #mintPanel         { display: none !important; }
+body.ios-shell.iap-shell #mintPanel.active  { display: flex !important; }
 .mint-inner { width: min(620px, 90%); padding-bottom: 10px; }
 .mint-head { border-top: none; text-align: center; padding: 14px 0 0; margin: 0 0 4px; }
 .tt-insp-lock {
