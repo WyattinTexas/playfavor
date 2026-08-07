@@ -179,15 +179,14 @@ PROMO = ("Every card you keep makes you stronger. Every card you pass arms a riv
 # 1.1's release notes. Only NATIVE changes belong here — the realm itself is
 # web and reaches every phone the moment it deploys, so features that shipped
 # to playfavor.net after 1.0 are already in players' hands and are not news.
-# ⚠ The Royal Mint line is only true if the 4 star IAPs ride 1.1's review —
-# if they slip to a later version, delete that paragraph before submitting.
+# (The 4 star IAPs did NOT ride 1.1 — the API cannot add IAP items to a
+# review submission, and the first consumable must ride a version, so they
+# wait for the next one. Add a Royal Mint paragraph back when they do.)
 WHATS_NEW = """Sign in with Apple has arrived. Seal your court to your Apple ID and your heroes, your rating, and your Stars follow you to any device.
 
 Your account now lives in the Keychain, so deleting and reinstalling FAVOR no longer strands a thing.
 
-The Court Seal is back on the standing screen. Copy it on one phone, paste it on another, and take your seat there.
-
-And the Royal Mint now takes Apple. Pouches of Stars, straight from the store."""
+The Court Seal is back on the standing screen. Copy it on one phone, paste it on another, and take your seat there."""
 
 KEYWORDS = "card,draft,board,strategy,tabletop,royal,queen,mission,multiplayer,family,fantasy,deck"
 SUBTITLE = "Draft cards. Win the crown."
@@ -196,14 +195,11 @@ MARKETING_URL = "https://playfavor.net"
 PRIVACY_URL = "https://playfavor.net/privacy.html"
 COPYRIGHT = "© 2026 Corkscrew Games"
 
-# ⚠ The Purchases paragraph assumes the 4 star IAPs ride this version's
-# review — if they slip to a later version, restore the old "nothing to
-# purchase (no in-app purchases)" wording before submitting.
 REVIEW_NOTES = """FAVOR is fully playable without any account or sign-in: tap Play and a royal guest identity is created automatically on-device. Sign in with Apple is offered and optional.
 
 This is the official digital edition of our physical card game FAVOR (Corkscrew Games, 1st Edition): the full game (card drafting, missions, character boards, end-of-act melees, scoring) plus features beyond the table: real-time online multiplayer with live matchmaking, persistent leaderboards (all-time rating, daily boards settled nightly, top scores, and Throne night results), a daily WANTED rival, a nightly Throne Room event, and a progression economy of earnable Stars that unlock additional heroes.
 
-Purchases: this version adds four optional consumable Star bundles (50, 100, 500, and 1000 Stars). Stars are also earned by finishing any game; nothing is locked behind payment.
+There are no in-app purchases in this version. Stars are earned by finishing games, and nothing is locked behind payment.
 
 Multiplayer note for a single reviewer: tapping Play pledges you to a match; if no live players are queued within a few seconds, the realm fills the table so a full game ALWAYS starts. Every feature can be exercised alone.
 
