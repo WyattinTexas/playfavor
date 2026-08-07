@@ -32,7 +32,18 @@ KEY_PATH = os.path.expanduser("~/.appstoreconnect/private/AuthKey_9Q9CJ93G2Z.p8"
 BASE = "https://api.appstoreconnect.apple.com"
 
 APP_ID = "6790169069"                                   # FAVOR: Royal Succession
-INFO_ID = "bd8cacb1-e324-4a34-a613-fa0a88c3811d"        # appInfo (version-independent)
+INFO_ID = "bd8cacb1-e324-4a34-a613-fa0a88c3811d"        # appInfo of the LIVE version
+
+
+def editable_info_id():
+    """The appInfo ASC will accept edits to. Once a released app has an open
+    version, ASC keeps TWO appInfos: the sealed READY_FOR_SALE one (INFO_ID)
+    and an editable PREPARE_FOR_SUBMISSION twin. PATCHing the sealed one 409s
+    INVALID_STATE (measured 8/7), so name/subtitle edits must aim at the twin."""
+    infos = get(f"/v1/apps/{APP_ID}/appInfos")["data"]
+    open_infos = [i for i in infos
+                  if i["attributes"].get("appStoreState") not in SEALED_STATES]
+    return open_infos[0]["id"] if open_infos else INFO_ID
 
 # VID/VLOC_ID are RESOLVED AT STARTUP now, not pinned. They used to name the
 # 1.0 records by hand; 1.0 went READY_FOR_SALE on 7/21, and a released version
@@ -83,7 +94,9 @@ def patch(path, body):
 
 def resolve_targets():
     """The version ASC will still let us edit, and its en-US localization."""
-    vs = get("/v1/appStoreVersions", **{"filter[app]": APP_ID, "limit": 50})["data"]
+    # /v1/appStoreVersions?filter[app] started returning 403 FORBIDDEN_ERROR
+    # (measured 8/7); the app-scoped relationship route is the one that works.
+    vs = get(f"/v1/apps/{APP_ID}/appStoreVersions", limit=50)["data"]
     openv = [v for v in vs if v["attributes"]["appStoreState"] not in SEALED_STATES]
     if not openv:
         live = ", ".join(sorted(v["attributes"]["versionString"] for v in vs)) or "?"
@@ -103,7 +116,7 @@ def resolve_targets():
 def cmd_newversion():
     """Open the next App Store version and give it its release notes."""
     ver = sys.argv[2]
-    vs = get("/v1/appStoreVersions", **{"filter[app]": APP_ID, "limit": 50})["data"]
+    vs = get(f"/v1/apps/{APP_ID}/appStoreVersions", limit=50)["data"]
     ex = next((v for v in vs if v["attributes"]["versionString"] == ver), None)
     if ex:
         v_id = ex["id"]
@@ -137,50 +150,44 @@ def cmd_newversion():
 
 # ---------- listing text ----------
 
-DESCRIPTION = """The King has passed, and his heirs vie for the throne. The Queen will crown whoever wins the most Favor in her eyes — make that heir you.
+# Rewritten 8/7 per store feedback (robotic, dash heavy, read like AI): zero
+# em-dashes, no bullet scaffolds, prose first. Every claim re-verified against
+# the live game 8/7 — the old copy named court AIs that don't exist under those
+# spellings (game: Lord Ashcropt, The Lady Vespurine; Skirmish/Rival ONLY),
+# said "Three leaderboards" (the game shows four tabs), "five-slot ring" (slot
+# counts vary), and "pledge at Play Now" (the button says Play).
+DESCRIPTION = """FAVOR is a card game of royal scheming for 3 to 5 players, brought to your phone straight from the Corkscrew Games table. The whole game turns on one wicked rule: draft a card, then pass your hand to the player beside you. What you keep makes you stronger. What you pass might crown your neighbor instead.
 
-FAVOR is the digital edition of the Corkscrew Games tabletop card game: a 3–5 player draft-and-pass duel of wits where every card you keep sends the rest into your rivals' hands.
+The King has passed. The Queen will hand the throne to whichever heir wins the most Favor in her eyes, and she is not sentimental. Make her choose you.
 
-EASY TO PICK UP, WICKED TO MASTER
-• Draft a card, pass the hand — what you leave behind arms your rivals
-• Play cards for skills and gold, discard for quick coin, or slide your ring to awaken new powers
-• Take on the Missions of the Realm before their act closes — glory pays in Favor
+Tap Play and you're at a live table in moments. Pick a table of 3, 4, or 5. If the realm runs short of rivals, courtiers take the empty chairs, so a game always starts. Host a Private Game for your friends, or slip into a Skirmish and try your luck against the court's own schemers: Count Balthazar, Dame Rosalind, Lord Cassius and their kin.
 
-TEN HEIRS, TEN GAME PLANS
-• The Explorer, the Knight, the Fiddler, the Duchess, the Magician and more — each with their painted character board and its five-slot ring track
-• Slide your ring to reshape your skills mid-act; every slot tells a different story
-• Rulebook-true difficulty stars and tips for every hero
+The cards do exactly what the printed ones do. Endeavors grow your skills. Weapons bank Power for the Melee that ends every act. Artifacts and Adventures pay Favor. Potions go off the moment you throw them. Missions hang over the table, daring you to finish them before the act closes. After three acts and three Melees the court tallies everything, Scorn included, and the heir with the most Favor takes the throne.
 
-THREE ACTS. THREE MELEES. ONE CROWN.
-• Every act ends in the Melee, where raw Power deals wounds and pays Prestige
-• The royal score sheet tallies Missions, Adventures, Artifacts, Prestige, and Scorn — exactly like the table
-• The heir with the most Favor takes the throne
+No two heirs play alike. The Duchess, the Bandit, the Fisherman, the Magician: ten heroes in all, each with a painted character board and a sliding ring that lets you rewire your skills in the middle of an act. Every finished game pays Stars, and Stars unlock new heroes in the Royal Emporium.
 
-A LIVING REALM
-• Real multiplayer: pledge at Play Now and get matched with live rivals in moments — the realm fills any empty seats so a game always starts
-• Cross the swords of the realm's own court: Lord Ashcroft, Count Balthazar, Lady Vespertine and their kin
-• Three leaderboards — All-Time rating, lifetime Power, and Daily bests crowned nightly at 10 PM Eastern
-• Earn Stars with every game, unlock new heroes in the Royal Emporium, and wear the crest of your choosing
+The realm keeps its own calendar. A new rival's face goes up on the WANTED plaque each day; finish ahead of them and the bounty is yours. Daily Champions are crowned at 10 PM Eastern. And once a night the Throne Room opens to the whole realm at once, with a board all its own for anyone standing in the hall when the doors bar.
 
-FAITHFUL TO THE TABLE
-Every card, mission, map, and character board matches the printed 1st Edition. The rules are never simplified.
+It is all the real game. Every card, mission, and character board matches the printed 1st Edition, and the rules are never simplified. New to FAVOR? Your first game teaches you at the table, turn by turn, the way a friend would.
 
-Is fate dealt, or chosen?"""
+Take your seat. The court is waiting."""
 
-PROMO = ("Draft cards, complete missions, and win the Queen's Favor. The tabletop card game "
-         "of royal succession — live multiplayer, daily crowns, ten heroes to master.")
+PROMO = ("Every card you keep makes you stronger. Every card you pass arms a rival. "
+         "FAVOR is the tabletop game of royal succession, live on your phone. "
+         "The Queen is watching.")
 
 # 1.1's release notes. Only NATIVE changes belong here — the realm itself is
 # web and reaches every phone the moment it deploys, so features that shipped
 # to playfavor.net after 1.0 are already in players' hands and are not news.
-WHATS_NEW = """SIGN IN WITH APPLE
-Seal your court to your Apple ID and take your seat on any device.
+# ⚠ The Royal Mint line is only true if the 4 star IAPs ride 1.1's review —
+# if they slip to a later version, delete that paragraph before submitting.
+WHATS_NEW = """Sign in with Apple has arrived. Seal your court to your Apple ID and your heroes, your rating, and your Stars follow you to any device.
 
-YOUR COURT SURVIVES A REINSTALL
-Your account is now kept in the Keychain. Deleting and reinstalling FAVOR no longer strands your heroes, your rating, or your Stars.
+Your account now lives in the Keychain, so deleting and reinstalling FAVOR no longer strands a thing.
 
-MOVE A COURT BETWEEN DEVICES
-Your Court Seal returns to the standing screen — copy it on one device, paste it on another, and take your seat there."""
+The Court Seal is back on the standing screen. Copy it on one phone, paste it on another, and take your seat there.
+
+And the Royal Mint now takes Apple. Pouches of Stars, straight from the store."""
 
 KEYWORDS = "card,draft,board,strategy,tabletop,royal,queen,mission,multiplayer,family,fantasy,deck"
 SUBTITLE = "Draft cards. Win the crown."
@@ -189,11 +196,16 @@ MARKETING_URL = "https://playfavor.net"
 PRIVACY_URL = "https://playfavor.net/privacy.html"
 COPYRIGHT = "© 2026 Corkscrew Games"
 
-REVIEW_NOTES = """FAVOR is fully playable without any account or sign-in — tap PLAY NOW and a royal guest identity is created automatically on-device. There is nothing to register and nothing to purchase in this version (no in-app purchases; the earnable Stars currency unlocks cosmetic heroes).
+# ⚠ The Purchases paragraph assumes the 4 star IAPs ride this version's
+# review — if they slip to a later version, restore the old "nothing to
+# purchase (no in-app purchases)" wording before submitting.
+REVIEW_NOTES = """FAVOR is fully playable without any account or sign-in: tap Play and a royal guest identity is created automatically on-device. Sign in with Apple is offered and optional.
 
-This is the official digital edition of our physical card game FAVOR (Corkscrew Games, 1st Edition) — the full game: card drafting, missions, character boards, end-of-act melees, scoring, plus features beyond the table: real-time online multiplayer with live matchmaking, persistent leaderboards (all-time, lifetime power, and daily boards settled nightly), a progression economy of earnable Stars that unlock additional heroes, and player crests.
+This is the official digital edition of our physical card game FAVOR (Corkscrew Games, 1st Edition): the full game (card drafting, missions, character boards, end-of-act melees, scoring) plus features beyond the table: real-time online multiplayer with live matchmaking, persistent leaderboards (all-time rating, daily boards settled nightly, top scores, and Throne night results), a daily WANTED rival, a nightly Throne Room event, and a progression economy of earnable Stars that unlock additional heroes.
 
-Multiplayer note for a single reviewer: hitting Play Now pledges you to a match; if no live players are queued within a few seconds, the realm fills the table so a full game ALWAYS starts. Every feature can be exercised alone.
+Purchases: this version adds four optional consumable Star bundles (50, 100, 500, and 1000 Stars). Stars are also earned by finishing any game; nothing is locked behind payment.
+
+Multiplayer note for a single reviewer: tapping Play pledges you to a match; if no live players are queued within a few seconds, the realm fills the table so a full game ALWAYS starts. Every feature can be exercised alone.
 
 The game requires a network connection (it is a live-service board game with server-backed leaderboards and matchmaking)."""
 
@@ -214,13 +226,14 @@ def cmd_metadata():
         "attributes": {"copyright": COPYRIGHT}}})
     print("version: copyright set")
 
-    ilocs = get(f"/v1/appInfos/{INFO_ID}/appInfoLocalizations")["data"]
+    info_id = editable_info_id()
+    ilocs = get(f"/v1/appInfos/{info_id}/appInfoLocalizations")["data"]
     iloc = next((l for l in ilocs if l["attributes"].get("locale") == "en-US"), None)
     if iloc is None:
         post("/v1/appInfoLocalizations", {"data": {
             "type": "appInfoLocalizations",
             "attributes": {"locale": "en-US", "subtitle": SUBTITLE, "privacyPolicyUrl": PRIVACY_URL},
-            "relationships": {"appInfo": {"data": {"type": "appInfos", "id": INFO_ID}}}}})
+            "relationships": {"appInfo": {"data": {"type": "appInfos", "id": info_id}}}}})
         print("appInfo localization: created with subtitle+privacyPolicyUrl")
     else:
         patch(f"/v1/appInfoLocalizations/{iloc['id']}", {"data": {
@@ -228,8 +241,8 @@ def cmd_metadata():
             "attributes": {"subtitle": SUBTITLE, "privacyPolicyUrl": PRIVACY_URL}}})
         print(f"appInfo localization: subtitle+privacy set (name stays '{iloc['attributes'].get('name')}')")
 
-    patch(f"/v1/appInfos/{INFO_ID}", {"data": {
-        "type": "appInfos", "id": INFO_ID,
+    patch(f"/v1/appInfos/{info_id}", {"data": {
+        "type": "appInfos", "id": info_id,
         "relationships": {
             "primaryCategory": {"data": {"type": "appCategories", "id": "GAMES"}},
             "primarySubcategoryOne": {"data": {"type": "appCategories", "id": "GAMES_CARD"}},
@@ -244,7 +257,7 @@ def cmd_metadata():
 
 
 def cmd_agerating():
-    d = get(f"/v1/appInfos/{INFO_ID}/ageRatingDeclaration")["data"]
+    d = get(f"/v1/appInfos/{editable_info_id()}/ageRatingDeclaration")["data"]
     decl_id, have = d["id"], d["attributes"]
     want = {
         "violenceCartoonOrFantasy": "INFREQUENT_OR_MILD",   # melees, painted swords
