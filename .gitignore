@@ -18,3 +18,8 @@ node_modules/
 # Telemetry pulls — training data lives in Firebase; local JSONL exports
 # (tools/telemetry-pull.mjs) are working copies, never committed.
 data/telemetry/
+
+# Live-play footage sessions (tools/record-session.mjs) — gigabytes of video
+# and the dedicated play profile; reproducible only by playing, never committed.
+marketing/footage/sessions/
+marketing/footage/.chrome-*/
