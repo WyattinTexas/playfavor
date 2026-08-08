@@ -876,12 +876,14 @@ console.log('── Mission borrowing: optional rescue at mission time, 2g/skill
 
   g.currentAct = 1;
   g.resolveMissions();
-  ok((p._pendingMissionBorrows || []).length === 1, 'human: due-but-borrowable mission PAUSES for the chooser');
+  ok(g._missionPause && g._missionPause.type === 'borrow' && g._missionPause.mission === m,
+    'human: due-but-borrowable mission PAUSES the walk at its slot');
   ok(p.missions.length === 1 && p.failedMissions.length === 0 && p.completedMissions.length === 0,
     'nothing auto-failed, nothing auto-borrowed');
 
   const lenderGold = g.players[1].gold;
-  const res = g.completeMissionWithBorrow(0, 0);
+  const res = g.resolveMissionBorrow(true, null);   // accept, first-available lender
+  g.resolveMissions();                              // the walk runs on to the end
   ok(res.success === true && p.gold === 8, `Borrow & Complete: fee paid (10 → ${p.gold})`);
   ok(g.players[1].gold === lenderGold + 2, 'the 2g lands with the lending neighbor');
   ok(p.completedMissions.length === 1 && p.missions.length === 0, 'mission completed and cleared');
@@ -896,12 +898,18 @@ console.log('── Mission borrowing: optional rescue at mission time, 2g/skill
   g2.players[1].playedCards.push({ ...kCard });
   g2.currentAct = 1;
   g2.resolveMissions();
-  ok((p2._pendingMissionBorrows || []).length === 1, 'decline rig: chooser queued');
+  ok(g2._missionPause && g2._missionPause.type === 'borrow', 'decline rig: the walk pauses on the offer');
   const scornBefore = p2.scorn;
-  g2.failMissionByChoice(0, 0);
-  ok(p2.failedMissions.length === 1 && p2.missions.length === 0, 'Let it Fail resolves the mission as failed');
+  g2.resolveMissionBorrow(false, null);
+  ok(p2.failedMissions.length === 1, 'Let it Fail resolves the mission as failed');
   ok(p2.scorn === scornBefore + 10, `failure penalty applied (+10 scorn)`);
-  ok(p2._pendingPenaltyDiscard === 5, "declined mission's Discard-5 joins the penalty picker");
+  g2.resolveMissions();
+  ok(g2._missionPause && g2._missionPause.type === 'penalty' && g2._missionPause.count === 5,
+    "declined mission's Discard-5 pauses the walk at ITS slot (not the act's end)");
+  g2.discardPlayedCards(0, () => true, 5);
+  g2.resolveMissionPenaltyDone();
+  g2.resolveMissions();
+  ok(p2.missions.length === 0 && !g2._missionPause, 'the walk completes once the debt is paid');
 
   // Unborrowable: no lender → no offer, the mission just fails at its due date.
   const g3 = newGame();
@@ -912,8 +920,8 @@ console.log('── Mission borrowing: optional rescue at mission time, 2g/skill
   g3.currentAct = 1;
   ok(g3.missionBorrowPlan(0, p3.missions[0]) === null, 'no lender → no plan');
   g3.resolveMissions();
-  ok((p3._pendingMissionBorrows || []).length === 0 && p3.failedMissions.length === 1,
-    'no offer — mission fails at its due date');
+  ok(!g3._missionPause && p3.failedMissions.length === 1,
+    'no offer — mission fails at its due date, no pause');
 
   // Mind's Eye / Philosopher's Stone gaps can never be borrowed.
   const g4 = newGame();
@@ -1063,8 +1071,9 @@ console.log('── Remote humans: decisions DEFER (never auto-decided by anothe
     g.players[0].playedCards.push({ ...kCard });
     g.currentAct = 1;
     g.resolveMissions();
-    ok((rp._pendingMissionBorrows || []).length === 1 && rp.completedMissions.length === 0,
-        'borrowable mission deferred for the remote human (no auto-borrow at 50 favor)');
+    ok(g._missionPause && g._missionPause.type === 'borrow' && g._missionPause.playerIndex === 1
+        && rp.completedMissions.length === 0,
+        'borrowable mission PAUSES the walk for the remote human (no auto-borrow at 50 favor)');
     ok(rp.failedMissions.length === 0, 'and not failed either — the stream decides');
 
     // Penalty discards defer the same way.
@@ -2544,14 +2553,15 @@ console.log('\n— Slot stones are POSITIONAL: nothing to grant, farm, or serial
   ok(g.getStoneCount(0) === 1, 'a JSON round-trip changes nothing — position IS the state');
 }
 
-console.log('\n— Mission skill grants chain, in ANY order (Wyatt 7/18) —');
+console.log('\n— Mission skill grants chain, in the CHOSEN order (Wyatt 7/18 → 8/8) —');
 {
-  // "The first mission you choose gives you power if you're successful. That
-  // happened, and the attributes I gained from the first mission didn't come
-  // into account for the later missions, which it is supposed to."
-  //
-  // Grants DID chain — but only in whatever order player.missions happened to
-  // sit in, which is acquisition order and nothing the player controls.
+  // 7/18: "the attributes I gained from the first mission didn't come into
+  // account for the later missions, which it is supposed to." 8/8 sharpened
+  // it: "it needs to TRULY follow in the correct order... for the next
+  // mission that comes up, your stats are a little different." The walk
+  // checks each mission against the world the previous one left — so a
+  // grant slotted first feeds its dependent, and a dependent slotted first
+  // FAILS. Order is the player's weapon now, both edges of it.
   // Mounted Champion: 7 Survival -> +3 Power.  Champion of Legend: 8 Power.
   const rig = (order) => {
     const g = newGame();
@@ -2567,19 +2577,18 @@ console.log('\n— Mission skill grants chain, in ANY order (Wyatt 7/18) —');
   const b = rig(['Champion of Legend', 'Mounted Champion']);
   ok(a.passed.length === 2,
     `grant-first: both complete (${a.passed.join(', ')})`);
-  ok(b.passed.length === 2,
-    `grant-SECOND: both still complete — order must not decide it (${b.passed.join(', ')})`);
-  ok(a.passed.join() === b.passed.join(),
-    'the same missions resolve the same way whichever order they were acquired');
-  ok(a.p.skills.power === 12 && b.p.skills.power === 12,
-    `and the +3 Power lands either way (${a.p.skills.power} / ${b.p.skills.power})`);
+  const bCoL = b.mine.find(r => r.mission.name === 'Champion of Legend');
+  ok(bCoL && !bCoL.success && b.passed.join() === 'Mounted Champion',
+    'grant-SECOND: Champion of Legend checked first at 5 Power FAILS — the chosen order decides (8/8)');
+  ok(a.p.skills.power === 12 && b.p.skills.power === 8,
+    `grants land where they land: 12 when both bank, 8 when only Mounted does (${a.p.skills.power} / ${b.p.skills.power})`);
 
   // A mission that CANNOT be met even after every grant still fails, and the
   // shortfall it reports is measured against the FINAL state.
   const c = rig(['Mounted Champion', 'Champion of Legend', 'Great Scholar']);
   const scholar = c.mine.find(r => r.mission.name === 'Great Scholar');
   ok(scholar && !scholar.success,
-    'a genuinely unreachable mission still fails after the fixed point');
+    'a genuinely unreachable mission still fails at its slot');
   ok(scholar && (scholar.details.missing || []).length > 0,
     `and reports what it was short of at the END (${(scholar.details.missing || []).join(', ')})`);
 }
@@ -3427,11 +3436,14 @@ console.log('── 7/23 mission math: Water Temple pays ONCE, formulas count fl
   ok(paid === 2 * cha && cha >= 5,
     `pays 2 × flex-inclusive Charisma (${paid} @ ${cha} — fixed 3 + 2 flex + slot)`);
 
-  // PAY ORDER: a skill-granting mission banked in the same phase counts
-  // into a formula mission's payout regardless of acquisition order —
-  // Wyatt's table paid 6 or 12 on identical state by take-order alone.
-  for (const order of [['A Day With the Birds', 'Golden Fiddle'],
-                       ['Golden Fiddle', 'A Day With the Birds']]) {
+  // PAY ORDER is the CHOSEN order (Wyatt 8/8, superseding the 7/23
+  // partition): banked after the grant, the Fiddle counts it; banked
+  // before, it pays the tally at ITS slot — and settleFormulaMissions
+  // trues every formula up to the FINAL tally when Act 3 closes, so no
+  // Favor is lost to a bold order; the beat just speaks its moment.
+  for (const [order, grantCounts] of [
+      [['A Day With the Birds', 'Golden Fiddle'], true],
+      [['Golden Fiddle', 'A Day With the Birds'], false]]) {
     const go = newGame();
     go.currentAct = 1;
     go.players.forEach(p => { p.missions = []; });
@@ -3441,8 +3453,10 @@ console.log('── 7/23 mission math: Water Temple pays ONCE, formulas count fl
     const fb = go.currentFavor(0);
     go.phase = 'missions';
     go.resolveMissions();
-    ok(go.currentFavor(0) - fb === 2 * go.players[0].skills.charisma,
-      `pay order ${order[0].slice(0, 9)}-first: Fiddle counts Birds' grant (paid ${go.currentFavor(0) - fb})`);
+    const finalCha = go.players[0].skills.charisma;
+    const want = grantCounts ? 2 * finalCha : 2 * (finalCha - 3);
+    ok(go.currentFavor(0) - fb === want,
+      `pay order ${order[0].slice(0, 9)}-first: Fiddle pays at ITS slot (paid ${go.currentFavor(0) - fb}, wanted ${want})`);
   }
 
   // The card-side siblings read the same flex-aware count…
@@ -3467,14 +3481,13 @@ console.log('── 7/23 mission math: Water Temple pays ONCE, formulas count fl
     `Great Vault Key counts the charisma|prospecting unit ONCE (${g4.dynamicCardFavor(0, gvk)} = ${base}+1)`);
 }
 
-console.log('── 8/3: surfaces speak the CHOSEN order — pays keep their own (Wyatt: "displayed second, played fourth") ──');
+console.log('── 8/3→8/8: surfaces AND pays speak the CHOSEN order ──');
 {
-  // Wyatt set his turn-in order and the ceremony announced the sweep's
-  // internal order instead: his score-reverser, slotted FOURTH, was
-  // announced second (the pay partition moves formulas last, so the two
-  // plain missions led). Resolution paid correctly all along — the fix is
-  // that results / completedMissions / failedMissions now come back in
-  // player.missions order, which is exactly what chooseMissionOrder wrote.
+  // 8/3: Wyatt set his turn-in order and the ceremony announced the
+  // sweep's internal order instead — v29 sorted the RECORDS into his
+  // order while the pays kept engine order. 8/8 closed the gap for good:
+  // the walk RESOLVES in player.missions order, so records accrue in the
+  // chosen order because that is genuinely the order things happened.
   const g = newGame();
   const p = g.players[0];
   g.currentAct = 3; g.emblemHolder = 0;
@@ -3500,8 +3513,9 @@ console.log('── 8/3: surfaces speak the CHOSEN order — pays keep their own
   ok(res[3].mission.name === 'Quest for the Stones',
     'the reverser is announced FOURTH — where Wyatt slotted it');
 
-  // Display order ≠ pay order: formula chosen FIRST still pays AFTER the
-  // grant lands (the 7/23 partition), while the announcement leads with it.
+  // Display order IS pay order now: a formula chosen FIRST pays at its
+  // own slot — today's tally, trued up at the final tally by
+  // settleFormulaMissions — and the announcement matches what happened.
   const g2 = newGame();
   const p2 = g2.players[0];
   g2.currentAct = 1; g2.emblemHolder = 0;
@@ -3516,8 +3530,8 @@ console.log('── 8/3: surfaces speak the CHOSEN order — pays keep their own
     .filter(e => e.src === 'mission' && e.label === 'Golden Fiddle')
     .reduce((n, e) => n + e.amount, 0);
   ok(res2[0].mission.name === 'Golden Fiddle', 'announced first, as chosen…');
-  ok(fiddlePaid === 2 * (2 + 3),
-    `…yet PAID after Birds' grant: 2×(2+3) = ${fiddlePaid} (pay rules untouched)`);
+  ok(fiddlePaid === 2 * 2,
+    `…and PAID first too: 2×2 pre-grant = ${fiddlePaid} — pay order IS the chosen order (8/8)`);
 
   // A failure keeps its chosen slot too — failures used to append after
   // every success regardless of where the player put them.
@@ -3533,6 +3547,86 @@ console.log('── 8/3: surfaces speak the CHOSEN order — pays keep their own
   const res3 = g3.resolveMissions().find(r => r.playerIndex === 0).results;
   ok(res3.length === 2 && !res3[0].success && res3[0].mission.name === 'Mercy',
     `a failed mission is announced in ITS chosen slot (${res3.map(r => `${r.mission.name}:${r.success ? 'ok' : 'fail'}`).join(' → ')})`);
+}
+
+console.log('── 8/8: THE ORDER LAW — each mission lands fully before the next is checked ──');
+{
+  // THE LIVE REPRO (Wyatt 8/8): a failed Act-3 mission CHOSEN FIRST must
+  // have its Scorn on the books when a later-chosen Quest for the Stones
+  // converts all Scorn to Prestige. The old engine checked everything
+  // first and landed every penalty last, so the conversion ran before the
+  // failure's Scorn existed — his order was narrated but not obeyed.
+  const rig = (order) => {
+    const g = newGame();
+    g.currentAct = 3; g.emblemHolder = 0;
+    g.players.forEach(q => { q.missions = []; });
+    const p = g.players[0];
+    p.philosopherStone = 3;          // Quest for the Stones is met
+    p.scorn = 12; p.prestige = 0;
+    p.missions = order.map(n => ({ ...missionByName(n) }));
+    g.resolveMissions();
+    return p;
+  };
+  // Failure first: King of the Sky's +10 Scorn lands (12 → 22), THEN the
+  // Quest converts all 22.
+  const a = rig(['King of the Sky', 'Quest for the Stones']);
+  ok(a.scorn === 0 && a.prestige === 22,
+    `failure chosen FIRST: its Scorn converts too (scorn ${a.scorn}, prestige ${a.prestige})`);
+  // Conversion first: only the 12 convert; the later failure's 10 stay.
+  const b = rig(['Quest for the Stones', 'King of the Sky']);
+  ok(b.scorn === 10 && b.prestige === 12,
+    `conversion chosen FIRST: the later failure's Scorn stays (scorn ${b.scorn}, prestige ${b.prestige})`);
+
+  // A failure's "Discard N" settles AT ITS SLOT — the next mission is
+  // checked against the table the player actually has left. This is the
+  // deliberate flip of the 7/14 sibling shield for human seats (Wyatt
+  // 8/8: "you now may or may not have certain variables"); AI seats keep
+  // the shield's effect by construction (sweep first, failures after).
+  const kCard = window.FAVOR_DATA.cards.find(c => (c.skills || []).includes('knowledge'));
+  const g2 = newGame();
+  g2.currentAct = 3; g2.emblemHolder = 0;
+  g2.players.forEach(q => { q.missions = []; });
+  const p2 = g2.players[0];
+  const birdsM = { ...missionByName('A Day With the Birds') };   // 3 Knowledge
+  ok(!g2.probeMissionRequirements(0, birdsM).success, 'rig sanity: Birds unmet without the cards');
+  p2.playedCards.push({ ...kCard, id: 'rk1' }, { ...kCard, id: 'rk2' }, { ...kCard, id: 'rk3' });
+  g2.applySlotSkills(p2);
+  ok(g2.probeMissionRequirements(0, birdsM).success, 'rig sanity: Birds met while the cards stand');
+  p2.missions = [
+    { ...missionByName('Wanted: Crazy Lou') },        // hopeless; failure discards 5
+    birdsM,                                           // chosen AFTER the failure
+  ];
+  g2.resolveMissions();
+  ok(g2._missionPause && g2._missionPause.type === 'penalty',
+    "Crazy Lou's Discard-5 pauses the walk at ITS slot");
+  g2.discardPlayedCards(0, () => true, g2._missionPause.count);  // the pick costs the Knowledge cards
+  g2.resolveMissionPenaltyDone();
+  const res2x = g2.resolveMissions().find(r => r.playerIndex === 0).results;
+  const birdsRes = res2x.find(r => r.mission.name === 'A Day With the Birds');
+  ok(birdsRes && !birdsRes.success,
+    'the NEXT mission is checked against the stripped table — Birds fails');
+
+  // A borrow ACCEPTED mid-walk lands its rewards before the next check:
+  // Birds' +3 Charisma, borrowed into being, feeds the Fiddle behind it.
+  const g3 = newGame();
+  g3.currentAct = 1; g3.emblemHolder = 0;
+  g3.players.forEach(q => { q.missions = []; });
+  const p3 = g3.players[0];
+  p3.bonusSkills = { survival: 3, knowledge: 2, charisma: 2 };
+  g3.applySlotSkills(p3);
+  p3.gold = 10;
+  g3.players[1].playedCards.push({ ...kCard, id: 'lend1' });     // lends the 3rd Knowledge
+  const birds3 = { ...missionByName('A Day With the Birds') };
+  p3.missions = [birds3, { ...missionByName('Golden Fiddle') }];
+  ok(!!g3.missionBorrowPlan(0, birds3), 'rig sanity: Birds is one borrowed Knowledge short');
+  const fb3 = g3.currentFavor(0);
+  g3.resolveMissions();
+  ok(g3._missionPause && g3._missionPause.type === 'borrow', "the walk pauses on Birds' borrow offer");
+  g3.resolveMissionBorrow(true, null);
+  g3.resolveMissions();
+  const chaFinal = p3.skills.charisma;
+  ok(p3.completedMissions.length === 2 && g3.currentFavor(0) - fb3 === 2 * chaFinal && chaFinal >= 5,
+    `borrowed Birds lands +3 Charisma BEFORE the Fiddle pays (2×${chaFinal} = ${g3.currentFavor(0) - fb3})`);
 }
 
 console.log('── 8/3: formula missions settle at the FINAL tally (Wyatt: 12 Knowledge ⇒ 12 Favor, "like the Fiddle") ──');

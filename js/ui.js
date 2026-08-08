@@ -2563,62 +2563,14 @@ async function mpHeldMissionStages() {
 }
 
 // \u2500\u2500 End-of-act stages, canonical order \u2014 every client applies every
-// seat's choices at the same point. Local seat uses the real choosers
-// (and publishes); remote seats stream; booted seats fall back to AI.
-async function mpEndActStages(borrowsPendingLocal) {
+// seat's choices at the same point. Mission borrows and penalty debts now
+// resolve INSIDE the walk (endActPhases answers the engine's pauses seat
+// by seat, slot by slot \u2014 resolveBorrowPause / resolvePenaltyPause);
+// what stages here is what the walk leaves behind: duplicates, a penalty
+// safety net, and A Promise. Local seat uses the real choosers (and
+// publishes); remote seats stream; booted seats fall back to AI.
+async function mpEndActStages() {
     const n = game.playerCount;
-    for (let cs = 0; cs < n; cs++) {
-        const li = FMP.localIdx(cs);
-        const p = game.players[li];
-        if (li === 0) {
-            for (const m of borrowsPendingLocal) {
-                await showMissionBorrowChooser(m);   // publishes inside
-            }
-        } else if (p._remoteHuman || (p._pendingMissionBorrows || []).length) {
-            const pend = (p._pendingMissionBorrows || []).slice();
-            p._pendingMissionBorrows = [];
-            for (const m of pend) {
-                mpWaitShow(li, `deciding ${m.name}`);
-                const mv = p._remoteHuman ? await FMP.waitFor(cs, 'mission_borrow') : null;
-                mpWaitHide();
-                const idx = p.missions.indexOf(m);
-                if (idx < 0) continue;
-                const plan = game.missionBorrowPlan(li, m);
-                const accept = mv ? !!mv.accept
-                    : (plan && game.missionFavorEstimate(li, m) >= plan.cost); // boot \u2192 persona-grade judgment
-                if (accept && plan) {
-                    // Apply THEIR lenders, not our own first-available guess \u2014
-                    // the fee lands in a specific neighbor's purse, so picking
-                    // a different one here would fork the tables. A booted seat
-                    // sends nothing, and every client then falls back to the
-                    // same deterministic first-available plan.
-                    const chosen = (mv && Array.isArray(mv.borrowFrom))
-                        ? mv.borrowFrom.map(b => ({ skill: b.skill,
-                            neighborIndex: FMP.localIdx(b.lender) }))
-                        : null;
-                    const res = game.completeMissionWithBorrow(li, idx, chosen);
-                    // The borrow could not close the gap after all. That is a
-                    // real failure with real consequences — give it the same
-                    // beat a due-date failure gets (completeMissionWithBorrow
-                    // returns before splicing, so idx is still valid).
-                    if (!res.success) await failMissionWithBeat(li, idx);
-                    else {
-                        const names = [...new Set(res.borrowFrom
-                            ? res.borrowFrom.map(b => game.players[b.neighborIndex].name)
-                            : [])].join(' & ');
-                        addLogEntry(`${p.name} borrows${names ? ` from ${names}` : ''} to complete ${m.name}`);
-                    }
-                } else {
-                    // A remote or AI seat letting a mission go used to be a
-                    // bare log line — no beat, on any table. Same ceremony
-                    // as everyone else now.
-                    addLogEntry(`${p.name} lets ${m.name} fail`);
-                    await failMissionWithBeat(li, idx);
-                }
-                renderGameState();
-            }
-        }
-    }
     // Duplicates — Mirror Gate / Wild Experiments winners choose their
     // copy, in canonical order; a booted seat falls to the shared argmax.
     for (let cs = 0; cs < n; cs++) {
@@ -5933,7 +5885,53 @@ async function endActPhases() {
         await chooseMissionOrder();
     }
 
-    const missionResults = game.resolveMissions();
+    // THE WALK (Wyatt 8/8) — resolution, its beats and its decisions all
+    // march in the player's chosen order: the engine pauses at every beat
+    // (narration) and every decision (a due mission's borrow, a failure's
+    // "Discard N"), and this loop answers each pause and re-enters until
+    // the phase completes. A decision is made AT ITS MISSION'S SLOT, so
+    // everything after it is checked against the world it left behind.
+    // MP: remote seats' decisions stream in; every client walks the same
+    // pump, so the moves land at identical points on every table.
+    game._missionNarrate = true;
+    let missionResults = game.resolveMissions();
+    while (game._missionPause) {
+        const pz = game._missionPause;
+        if (pz.type === 'beat') {
+            // Batch every CONSECUTIVE beat into one ceremony session — the
+            // engine pauses per resolution, but the stage holds one
+            // continuous "tap — reveal, then onward" run (banner up once,
+            // beats advance on tap, straight through every seat) exactly
+            // as before. Only a DECISION breaks the batch: the story stops
+            // at that mission's slot, the chooser speaks, and a fresh
+            // session carries on with what happened next.
+            const collected = [];
+            let cur = pz;
+            while (cur && cur.type === 'beat') {
+                game._missionPause = null;
+                const last = collected[collected.length - 1];
+                if (last && last.playerIndex === cur.playerIndex) {
+                    last.results.push(...cur.results);
+                } else {
+                    collected.push({ playerIndex: cur.playerIndex, results: [...cur.results] });
+                }
+                missionResults = game.resolveMissions();
+                cur = game._missionPause;
+            }
+            await showMissionCeremony(collected, actNum);
+            renderGameState();
+            continue;   // cur (a decision, or nothing) rules the loop
+        }
+        if (pz.type === 'borrow') {
+            await resolveBorrowPause(pz);
+        } else if (pz.type === 'penalty') {
+            await resolvePenaltyPause(pz);
+        } else {
+            game._missionPause = null;   // unknown pause — never wedge the act
+        }
+        missionResults = game.resolveMissions();
+    }
+    game._missionNarrate = false;
 
     let hasMissionResults = false;
     missionResults.forEach(pr => {
@@ -5953,13 +5951,6 @@ async function endActPhases() {
     // canonical-order stage loop owns the flag instead (mpEndActStages).
     const promisePending = mpActive() ? false : game.players[0]._pendingPromiseDiscard;
     if (promisePending) game.players[0]._pendingPromiseDiscard = false;
-
-    // MISSION BORROW — due missions short only on borrowable skills were
-    // paused by resolveMissions (same pause pattern as the penalty picker).
-    // The player decides each one FIRST: a declined mission fails here, so
-    // its own "Discard N" penalty joins the picker read below.
-    const borrowsPending = (game.players[0]._pendingMissionBorrows || []).slice();
-    game.players[0]._pendingMissionBorrows = [];
 
     // MELEE PHASE
     const meleeStart = 600;
@@ -6010,19 +6001,17 @@ async function endActPhases() {
         }
     }, meleeStart);
 
-    // Multiplayer: every seat's end-of-act choices (borrows, penalty
-    // picks, A Promise) resolve in CANONICAL order inside one stage so
-    // all clients mutate the engine at identical points. Solo keeps the
-    // classic local-first chain.
-    const afterBorrows = mpActive()
-        ? () => mpEndActStages(borrowsPending)
-        : () => borrowsPending.reduce(
-            (chain, m) => chain.then(() => showMissionBorrowChooser(m)), Promise.resolve());
-    // PENALTY DISCARD — a failed mission says "Discard N Cards": the player
-    // picks which (physical-game agency), not the engine. Read AFTER the
-    // borrow choosers so declined missions' penalties are included.
+    // Remaining end-of-act choices. Borrows and penalty discards already
+    // resolved INSIDE the walk, at their mission's slot; what stages here
+    // is what the walk leaves behind: duplicates, A Promise, and a safety
+    // net for penalty debt born outside the mission phase. Multiplayer
+    // walks them in CANONICAL order so all clients mutate the engine at
+    // identical points; solo keeps the classic local-first chain.
+    const afterStages = mpActive() ? () => mpEndActStages() : () => Promise.resolve();
+    // PENALTY DISCARD safety net — mission debts drained inside the walk;
+    // this catches anything owed from outside the mission phase.
     // DUPLICATES — read LIVE (not precaptured): a borrow-completed Mirror
-    // Gate sets the flag inside the borrow chooser above.
+    // Gate sets the flag inside the walk above.
     const afterDuplicate = () => {
         if (mpActive()) return Promise.resolve();   // handled in the stage loop
         return game.players[0]._pendingDuplicatePick
@@ -6037,20 +6026,95 @@ async function endActPhases() {
     const afterPromise = promisePending
         ? () => showPromiseDiscardPicker()
         : () => Promise.resolve();
-    // The ceremony narrates every resolution first; the stats it changed
-    // repaint before the player is asked to make any follow-up choice.
-    // A resolution that DEALT missions (Midnight Crash) gets its own beat right
-    // after — you see the card you were handed before the act moves on.
-    showMissionCeremony(missionResults, actNum)
-        .then(() => showMissionDrawBeat())
+    // Beats already narrated inside the walk, in the chosen order. What
+    // remains: missions DEALT by a resolution (Midnight Crash) get their
+    // own beat — you see the card you were handed before the act moves on.
+    showMissionDrawBeat()
         .then(() => renderGameState())
-        .then(afterBorrows).then(afterDuplicate).then(afterPenalty).then(afterPromise)
+        .then(afterStages).then(afterDuplicate).then(afterPenalty).then(afterPromise)
         // A mission FAILED by declining its borrow (Let it Fail) records its
         // draws HERE, after the first beat already ran — surface them now so a
         // Midnight-Crash Act-3 mission is never handed out in silence (Wyatt 7/17).
         .then(() => showMissionDrawBeat())
         .then(() => renderGameState())
         .then(startMelee);
+}
+
+// ── A 'borrow' pause — the walk stopped at a due, unmet, borrowable
+// mission. The owner answers (chooser here; a remote seat streams); the
+// engine applies it at THIS slot, so what the player saves — or lets die
+// — is on the books before the next mission is checked.
+async function resolveBorrowPause(pz) {
+    const li = pz.playerIndex;
+    const p = game.players[li];
+    const m = pz.mission;
+    let res;
+    if (li === 0) {
+        const chosen = await showMissionBorrowChooser(m);   // publishes inside
+        res = game.resolveMissionBorrow(!!chosen, chosen);
+    } else {
+        mpWaitShow(li, `deciding ${m.name}`);
+        const mv = p._remoteHuman ? await FMP.waitFor(FMP.canonSeat(li), 'mission_borrow') : null;
+        mpWaitHide();
+        const plan = game.missionBorrowPlan(li, m);
+        // Booted mid-decision: fall back to the SAME judgment an AI seat
+        // runs (aiWantsMissionBorrow) — a client that saw the boot early
+        // resolves this seat as AI, one that reached the wait first lands
+        // here, and both must reach the same verdict or the tables fork.
+        const accept = mv ? !!(mv.accept && plan) : game.aiWantsMissionBorrow(li, m, plan);
+        // Apply THEIR lenders, never our own first-available guess — the
+        // fee lands in a specific purse. Streamed as CANONICAL seats; a
+        // booted seat sends nothing and every client falls back to the
+        // same deterministic first-available plan.
+        const chosen = (mv && accept && Array.isArray(mv.borrowFrom))
+            ? mv.borrowFrom.map(b => ({ skill: b.skill, neighborIndex: FMP.localIdx(b.lender) }))
+            : null;
+        res = game.resolveMissionBorrow(!!accept, chosen);
+    }
+    if (res && res.success) {
+        const names = [...new Set((res.borrowFrom || [])
+            .map(b => game.players[b.neighborIndex].name))].join(' & ');
+        addLogEntry(`${li === 0 ? 'You' : p.name} borrow${li === 0 ? '' : 's'}${names ? ` from ${names}` : ''} (−${res.borrowed}g) to complete ${m.name}`);
+    } else {
+        addLogEntry(`${li === 0 ? 'You let' : `${p.name} lets`} ${m.name} fail`);
+    }
+    renderGameState();
+}
+
+// ── A 'penalty' pause — a failed mission's "Discard N" debt, owed at the
+// failure's own slot so the table the NEXT mission is checked against is
+// the table the player actually has left (Wyatt 8/8: "your stats are a
+// little different" — including the cards you no longer hold).
+async function resolvePenaltyPause(pz) {
+    const li = pz.playerIndex;
+    const p = game.players[li];
+    if (li === 0) {
+        await showPenaltyDiscardPicker(pz.count);           // publishes inside
+    } else {
+        const owed = pz.count;
+        mpWaitShow(li, `discarding ${owed} to a failed mission`);
+        const mv = p._remoteHuman ? await FMP.waitFor(FMP.canonSeat(li), 'penalty') : null;
+        mpWaitHide();
+        const ids = (mv && Array.isArray(mv.cardIds)) ? mv.cardIds : [];
+        const had = [...p.playedCards];
+        const taken = ids.length
+            ? game.discardPlayedCards(li, c => ids.includes(c.id), Math.min(owed, ids.length))
+            : 0;
+        if (taken < Math.min(owed, p.playedCards.length + taken)) {
+            // Short or booted — the engine's own AI keep-score fills in.
+            p._remoteHuman = false;
+            game.penaltyDiscard(li, owed - taken);
+            if (mv) p._remoteHuman = true;
+        }
+        // NAME the cards — a bare count tells the table nothing about what
+        // a rival just lost.
+        const gone = had.filter(c => !p.playedCards.includes(c));
+        addLogEntry(`${p.name} discards ${gone.length
+            ? gone.map(c => c.name).join(', ')
+            : `${owed} card(s)`} to a failed mission`);
+        renderGameState();
+    }
+    game.resolveMissionPenaltyDone();
 }
 
 // ═══ BORROW & PLAY — "from whom?" ═══════════════════════════════════
@@ -6337,58 +6401,28 @@ function showEarlyMissionChoice(mission) {
     });
 }
 
-// A mission resolved OUTSIDE resolveMissions still deserves the same beat,
-// for ANY seat. Wyatt 7/18: "it really needs to be understandable for all
-// players, each mission that gets played." Five paths reached a mission's end
-// with nothing but a toast or a log line — a remote seat declining a borrow in
-// MP, the local player's deliberate turn-in-and-fail, an early turn-in
-// success, an early borrow-and-complete. They share this now.
-//
-// `apply` must be the engine call that resolves the mission; whatever it
-// returns is read for {success, cost}. Measured through the engine so the
-// beat carries the discarded cards, the conditional gates that missed and
-// every OTHER seat it moved — exactly like a due-date resolution.
-function missionBeat(playerIndex, idx, apply) {
-    const p = game.players[playerIndex];
-    const mission = p && p.missions[idx];
-    if (!mission) { const r = apply(); renderGameState(); return Promise.resolve(r); }
-    // Read the shortfall BEFORE the resolution applies — afterwards the
-    // mission is off the books and a discard penalty may have stripped the
-    // very skills we want to report on.
-    const { details } = game.checkMissionRequirements(playerIndex, mission);
-    let res;
-    const deltas = game.measureResolution(playerIndex, () => { res = apply(); });
-    renderGameState();
-    const beat = {
-        mission, success: !!(res && res.success), deltas, details,
-        borrowed: (res && res.cost) || 0,
-    };
-    return showMissionCeremony([{ playerIndex, results: [beat] }], game.currentAct)
-        .then(() => res);
-}
-
-function failMissionWithBeat(playerIndex, idx) {
-    return missionBeat(playerIndex, idx, () => game.failMissionByChoice(playerIndex, idx));
-}
-
+// Every mission now resolves INSIDE the walk (resolveMissions' pump), so
+// every seat's every resolution — due, attempted, borrowed, declined —
+// carries the same measured ceremony beat by construction. The old
+// missionBeat/failMissionWithBeat side road is gone with the out-of-band
+// paths that needed it.
 function showMissionBorrowChooser(mission) {
     return new Promise((resolve) => {
         const ov = document.getElementById('promisePicker');
         const mi = game.players[0].missions.indexOf(mission);
         const plan = mi >= 0 ? game.missionBorrowPlan(0, mission) : null;
 
-        // A declined mission used to die as a toast — fired while the NEXT
-        // chooser was already on stage, so Alchemic Seige's +20 Prestige fail
-        // reward landed with zero feedback on 7/18's recording. Fail it with
-        // measured deltas and give it a real ceremony beat; the promise chain
-        // holds the next chooser until the beat has played.
-        const failWithBeat = (idx) => failMissionWithBeat(0, idx);
-
+        // The chooser ANSWERS; the engine applies. It resolves the picked
+        // lenders (an array) or null for Let it Fail — resolveBorrowPause
+        // feeds that to game.resolveMissionBorrow, which completes or
+        // fails the mission AT ITS SLOT in the walk and hands the
+        // ceremony its beat. Publishing rides inside, so the wire always
+        // carries exactly what was clicked.
         if (!ov || mi < 0 || !plan) {
-            // The window closed between phases — resolve it honestly as the
-            // failure it already was at its due date.
-            if (mi >= 0) { failWithBeat(mi).then(resolve); return; }
-            resolve();
+            // The plan died between the pause and the chooser — publish an
+            // honest decline so no peer waits on a move that never comes.
+            mpPub('mission_borrow', { accept: false, missionName: mission.name, borrowFrom: null });
+            resolve(null);
             return;
         }
 
@@ -6431,7 +6465,6 @@ function showMissionBorrowChooser(mission) {
 
         const finish = (chosen) => {
             ov.classList.remove('active');
-            const idx = game.players[0].missions.indexOf(mission);
             // Stream the LENDERS too, not just yes/no — a peer that re-picked
             // the first neighbor itself would pay a different purse and fork.
             // Lenders stream as CANONICAL seats — every client's local
@@ -6445,24 +6478,7 @@ function showMissionBorrowChooser(mission) {
                         lender: (window.FMP && FMP.active()) ? FMP.canonSeat(b.neighborIndex) : b.neighborIndex }))
                     : null,
             });
-            if (!chosen) {
-                addLogEntry(`You let ${mission.name} fail`);
-                failWithBeat(idx).then(resolve);
-                return;
-            }
-            const res = game.completeMissionWithBorrow(0, idx, chosen);
-            if (res.success) {
-                const names = [...new Set(chosen.map(b => game.players[b.neighborIndex].name))].join(' & ');
-                showNotification(`Mission complete: ${mission.name}! (−${res.cost}g to ${names})`, 'mission');
-                addLogEntry(`You borrow from ${names} (−${res.cost}g) and complete ${mission.name}`);
-            } else {
-                // The plan died under the click — the due date still rules.
-                addLogEntry(`You fail ${mission.name}`);
-                failWithBeat(idx).then(resolve);
-                return;
-            }
-            renderGameState();
-            resolve();
+            resolve(chosen || null);
         };
 
         const render = () => {

@@ -2375,220 +2375,381 @@ class FavorGame {
     }
 
     resolveMissions() {
-        const results = [];
-
-        // Missions dealt BY a resolution (The Midnight Crash's failure deals the
-        // whole table an Act 3 mission). Cleared each act so last act's deal
-        // can't narrate twice.
-        this._missionDraws = [];
-
-        // What each resolution actually PAID or COST — the mission ceremony
-        // shows these honest deltas. Per-asset favor depends on the player's
-        // state at this exact moment, so recomputing later would lie.
+        // ── THE ORDER LAW (Wyatt 8/8) ──────────────────────────────────
+        // "It needs to truly follow in the correct order. When you
+        // complete those missions, you get the rewards or the
+        // repercussions. For the next mission that comes up, your stats
+        // are a little different." A human seat resolves player.missions
+        // ONE AT A TIME, in exactly the order the list sits in
+        // (chooseMissionOrder writes the player's order straight into
+        // it). Each mission's rewards OR penalties land fully before the
+        // next mission is even checked — a failure's Scorn is on the
+        // books when a later Quest for the Stones converts, and an early
+        // grant is countable by everything after it. His 8/8 table: the
+        // failed mission he slotted FIRST kept its Scorn out of the
+        // conversion he slotted second — the old shape (all checks first,
+        // every penalty last, formulas repartitioned) made that
+        // structural, and v29 then sorted the ANNOUNCEMENTS into his
+        // order while the pays kept engine order. Now the pays ARE the
+        // order; the records need no sorting because they accrue in it.
         //
-        // Wyatt 7/18: "Who got gold? Who is affected by this?" The old snapshot
-        // was SIX SCALARS ON ONE SEAT, so three whole classes of consequence
-        // were structurally invisible. Measured now, alongside them:
-        //   others    — every OTHER seat the resolution moved. others_gain_5_gold
-        //               and friends mutate players outside the measured seat, so
-        //               "who got gold" had no answer to give.
-        //   discarded — the actual CARD OBJECTS a bulk discard took. The engine
-        //               flattened them to a count, so a Secret Grotto failure
-        //               showed the prestige it paid and never the cards it cost.
-        //   gates     — conditional failure rewards, and whether they FIRED. A
-        //               gate that missed must be able to say so, or a mission
-        //               like The Labyrinth renders a literally empty beat.
-        // measureResolution lives on the class so the UI's out-of-band failure
-        // paths (a declined borrow, a deliberate turn-in-and-fail) measure a
-        // mission EXACTLY the way a due-date resolution does, and their
-        // ceremony beats carry the same information.
-        const measure = (idx, fn) => this.measureResolution(idx, fn);
-
-        // Start with emblem holder, go clockwise
-        let pi = this.emblemHolder;
-        for (let i = 0; i < this.playerCount; i++) {
-            const player = this.players[pi];
-            const playerResults = [];
-
-            // THE CHOSEN ORDER (Wyatt 8/3: "the game did not display them
-            // in the correct order"). player.missions IS the order the
-            // player set — chooseMissionOrder writes it directly — and it
-            // is the order every surface must speak in. The sweep below
-            // completes missions in requirement-unlock order and the pay
-            // partition moves formulas last, so playerResults and the
-            // completed/failed lists used to accrue in ENGINE order: his
-            // reverse-score mission, slotted fourth, was announced second
-            // while the pays were right all along. Snapshot the player's
-            // order now; presentation is restored after the sweep, and the
-            // PAY order keeps its own rules untouched.
-            const chosenOrder = player.missions.slice();
-            const chosenPos = (m) => {
-                const at = chosenOrder.indexOf(m);
-                return at < 0 ? chosenOrder.length : at;   // mid-phase arrivals last
+        // This deliberately repeals two human-seat laws:
+        //   · 7/14's "every check before any penalty" shield — a failure
+        //     you slotted early CAN strip what a later mission needed;
+        //   · 7/18's fixed-point rescue and 7/23's grants-before-formulas
+        //     partition — the order is the player's weapon now, and both
+        //     edges of it are theirs. (Formula beats still speak today's
+        //     tally and settleFormulaMissions trues them up at the final
+        //     tally, so no Favor is ever lost to a bold order.)
+        // AI seats never chose an order, so the sweep stays for them —
+        // banking in unlock order is just a sensible player — but their
+        // failure penalties land inline now too: one law per table.
+        //
+        // DECISIONS PAUSE THE PHASE. A due, unmet, borrowable mission on
+        // a human seat stops the walk at its slot: this._missionPause is
+        // set and resolveMissions returns the results-so-far. The
+        // orchestrator (solo chain / MP stage code) answers the pause —
+        // chooser or stream — then calls resolveMissions() again to
+        // continue. Pause types:
+        //   'borrow'  → resolveMissionBorrow(accept, chosen)
+        //   'penalty' → apply the owed discard, resolveMissionPenaltyDone()
+        //   'beat'    → (only when this._missionNarrate) narrate
+        //               pause.results, clear the flag, re-enter.
+        // Every client walks the identical pump, so streamed decisions
+        // land at identical points — lockstep holds. Headless rigs with
+        // no narrator and no human decisions complete in one synchronous
+        // call and read the same results shape as ever.
+        if (!this._mres) {
+            // Missions dealt BY a resolution (The Midnight Crash's failure
+            // deals the whole table an Act 3 mission). Reset per phase so
+            // last act's deal can't narrate twice.
+            this._missionDraws = [];
+            const seats = [];
+            for (let i = 0; i < this.playerCount; i++) {
+                seats.push((this.emblemHolder + i) % this.playerCount);
+            }
+            this._mres = {
+                seats, seatIdx: 0, cursor: 0,
+                seatList: null, resolved: null, seatResults: null,
+                doneBase: 0, failBase: 0,
+                penaltyOwed: null, results: [],
             };
-            const doneBase = player.completedMissions.length;
-            const failBase = player.failedMissions.length;
+        }
+        const S = this._mres;
+        if (this._missionPause) return S.results;   // a decision is still owed
 
-            // Two passes: every due mission is CHECKED (and successes paid
-            // out) before any failure penalty lands. A failure that discards
-            // played cards must never strip the skills a sibling mission in
-            // this same phase was counting on.
-            //
-            // ⚠ AND the success pass runs to a FIXED POINT. A mission's
-            // success rewards can grant SKILLS, and those skills are on the
-            // table for every sibling still resolving in this same phase.
-            // Wyatt 7/18: "the first mission you choose gives you power if
-            // you're successful... the attributes I gained from the first
-            // mission didn't come into account for the later missions, which
-            // it is supposed to."
-            //
-            // Grants DID chain — but only in whatever order player.missions
-            // happened to sit in, which is acquisition order and not anything
-            // the player controls. Mounted Champion (+3 Power) before Champion
-            // of Legend (needs 8 Power) passed BOTH; the same two missions the
-            // other way round failed Champion of Legend outright. Sweeping
-            // until a sweep completes nothing new is order-independent, so the
-            // player always gets every completion they earned and every client
-            // agrees. Success rewards never take a skill away, and `resolved`
-            // only grows, so this always converges.
-            const failed = [];
-            const resolved = new Set();
-            // ⚠ `_remoteHuman`, never `pi === 0`: pi is the LOCAL seat index,
-            // so a remote human is 0 on their own client and non-zero on
-            // everyone else's. Keying rules on pi is a lockstep fork.
+        while (S.seatIdx < S.seats.length) {
+            const pi = S.seats[S.seatIdx];
+            const player = this.players[pi];
+            if (!S.seatList) {
+                S.seatList = player.missions.slice();   // the chosen order
+                S.resolved = new Set();
+                S.seatResults = [];
+                S.cursor = 0;
+                S.doneBase = player.completedMissions.length;
+                S.failBase = player.failedMissions.length;
+                S.results.push({ playerIndex: pi, results: S.seatResults });
+            }
+            // ⚠ `_remoteHuman`, never `pi === 0` alone: pi is the LOCAL seat
+            // index, so a remote human is 0 on their own client and non-zero
+            // on everyone else's. Keying rules on pi is a lockstep fork.
             const humanSeat = pi === 0 || player._remoteHuman;
-            const inWindow = (m) => !!m.activationRound && m.activationRound <= this.currentAct;
-            // FORCED at the end of its due act; before that it is still the
-            // holder's call (the act-boundary chooser sets _attemptNow, and an
-            // attempted mission then walks exactly the same road as a due one).
-            const isDue = (m) => this.missionDueAct(m) <= this.currentAct || m._attemptNow === true;
-
-            // PAY ORDER (Wyatt 7/23, the second Golden Fiddle bug): within
-            // one resolution phase, missions that GRANT skills must land
-            // before missions whose formula COUNTS skills — his table
-            // banked the Fiddle before A Day With the Birds' +3 Charisma
-            // because he'd TAKEN it first, and the identical missions paid
-            // 6 or 12 by acquisition order alone. A physical player banks
-            // in the best order; the stable partition below gives every
-            // seat that order deterministically (lockstep-identical), and
-            // the fixed-point sweep still lets ANY mission's grants unlock
-            // requirement chains across passes.
-            const paysFormula = (m) => String(m.successSpecial || '').indexOf('favor_per_') === 0;
-            const inPayOrder = (arr) => [...arr.filter(m => !paysFormula(m)), ...arr.filter(paysFormula)];
-
-            let progressed = true;
-            while (progressed) {
-                progressed = false;
-                inPayOrder(player.missions).forEach((mission) => {
-                    if (resolved.has(mission) || !inWindow(mission)) return;
-                    // Not due and not attempted: a HUMAN seat decides this at
-                    // the act boundary, never automatically. Only a true AI
-                    // seat banks a met mission for itself; an unmet one is
-                    // HELD, never auto-failed.
-                    if (!isDue(mission) && humanSeat) return;
-                    const { success, details } = this.checkMissionRequirements(pi, mission);
-                    if (!success) return;
-                    // A Hard seat never banks a mission whose FAILURE line
-                    // pays better (Alchemic Seige: fail +20 vs success −10).
-                    // Skipped here, it stays unresolved; when due, the pass
-                    // below finds nothing to borrow and loses it on purpose
-                    // — the same failMissionByChoice road a human walks.
-                    if (!humanSeat && window.FAI && window.FAI.isHard(this, pi)
-                        && window.FAI.wantsFailOnPurpose(this, pi, mission)) return;
-                    resolved.add(mission);
-                    const deltas = measure(pi, () => this.applyMissionRewards(pi, mission));
-                    player.completedMissions.push(mission);
-                    this._noteMissionDone(pi, mission, 0);
-                    if (pi === 0 && window.FALM) window.FALM.recordMission(mission);
-                    playerResults.push({ mission, success: true, details, deltas });
-                    progressed = true;   // its rewards may unlock a sibling
-                });
+            if (humanSeat) {
+                if (!this._walkHumanMissions(pi)) return S.results;   // paused
+            } else {
+                this._sweepAiMissions(pi);
             }
 
-            // Fixed point reached — nothing else can be met on skills alone.
-            // ONLY NOW may a due mission borrow or fail.
-            inPayOrder(player.missions).forEach((mission, mi) => {
-                if (resolved.has(mission) || !inWindow(mission) || !isDue(mission)) return;
-                // Re-read the shortfall against the FINAL state, so a beat
-                // reports what they were actually short of at the end.
-                const { details } = this.checkMissionRequirements(pi, mission);
-                {
-                    // Unmet at its due date — can borrowed skills save it?
-                    // Borrowing is a CHOICE, never automatic: the human gets
-                    // a chooser (endActPhases pauses the phase, same pattern
-                    // as _pendingPenaltyDiscard); the AI borrows only when
-                    // the mission's favor clearly beats the gold fee.
-                    // Hard seats pick their lenders (fund the TRAILING seat,
-                    // never the leader) and judge the rescue in branch EV;
-                    // casual seats keep the old first-available plan.
-                    const hardSeat = !humanSeat && window.FAI && window.FAI.isHard(this, pi);
-                    const plan = this.missionBorrowPlan(pi, mission,
-                        hardSeat ? window.FAI.preferredLenders(this, pi, mission) : undefined);
-                    if (plan && humanSeat) {
-                        player._pendingMissionBorrows = player._pendingMissionBorrows || [];
-                        player._pendingMissionBorrows.push(mission);
-                        return; // stays in player.missions; the chooser/stream resolves it
-                    }
-                    // Persona rivals judge the trade sharper: any mission
-                    // worth at least the fee is taken; generic bots still
-                    // demand a clear 2× win. Judgment only — no stat cheats.
-                    const borrowBar = plan ? plan.cost * (player._personaAI ? 1 : 2) : Infinity;
-                    const wantsBorrow = hardSeat
-                        ? (plan && window.FAI.borrowWorth(this, pi, mission, plan))
-                        : (plan && this.missionFavorEstimate(pi, mission) >= borrowBar);
-                    if (plan && !humanSeat && wantsBorrow) {
-                        const deltas = measure(pi, () => {
-                            player.gold -= plan.cost;
-                            plan.borrowFrom.forEach(b => {
-                                this.players[b.neighborIndex].gold += BORROW_SKILL_COST;
-                            });
-                            this.applyMissionRewards(pi, mission);
-                        });
-                        resolved.add(mission);
-                        player.completedMissions.push(mission);
-                        this._noteMissionDone(pi, mission, 0);
-                        if (pi === 0 && window.FALM) window.FALM.recordMission(mission);
-                        this.addLog(`${player.name} borrows ${plan.borrowFrom.map(b => b.skill).join(', ')} (−${plan.cost}g) to complete ${mission.name}`);
-                        playerResults.push({ mission, success: true, details, borrowed: plan.cost, deltas });
-                        return;
-                    }
-                    resolved.add(mission);
-                    failed.push(mission);
-                    player.failedMissions.push(mission);
-                    playerResults.push({ mission, success: false, details });
-                }
-            });
-            failed.forEach(mission => {
-                const deltas = measure(pi, () => this.applyMissionFailure(pi, mission));
-                const entry = playerResults.find(r => r.mission === mission && !r.success);
-                if (entry) entry.deltas = deltas;
-            });
+            // Seat complete — remove what resolved; a mission inside its
+            // window but not yet due carries over to the next act.
+            player.missions = player.missions.filter(m => !S.resolved.has(m));
 
-            // Present in the player's CHOSEN order — results drive the
-            // ceremony and the log; completedMissions / failedMissions
-            // drive the journal, the browser, the strip and the score
-            // sheet. The pays above already landed (grants before
-            // formulas, sweep to fixed point); reordering the RECORDS
-            // afterwards changes what is said, never what was paid.
-            // Deterministic from state, so every lockstep client speaks
-            // the same order.
-            playerResults.sort((a, b) => chosenPos(a.mission) - chosenPos(b.mission));
-            const doneTail = player.completedMissions.slice(doneBase)
-                .sort((a, b) => chosenPos(a) - chosenPos(b));
-            player.completedMissions.splice(doneBase, doneTail.length, ...doneTail);
-            const failTail = player.failedMissions.slice(failBase)
-                .sort((a, b) => chosenPos(a) - chosenPos(b));
-            player.failedMissions.splice(failBase, failTail.length, ...failTail);
+            // An AI seat resolves in sweep order; its RECORDS still read in
+            // list order (the v29 display law) for the ceremony, journal,
+            // browser and strip. Human records accrued in the chosen order
+            // — nothing to sort.
+            if (!humanSeat) {
+                const at = (m) => {
+                    const i = S.seatList.indexOf(m);
+                    return i < 0 ? S.seatList.length : i;   // mid-phase arrivals last
+                };
+                S.seatResults.sort((a, b) => at(a.mission) - at(b.mission));
+                const doneTail = player.completedMissions.slice(S.doneBase)
+                    .sort((a, b) => at(a) - at(b));
+                player.completedMissions.splice(S.doneBase, doneTail.length, ...doneTail);
+                const failTail = player.failedMissions.slice(S.failBase)
+                    .sort((a, b) => at(a) - at(b));
+                player.failedMissions.splice(S.failBase, failTail.length, ...failTail);
+            }
 
-            // Remove only what actually resolved — missions still inside
-            // their window carry over to the next act.
-            player.missions = player.missions.filter(m => !resolved.has(m));
-
-            results.push({ playerIndex: pi, results: playerResults });
-            pi = (pi + 1) % this.playerCount;
+            const seatResults = S.seatResults;
+            S.seatList = null;
+            S.seatIdx++;
+            if (!humanSeat && this._missionNarrate && seatResults.length) {
+                // One beat pause per AI seat — its whole run narrates before
+                // the next seat moves. (Human beats pause one BY one, since
+                // a chooser can interleave between them.)
+                this._missionPause = { type: 'beat', playerIndex: pi, results: seatResults };
+                return S.results;
+            }
         }
 
+        const results = S.results;
+        this._mres = null;
         return results;
+    }
+
+    /**
+     * The human walk — one mission at a time, in the list's order, each
+     * landed in full before the next is checked. Returns false when the
+     * phase pauses (decision or beat); the pump re-enters here on resume.
+     */
+    _walkHumanMissions(pi) {
+        const S = this._mres;
+        const player = this.players[pi];
+        // A failed mission's "Discard N" debt pauses the walk right after
+        // the failure's own beat — the cards must actually be gone before
+        // the next mission's check reads the table.
+        const pausePenaltyIfOwed = () => {
+            if (!S.penaltyOwed) return false;
+            const po = S.penaltyOwed;
+            S.penaltyOwed = null;
+            this._missionPause = { type: 'penalty', playerIndex: po.pi, count: po.count };
+            return true;
+        };
+        while (S.cursor < S.seatList.length) {
+            if (pausePenaltyIfOwed()) return false;
+            const mission = S.seatList[S.cursor];
+            // Already off the books (a borrow decision resolved it).
+            if (S.resolved.has(mission) || !player.missions.includes(mission)) {
+                S.cursor++;
+                continue;
+            }
+            const inWindow = !!mission.activationRound && mission.activationRound <= this.currentAct;
+            // FORCED at the end of its due act; before that it is the
+            // holder's call — the act-boundary chooser sets _attemptNow,
+            // and an attempt walks exactly like a due mission.
+            const isDue = this.missionDueAct(mission) <= this.currentAct || mission._attemptNow === true;
+            if (!inWindow || !isDue) { S.cursor++; continue; }
+
+            const { success, details } = this.checkMissionRequirements(pi, mission);
+            if (success) {
+                // Off the books BEFORE effects (the turnInMission
+                // convention) — with the walk pausing for beats, a surface
+                // can render mid-phase, and a mission sitting in missions
+                // AND completedMissions would double-list.
+                this._unbookMission(pi, mission);
+                const deltas = this.measureResolution(pi, () => this.applyMissionRewards(pi, mission));
+                S.resolved.add(mission);
+                player.completedMissions.push(mission);
+                this._noteMissionDone(pi, mission, 0);
+                if (pi === 0 && window.FALM) window.FALM.recordMission(mission);
+                const res = { mission, success: true, details, deltas };
+                S.seatResults.push(res);
+                S.cursor++;
+                if (this._missionNarrate) {
+                    this._missionPause = { type: 'beat', playerIndex: pi, results: [res] };
+                    return false;
+                }
+                continue;
+            }
+
+            // Unmet at its slot. Borrowing is a CHOICE, never automatic —
+            // and nothing after this slot may resolve until it's answered,
+            // because the answer changes the world the next mission is
+            // checked against.
+            const plan = this.missionBorrowPlan(pi, mission);
+            if (plan) {
+                this._missionPause = { type: 'borrow', playerIndex: pi, mission, details, plan };
+                return false;
+            }
+            this._failMissionInline(pi, mission, details);
+            S.cursor++;
+            if (this._missionNarrate) {
+                this._missionPause = { type: 'beat', playerIndex: pi, results: [S.seatResults[S.seatResults.length - 1]] };
+                return false;
+            }
+            if (pausePenaltyIfOwed()) return false;
+        }
+        return !pausePenaltyIfOwed();
+    }
+
+    /**
+     * An AI seat never chose an order, so the 7/18 sweep stays: bank
+     * whatever is met, repeat until nothing new completes (a grant can
+     * unlock a sibling in either direction), formulas after grants
+     * (7/23). What it may NOT do anymore is take its failure medicine
+     * after everyone's pays — failures land inline, one law per table.
+     */
+    _sweepAiMissions(pi) {
+        const S = this._mres;
+        const player = this.players[pi];
+        const inWindow = (m) => !!m.activationRound && m.activationRound <= this.currentAct;
+        const isDue = (m) => this.missionDueAct(m) <= this.currentAct || m._attemptNow === true;
+        const paysFormula = (m) => String(m.successSpecial || '').indexOf('favor_per_') === 0;
+        const inPayOrder = (arr) => [...arr.filter(m => !paysFormula(m)), ...arr.filter(paysFormula)];
+
+        let progressed = true;
+        while (progressed) {
+            progressed = false;
+            inPayOrder(player.missions).forEach((mission) => {
+                if (S.resolved.has(mission) || !inWindow(mission)) return;
+                const { success, details } = this.checkMissionRequirements(pi, mission);
+                if (!success) return;
+                // A Hard seat never banks a mission whose FAILURE line pays
+                // better (Alchemic Seige: fail +20 vs success −10). Left
+                // unresolved here, the due pass below finds nothing to
+                // borrow and loses it on purpose.
+                if (window.FAI && window.FAI.isHard(this, pi)
+                    && window.FAI.wantsFailOnPurpose(this, pi, mission)) return;
+                this._unbookMission(pi, mission);
+                S.resolved.add(mission);
+                const deltas = this.measureResolution(pi, () => this.applyMissionRewards(pi, mission));
+                player.completedMissions.push(mission);
+                this._noteMissionDone(pi, mission, 0);
+                S.seatResults.push({ mission, success: true, details, deltas });
+                progressed = true;   // its rewards may unlock a sibling
+            });
+        }
+
+        // Fixed point reached — only due, unmet missions remain. Borrow
+        // when the seat judges it worth the fee, otherwise fail — inline.
+        inPayOrder(player.missions).forEach((mission) => {
+            if (S.resolved.has(mission) || !inWindow(mission) || !isDue(mission)) return;
+            // Re-read the shortfall against the CURRENT state, so the beat
+            // reports what they were actually short of when it resolved.
+            const { details } = this.checkMissionRequirements(pi, mission);
+            const hardSeat = window.FAI && window.FAI.isHard(this, pi);
+            const plan = this.missionBorrowPlan(pi, mission,
+                hardSeat ? window.FAI.preferredLenders(this, pi, mission) : undefined);
+            if (plan && this.aiWantsMissionBorrow(pi, mission, plan)) {
+                this._unbookMission(pi, mission);
+                const deltas = this.measureResolution(pi, () => {
+                    player.gold -= plan.cost;
+                    plan.borrowFrom.forEach(b => {
+                        this.players[b.neighborIndex].gold += BORROW_SKILL_COST;
+                    });
+                    this.applyMissionRewards(pi, mission);
+                });
+                S.resolved.add(mission);
+                player.completedMissions.push(mission);
+                this._noteMissionDone(pi, mission,
+                    new Set(plan.borrowFrom.map(b => b.neighborIndex)).size);
+                this.addLog(`${player.name} borrows ${plan.borrowFrom.map(b => b.skill).join(', ')} (−${plan.cost}g) to complete ${mission.name}`);
+                S.seatResults.push({ mission, success: true, details, borrowed: plan.cost, deltas });
+                return;
+            }
+            this._failMissionInline(pi, mission, details);
+        });
+    }
+
+    /**
+     * A mission failing AT ITS SLOT — measured, booked, penalties landed
+     * now, before anything later in the order is looked at. A human
+     * "Discard N" debt is drained into S.penaltyOwed: the walk pauses on
+     * it (behind the failure's own beat) instead of parking it for the
+     * end of the act, so the table the next check reads is the table the
+     * player actually has left. AI seats discarded inside
+     * applyMissionFailure already (keep-score road) — nothing is owed.
+     */
+    _failMissionInline(pi, mission, details) {
+        const S = this._mres;
+        const player = this.players[pi];
+        const owedBefore = player._pendingPenaltyDiscard || 0;
+        this._unbookMission(pi, mission);
+        const deltas = this.measureResolution(pi, () => this.applyMissionFailure(pi, mission));
+        S.resolved.add(mission);
+        player.failedMissions.push(mission);
+        S.seatResults.push({ mission, success: false, details, deltas });
+        const owed = player._pendingPenaltyDiscard || 0;
+        if (owed > owedBefore) {
+            player._pendingPenaltyDiscard = 0;   // the walk owns this debt now
+            S.penaltyOwed = { pi, count: owed };
+        }
+    }
+
+    /**
+     * Answer a 'borrow' pause. accept completes the mission with the
+     * chosen lenders (re-validated — a plan that died under the click
+     * falls through to failure); decline lets it fail, penalties landing
+     * at this slot like any other failure in the walk. Returns the result
+     * entry (null when no borrow pause is open). The caller then re-enters
+     * resolveMissions() to continue the walk.
+     */
+    resolveMissionBorrow(accept, chosen) {
+        const pz = this._missionPause;
+        if (!pz || pz.type !== 'borrow' || !this._mres) return null;
+        const S = this._mres;
+        const pi = pz.playerIndex;
+        const player = this.players[pi];
+        const mission = pz.mission;
+        this._missionPause = null;
+        let res = null;
+        if (accept) {
+            const idx = player.missions.indexOf(mission);
+            let out = null;
+            if (idx >= 0) {
+                const deltas = this.measureResolution(pi, () => {
+                    out = this.completeMissionWithBorrow(pi, idx, chosen || undefined);
+                });
+                if (out && out.success) {
+                    S.resolved.add(mission);
+                    res = { mission, success: true, details: pz.details, deltas,
+                        borrowed: out.cost, borrowFrom: out.borrowFrom };
+                    S.seatResults.push(res);
+                }
+            }
+        }
+        if (!res) {
+            this._failMissionInline(pi, mission, pz.details);
+            res = S.seatResults[S.seatResults.length - 1];
+        }
+        S.cursor++;
+        if (this._missionNarrate) {
+            this._missionPause = { type: 'beat', playerIndex: pi, results: [res] };
+        }
+        return res;
+    }
+
+    // A resolving mission leaves the hand AT resolution (the turnInMission
+    // convention) — the walk pauses for beats and choosers, surfaces render
+    // mid-phase, and a mission listed as held AND completed reads as two.
+    _unbookMission(pi, mission) {
+        const list = this.players[pi].missions;
+        const at = list.indexOf(mission);
+        if (at >= 0) list.splice(at, 1);
+    }
+
+    /**
+     * Answer a 'penalty' pause once the owed discard has been applied —
+     * the pickers/streams discard through discardPlayedCards themselves;
+     * a booted seat's fallback runs penaltyDiscard on the AI road. Clears
+     * the pause; the caller re-enters resolveMissions() to continue.
+     */
+    resolveMissionPenaltyDone() {
+        const pz = this._missionPause;
+        if (!pz || pz.type !== 'penalty') return false;
+        this._missionPause = null;
+        return true;
+    }
+
+    /**
+     * Would this seat, playing for itself, take this borrow rescue? ONE
+     * judgment for the engine's AI seats AND the MP booted-seat fallback:
+     * two different bars here were a lockstep fork waiting to happen (a
+     * client that saw the boot early resolves the seat as AI; one that
+     * reached the wait first falls back — both must land the same).
+     * Persona rivals take any mission worth at least the fee; generic
+     * bots demand a clear 2× win; Hard seats judge the rescue in branch
+     * EV. Judgment only — no stat cheats.
+     */
+    aiWantsMissionBorrow(pi, mission, plan) {
+        if (!plan) return false;
+        if (window.FAI && window.FAI.isHard(this, pi)) {
+            return !!window.FAI.borrowWorth(this, pi, mission, plan);
+        }
+        const bar = plan.cost * (this.players[pi]._personaAI ? 1 : 2);
+        return this.missionFavorEstimate(pi, mission) >= bar;
     }
 
     checkMissionRequirements(playerIndex, mission) {

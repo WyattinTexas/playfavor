@@ -1763,7 +1763,15 @@ console.log('── Desktop: Trade Route lends ACROSS the table — the far seat
     `the engine plans the borrow ACROSS, at seat 2 (${JSON.stringify(rig.plan)})`);
 
   // 1 · WITH the card fielded: every seat is offered, the far one is live.
-  await page.evaluate(() => { showMissionBorrowChooser(game.players[0].missions[0]); });
+  // The chooser ANSWERS and the engine's borrow pause APPLIES (8/8 walk):
+  // start the real pump so the pause is open, then wire the chooser's
+  // decision to resolveMissionBorrow exactly as resolveBorrowPause does.
+  await page.evaluate(() => {
+    game._missionNarrate = false;                 // no beats — keep the rig tight
+    game.resolveMissions();                       // pauses {type:'borrow'} at Mirror Gate
+    window._mbDecision = showMissionBorrowChooser(game._missionPause.mission);
+    window._mbDecision.then(chosen => { game.resolveMissionBorrow(!!chosen, chosen); });
+  });
   await page.waitForFunction(() =>
     document.getElementById('promisePicker').classList.contains('active'), { timeout: 8000 });
   await sleep(300);
@@ -1868,13 +1876,29 @@ console.log('── Desktop: declined mission plays a fail beat — the prestige
     const p = game.players[0];
     // Alchemic Seige: short its (borrowable) Alchemy, stone in hand, so the
     // due-date chooser opens; its failure pays +20 Prestige and no scorn.
-    p.missions = [{ ...FAVOR_DATA.missions.find(m => m.name === 'Alchemic Seige') }];
+    // Pinned due NOW so the 8/8 walk pauses on it at this act's end.
+    const m = { ...FAVOR_DATA.missions.find(x => x.name === 'Alchemic Seige') };
+    m.activationRound = 1; m.dueAct = 1;
+    p.missions = [m];
     p.philosopherStone = 1;
     p.skills.alchemy = 0;
     const aCard = FAVOR_DATA.cards.find(c => (c.skills || []).includes('alchemy'));
     game.players[1].playedCards.push({ ...aCard });
-    // Fire the chooser directly — never await an evaluate gated on a UI click.
-    showMissionBorrowChooser(p.missions[0]);
+    // The REAL road (8/8): the walk pauses at the borrowable mission; the
+    // chooser answers; resolveMissionBorrow applies the decline — failing
+    // it inline — and hands narration its beat, which we then play exactly
+    // as endActPhases would. Never await an evaluate gated on a UI click.
+    game._missionNarrate = true;
+    game.resolveMissions();                       // pauses {type:'borrow'}
+    window._mbDecision = showMissionBorrowChooser(game._missionPause.mission);
+    window._mbDecision.then(chosen => {
+      game.resolveMissionBorrow(!!chosen, chosen);
+      const pz = game._missionPause;
+      if (pz && pz.type === 'beat') {
+        game._missionPause = null;
+        showMissionCeremony([{ playerIndex: pz.playerIndex, results: pz.results }], game.currentAct);
+      }
+    });
   });
   await page.waitForFunction(() =>
     document.getElementById('promisePicker').classList.contains('active') &&

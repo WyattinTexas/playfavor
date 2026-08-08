@@ -220,7 +220,18 @@
     //     when the purse runs dry — gold can no longer go negative (the
     //     broke Duchess). Old builds pay every seat unconditionally, so
     //     a broke giver forks the gold ledger: one law per table.
-    const MPV = 32;
+    // 33 (8/8): missions resolve SEQUENTIALLY in the player's chosen
+    //     order — each one's rewards/penalties (and its borrow or
+    //     "Discard N" decision) land fully before the next is checked,
+    //     so a failure's Scorn is on the books when a later Quest for
+    //     the Stones converts (Wyatt 8/8). The decision stream moved
+    //     with it: borrow/penalty moves are consumed mid-resolution at
+    //     the mission's slot (emblem-order walk), not in a post-
+    //     resolution canonical stage sweep, and AI failure penalties
+    //     land inline. Old builds check everything before any penalty
+    //     and repartition pays, so mixed tables would fork on the first
+    //     failed mission: one law per table.
+    const MPV = 33;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.
