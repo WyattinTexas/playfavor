@@ -433,7 +433,14 @@ def build():
     pl = pl.replace('URL_PLAY', URL_PLAY).replace('URL_IOS', URL_IOS).replace('URL_WEB', URL_WEB)
     html = patch(html, '</body>', pl + '\n</body>', 'pl layer')
 
-    # ── rotation shell (GVT): portrait container → rotated srcdoc iframe ──
+    # ── landscape-wall shell (Wyatt 8/8: "landscape-only… it just displays
+    # as a landscape wall in portrait — rotating should do nothing") ──
+    # One FIXED 960×445 landscape stage, uniformly SCALED to fit any
+    # container — never rotated, never re-laid-out. Portrait = a centered
+    # letterboxed wall (wordmark + a quiet rotate hint in the outer chrome);
+    # rotating the device only changes the scale factor. Inside the iframe
+    # the viewport is always landscape, so the game's own #rotate-gate can
+    # never fire and every layout is the phone-landscape one it was made for.
     esc = html.replace('&', '&amp;').replace('"', '&quot;')
     if esc.replace('&quot;', '"').replace('&amp;', '&') != html:
         sys.exit('✗ srcdoc escaping does not round-trip')
@@ -442,12 +449,30 @@ def build():
              '<link rel="icon" href="data:,">'
              '<title>FAVOR</title><style>'
              'html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#120c06}'
-             '#plFrame{border:0;display:block;width:100vw;height:100vh}'
-             '@media (orientation: portrait){#plFrame{width:100vh;height:100vw;'
-             'transform:rotate(90deg) translateY(-100%);transform-origin:top left}}'
+             '#plStage{position:absolute;left:50%;top:50%;width:960px;height:445px;'
+             'transform:translate(-50%,-50%);transform-origin:center center}'
+             '#plFrame{border:0;display:block;width:960px;height:445px;background:#120c06}'
+             '#plMark,#plHint{position:absolute;left:0;right:0;text-align:center;display:none;'
+             'font-family:Georgia,\'Times New Roman\',serif;pointer-events:none}'
+             '#plMark{color:#e8c34b;font-weight:bold;letter-spacing:10px;'
+             'text-shadow:0 2px 0 #8a6a1f,0 6px 18px rgba(0,0,0,.6)}'
+             '#plHint{color:#cdbb92;letter-spacing:3px;font-variant:small-caps;font-size:15px}'
+             '@media (orientation:portrait){#plMark,#plHint{display:block}}'
              '</style></head><body>'
-             f'<iframe id="plFrame" srcdoc="{esc}" allow="autoplay"></iframe>'
-             '</body></html>')
+             '<div id="plMark">FAVOR</div>'
+             f'<div id="plStage"><iframe id="plFrame" srcdoc="{esc}" allow="autoplay"></iframe></div>'
+             '<div id="plHint">⟳ rotate for the full table</div>'
+             '<script>(function(){var W=960,H=445;var st=document.getElementById("plStage");'
+             'function fit(){var w=innerWidth,h=innerHeight;'
+             'var s=Math.min(w/W,h/H,1.75);'
+             'st.style.transform="translate(-50%,-50%) scale("+s+")";'
+             'var top=(h-H*s)/2;'
+             'var mk=document.getElementById("plMark"),hi=document.getElementById("plHint");'
+             'mk.style.top=Math.max(10,top-Math.min(72,top*0.5))+"px";'
+             'mk.style.fontSize=Math.min(46,Math.max(26,Math.round(w*0.085)))+"px";'
+             'hi.style.top=Math.min(h-26,top+H*s+16)+"px";}'
+             'addEventListener("resize",fit);addEventListener("orientationchange",fit);fit();})();'
+             '</script></body></html>')
 
     OUT.write_text(outer, encoding='utf-8')
     size = OUT.stat().st_size

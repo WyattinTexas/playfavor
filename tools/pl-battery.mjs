@@ -11,7 +11,8 @@
  * a throw reaches the reveal chooser · card art rides the PLMAP (data:
  * srcs) · PLAY NOW chip + end screen fire mraid.open with the right store
  * URL per UA · the ad seam (FADS) is ABSENT · portrait containers get the
- * rotated shell · zero console errors.
+ * LANDSCAPE WALL (scale-only, never rotated — Wyatt 8/8; the game's own
+ * rotate-gate can never fire) · zero console errors.
  */
 import { statSync } from 'fs';
 import { dirname, join } from 'path';
@@ -66,6 +67,16 @@ async function boot({ width, height, ua }) {
   return { page, frame, errors, requests };
 }
 
+// The stage is a SCALED 960×445 iframe — a real tap must map inner coords
+// through the frame's on-screen rect (1:1 died with the rotation shell).
+async function tapInner(page, pt) {
+  const box = await page.evaluate(() => {
+    const r = document.getElementById('plFrame').getBoundingClientRect();
+    return { l: r.left, t: r.top, w: r.width, h: r.height };
+  });
+  await page.mouse.click(box.l + pt.x * (box.w / 960), box.t + pt.y * (box.h / 445));
+}
+
 // ═══ Landscape leg: boot → hero tap → game → throw → chooser → CTA ═══
 console.log('── landscape: full loop');
 {
@@ -90,7 +101,7 @@ console.log('── landscape: full loop');
     const r = el.getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   });
-  await page.mouse.click(r1.x, r1.y);
+  await tapInner(page, r1);
   await sleep(700);
   const r2 = await frame.evaluate(() => {
     const btns = [...document.querySelectorAll('button, .btn-royal')]
@@ -99,7 +110,7 @@ console.log('── landscape: full loop');
     const r = btns[0].getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2, label: btns[0].textContent.trim() };
   });
-  if (r2) await page.mouse.click(r2.x, r2.y);
+  if (r2) await tapInner(page, r2);
   else await frame.evaluate(() => { if (typeof confirmCharacter === 'function') confirmCharacter(); });
   const live = await frame.waitForFunction(() => typeof game !== 'undefined' && game && game.players && game.players[0].character, { timeout: 20000 }).then(() => true).catch(() => false);
   ok(live, `a real tap seats a hero — the table is live (confirm: ${r2 ? r2.label : 'fn'})`);
@@ -148,20 +159,39 @@ console.log('── landscape: full loop');
   await page.close();
 }
 
-// ═══ Portrait leg: the rotation shell ═══
-console.log('── portrait: rotated shell + Android store URL');
+// ═══ Portrait leg: the landscape WALL (Wyatt 8/8 — never rotated) ═══
+console.log('── portrait: landscape wall, scale-only, Android store URL');
 {
   const { page, frame, errors, requests } = await boot({
     width: 390, height: 844,
     ua: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Mobile Safari/537.36',
   });
-  const rot = await page.evaluate(() => {
-    const f = document.getElementById('plFrame');
-    return getComputedStyle(f).transform;
+  const wall = await page.evaluate(() => {
+    const st = document.getElementById('plStage');
+    const m = new DOMMatrixReadOnly(getComputedStyle(st).transform);
+    const r = st.getBoundingClientRect();
+    const hint = document.getElementById('plHint');
+    return {
+      rotated: Math.abs(m.b) > 0.001 || Math.abs(m.c) > 0.001,
+      scale: m.a,
+      w: Math.round(r.width), h: Math.round(r.height),
+      fitsW: r.width <= innerWidth + 1,
+      hint: hint && getComputedStyle(hint).display !== 'none',
+    };
   });
-  ok(rot && rot !== 'none', `portrait container rotates the frame (${rot.slice(0, 24)}…)`);
+  ok(!wall.rotated && wall.scale > 0 && wall.scale < 1,
+    `the stage is SCALED, never rotated (scale ${wall.scale.toFixed(3)})`);
+  ok(wall.w > wall.h && wall.fitsW,
+    `portrait shows a centered landscape wall (${wall.w}×${wall.h} in 390w)`);
+  ok(wall.hint, 'the letterbox wears the rotate hint');
   const up = await frame.waitForFunction(() => document.querySelector('.character-card'), { timeout: 15000 }).then(() => true).catch(() => false);
-  ok(up, 'the game boots inside the rotated shell');
+  ok(up, 'the game boots inside the wall');
+  const gate = await frame.evaluate(() => {
+    const g = document.getElementById('rotate-gate');
+    return g ? getComputedStyle(g).display : 'absent';
+  });
+  ok(gate === 'none' || gate === 'absent',
+    `the game's own rotate-gate never fires inside the wall (${gate})`);
   await frame.evaluate(() => window.PLEND());
   await sleep(250);
   await frame.evaluate(() => document.querySelector('#plEnd .pill').click());
