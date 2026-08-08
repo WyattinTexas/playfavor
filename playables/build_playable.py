@@ -273,6 +273,10 @@ def build():
 
     def static_src(m2):
         key = m2.group(1)
+        # NEVER touch JS template literals riding in inlined script source —
+        # `src="assets/x/${expr}"` must stay code (the runtime rew() owns it).
+        if '${' in key or '`' in key:
+            return m2.group(0)
         return f'src="{plmap.get(key, PX)}"'
     html, n_static = re.subn(r'src="(assets/[^"?]+)(?:\?v=\d+)?"', static_src, html)
     print(f'  static img srcs rewritten: {n_static}')
@@ -450,7 +454,8 @@ def build():
 
     # Gates.
     for needle, why in [('www.gstatic.com/firebasejs', 'firebase script survived'),
-                        ('broadcast.js', 'the ad seam leaked into an ad creative'),
+                        ('src=&quot;js/broadcast.js', 'the ad seam leaked into an ad creative'),
+                        ('window.FADS = FADS', 'the ad seam BODY leaked into an ad creative'),
                         ('rel=&quot;preload&quot;', 'a preload request survived')]:
         if needle in outer:
             sys.exit(f'✗ gate: {why}')
