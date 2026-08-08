@@ -9479,6 +9479,237 @@ console.log('── Court Seal: preview names the row; claim takes the seat');
   await bPage.close();
 }
 
+// ═══ THE DAILY BROADCAST + AD GATES (design/ads/ADS-V1.md, Wyatt 8/8) ═══
+// The gate disarms itself on localhost so every flow above stays byte-
+// deterministic; THIS flow re-arms it (window._adsOn, pre-parse) and proves:
+// the TV pays 30★ once a day through the row txn (abort pays nothing and
+// never burns the day), the doors gate through one wordless theater, the
+// held launch fires exactly once (finish AND ✕-abort), mid-show taps land
+// on glass, the counter survives the victory reload (sessionStorage), the
+// Throne Room never gates, and the Settings backdoor is gone.
+console.log('── The Daily Broadcast: TV pays once a day; doors gate — except the Throne');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('ads: ' + m.text()); });
+  await page.setViewport({ width: 1280, height: 800 });
+  const ADS_UID = 'uauditads' + Math.random().toString(36).slice(2, 8);
+  await page.evaluateOnNewDocument((u) => {
+    localStorage.setItem('favor_coach_seen', JSON.stringify(
+      ['welcome', 'missions', 'hand', 'skills', 'pass', 'rivals',
+       'scorn', 'favor', 'ring', 'melee', 'emblem']));
+    localStorage.setItem('favorTelemetryOff', '1');
+    localStorage.setItem('favorUid', u);
+    localStorage.setItem('favorQueue', '3');
+    window._adsOn = 1;              // re-arm the gate on localhost (rig law)
+  }, ADS_UID);
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FADS && window.FMODES && window.FLB && window.FSET, { timeout: 20000 });
+
+  // Wiring: every door routes through FADS.gate — source-asserted, so a
+  // refactor that drops a door fails HERE, not in the field.
+  const wired = await page.evaluate(() => ({
+    play: String(window.startGame).includes('FADS.gate'),
+    skirmish: String(FMODES.beginSkirmish).includes('FADS.gate'),
+    rival: String(FMODES.beginRivalGame).includes('FADS.gate'),
+    host: String(FMODES.hostRoom).includes('FADS.gate'),
+    join: String(FMODES.joinRoom).includes('FADS.gate'),
+    throneClean: !String(FMODES.openThroneDoor).includes('FADS.gate')
+      && !String(FMODES.testThroneRoom).includes('FADS.gate'),
+  }));
+  ok(wired.play && wired.skirmish && wired.rival && wired.host && wired.join,
+    `all five doors ride FADS.gate (${JSON.stringify(wired)})`);
+  ok(wired.throneClean, 'no Throne path touches the gate');
+
+  // Settings: the rehearsal backdoor is GONE; the rig seam survives.
+  const backdoor = await page.evaluate(() => {
+    FSET.open();
+    const secs = [...document.querySelectorAll('#setOverlay .set-sec-title')].map(e => e.textContent);
+    FSET.close();
+    return { secs, seam: typeof FMODES.testThroneRoom === 'function' };
+  });
+  ok(!backdoor.secs.some(t => /throne/i.test(t)),
+    `Settings carries no Throne section (${backdoor.secs.join(' · ')})`);
+  ok(backdoor.seam, 'FMODES.testThroneRoom stays as a rig seam');
+
+  // The TV: armed for a fresh uid — snow, scanline, the +30★ badge.
+  const tv0 = await page.evaluate(() => {
+    const st = FADS._state();
+    const b = document.getElementById('tvBtn');
+    return { armed: st.armed, claimed: st.claimed, svg: !!(b && b.querySelector('svg')),
+      badge: !!(b && b.querySelector('.tvbadge')), text: b ? b.textContent : '' };
+  });
+  ok(tv0.armed && !tv0.claimed && tv0.svg && tv0.badge && /\+30\s*★/.test(tv0.text),
+    `TV armed for a fresh day (${JSON.stringify({ armed: tv0.armed, badge: tv0.badge })})`);
+  await page.screenshot({ path: join(SHOTS, 'ads-tv-armed.png') });
+
+  // Abort pays NOTHING and never burns the day.
+  await page.evaluate(() => { FADS.tvTap(); });
+  await sleep(300);
+  const midShow = await page.evaluate(() => ({
+    theater: !!document.getElementById('tvTheater'), live: FADS._state().live,
+  }));
+  ok(midShow.theater && midShow.live, 'TV tap opens the theater');
+  await page.screenshot({ path: join(SHOTS, 'ads-theater.png') });
+  await page.evaluate(() => FADS._tvAbort());
+  await sleep(700);
+  const afterAbort = await page.evaluate(async () => {
+    const row = await FLB._dbGet(`players/${FLB.uid()}`);
+    const st = FADS._state();
+    return { row, armed: st.armed, claimed: st.claimed,
+      theater: !!document.getElementById('tvTheater') };
+  });
+  ok(!afterAbort.theater && !afterAbort.row && afterAbort.armed && !afterAbort.claimed,
+    `abort tears down, pays nothing, day unburnt (row=${JSON.stringify(afterAbort.row)})`);
+
+  // Completion pays 30★ exactly once, through the whole-row txn.
+  await page.evaluate(() => { FADS.tvTap(); });
+  await sleep(300);
+  await page.evaluate(() => FADS._tvFinish());
+  await page.waitForFunction(async () => {
+    const row = await FLB._dbGet(`players/${FLB.uid()}`);
+    return row && row.stars === 30;
+  }, { timeout: 10000 });
+  // The row can land a beat before tvGrant's own continuation stamps the
+  // local day — wait for the seam's view, then assert.
+  await page.waitForFunction(() => FADS._state().claimed === true, { timeout: 5000 });
+  const paid = await page.evaluate(async () => {
+    const row = await FLB._dbGet(`players/${FLB.uid()}`);
+    return { stars: row && row.stars, tvDay: row && row.tvDay, key: FLB.currentDateKey(),
+      name: row && row.name, armed: FADS._state().armed };
+  });
+  ok(paid.stars === 30 && paid.tvDay === paid.key,
+    `the grant landed: stars 30, tvDay=${paid.tvDay} (=${paid.key})`);
+  ok(paid.name === undefined, 'no name write — the stub stays off the boards');
+  ok(paid.armed === false, 'the set is asleep for the rest of the day');
+  await sleep(1400);
+  await page.screenshot({ path: join(SHOTS, 'ads-tv-asleep.png') });
+
+  // Same-day second tap: a blink, never a theater, never a second pay.
+  await page.evaluate(() => { FADS.tvTap(); });
+  await sleep(400);
+  const second = await page.evaluate(async () => ({
+    theater: !!document.getElementById('tvTheater'),
+    stars: (await FLB._dbGet(`players/${FLB.uid()}/stars`)),
+  }));
+  ok(!second.theater && second.stars === 30, 'second tap = blink only, still 30★');
+
+  // THE GATE — skirmish door: theater first, launch held.
+  const g1 = await page.evaluate(() => {
+    FMODES.openSkirmish();
+    FMODES.beginSkirmish(3);
+    return { theater: !!document.getElementById('tvTheater'),
+      onTitle: !document.getElementById('title-screen').classList.contains('hidden'),
+      games: FADS._state().sess.games };
+  });
+  ok(g1.theater && g1.onTitle && g1.games === 1,
+    `skirmish door gates BEFORE the launch (games=${g1.games})`);
+  // Mid-show door taps land on glass: no count, no second show, no launch.
+  const glass = await page.evaluate(() => {
+    FMODES.beginSkirmish(3);
+    return FADS._state().sess.games;
+  });
+  ok(glass === 1, `mid-show tap lands on glass (games still ${glass})`);
+  await page.evaluate(() => FADS._tvFinish());
+  await page.waitForFunction(() => document.querySelector('.character-card')
+    && document.querySelector('.character-card').offsetParent, { timeout: 20000 });
+  ok(true, 'the held launch fired on finish (hero select is up)');
+
+  // The counter SURVIVES the victory reload (the sessionStorage law).
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FADS && window.FMODES, { timeout: 20000 });
+  const carried = await page.evaluate(() => FADS._state().sess.games);
+  ok(carried === 1, `the session counter rides through a reload (games=${carried})`);
+
+  // ✕ aborts the break and the game STILL launches (kindness, not a leak).
+  const g2 = await page.evaluate(() => {
+    FMODES.openSkirmish();
+    FMODES.beginSkirmish(3);
+    return { theater: !!document.getElementById('tvTheater'), games: FADS._state().sess.games };
+  });
+  ok(g2.theater && g2.games === 2, 'second door game gates too');
+  await page.evaluate(() => {
+    const x = document.querySelector('#tvTheater .tvt-x');
+    if (x) x.click();
+  });
+  await page.waitForFunction(() => document.querySelector('.character-card')
+    && document.querySelector('.character-card').offsetParent, { timeout: 20000 });
+  ok(true, '✕ aborts the show and the launch still lands');
+
+  // The Throne Room NEVER gates: the door opens its own panel, no theater,
+  // no count. (Skipped while the court is genuinely open — the live-court
+  // law — so this flow never joins a real hall.)
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FADS && window.FMODES && window.FMP, { timeout: 20000 });
+  const court = await page.evaluate(() => FMP.throne.phase().phase);
+  if (court === 'open') {
+    ok(true, 'court is OPEN right now — throne-door leg skipped (live-court law)');
+  } else {
+    const throne = await page.evaluate(() => {
+      const before = FADS._state().sess.games;
+      FMODES.openThroneDoor();
+      return { theater: !!document.getElementById('tvTheater'),
+        before, after: FADS._state().sess.games,
+        panel: document.getElementById('throneOv').classList.contains('active') };
+    });
+    ok(!throne.theater && throne.before === throne.after && throne.panel,
+      `the Throne door shows NO break and counts nothing (games ${throne.before}→${throne.after})`);
+  }
+
+  // Phone seat: the set may not cover the corner rails or the throne strip.
+  await page.setViewport({ width: 844, height: 390, hasTouch: true, isMobile: true });
+  await sleep(400);
+  const seat = await page.evaluate(() => {
+    const r = (id) => { const e = document.getElementById(id); return e ? e.getBoundingClientRect() : null; };
+    const tv = r('tvBtn');
+    const mint = document.querySelector('#title-screen .mint-link');
+    const hit = (a, b) => a && b && b.width > 0 && !(a.right < b.left || b.right < a.left || a.bottom < b.top || b.bottom < a.top);
+    return { tv: !!tv, cog: hit(tv, r('settingsBtn')), alm: hit(tv, r('almanacBtn')),
+      deed: hit(tv, r('deedsBtn')), throne: hit(tv, r('throneDoor')),
+      mint: hit(tv, mint ? mint.getBoundingClientRect() : null) };
+  });
+  ok(seat.tv && !seat.cog && !seat.alm && !seat.deed && !seat.throne && !seat.mint,
+    `phone seat is clean (overlaps: ${JSON.stringify(seat)})`);
+  await page.screenshot({ path: join(SHOTS, 'ads-tv-phone.png') });
+
+  // Clean the row this flow minted (the sweep would catch it; be tidy).
+  await page.evaluate(async () => {
+    await firebase.database().ref(`favor/players/${FLB.uid()}`).remove();
+  });
+  await page.close();
+}
+
+// ═══ STEAM SHELL: no ads, ever (paid product; Valve review loads this site) ═══
+console.log('── Steam shell: no TV, no gates, no theater');
+{
+  const page = await browser.newPage();
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push('ads-steam: ' + m.text()); });
+  await page.setViewport({ width: 1280, height: 800 });
+  await page.setUserAgent((await browser.userAgent()) + ' FavorShell-Steam/1.0');
+  await page.evaluateOnNewDocument(() => {
+    localStorage.setItem('favor_coach_seen', JSON.stringify(
+      ['welcome', 'missions', 'hand', 'skills', 'pass', 'rivals',
+       'scorn', 'favor', 'ring', 'melee', 'emblem']));
+    localStorage.setItem('favorTelemetryOff', '1');
+    window._adsOn = 1;   // even ARMED, Steam sees nothing
+  });
+  await page.goto(URL, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => window.FADS && window.FMODES, { timeout: 20000 });
+  const steam = await page.evaluate(() => {
+    const st = FADS._state();
+    const b = document.getElementById('tvBtn');
+    FMODES.openSkirmish();
+    FMODES.beginSkirmish(3);
+    return { steam: st.steam,
+      hidden: !b || b.style.display === 'none' || !b.querySelector('svg'),
+      theater: !!document.getElementById('tvTheater'),
+      rw: FADS.rewardedAvailable(), int: FADS.interstitialAvailable() };
+  });
+  ok(steam.steam && steam.hidden, 'Steam UA: the TV never renders');
+  ok(!steam.theater, 'Steam UA: a door tap shows NO break');
+  ok(!steam.rw && !steam.int, 'Steam UA: both seam members report no fill');
+  await page.close();
+}
+
 // ═══ FINAL INTEGRITY GATE: no audit run may leave a mark on a REAL row ═══
 // Personas post daily scores as of 7/18, which opens a contamination path
 // that did not exist before: an audit game that seated a real persona would

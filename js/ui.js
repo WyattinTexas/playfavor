@@ -366,6 +366,15 @@ function startGame() {
     // (Never for pinned rig builds — the suite's Play taps go straight
     // to the select screen, exactly as before saves existed.)
     if (window._pinEmblemSeed === undefined && loadSoloSave() && openResumeSheet()) return;
+    // ADS V1: the break rides the PLAY tap itself — before the queue is
+    // ever entered ("an ad before it queues up"). Resuming a saved table
+    // never gates (the sheet returned above); its New Game re-enters here
+    // with the save cleared and gates then. The gate no-ops on rig builds
+    // and in the Steam shell (design/ads/ADS-V1.md).
+    if (window.FADS && FADS.gate) { FADS.gate('play', startGameGo); return; }
+    startGameGo();
+}
+function startGameGo() {
     window._mpConsumed = false;
     window._gameMode = null;   // Play Now is the queue — modes set their own
     // Straight-to-the-heroes seam: pinned/skip-queue builds (the audit's

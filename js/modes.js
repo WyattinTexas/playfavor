@@ -91,10 +91,15 @@
 
     function beginSkirmish(n) {
         closeSkirmishPick();
-        window._gameMode = 'skirmish';
-        window._skirmishSize = [3, 4, 5].includes(n) ? n : 3;
-        window._skirmishHard = _skHard;
-        titleToSelect(ownedChars());
+        // ADS V1: the break rides the size tap — the door into the game
+        // (design/ads/ADS-V1.md; the gate no-ops on rig builds and Steam).
+        const go = () => {
+            window._gameMode = 'skirmish';
+            window._skirmishSize = [3, 4, 5].includes(n) ? n : 3;
+            window._skirmishHard = _skHard;
+            titleToSelect(ownedChars());
+        };
+        if (window.FADS && FADS.gate) FADS.gate('skirmish', go); else go();
     }
 
     // ── WANTED (the daily rival) ─────────────────────────────────────
@@ -220,13 +225,17 @@
 
     function beginRivalGame() {
         closeRivalIntro();
-        window._gameMode = 'rival';
-        const rival = rivalOfDay();
-        window._rivalDef = rival;
-        // You can't take the seat the rival already holds (Wyatt 7/17) — drop
-        // their hero from your offer. Guard against a one-hero roster.
-        const roster = ownedChars().filter(c => c.id !== rival.hero);
-        titleToSelect(roster.length ? roster : ownedChars());
+        // ADS V1: Face Them / Rematch is the door tap — the break rides it.
+        const go = () => {
+            window._gameMode = 'rival';
+            const rival = rivalOfDay();
+            window._rivalDef = rival;
+            // You can't take the seat the rival already holds (Wyatt 7/17) — drop
+            // their hero from your offer. Guard against a one-hero roster.
+            const roster = ownedChars().filter(c => c.id !== rival.hero);
+            titleToSelect(roster.length ? roster : ownedChars());
+        };
+        if (window.FADS && FADS.gate) FADS.gate('rival', go); else go();
     }
 
     // Called by showScoring with the final placements. A daily win pays
@@ -285,22 +294,31 @@
     }
 
     function hostRoom() {
-        room = { host: true };
-        FMP.hostRoom({
-            size: (window.FLB && FLB.queueSize()) || 3,
-            offer: rollStickyOffer().map(c => c.id),   // seal fallback, like the queue
-            onState: roomEvent,
-        });
+        // ADS V1: the break rides the Host tap, BEFORE the room exists —
+        // never the start relay (a delayed relay desyncs the lobby).
+        const go = () => {
+            room = { host: true };
+            FMP.hostRoom({
+                size: (window.FLB && FLB.queueSize()) || 3,
+                offer: rollStickyOffer().map(c => c.id),   // seal fallback, like the queue
+                onState: roomEvent,
+            });
+        };
+        if (window.FADS && FADS.gate) FADS.gate('room', go); else go();
     }
 
     function joinRoom() {
         const code = ($('rmCode') ? $('rmCode').value : '').trim().toUpperCase();
         if (code.length < 4) { showNotification('Enter the room code your host shared.', 'error'); return; }
-        room = { host: false };
-        FMP.joinRoom(code, {
-            offer: rollStickyOffer().map(c => c.id),
-            onState: roomEvent,
-        });
+        // ADS V1: validated first — a typo'd code never counts a door game.
+        const go = () => {
+            room = { host: false };
+            FMP.joinRoom(code, {
+                offer: rollStickyOffer().map(c => c.id),
+                onState: roomEvent,
+            });
+        };
+        if (window.FADS && FADS.gate) FADS.gate('room', go); else go();
     }
 
     function roomEvent(kind, d) {

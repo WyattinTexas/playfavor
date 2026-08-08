@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-// Probe: Settings → "Test the Throne Room" rehearsal flow, end to end.
-// Asserts: button exists, hall opens on a bent 1970s night, the draw
-// seats a 4-table with AI fill, the seal goes live, the record carries
-// NO rec.throne stamp (no 3×/purse/board), and the clock unbends.
+// Probe: the Throne rehearsal flow, end to end — via the RIG SEAM
+// (FMODES.testThroneRoom()). The Settings button was REMOVED 8/8 (Wyatt:
+// "remove the backdoor throne room entrance from the settings page"), so
+// step 1 now asserts its ABSENCE. Then: hall opens on a bent 1970s night,
+// the draw seats a 4-table with AI fill, the seal goes live, the record
+// carries NO rec.throne stamp (no 3×/purse/board), and the clock unbends.
 // Cleans up its own RTDB traces (night, game record, player row).
 import puppeteer from 'puppeteer-core';
 import { mkdirSync } from 'fs';
@@ -30,28 +32,25 @@ await page.evaluateOnNewDocument(() => {
 await page.goto(URL, { waitUntil: 'networkidle2' });
 await page.waitForFunction(() => window.FSET && window.FMODES && window.FMP && FMP.available && FMP.available(), { timeout: 20000 });
 
-// 1) The Settings panel carries the section + button.
+// 1) The Settings panel no longer carries the backdoor (Wyatt 8/8) —
+//    and the rig seam still exists.
 await page.evaluate(() => { FSET.open(); });
 await sleep(400);
-const btnInfo = await page.evaluate(() => {
+const backdoor = await page.evaluate(() => {
   const secs = [...document.querySelectorAll('#setOverlay .set-sec')];
   const sec = secs.find(s => /Throne Room/i.test(s.querySelector('.set-sec-title')?.textContent || ''));
-  if (!sec) return null;
-  const btn = sec.querySelector('button.set-upd-btn');
-  return { label: sec.querySelector('.set-build span')?.textContent, btn: btn?.textContent };
+  return { section: !!sec, seam: !!(window.FMODES && FMODES.testThroneRoom) };
 });
-ok(btnInfo && /Enter the Hall/.test(btnInfo.btn || ''), `Settings section present ("${btnInfo?.label}" → "${btnInfo?.btn}")`);
+ok(!backdoor.section, 'Settings carries NO Throne Room section (backdoor removed)');
+ok(backdoor.seam, 'FMODES.testThroneRoom rig seam still exists');
 await page.screenshot({ path: `${SHOTS}/1-settings.png` });
+await page.evaluate(() => { FSET.close(); });
 
 // Shrink the pick window so the seal lands fast (the documented seam).
 await page.evaluate(() => { FMP._T.pick = 5000; FMP._T.pickGrace = 1000; });
 
-// 2) Press it — the hall opens on a bent past night.
-await page.evaluate(() => {
-  const secs = [...document.querySelectorAll('#setOverlay .set-sec')];
-  const sec = secs.find(s => /Throne Room/i.test(s.querySelector('.set-sec-title')?.textContent || ''));
-  sec.querySelector('button.set-upd-btn').click();
-});
+// 2) Enter via the rig seam — the hall opens on a bent past night.
+await page.evaluate(() => { FMODES.testThroneRoom(); });
 await sleep(800);
 const hall = await page.evaluate(() => ({
   active: document.getElementById('throneHall')?.classList.contains('active'),

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FAVOR — end card</title>
+<style>
+  /* 1080×1920 still for the ad tails — captured by tools/capture-ads.mjs.
+     The game's own royal palette: deep hall brown, parchment cream, gold. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1080px; height: 1920px; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(ellipse 900px 700px at 50% 26%, rgba(240, 200, 110, 0.16), transparent 70%),
+      radial-gradient(ellipse 1400px 1000px at 50% 110%, rgba(96, 64, 28, 0.55), transparent 75%),
+      linear-gradient(180deg, #241a10 0%, #1a1209 45%, #120c06 100%);
+    font-family: Georgia, 'Times New Roman', serif;
+    color: #f0e6d2;
+    display: flex; flex-direction: column; align-items: center;
+    text-align: center;
+  }
+  .fleur { color: #c9a84c; font-size: 64px; margin-top: 210px; letter-spacing: 40px; text-shadow: 0 0 26px rgba(232, 195, 75, 0.5); }
+  h1 {
+    margin-top: 40px;
+    font-size: 220px; font-weight: bold; letter-spacing: 30px;
+    color: #e8c34b;
+    text-shadow: 0 4px 0 #8a6a1f, 0 10px 34px rgba(0, 0, 0, 0.7), 0 0 60px rgba(232, 195, 75, 0.35);
+  }
+  .sub {
+    margin-top: 22px;
+    font-size: 44px; letter-spacing: 14px; color: #cdbb92;
+    font-variant: small-caps;
+  }
+  .rule { width: 620px; height: 3px; margin: 70px auto 0;
+    background: linear-gradient(90deg, transparent, #c9a84c 18%, #e8c34b 50%, #c9a84c 82%, transparent); }
+  .line { margin-top: 64px; font-size: 52px; color: #f0e6d2; line-height: 1.5; }
+  .line b { color: #ffd97a; }
+  .stars { margin-top: 46px; font-size: 56px; color: #e8c34b; letter-spacing: 26px; text-shadow: 0 0 22px rgba(232, 195, 75, 0.55); }
+  .pill {
+    margin-top: 120px;
+    display: inline-block;
+    padding: 46px 130px;
+    font-size: 78px; font-weight: bold; letter-spacing: 8px;
+    color: #2a1f14;
+    background: linear-gradient(180deg, #ffe9ad, #e8c34b 55%, #c9992f);
+    border: 6px solid #8a6a1f; border-radius: 90px;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6), 0 0 70px rgba(232, 195, 75, 0.4), inset 0 3px 0 rgba(255, 255, 255, 0.55);
+  }
+  .free { margin-top: 54px; font-size: 46px; letter-spacing: 10px; color: #cdbb92; font-variant: small-caps; }
+  .plate { position: absolute; bottom: 74px; left: 0; right: 0; font-size: 34px; letter-spacing: 6px; color: #8f7f5c; }
+</style>
+</head>
+<body>
+  <div class="fleur">⚜</div>
+  <h1>FAVOR</h1>
+  <div class="sub">A Game of Royal Succession</div>
+  <div class="rule"></div>
+  <div class="line">Win the crown's <b>Favor</b>.<br>Outplay the court.</div>
+  <div class="stars">★ ★ ★</div>
+  <div class="pill">PLAY NOW!</div>
+  <div class="free">Download Free</div>
+  <div class="plate">3–5 Players · playfavor.net</div>
+</body>
+</html>

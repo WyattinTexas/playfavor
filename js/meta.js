@@ -1910,6 +1910,35 @@
         return fresh;
     }
 
+    // ── THE DAILY BROADCAST — the rewarded TV's once-a-day grant ─────
+    // Same law as the rival claim: one whole-row transaction flips tvDay
+    // and adds the Stars together, so two tabs (or a cleared localStorage)
+    // can never double-pay. The seam (js/broadcast.js) never touches
+    // stars — it calls this on a COMPLETED show only. Deliberately no
+    // `name` write: a fresh row born from a TV tap stays off the boards
+    // (nameless stubs are filtered) until the first posted game names it.
+    function tvDayClaimed() {
+        return (_me && _me.tvDay) || null;
+    }
+    async function claimTvReward(key, stars) {
+        const res = await dbTxn(`players/${uid()}`, p => {
+            const cur = p || {};
+            if (cur.tvDay === key) return;   // already paid today — abort
+            return {
+                ...cur,
+                tvDay: key,
+                stars: (cur.stars || 0) + stars,
+            };
+        });
+        const fresh = !!(res.committed && res.value && res.value.tvDay === key
+            && (!_me || _me.tvDay !== key));
+        if (res.committed && res.value) {
+            _me = res.value;          // the chip repaints from the fresh row
+            renderProfileChip();
+        }
+        return fresh;
+    }
+
     // ── Avatars — a chosen crest that rides the chip, the boards and the
     // table. Two shelves (Wyatt 7/21): 48 free pixel PORTRAITS everyone
     // starts with (assets/avatars/pixel/Icon1..48.png), and 11 PAINTED
@@ -2193,6 +2222,10 @@
         // loads after this file, so on the very first boot FMODES may not exist
         // yet; its own load-time render covers that ordering.
         if (window.FMODES && FMODES.renderRivalPlaque) FMODES.renderRivalPlaque();
+        // …and the Daily Broadcast set, whose claimed/armed state rides tvDay
+        // on the same row (js/broadcast.js loads last; its own boot render
+        // covers the first-paint ordering).
+        if (window.FADS && FADS.renderTv) FADS.renderTv();
     }
 
     // Wyatt 7/18: "Viewing profile is bad — you just see the different avatars
@@ -3816,6 +3849,7 @@
         postGameResult, openLeaderboard, closeLeaderboard, openProfile, closeProfile,
         queueSize, rename, renderProfileChip, snapshot, tableSeed,
         personaDefs, rivalDayClaimed, claimRivalWin, msUntilNextWindow,
+        tvDayClaimed, claimTvReward,
         settleDue, drainMsgs, currentDateKey, generateName,
         tableDelta, fmtRating, fmtRatingDelta, eloOf, ratingColor, ratingTier, ratingSpan,
         gameStars, fellowshipStars: FELLOWSHIP_STARS_PER_HUMAN,

@@ -10243,3 +10243,75 @@ body.no-play-glow .hand-card.playable {
         }
     }
 }
+
+/* ═══ THE DAILY BROADCAST — ads V1 (js/broadcast.js; design/ads/ADS-V1.md) ═══
+   The rewarded CRT on the title screen + the wordless placeholder theater.
+   Names dodge ad-blocker cosmetics on purpose: #tvTheater, .ts-tv, .tvt-*. */
+.ts-tv {
+    position: absolute; left: max(18px, env(safe-area-inset-left)); bottom: 14px;
+    width: 84px; height: 98px; padding: 0; z-index: 6;
+    background: none; border: none; cursor: pointer;
+}
+/* the set claims the corner — the footer's first word (★ Get Stars) steps
+   right so the two never overlap on any hall width */
+#title-screen .ts-footer { padding-left: clamp(76px, 9vw, 104px); }
+.ts-tv svg { width: 100%; height: 100%; display: block; overflow: visible;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35)); }
+/* armed: seeded snow jitters on steps(1), the scanline sweeps, the badge bobs */
+.tvst1 { animation: tvj1 0.5s steps(1) infinite; }
+.tvst2 { animation: tvj2 0.7s steps(1) infinite; }
+.tvscan { animation: tvscan 2.6s linear infinite; }
+.tvbadge { animation: tvbob 2.2s ease-in-out infinite; }
+@keyframes tvj1 { 0% { transform: translate(0, 0); } 25% { transform: translate(1px, -1px); }
+    50% { transform: translate(-1px, 1px); } 75% { transform: translate(1px, 1px); } }
+@keyframes tvj2 { 0% { transform: translate(0, 0); } 33% { transform: translate(-1px, -1px); }
+    66% { transform: translate(1px, 0); } }
+@keyframes tvscan { 0% { transform: translateY(0); } 100% { transform: translateY(29px); } }
+@keyframes tvbob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+/* asleep tap: one soft gray blink — no modal, no nag */
+.ts-tv.zap .tvflash { animation: tvzap 0.5s steps(2) 1; }
+@keyframes tvzap { 0% { opacity: 0.55; } 50% { opacity: 0.15; } 100% { opacity: 0; } }
+/* the grant's float, born at the set */
+.tv-float {
+    position: absolute; left: 34px; bottom: 118px;
+    color: #FFD75E; font-weight: bold; font-size: 22px;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+    animation: tvfloat 1.1s ease-out forwards;
+    pointer-events: none; z-index: 7;
+}
+.tv-float.small { font-size: 14px; bottom: 104px; }
+@keyframes tvfloat { 0% { opacity: 0; transform: translateY(8px); }
+    15% { opacity: 1; } 100% { opacity: 0; transform: translateY(-44px); } }
+/* the theater: over every menu overlay (10500-10550), UNDER the MATCH FOUND
+   ring (10560) so an accept landing mid-show stays visible and tappable */
+#tvTheater {
+    position: fixed; inset: 0; z-index: 10552;
+    background: rgba(8, 7, 5, 0.92);
+    display: flex; align-items: center; justify-content: center;
+}
+#tvTheater .tvt-tv { width: min(52vw, 66vh, 480px);
+    filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.55)); }
+#tvTheater .tvt-ring { position: absolute; left: 50%;
+    bottom: max(20px, env(safe-area-inset-bottom));
+    transform: translateX(-50%); width: 54px; height: 54px; }
+#tvTheater .tvt-ring b { position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center; color: #FFE97A; font-size: 20px; }
+#tvTheater circle.p { transition: stroke-dashoffset 1s linear; }
+#tvTheater .tvt-x {
+    position: absolute; top: max(10px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    background: rgba(20, 16, 12, 0.7); color: #EDEADF;
+    font-size: 20px; font-weight: bold; cursor: pointer;
+}
+/* phones: smaller set, same corner */
+@media (max-width: 640px), (max-height: 480px) {
+    .ts-tv { width: 64px; height: 75px; left: max(10px, env(safe-area-inset-left)); bottom: 10px; }
+    .tv-float { left: 22px; bottom: 90px; font-size: 18px; }
+    .tv-float.small { bottom: 80px; }
+    /* the set owns the corner column: the footer's first word AND the
+       throne strip's left end both step right of it */
+    #title-screen .ts-footer { padding-left: 64px; }
+    #title-screen .ts-throne { margin-left: 64px; }
+}
