@@ -32,11 +32,11 @@ mkdir -p "$OUT" "$TMP"
 
 #        key          scene      len  music_in  treatment
 ADS=$(cat <<'TABLE'
-A_FirstHand |firstplay |30 |0.00  |pan 380 760
-B_TheHerald |missions  |30 |24.00 |pan 460 660
+A_FirstHand |firstplay |30 |0.00  |pan 60 760
+B_TheHerald |missions  |30 |24.00 |pan 490 560
 C_TheMelee  |melee     |15 |45.00 |pan 656 656
-D_Wanted    |wanted    |15 |58.00 |pan 300 700
-E_TheCrown  |victory   |30 |64.30 |blur
+D_Wanted    |wanted    |15 |58.00 |blur
+E_TheCrown  |victory   |30 |64.30 |pan 560 656
 TABLE
 )
 
@@ -69,24 +69,24 @@ PY
     pan*)
       read -r _ X0 X1 <<< "$TREAT"
       VG="[0:v]trim=0:${GLEN},setpts=PTS-STARTPTS,fps=30,scale=in_range=full:out_range=tv,\
-crop=607:1080:'${X0}+(${X1}-${X0})*t/${GLEN}':0,scale=1080:1920:flags=lanczos[g]"
+crop=607:1080:'${X0}+(${X1}-${X0})*t/${GLEN}':0,scale=1080:1920:flags=lanczos,setsar=1[g]"
       ;;
     blur)
       VG="[0:v]trim=0:${GLEN},setpts=PTS-STARTPTS,fps=30,scale=in_range=full:out_range=tv,split[a][b];\
 [a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=26,eq=brightness=-0.08[bg];\
-[b]scale=1080:-2:flags=lanczos[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[g]"
+[b]scale=1080:-2:flags=lanczos[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1[g]"
       ;;
     *) echo "✗ $KEY: unknown treatment '$TREAT'"; exit 1 ;;
   esac
 
   # Music window: 2-pass loudnorm to −14.5 LUFS on exactly this cut.
-  M1=$(ffmpeg -hide_banner -nostats -ss "$MIN" -t "$LEN" -i "$MUSIC" \
+  M1=$(ffmpeg -nostdin -hide_banner -nostats -ss "$MIN" -t "$LEN" -i "$MUSIC" \
         -af loudnorm=I=-14.5:TP=-1.0:LRA=11:print_format=json -f null - 2>&1 \
       | python3 -c "import sys,json,re; m=re.search(r'\{[^{}]+\}', sys.stdin.read(), re.S); d=json.loads(m.group(0)); print(':'.join([d['input_i'],d['input_tp'],d['input_lra'],d['input_thresh'],d['target_offset']]))")
   IFS=':' read -r II ITP ILRA ITH OFF <<< "$M1"
   FADE_AT=$(python3 -c "print(f'{$LEN - 1.2:.2f}')")
 
-  ffmpeg -hide_banner -loglevel error -y \
+  ffmpeg -nostdin -hide_banner -loglevel error -y \
     -f concat -safe 0 -i "$FR" \
     -loop 1 -t "$CARD_SECS" -i "$CARD" \
     -ss "$MIN" -t "$LEN" -i "$MUSIC" \

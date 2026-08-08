@@ -48,6 +48,10 @@ async function openPage() {
     localStorage.setItem('favor_coach_seen', JSON.stringify(
       ['welcome', 'missions', 'hand', 'skills', 'pass', 'rivals',
        'scorn', 'favor', 'ring', 'melee', 'emblem']));
+    // Scenes share one browser profile — an earlier scene's live table
+    // checkpoints a solo save, and the resume sheet would eat PLAY.
+    localStorage.removeItem('favorSoloSave');
+    window._noSoloSave = true;
   });
   await page.goto(URL, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => window.FLB && FLB.mode !== 'connecting', { timeout: 20000 });
@@ -127,12 +131,26 @@ async function bootToTable(page, { flourish = false, pick = 2 } = {}) {
   }
   const heroCount = await page.evaluate(() => document.querySelectorAll('.character-card').length);
   await click(page, '.character-card', Math.min(pick, Math.max(0, heroCount - 1)));
-  await sleep(flourish ? 1200 : 700);
-  await click(page, '#confirmBtn');
+  await sleep(flourish ? 1400 : 900);        // the detail board read blooms
+  await confirmHero(page);
   await page.waitForFunction(() => typeof game !== 'undefined' && game && game.players[0].character, { timeout: 25000 });
   await sleep(1200);
   await clearCoach(page);
   await sleep(600);
+}
+
+// Selection commits on the DETAIL SHEET's Confirm (7/20 §2 — the grid's
+// old Begin button is display:none until the sheet wires it).
+async function confirmHero(page) {
+  const p = await page.evaluate(() => {
+    const btns = [...document.querySelectorAll('button, .btn-royal')]
+      .filter(b => /confirm/i.test(b.textContent) && b.getBoundingClientRect().width > 0);
+    if (!btns.length) return null;
+    const r = btns[0].getBoundingClientRect();
+    return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+  });
+  if (p) { await page.mouse.move(p.x, p.y, { steps: 8 }); await sleep(150); await page.mouse.click(p.x, p.y); }
+  else await page.evaluate(() => { if (typeof confirmCharacter === 'function') confirmCharacter(); });
 }
 
 // One full throw round: card flies, rivals answer, the reveal chooser
@@ -178,7 +196,7 @@ const SCENES = {
       await throwRound(page, { dwell: 1800 });
       await sleep(6000);                     // floats + rival spotlights
       await clearCoach(page);
-      await sleep(1800);
+      await sleep(4200);
     });
     await page.close();
   },
@@ -210,9 +228,9 @@ const SCENES = {
       await sleep(4000);
       await page.evaluate(() => { document.getElementById('missionCeremony')?.classList.remove('active'); });
       await page.evaluate(() => openBoardOverlay());
-      await sleep(3500);
+      await sleep(5400);
       await page.evaluate(() => closeBoardOverlay());
-      await sleep(800);
+      await sleep(1200);
     });
     await page.close();
   },
@@ -259,8 +277,8 @@ const SCENES = {
       await sleep(700);
       const heroCount = await page.evaluate(() => document.querySelectorAll('.character-card').length);
       await click(page, '.character-card', Math.min(1, heroCount - 1));
-      await sleep(900);
-      await click(page, '#confirmBtn');
+      await sleep(1100);
+      await confirmHero(page);
       await page.waitForFunction(() => typeof game !== 'undefined' && game && game.players[0].character, { timeout: 25000 });
       await sleep(1400);
       await clearCoach(page);
@@ -288,10 +306,10 @@ const SCENES = {
         game.currentAct = 3;
         showScoring();
       });
-      await sleep(9000);                     // the sheet's reveal cinematics
+      await sleep(16000);                    // the sheet's reveal cinematics
       await page.evaluate(() => { hideActionPanel && hideActionPanel(); FLB.openLeaderboard('daily'); });
       await page.waitForFunction(() => document.querySelectorAll('#lbBody .lb-row').length >= 1, { timeout: 12000 }).catch(() => {});
-      await sleep(3200);
+      await sleep(7200);
     });
     await page.close();
   },
