@@ -32,7 +32,9 @@ const browser = await puppeteer.launch({
 
 async function boot() {
   const page = await browser.newPage();
-  await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
+  // dpr 2 = supersampled raster; downscale to 1920×1080 after the run
+  // (sips -z 1080 1920) for crisper edges than a native 1x capture.
+  await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 2 });
   const baseUA = await browser.userAgent();
   await page.setUserAgent(baseUA + ' FavorShell-iOS/1.0');  // shell UA: Mint stays hidden
   await page.evaluateOnNewDocument(() => {

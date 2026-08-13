@@ -887,3 +887,78 @@
     .ms-crown { top: -13px; }
 }
 
+
+/* ── DESKTOP — the Melee at throne-room scale ───────────────────────────
+   Every clamp above is capped for phone landscape, so on a 1080p monitor
+   the whole cinematic huddles in the center of a dark screen (Wyatt 8/13:
+   "on the phone it's perfect, but on desktop it needs to be much, much
+   bigger"). Same gate as the hero-select desktop pass: raise the ceilings
+   ~1.6-1.8x and let the dvh/vw midterms do the scaling in between. Phones
+   and short landscapes never match this query and keep today's tuning.
+   fitPodium() still guards the tie case if a grown row outruns the stage. */
+@media (min-width: 1100px) and (min-height: 700px) {
+    .ms-stage { padding: clamp(120px, 22dvh, 210px) 3vw 2.5dvh; gap: clamp(12px, 2.6dvh, 34px); }
+
+    /* banner · herald · chrome */
+    .ms-title-main { font-size: clamp(40px, 9dvh, 96px); }
+    .ms-title-act { font-size: clamp(14px, 2.2dvh, 22px); }
+    .ms-herald { font-size: clamp(15px, 2.4dvh, 26px); top: clamp(8px, 1.6dvh, 18px); }
+    .ms-hint { font-size: 14px; letter-spacing: 4px; }
+    .ms-skip { font-size: 13px; padding: 6px 16px; right: 18px; }
+    .ms-continue { font-size: clamp(14px, 2.1dvh, 19px); padding: 12px 26px; }
+
+    /* podium */
+    .ms-podium { gap: clamp(48px, 5.5vw, 100px); }
+    .ms-tier { width: clamp(140px, 14.5vw, 226px); }
+    .ms-portrait { width: clamp(136px, 14vw, 220px); }
+    .ms-tier.champ { width: clamp(170px, 17vw, 274px); }
+    .ms-tier.champ .ms-portrait { width: clamp(184px, 18.5vw, 296px); }
+    .ms-tier.multi .ms-name { max-width: clamp(140px, 14vw, 220px); }
+    .ms-tier.champ.multi .ms-name { max-width: clamp(184px, 20vw, 290px); }
+    .ms-name { font-size: clamp(15px, 2dvh, 20px); }
+    .ms-tier.champ .ms-name { font-size: clamp(18px, 2.5dvh, 25px); }
+    .ms-power img { width: clamp(18px, 2.3dvh, 25px); height: clamp(18px, 2.3dvh, 25px); }
+    .ms-power b { font-size: clamp(20px, 2.6dvh, 28px); }
+    .ms-tier.champ .ms-power b { font-size: clamp(25px, 3.3dvh, 36px); }
+    .ms-prestige { font-size: clamp(13px, 1.8dvh, 17px); padding: 3px 13px; }
+    .ms-tier.champ .ms-prestige { font-size: clamp(15px, 2.2dvh, 20px); }
+    .ms-ptoken-plus { font-size: clamp(19px, 2.6dvh, 26px); }
+    .ms-ptoken { width: clamp(32px, 4.6dvh, 50px); height: clamp(32px, 4.6dvh, 50px); }
+    .ms-tier.champ .ms-ptoken { width: clamp(38px, 5.5dvh, 60px); height: clamp(38px, 5.5dvh, 60px); }
+    .ms-numeral { font-size: clamp(32px, 5dvh, 56px); }
+    .ms-tier.p-center .ms-plinth { height: clamp(84px, 15dvh, 180px); }
+    .ms-tier.p-left .ms-plinth { height: clamp(62px, 11.5dvh, 134px); }
+    .ms-tier.p-right .ms-plinth { height: clamp(46px, 8.5dvh, 98px); }
+    .ms-crown { width: clamp(64px, 6.5vw, 106px); top: -30px; }
+    .ms-laurel { width: clamp(38px, 3.8vw, 60px); }
+
+    /* also-rans (4th/5th at the right) */
+    .ms-ar { width: clamp(86px, 9vw, 122px); }
+    .ms-ar-wrap { width: clamp(118px, 12vw, 168px); }
+    .ms-ar-place { font-size: 14px; }
+    .ms-ar-name { font-size: 15px; }
+    .ms-ar-power img { width: 17px; height: 17px; }
+    .ms-ar-power b { font-size: 17px; }
+    .ms-alsoran { right: 24px; }
+
+    /* arena · forge · clash */
+    .ms-arena { gap: clamp(24px, 2.8vw, 52px); padding-top: clamp(80px, 17dvh, 170px); }
+    .ms-combatant { width: clamp(160px, 16vw, 262px); }
+    .ms-cb-name { font-size: clamp(14px, 2dvh, 20px); }
+    .ms-cb-power img { width: clamp(17px, 2.2dvh, 24px); height: clamp(17px, 2.2dvh, 24px); }
+    .ms-cb-power b { font-size: clamp(20px, 2.7dvh, 28px); }
+
+    /* the evidence row + tucked fans */
+    .ms-cardrow { bottom: clamp(72px, 13dvh, 128px); gap: clamp(12px, 1.8vw, 22px); }
+    .ms-rowitem { width: clamp(112px, 11.5vw, 188px); }
+    .ms-rowitem.board img:not(.ms-ring) { height: clamp(136px, 14vw, 226px); }
+    .ms-rowamt { min-width: 34px; height: 34px; font-size: 18px; top: -12px; right: -12px; }
+    .ms-tuckcard { width: clamp(34px, 3.4vw, 52px); }
+    .ms-tuckcard.board { width: clamp(52px, 5.6vw, 80px); }
+
+    /* combat callouts + coin verdicts */
+    .ms-callout b { font-size: clamp(24px, 3.4dvh, 38px); }
+    .ms-callout span { font-size: 13px; }
+    .ms-callout.mult b { font-size: clamp(30px, 4.2dvh, 48px); }
+    .ms-coinres img { width: clamp(30px, 4.4dvh, 44px); }
+}

@@ -1668,16 +1668,17 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
 @media (min-width: 1100px) and (min-height: 700px) {
     #character-select { justify-content: safe center; }
     .character-grid {
-        max-width: min(1560px, 94vw);
-        gap: 30px;
-        grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+        max-width: min(1840px, 96vw);
+        gap: 36px;
+        grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
     }
-    .select-subtitle { font-size: 20px; }
-    .character-info { padding: 16px 20px; }
-    .character-info h3 { font-size: 24px; }
-    .character-info .epithet { font-size: 16.5px; }
-    .character-info .difficulty { font-size: 17px; }
-    .character-info .tip { font-size: 15px; }
+    #character-select .select-title { font-size: clamp(40px, 3.2vw, 58px); }
+    .select-subtitle { font-size: 21px; }
+    .character-info { padding: 18px 22px; }
+    .character-info h3 { font-size: 28px; }
+    .character-info .epithet { font-size: 19px; }
+    .character-info .difficulty { font-size: 19px; }
+    .character-info .tip { font-size: 17px; }
 }
 
 /* ─── GAME SCREEN — Tavern Board Layout ────────────────── */
