@@ -231,7 +231,15 @@
     //     land inline. Old builds check everything before any penalty
     //     and repartition pays, so mixed tables would fork on the first
     //     failed mission: one law per table.
-    const MPV = 33;
+    // 34 (8/13): Magician Side A's "Pick One" is no longer a landing
+    //     pick — standing on the slot IS the ability: one flex ("OR")
+    //     unit, any single option per check (Wyatt: "pick one per card
+    //     you're playing"; the permanent +1 read as a nerf). A v33
+    //     client publishes/awaits 'slot_pick' on that slot and grants a
+    //     permanent bonusSkill, so the simulations diverge the moment a
+    //     Magician lands there: one law per table. (Side B's counter
+    //     pick still streams 'slot_pick' unchanged.)
+    const MPV = 34;
 
     // Every timer in one place — the audit suite shrinks these so a boot
     // takes seconds, not minutes. Production values are Wyatt's spec.

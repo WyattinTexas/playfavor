@@ -1543,21 +1543,26 @@ console.log('── The three farmable slot events are capped at once per ACT');
   ok(p.scorn === 20, `its 5 Scorn coin bit on EVERY landing — 4 × 5 = ${p.scorn}`);
 }
 
-console.log("── The Magician's PICK ONE is the player's choice (and it finally sticks)");
+console.log("── The Magician's PICK ONE (Side B): the player's choice, and it sticks");
 {
-  // Two bugs lived here. (1) It auto-took whichever skill you had least of —
-  // the board says "Pick One", so the box gives a CHOICE and we must build it.
-  // (2) The grant wrote to player.skills, and applySliderAbilities calls
-  // applySlotSkills immediately after, which zeroes skills and rebuilds from
-  // slot + cards + bonusSkills — so the +1 was erased microseconds later, every
-  // single time. applySlotPick() is now the ONE mutation point (local / remote /
-  // AI), and it writes to bonusSkills.
+  // The landing-pick laws live on SIDE B now (8/13): its options are
+  // COUNTERS (Mind's Eye / Philosopher's Stone) plus skills, so it still
+  // pauses for a choice. Side A's skills-only set is an ongoing flex unit
+  // instead — covered in its own section at the end of this suite.
+  // Historical bugs guarded here: (1) it auto-took the weakest option —
+  // the board says "Pick One", so the box gives a CHOICE; (2) the grant
+  // wrote to player.skills and the immediate applySlotSkills recalc erased
+  // it — skill grants ride bonusSkills, and applySlotPick() is the ONE
+  // mutation point (local / remote / AI).
   const rig = (whoIsMagician) => {
     const g = new FavorGame(3);
     g.loadDecks();
     const roster = ['knight', 'knight', 'knight'];
     roster[whoIsMagician] = 'magician';
-    g.initPlayers(roster.map((c, i) => ({ characterId: c, playerName: 'P' + i })));
+    g.initPlayers(roster.map((c, i) => ({
+      characterId: c, playerName: 'P' + i,
+      ...(c === 'magician' ? { side: 'b' } : {})
+    })));
     g.phase = 'gameplay';
     const p = g.players[whoIsMagician];
     const slot = p.character.slots.findIndex(s => s.special === 'pick_one');
@@ -1568,7 +1573,7 @@ console.log("── The Magician's PICK ONE is the player's choice (and it final
   };
 
   const magSlot = rig(0).slot;
-  ok(magSlot >= 0, `Magician has a pick_one slot (slot ${magSlot + 1})`);
+  ok(magSlot >= 0, `Magician B has a pick_one slot (slot ${magSlot + 1})`);
 
   // ── The HUMAN pauses. Nothing is taken on their behalf.
   const h = rig(0);
@@ -1579,23 +1584,18 @@ console.log("── The Magician's PICK ONE is the player's choice (and it final
     'and NOTHING is granted until they choose (no more silent auto-take)');
   ok(h.g.slotPickOptions(0).length === 4, 'slotPickOptions reports the board\'s four');
 
-  // Choose CHARISMA — deliberately not the weakest, so an auto-picker would
-  // have chosen differently. This proves the player's choice is honoured.
-  const weakest = h.g.aiSlotPick(0);
-  h.p.bonusSkills = { charisma: 0 };
-  h.g.applySlotSkills(h.p);
-  const res = h.g.applySlotPick(0, 'charisma');
-  ok(res.success && res.skill === 'charisma', `applySlotPick honours the pick (${res.skill})`);
-  ok((h.p.bonusSkills.charisma || 0) === 1, 'the grant rides bonusSkills');
-  ok((h.p.skills.charisma || 0) >= 1, `live total shows it (charisma ${h.p.skills.charisma})`);
+  // Choose POWER — a plain-skill option, so the grant rides bonusSkills.
+  const res = h.g.applySlotPick(0, 'power');
+  ok(res.success && res.skill === 'power', `applySlotPick honours the pick (${res.skill})`);
+  ok((h.p.bonusSkills.power || 0) === 1, 'the grant rides bonusSkills');
+  ok((h.p.skills.power || 0) >= 1, `live total shows it (power ${h.p.skills.power})`);
   ok(!h.p._pendingSlotPick, 'the pause flag is cleared');
 
   // THE regression that shipped for months: force the recalc that used to erase it.
-  const chaBefore = h.p.skills.charisma;
+  const powBefore = h.p.skills.power;
   h.g.applySlotSkills(h.p);
-  ok(h.p.skills.charisma === chaBefore && chaBefore >= 1,
-    `charisma SURVIVES applySlotSkills (${h.p.skills.charisma}) — the old code lost it here`);
-  ok(weakest !== 'charisma' || true, `(AI would have taken '${weakest}')`);
+  ok(h.p.skills.power === powBefore && powBefore >= 1,
+    `power SURVIVES applySlotSkills (${h.p.skills.power}) — the old code lost it here`);
 
   // ── A REMOTE human pauses too — their pick streams, never auto-decided.
   const r = rig(1);
@@ -1605,15 +1605,15 @@ console.log("── The Magician's PICK ONE is the player's choice (and it final
     'a REMOTE human pauses as well — their choice streams, it is never auto-taken');
   ok(Object.keys(r.p.bonusSkills || {}).length === 0, 'and nothing is granted for them either');
 
-  // ── The AI decides inline (no pause) and takes its weakest option.
+  // ── The AI decides inline (no pause); counter options ride their counters.
   const a = rig(2);
   a.g.moveSlider(2, 1);
   ok(!a.p._pendingSlotPick, 'the AI never pauses the table');
-  const aiGot = Object.keys(a.p.bonusSkills || {}).find(k => a.p.bonusSkills[k] > 0);
-  ok(!!aiGot, `the AI grants itself one (${aiGot})`);
-  ok((a.p.skills[aiGot] || 0) >= 1, `and it sticks through the recalc (${aiGot}=${a.p.skills[aiGot]})`);
+  const aiGot = (a.p.bonusMindsEye || 0) + (a.p.philosopherStone || 0)
+    + Object.keys(a.p.bonusSkills || {}).filter(k => a.p.bonusSkills[k] > 0).length;
+  ok(aiGot === 1, 'the AI grants itself exactly one (counter or skill)');
 
-  // ── A junk / missing skill (booted seat, hostile client) falls back to the
+  // ── A junk / missing pick (booted seat, hostile client) falls back to the
   // deterministic AI pick rather than dropping the grant — lockstep can't drift.
   const j = rig(0);
   j.g.moveSlider(0, 1);
@@ -1621,18 +1621,21 @@ console.log("── The Magician's PICK ONE is the player's choice (and it final
   const jres = j.g.applySlotPick(0, 'not_a_skill');
   ok(jres.success && jres.skill === fallback,
     `an invalid pick falls back to the deterministic AI choice (${jres.skill})`);
-  ok((j.p.bonusSkills[fallback] || 0) === 1, 'the grant still lands — never silently dropped');
+  const jGot = fallback === 'minds_eye' ? (j.p.bonusMindsEye || 0)
+    : fallback === 'philosopher_stone' ? (j.p.philosopherStone || 0)
+    : (j.p.bonusSkills[fallback] || 0);
+  ok(jGot === 1, 'the grant still lands — never silently dropped');
 
   // ── Still capped once per act (it is in SLOT_EVENTS_ONCE_PER_ACT).
   const c = rig(0);
   c.g.moveSlider(0, 1);
-  c.g.applySlotPick(0, 'charisma');
+  c.g.applySlotPick(0, 'power');
   c.p._paidSlideDir = null;
   c.g.moveSlider(0, -1);                                  // step off
   c.p._paidSlideDir = null;
   c.g.moveSlider(0, 1);                                   // land AGAIN, same act
   ok(!c.p._pendingSlotPick, 'a second landing in the same act offers NO second pick');
-  ok((c.p.bonusSkills.charisma || 0) === 1, 'and grants nothing more');
+  ok((c.p.bonusSkills.power || 0) === 1, 'and grants nothing more');
   c.g.startAct(2);
   c.p.gold = 60;
   c.p.sliderPosition = magSlot - 1;
@@ -1733,14 +1736,19 @@ console.log('── Chemical X: "move to ANY slot" is the PLAYER\'s choice, not 
   ok(m.p._pendingSlotMission === true,
     `landing on the Magician's mission slot pauses for the mission pick (slot ${missionSlot + 1})`);
 
+  // 8/13: Side A's Pick One is an ongoing OR now, not a landing pick — so a
+  // Chemical X drop grants the flex unit with NO pause (Side B's counter
+  // pick still cascades a pause; covered in the Side B section).
   const m2 = rig('magician', 0);
   const pickSlot = m2.p.character.slots.findIndex(s => s.special === 'pick_one');
   playCard(m2.g, 0, 'Chemical X');
   m2.g.applyFreeSliderMove(0, pickSlot);
-  ok(Array.isArray(m2.p._pendingSlotPick),
-    `landing on his Pick One slot pauses for the skill pick (slot ${pickSlot + 1})`);
+  ok(!m2.p._pendingSlotPick,
+    `landing on his Pick One slot never pauses — the OR is ongoing (slot ${pickSlot + 1})`);
+  ok((m2.p.flexSkills || []).some(u => u.length === 4),
+    'the drop grants the 4-way flex unit immediately');
   ok(Object.keys(m2.p.bonusSkills).length === 1,
-    'and nothing is granted until that pick is made (only the rig\'s Alchemy)');
+    'and nothing permanent is granted (only the rig\'s Alchemy)');
 }
 
 // ── 2026-07-13 art audit: three cards whose data disagreed with their printed face.
@@ -3982,6 +3990,71 @@ console.log('── Hard-AI §5f: Wyatt\'s acceptance examples (js/ai.js) ──
   };
   const one = snap(), two = snap();
   ok(one === two, `identical decisions from an identical seed (${one.slice(0, 60)}…)`);
+}
+
+console.log('── Magician "Pick One" (8/13): Side A = per-check OR while parked, not a permanent pick');
+{
+  const g = new FavorGame(3);
+  g.setSeed(777);
+  g.loadDecks();
+  g.initPlayers([
+    { characterId: 'magician', playerName: 'You' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
+  g.phase = 'gameplay';
+  const p = g.players[0];
+  p.gold = 20;
+  const r = g.moveSlider(0, 1);                    // center → slot 3, the Pick One slot
+  ok(r.success && p.sliderPosition === 3, 'slides onto the Pick One slot');
+  ok(!p._pendingSlotPick, 'no landing picker fires — Side A is not an event');
+  ok((p.flexSkills || []).some(u => u.length === 4 && u.includes('survival') && u.includes('alchemy')),
+    'standing there grants the 4-way flex unit');
+  ok(!p.bonusSkills || Object.keys(p.bonusSkills).length === 0, 'no permanent skill granted');
+  ok(!p._actSlotEvents.has('pick_one'), 'no per-act event charge burned');
+
+  // One unit covers ONE requirement: 1 Alchemy passes on the unit alone…
+  ok(g.formulaSkillCount(0, ['survival', 'charisma']) === 1,
+    'formulas count the unit ONCE across its options');
+  const res = playCard(g, 0, 'Alchemist Apprentice');   // Req: 1 Alchemy — fixed tally is 0
+  ok(res && res.success, 'Req 1 Alchemy is met by the slot unit (0 fixed Alchemy)');
+  // …but never two at once: Req 3 Charisma with 0 fixed stays short.
+  const p2 = { ...cardByName('Favor of the Princess') };
+  p.hand = [p2];
+  g.pendingActivations[0] = null;
+  g.pickCard(0, 0);
+  const chk = g.checkRequirements(0, p2);
+  ok(!chk.canPlay, 'Req 3 Charisma still short (the unit is one skill, not three)');
+
+  // Neighbors can borrow it, exactly like an OR card's options.
+  ok(g.playerHasSkillOnCards(0, 'prospecting'), 'the parked unit is a lender source (Prospecting)');
+
+  // Leaving the slot takes the OR with you.
+  g._paidSlideDir = null;
+  const r2 = g.moveSlider(0, 1);                   // slot 3 → slot 4
+  ok(r2.success && !(p.flexSkills || []).length, 'sliding off removes the flex unit');
+}
+
+console.log('── Magician "Pick One" Side B (counters): still a once-per-act landing pick');
+{
+  const g = new FavorGame(3);
+  g.setSeed(778);
+  g.loadDecks();
+  g.initPlayers([
+    { characterId: 'magician', playerName: 'You', side: 'b' },
+    { characterId: 'knight', playerName: 'A' },
+    { characterId: 'bandit', playerName: 'B' },
+  ]);
+  g.phase = 'gameplay';
+  const p = g.players[0];
+  p.gold = 20;
+  g.moveSlider(0, 1);                              // center → alt slot 3 (minds_eye/stone/knowledge/power)
+  ok(Array.isArray(p._pendingSlotPick) && p._pendingSlotPick.includes('philosopher_stone'),
+    'Side B still pauses for the landing pick (its options are counters)');
+  ok(!(p.flexSkills || []).length, 'Side B grants no flex unit');
+  ok(p._actSlotEvents.has('pick_one'), 'Side B burns its per-act charge');
+  const applied = g.applySlotPick(0, 'philosopher_stone');
+  ok(applied.success && (p.philosopherStone || 0) === 1, 'the picked Stone lands on its counter');
 }
 
 console.log(`\n${fail === 0 ? `✅ ${pass} checks passed` : `❌ ${fail} FAILED, ${pass} passed`}`);

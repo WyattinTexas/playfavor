@@ -857,7 +857,12 @@ function cdSlotHtml(slot, idx) {
     if (slot.favor) bits.push(`<span class="cd-bit"><img src="assets/icons/favor.png" alt="">${slot.favor} Favor at game end</span>`);
     if (slot.scorn) bits.push(`<span class="cd-bit bad"><img src="assets/icons/scorn.png" alt="">+${slot.scorn} Scorn</span>`);
     if (slot.special === 'pick_one' && Array.isArray(slot.pickOptions)) {
-        bits.push(`<span class="cd-bit special">Pick one: ${slot.pickOptions.map(cdPretty).join(' / ')}</span>`);
+        // Skills-only set (Side A) = ongoing OR while parked here; a set
+        // with specials (Side B) still lands as a once-per-act pick.
+        const isFlex = typeof pickSetIsFlex === 'function' && pickSetIsFlex(slot);
+        bits.push(`<span class="cd-bit special">${isFlex
+            ? `Counts as any ONE of: ${slot.pickOptions.map(cdPretty).join(' / ')} — your choice each card`
+            : `Pick one: ${slot.pickOptions.map(cdPretty).join(' / ')}`}</span>`);
     } else if (slot.special) {
         bits.push(`<span class="cd-bit special">${SPECIAL_DESCRIPTIONS[slot.special] || cdPretty(slot.special)}</span>`);
     }
@@ -2958,20 +2963,24 @@ function buildStatsPanelHtml(playerIndex, state) {
             </div>`;
     });
 
-    // Flex skills (Mining Guild etc.): one unit, EITHER option per use --
-    // shown as their own rows so the fixed totals above never wander.
+    // Flex skills (Mining Guild etc., Magician's Pick One slot): one unit,
+    // ANY single option per use -- shown as their own rows so the fixed
+    // totals above never wander.
     const flexPairs = {};
     (player.flexSkills || []).forEach(pair => {
         const key = pair.join('|');
         flexPairs[key] = (flexPairs[key] || 0) + 1;
     });
     Object.entries(flexPairs).forEach(([key, n]) => {
-        const [a, b] = key.split('|');
+        const opts = key.split('|');
         const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+        const label = opts.length > 2
+            ? opts.map(cap).join(' / ')
+            : `${cap(opts[0])} <i>or</i> ${cap(opts[1])}`;
         skillsHtml += `
-            <div class="skill-row flex-skill" title="Counts as ${cap(a)} OR ${cap(b)} -- one per use, never both">
-                <span class="skill-icon flex-pair">${SKILL_ICONS[a]}${SKILL_ICONS[b]}</span>
-                <span class="skill-label">${cap(a)} <i>or</i> ${cap(b)}</span>
+            <div class="skill-row flex-skill" title="Counts as ONE of ${opts.map(cap).join(' / ')} -- one per use, never two">
+                <span class="skill-icon flex-pair">${opts.map(s => SKILL_ICONS[s]).join('')}</span>
+                <span class="skill-label">${label}</span>
                 <span class="skill-value has-skill">${n > 1 ? '×' + n : '✦'}</span>
             </div>`;
     });
@@ -3032,10 +3041,10 @@ function buildStatChipsHtml(playerIndex, state) {
         flexPairs[key] = (flexPairs[key] || 0) + 1;
     });
     Object.entries(flexPairs).forEach(([key, n]) => {
-        const [a, b] = key.split('|');
+        const opts = key.split('|');
         h += `<span class="tv-skill-chip flex"
-                    onclick="tvChipTip(event, '${cap(a)} or ${cap(b)} — one per use, never both')">
-                    <span class="flex-pair">${SKILL_ICONS[a]}${SKILL_ICONS[b]}</span><b>${n > 1 ? '×' + n : '✦'}</b></span>`;
+                    onclick="tvChipTip(event, '${opts.map(cap).join(' / ')} — any ONE per use, never two')">
+                    <span class="flex-pair">${opts.map(s => SKILL_ICONS[s]).join('')}</span><b>${n > 1 ? '×' + n : '✦'}</b></span>`;
     });
 
     const tvStones = game.getStoneCount(playerIndex);
@@ -3416,12 +3425,12 @@ function renderTvSkills(state) {
         flexPairs[key] = (flexPairs[key] || 0) + 1;
     });
     Object.entries(flexPairs).forEach(([key, n]) => {
-        const [a, b] = key.split('|');
-        // BOTH faces of the either/or pair — a lone icon read as a
+        const opts = key.split('|');
+        // EVERY face of the either/or unit — a lone icon read as a
         // duplicate of the fixed-skill chip above it (Wyatt, 7/7).
         h += `<span class="tv-skill-chip flex"
-                    onclick="tvChipTip(event, '${cap(a)} or ${cap(b)} — one per use, never both')">
-                    <span class="flex-pair">${SKILL_ICONS[a]}${SKILL_ICONS[b]}</span><b>${n > 1 ? '×' + n : '✦'}</b></span>`;
+                    onclick="tvChipTip(event, '${opts.map(cap).join(' / ')} — any ONE per use, never two')">
+                    <span class="flex-pair">${opts.map(s => SKILL_ICONS[s]).join('')}</span><b>${n > 1 ? '×' + n : '✦'}</b></span>`;
         rows++;
     });
 

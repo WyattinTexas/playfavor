@@ -53,8 +53,24 @@ const TRADE_ROUTE_SKILLS = ['survival', 'alchemy', 'charisma', 'prospecting'];
 const SLOT_EVENTS_ONCE_PER_ACT = new Set([
     'steal_3_prestige_each',   // Bandit slot 1 — prestige IS score; 3 × every rival, repeatable
     'choose_mission',          // Magician slot 2 — a mission is worth up to 30 Favor
-    'pick_one'                 // Magician slot 4 — a permanent skill, every landing
+    'pick_one'                 // Magician B slot 4 ONLY — a permanent COUNTER pick (Mind's
+                               // Eye / Stone). A skills-only pick set (Side A) never fires
+                               // as an event at all: standing there IS the ability — a flex
+                               // ("OR") unit, chosen per check (see applySlotSkills).
 ]);
+
+// A "Pick One" slot whose options are ALL plain skills is not an event —
+// it's an ongoing OR: while the ring stands there the player owns one flex
+// unit usable as any single option per check, exactly like the Mining-Guild
+// class of card (Wyatt 8/13: the landing-pick read as a permanent choice
+// and played as a nerf). A set carrying specials (Magician Side B's Mind's
+// Eye / Philosopher's Stone) still lands as a once-per-act picker, because
+// those grant counters that must persist off-slot.
+function pickSetIsFlex(slot) {
+    return !!(slot && slot.special === 'pick_one'
+        && Array.isArray(slot.pickOptions) && slot.pickOptions.length
+        && slot.pickOptions.every(o => SKILLS.includes(o)));
+}
 
 class FavorGame {
     constructor(playerCount) {
@@ -705,6 +721,9 @@ class FavorGame {
         if (player.character && player.character.slots) {
             const slot = player.character.slots[player.sliderPosition];
             if (slot && slot.skills && slot.skills[skill]) return true;
+            // A skills-only "Pick One" slot lends like an OR card — any of
+            // its options counts as a source while the ring stands there.
+            if (pickSetIsFlex(slot) && slot.pickOptions.includes(skill)) return true;
         }
         return false;
     }
@@ -948,7 +967,9 @@ class FavorGame {
         // are ongoing positional abilities resolved elsewhere, and the steal /
         // give / convert events are bounded by gold that actually has to exist.
         if (slot.special) {
-            if (SLOT_EVENTS_ONCE_PER_ACT.has(slot.special)) {
+            // A skills-only "Pick One" isn't an event (it's the ongoing flex
+            // unit) — don't burn its per-act charge or log a spent-event line.
+            if (SLOT_EVENTS_ONCE_PER_ACT.has(slot.special) && !pickSetIsFlex(slot)) {
                 if (!player._actSlotEvents) player._actSlotEvents = new Set();
                 if (player._actSlotEvents.has(slot.special)) {
                     this.addLog(`${player.name}: slot ${pos + 1}'s event already used this act`);
@@ -1027,14 +1048,17 @@ class FavorGame {
     }
 
     /**
-     * The skills the player's CURRENT slot offers to "Pick One" from — empty
-     * unless they're standing on a pick_one slot (the Magician's 4th).
+     * The options the player's CURRENT slot offers to "Pick One" from — empty
+     * unless they're standing on a pick_one slot that still LANDS as a pick
+     * (a set carrying specials, i.e. Magician Side B). A skills-only set is
+     * the ongoing flex unit instead (applySlotSkills) and never picks.
      */
     slotPickOptions(playerIndex) {
         const p = this.players[playerIndex];
         const slot = (p && p.character && p.character.slots)
             ? p.character.slots[p.sliderPosition] : null;
-        return (slot && slot.special === 'pick_one' && Array.isArray(slot.pickOptions))
+        return (slot && slot.special === 'pick_one' && Array.isArray(slot.pickOptions)
+                && !pickSetIsFlex(slot))
             ? slot.pickOptions.slice()
             : [];
     }
@@ -1204,6 +1228,15 @@ class FavorGame {
                 player.flexSkills.push(['alchemy', 'survival']);
             }
         });
+
+        // Magician "Pick One" (Side A — skills-only set): while the ring
+        // stands here the slot is ONE flex unit — counts as any single one
+        // of its options per check, never two at once (Wyatt 8/13: "it's
+        // basically an OR ... one of them per card you're playing"; the old
+        // landing pick granted a permanent +1 and played as a nerf).
+        if (pickSetIsFlex(slot)) {
+            player.flexSkills.push(slot.pickOptions.slice());
+        }
 
         // Mission success rewards ("3 Prospecting") persist for the rest of
         // the game — they must survive this rebuild.
@@ -1523,18 +1556,17 @@ class FavorGame {
                 break;
 
             case 'pick_one':
-                // The Magician's board reads "Pick One" — so the PLAYER picks.
-                // Rules fidelity: where the box gives a choice, build the choice.
-                // This used to silently auto-take whichever skill you had least of.
-                //
-                // ⚠ And the grant never even LANDED: it wrote to player.skills,
-                // and applySliderAbilities calls applySlotSkills immediately after
-                // this, which zeroes player.skills and rebuilds it from slot +
-                // played cards + bonusSkills. The +1 was erased microseconds after
-                // it was granted, every single time. Skill grants must ride
-                // bonusSkills to survive the recalc — applySlotPick() is now the
-                // ONE mutation point for local, remote and AI alike, so every
-                // client applies the identical change at the identical moment.
+                // Skills-only pick sets (Magician Side A) are NOT an event —
+                // standing on the slot grants a per-check flex ("OR") unit via
+                // applySlotSkills, so landing here does nothing extra (Wyatt
+                // 8/13: the landing pick read as a permanent choice — a nerf).
+                // Only a set carrying SPECIALS (Side B's Mind's Eye / Stone
+                // counters) still pauses for the once-per-act pick below.
+                if (pickSetIsFlex(slot)) break;
+                // Skill grants must ride bonusSkills to survive the recalc —
+                // applySlotPick() is the ONE mutation point for local, remote
+                // and AI alike, so every client applies the identical change
+                // at the identical moment.
                 if (slot.pickOptions && slot.pickOptions.length > 0) {
                     if (player.index === 0 || player._remoteHuman) {
                         // Human (local OR remote) — the flag pauses for a choice:

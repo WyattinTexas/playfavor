@@ -19,9 +19,15 @@
  *     The digital game instead pays a slot out EVERY time you land on it:
  *     the once-per-game gate made a paid slide onto an already-taken coin do
  *     nothing, with no explanation, and it read as a bug.
- *   - The three events a free discard-slide could farm (steal_3_prestige_each,
- *     choose_mission, pick_one) recharge once per ACT — see
- *     SLOT_EVENTS_ONCE_PER_ACT in engine/gameState.js. Everything else re-fires.
+ *   - The events a free discard-slide could farm (steal_3_prestige_each,
+ *     choose_mission, and Side B's counter-granting pick_one) recharge once
+ *     per ACT — see SLOT_EVENTS_ONCE_PER_ACT in engine/gameState.js.
+ *     Everything else re-fires.
+ *   - pick_one with a SKILLS-ONLY option set (Magician Side A slot 3) is
+ *     NOT an event: while the ring stands there the player owns one flex
+ *     ("OR") unit — counts as any single option per check, like the
+ *     Mining-Guild card class (Wyatt 8/13). Only a set carrying specials
+ *     (Side B: minds_eye / philosopher_stone counters) lands as a pick.
  *   - Favor is tallied at end of game based on final ring position
  *   - "The free skill activates immediately each movement"
  *
