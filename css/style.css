@@ -1658,6 +1658,28 @@ body:has(#game-screen.active) .music-toggle { left: auto; right: 240px; }
     margin-top: 6px;
 }
 
+/* ═══ DESKTOP — Choose Your Hero at full size ═══
+   The grid was pinned to 1200px with phone-scale type, leaving the lower
+   half of a 1080p screen empty (Wyatt 8/13). On a real desktop viewport
+   the content centers vertically ("safe" so a short window still scrolls
+   from the top instead of clipping) and the cards grow to use the width.
+   auto-fit (not auto-fill) collapses the empty tracks, so the three-hero
+   draft stretches instead of leaving a ghost fourth column. */
+@media (min-width: 1100px) and (min-height: 700px) {
+    #character-select { justify-content: safe center; }
+    .character-grid {
+        max-width: min(1560px, 94vw);
+        gap: 30px;
+        grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    }
+    .select-subtitle { font-size: 20px; }
+    .character-info { padding: 16px 20px; }
+    .character-info h3 { font-size: 24px; }
+    .character-info .epithet { font-size: 16.5px; }
+    .character-info .difficulty { font-size: 17px; }
+    .character-info .tip { font-size: 15px; }
+}
+
 /* ─── GAME SCREEN — Tavern Board Layout ────────────────── */
 
 #game-screen {
@@ -4032,9 +4054,28 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
 
 .mission-select-content { text-align: center; }
 
+/* Overlay type scales with the screen — phones read exactly as before
+   (the clamps bottom out at the old inline 28px/15px/14px), desktops get
+   real presence instead of a phone layout marooned in dark space. */
+.mission-select-content .select-title {
+    font-size: clamp(28px, 3.4vw, 46px);
+    margin-bottom: 6px;
+}
+.mission-select-content .select-subtitle {
+    font-size: clamp(15px, 1.15vw, 20px);
+    margin-bottom: clamp(14px, 2vh, 26px);
+    opacity: 0.8;
+}
+.mo-name {
+    font-family: 'Cinzel', serif;
+    color: var(--gold);
+    margin-top: 8px;
+    font-size: clamp(14px, 1vw, 19px);
+}
+
 .mission-options {
     display: flex;
-    gap: 24px;
+    gap: clamp(24px, 2.4vw, 44px);
     justify-content: center;
     margin-top: 20px;
 }
@@ -4056,7 +4097,10 @@ body:has(#game-screen.active) .log-toggle { display: flex; right: 294px; }
 }
 
 .mission-option img {
-    width: 150px;
+    /* 150px was a phone width serving every screen. Scale with the
+       viewport, but never below the phone size and never past the point
+       where three portrait cards + title still fit a 1080p frame. */
+    width: clamp(150px, min(19vw, 34vh), 310px);
     border-radius: 8px;
 }
 

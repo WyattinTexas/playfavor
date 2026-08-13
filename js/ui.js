@@ -5676,8 +5676,12 @@ function showMissionSelectUI() {
     const overlay = document.getElementById('missionSelect');
 
     let html = '<div class="mission-select-content">';
-    html += '<h2 class="select-title" style="font-size: 28px; margin-bottom: 6px;">Choose a Mission</h2>';
-    html += '<div class="select-subtitle" style="font-size: 15px; margin-bottom: 14px;">Meet a mission’s skills by its due Act for big Favor — fall short and it costs Scorn.</div>';
+    // Sizing lives in CSS (.mission-select-content rules) so the desktop
+    // overlay can scale up — the old inline 28px/15px pinned every screen
+    // to phone-size type (Wyatt 8/13: "the desktop version never got its
+    // best-practices pass").
+    html += '<h2 class="select-title">Choose a Mission</h2>';
+    html += '<div class="select-subtitle">Meet a mission’s skills by its due Act for big Favor — fall short and it costs Scorn.</div>';
     html += '<div class="mission-options">';
 
     game.visibleMissions.forEach((m, i) => {
@@ -5685,7 +5689,7 @@ function showMissionSelectUI() {
             <div class="mission-option" onclick="selectMission(${i})">
                 <img src="assets/cards/missions/${m.filename}" alt="${m.name}"
                      data-peek="assets/cards/missions/${m.filename}">
-                <div style="font-family: Cinzel, serif; color: var(--gold); margin-top: 8px; font-size: 14px;">${m.name}</div>
+                <div class="mo-name">${m.name}</div>
             </div>
         `;
     });
