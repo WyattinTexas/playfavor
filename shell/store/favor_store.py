@@ -92,6 +92,13 @@ def patch(path, body):
     return r.json() if r.text.strip() else {}
 
 
+def delete(path):
+    r = requests.delete(BASE + path, headers=H())
+    if r.status_code >= 300:
+        print(f"DELETE {path} -> {r.status_code}\n{r.text[:300]}", file=sys.stderr)
+    r.raise_for_status()
+
+
 def resolve_targets():
     """The version ASC will still let us edit, and its en-US localization."""
     # /v1/appStoreVersions?filter[app] started returning 403 FORBIDDEN_ERROR
@@ -176,17 +183,13 @@ PROMO = ("Every card you keep makes you stronger. Every card you pass arms a riv
          "FAVOR is the tabletop game of royal succession, live on your phone. "
          "The Queen is watching.")
 
-# 1.1's release notes. Only NATIVE changes belong here — the realm itself is
+# 1.2's release notes. Only NATIVE changes belong here — the realm itself is
 # web and reaches every phone the moment it deploys, so features that shipped
-# to playfavor.net after 1.0 are already in players' hands and are not news.
-# (The 4 star IAPs did NOT ride 1.1 — the API cannot add IAP items to a
-# review submission, and the first consumable must ride a version, so they
-# wait for the next one. Add a Royal Mint paragraph back when they do.)
-WHATS_NEW = """Sign in with Apple has arrived. Seal your court to your Apple ID and your heroes, your rating, and your Stars follow you to any device.
-
-Your account now lives in the Keychain, so deleting and reinstalling FAVOR no longer strands a thing.
-
-The Court Seal is back on the standing screen. Copy it on one phone, paste it on another, and take your seat there."""
+# to playfavor.net after 1.1 are already in players' hands and are not news.
+# The news THIS version carries is the Royal Mint: the 4 star consumables
+# ride this submission (UI-minted onto the draft, then cmd_submit adds the
+# version item — the API alone cannot fold first consumables).
+WHATS_NEW = """The Royal Mint has opened its doors. Stars now come in packs of 50, 100, 500, and 1000, sold right inside the store: open the Royal Emporium from the title screen and tap Purchase Stars. A pack lands in your purse the moment the receipt clears, your balance follows your court to any device, and Stars still flow from finished games and daily crowns the way they always have."""
 
 KEYWORDS = "card,draft,board,strategy,tabletop,royal,queen,mission,multiplayer,family,fantasy,deck"
 SUBTITLE = "Draft cards. Win the crown."
@@ -199,7 +202,7 @@ REVIEW_NOTES = """FAVOR is fully playable without any account or sign-in: tap Pl
 
 This is the official digital edition of our physical card game FAVOR (Corkscrew Games, 1st Edition): the full game (card drafting, missions, character boards, end-of-act melees, scoring) plus features beyond the table: real-time online multiplayer with live matchmaking, persistent leaderboards (all-time rating, daily boards settled nightly, top scores, and Throne night results), a daily WANTED rival, a nightly Throne Room event, and a progression economy of earnable Stars that unlock additional heroes.
 
-There are no in-app purchases in this version. Stars are earned by finishing games, and nothing is locked behind payment.
+IN-APP PURCHASES (four consumable Star packs ride this submission): from the title screen tap STORE to open the Royal Emporium, then tap the gold "Purchase Stars" button at the top of the sheet. The four packs (50, 100, 500, and 1000 Stars) appear in a sheet called The Royal Mint; the title screen's "Get Stars" link reaches the same place. Prices load live from the storefront when the sheet opens. The packs are available in all storefronts with no device, region, or configuration restrictions; the Paid Applications agreement is active; the products are attached to this submission and configured for the review sandbox. Stars are FAVOR's existing earnable currency (finished games and daily crowns pay them); a pack simply adds to the same account balance, and nothing in the game requires a purchase.
 
 Multiplayer note for a single reviewer: tapping Play pledges you to a match; if no live players are queued within a few seconds, the realm fills the table so a full game ALWAYS starts. Every feature can be exercised alone.
 
@@ -391,6 +394,18 @@ def cmd_screenshots():
     print(f"screenshots done for {display_type}")
 
 
+def cmd_clearshots():
+    """Delete every screenshot the editable version inherited — run before
+    `screenshots` when replacing a set (upload skips same-named files, so a
+    stale inherited set would otherwise survive by fileName collision)."""
+    sets = get(f"/v1/appStoreVersionLocalizations/{VLOC_ID}/appScreenshotSets")["data"]
+    for s in sets:
+        shots = get(f"/v1/appScreenshotSets/{s['id']}/appScreenshots", limit=50)["data"]
+        for sh in shots:
+            delete(f"/v1/appScreenshots/{sh['id']}")
+        print(f"cleared {len(shots)} shots from {s['attributes']['screenshotDisplayType']}")
+
+
 def cmd_attach():
     want_ver = sys.argv[2]
     d = get("/v1/builds", **{"filter[app]": APP_ID, "filter[version]": want_ver, "limit": 1})
@@ -413,16 +428,18 @@ def cmd_submit():
             "attributes": {"platform": "IOS"},
             "relationships": {"app": {"data": {"type": "apps", "id": APP_ID}}}}})["data"]
         print(f"created review submission {sub['id']}")
-    items = get(f"/v1/reviewSubmissions/{sub['id']}/items", limit=10)["data"]
-    if not items:
+    items = get(f"/v1/reviewSubmissions/{sub['id']}/items", limit=50,
+                include="appStoreVersion")["data"]
+    has_version = any(((it.get("relationships") or {}).get("appStoreVersion") or {}).get("data")
+                      for it in items)
+    print(f"submission carries {len(items)} item(s); version item present: {has_version}")
+    if not has_version:
         post("/v1/reviewSubmissionItems", {"data": {
             "type": "reviewSubmissionItems",
             "relationships": {
                 "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": sub["id"]}},
                 "appStoreVersion": {"data": {"type": "appStoreVersions", "id": VID}}}}})
         print(f"added version {VER_STR} to the submission")
-    else:
-        print(f"submission already has {len(items)} item(s)")
     patch(f"/v1/reviewSubmissions/{sub['id']}", {"data": {
         "type": "reviewSubmissions", "id": sub["id"], "attributes": {"submitted": True}}})
     print("SUBMITTED for App Review")
@@ -447,7 +464,15 @@ def cmd_status():
         print("review detail: missing")
     subs = get("/v1/reviewSubmissions", **{"filter[app]": APP_ID, "limit": 5})
     for s in subs["data"]:
-        print("submission:", s["id"], s["attributes"].get("state"))
+        st = s["attributes"].get("state")
+        line = f"submission: {s['id']} {st}"
+        if st in ("READY_FOR_REVIEW", "WAITING_FOR_REVIEW", "IN_REVIEW", "UNRESOLVED_ISSUES"):
+            its = get(f"/v1/reviewSubmissions/{s['id']}/items", limit=50,
+                      include="appStoreVersion")["data"]
+            n_ver = sum(1 for it in its
+                        if ((it.get("relationships") or {}).get("appStoreVersion") or {}).get("data"))
+            line += f" · {len(its)} item(s), {n_ver} version, {len(its) - n_ver} other"
+        print(line)
 
 
 if __name__ == "__main__":
