@@ -2812,6 +2812,9 @@
         _confirmingBuy = null;
         _shelfAnim = true;
         panel.classList.add('active');
+        // A store opened before the storefront priced anything asks again
+        // right now — the player (or a reviewer) is looking at the cards.
+        if ((APPLE_IAP || PLAY_IAP) && !(_iapPrices && Object.keys(_iapPrices).length)) iapAskProducts();
         renderStore();
         // Freshen the record so the balance is honest, then re-render.
         // A one-shot get() REJECTS when the wire hiccups — the stale
@@ -3181,12 +3184,30 @@
     function _iapProducts(list) {
         _iapPrices = {};
         (list || []).forEach(p => { if (p && p.sku) _iapPrices[p.sku] = iapEsc(p.price || ''); });
-        // The Mint door opens only when Apple actually priced something —
-        // see the boot() comment. Toggle, not add: a storefront that goes
-        // dry heals shut on the next products answer.
-        document.body.classList.toggle('iap-shell',
-            APPLE_PACKS.some(p => _iapPrices[p.sku]));
+        // The door is the HANDLER, not the price (see boot()): a shell that
+        // can sell always shows the Mint. An empty answer paints honest
+        // UNAVAILABLE cards and asks the storefront again (iapRetryProducts).
+        document.body.classList.add('iap-shell');
+        iapRetryProducts(APPLE_PACKS.some(p => _iapPrices[p.sku]));
         renderStore();
+    }
+
+    // ── Storefront retry ──────────────────────────────────────────────
+    // StoreKit's first products fetch on a fresh install can come back
+    // EMPTY for reasons that pass (cold sandbox, a network blink, App
+    // Review's device warming up) and the shell's `try?` swallows the
+    // error into []. Submission 317fed56 (1.2/22) was rejected 2.1(b)
+    // "could not be found in the binary" on exactly that: one empty
+    // answer at boot sealed the door for the whole session. So: while no
+    // pack is priced, ask again — 3s · 6s · 12s · 24s · 48s · 60s… capped,
+    // and every store open asks once more. Idempotent: prices overwrite,
+    // replayed transactions take the re-ack path.
+    let _iapRetryTimer = null, _iapRetryN = 0;
+    function iapRetryProducts(priced) {
+        if (_iapRetryTimer) { clearTimeout(_iapRetryTimer); _iapRetryTimer = null; }
+        if (priced) { _iapRetryN = 0; return; }
+        const wait = Math.min(60000, 3000 * Math.pow(2, _iapRetryN++));
+        _iapRetryTimer = setTimeout(() => { _iapRetryTimer = null; iapAskProducts(); }, wait);
     }
 
     function askBuyApple(sku) {
@@ -3300,11 +3321,10 @@
     function _playProducts(list) {
         _iapPrices = {};
         (list || []).forEach(p => { if (p && p.sku) _iapPrices[p.sku] = iapEsc(p.price || ''); });
-        // Same door law as _iapProducts: only a PRICED pack opens the Mint.
-        // Play returns nothing for unapproved products too (vc2 will boot
-        // against an unreviewed catalog its first days).
-        document.body.classList.toggle('iap-shell',
-            PLAY_PACKS.some(p => _iapPrices[p.sku]));
+        // Same door law as _iapProducts: the handler is the door, an empty
+        // catalog paints UNAVAILABLE and retries.
+        document.body.classList.add('iap-shell');
+        iapRetryProducts(PLAY_PACKS.some(p => _iapPrices[p.sku]));
         renderStore();
     }
 
@@ -3641,7 +3661,9 @@
             </div>`;
         }).join('') + (_iapNote
             ? `<div class="st-pack-wait" id="storeWait">${_iapNote}</div>`
-            : '');
+            : (_iapPrices !== null && !APPLE_PACKS.some(p => _iapPrices[p.sku]) && online)
+                ? '<div class="st-pack-wait" id="storeWait">The storefront has not answered yet — the packs light up on their own in a moment.</div>'
+                : '');
     }
 
     // The same cards again, through Play's sheet. Price text is
@@ -3709,13 +3731,16 @@
         // comment already cited two stale ones once).
         // A shell that CAN sell needs that door back, so mark it
         // positively — the CSS re-shows only under .ios-shell.iap-shell.
-        // The DOOR is granted in _iapProducts/_playProducts, and only once
-        // the storefront actually PRICES a pack — a bridge whose products
-        // are unapproved (agreement pending, review not done) returns an
-        // empty list, and a door to four dead UNAVAILABLE cards is
-        // reviewer bait and a broken store. Builds ≤20, Steam and the
-        // plain web have no bridge, never hear products, and stay
-        // byte-identical. The RAILS below stay gated on the handlers.
+        // The DOOR is the billing HANDLER (favorIAP / favorPlay). It used
+        // to wait for a PRICED pack instead, on the theory that a door to
+        // four UNAVAILABLE cards was reviewer bait — and App Review then
+        // rejected 1.2(22) under 2.1(b) because one empty StoreKit answer
+        // at boot hid the Mint entirely: "could not be found in the
+        // binary". A visible-but-UNAVAILABLE card is the honest, findable
+        // state; the retry in iapRetryProducts prices it moments later.
+        // Builds ≤20, Steam and the plain web have no bridge, never hear
+        // products, and stay byte-identical. The RAILS stay handler-gated.
+        if (APPLE_IAP || PLAY_IAP) document.body.classList.add('iap-shell');
         iapAskProducts();      // no-op without the bridge; doubles as page-ready
         bindQueuePicker();
         await connect();
