@@ -5,7 +5,7 @@ Wyatt, Wednesday 9/2/2026 ~9:27 pm ET, verbatim: "Music is continuing to play in
 This is the FAVOR half (GVT rides its own lane). One bug, page-only, in `js/sfx.js` (the theme section + FSFX) plus its ui-audit leg. The fix is a PAGE fix: every shell (iOS WKWebView, the Play WebView, the Steam Electron window) loads https://playfavor.net/ live, so it lands in all three on their next launch with zero store builds.
 
 ## §STATUS
-in progress, card "TASK FROM THE GO MACHINE 9/2 21:33" (quiet-when-put-away), started 21:39 ET 9/2/2026, acct B (drbango305@gmail.com), session 20% at start.
+DONE — SHIPPED `1214dd9`, live 22:46 ET 9/2/2026 (acct B, drbango305@gmail.com; started 21:39 ET, session 20% → ~30%). Card "TASK FROM THE GO MACHINE 9/2 21:33" (quiet-when-put-away). Owed: Wyatt's ear-check on the phone (§4.3).
 
 ## §1 TODAY (HEAD `2a27ba1`, live stamp `20260826105740`; the served js/sfx.js md5 `e12794f0…` == HEAD, checked 21:37 ET)
 
@@ -75,4 +75,6 @@ Rig: `repro-quiet.mjs` (scratchpad, the 8/4 `repro-polish.mjs` pattern; puppetee
 5. **A window behind another window** (desktop / Steam) keeps singing — that is `document.hidden`'s law (hidden = minimized, hidden tab or fully covered). If Wyatt wants "any loss of focus" to pause the theme, the dial is a `blur`/`focus` pair on `window` calling the same `pocketEnter`/`pocketLeave` — a different feel (alt-tab pauses your music), so not shipped.
 
 ## §5 STAMP
-QUIET WHEN PUT AWAY · NOT SHIPPED · in progress
+QUIET WHEN PUT AWAY · SHIPPED 1214dd9 · stamp ?v=20260902215117 live 22:46 ET (Pages run 33708823323 completed success 22:46:51; served js/sfx.js md5 4ca53d31 == the commit) · ui-audit 1039 green + 30 reds that are the standing repair queue, BYTE-IDENTICAL to the pre-fix baseline (2a27ba1 on :8893 with its own tools/: 1021 green / 31 reds = the same 30 + one environmental "a real persona posted a daily score during this run") · zero console errors both runs · theme block 28/28 (15 old + 13 new) · engine-smoke 693 (unchanged) · audit-check ALL CLEAN · hide→paused ≤250 ms (the pause is synchronous on the visibilitychange edge; the rig checks at 250 and 500, position frozen) · return→playing ≤250 ms (from the held second, never 0) · live headless leg on playfavor.net 48/48.
+
+Side note for the ledger: the baseline run's integrity gate swept one legitimate daily row (2026-09-03 persona_balthazar, best 2 — a real player's game against the day's rival landed inside the 22:31-22:45 window; the gate treats daily rows inside RUN_START as disposable by design, the 8/5 memory's known cosmetic cost of a mid-day run). The ship run swept only its own uaudit row.
