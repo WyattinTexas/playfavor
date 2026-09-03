@@ -8634,6 +8634,83 @@ console.log('── The menu theme: gesture starts it at the title only; any dea
   // sfx.js absorbs the veto path — so the deterministic truth is the dial:
   ok(home.vol === 0.55, 'volume rides the dial (0.55)');
 
+  // PUT AWAY, IT GOES QUIET (Wyatt 9/2): the page's own word for the home
+  // swipe, the switcher, the lock screen, a hidden tab and a minimized
+  // window is document.hidden — shadow it and fire the edge. Rig-dependent
+  // like the rest of this block: the muted rig genuinely plays, so the hold
+  // has something to pause; a strict policy would have vetoed play() and
+  // the hold sees silence (held only where it sang).
+  const shadeSrc = `(h) => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => h });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (h ? 'hidden' : 'visible') });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }`;
+  const pocket = await page.evaluate(async (shadeSrc) => {
+    const shade = eval(shadeSrc);
+    const el = FSFX._theme().el;
+    const sang = !el.paused;
+    // The road-home pass needs a beat to fetch and roll (2.3 MB mp3) — a
+    // hold at 0.00 s proves nothing about the position.
+    for (let i = 0; i < 80 && sang && !(el.currentTime > 0.05); i++) await new Promise(r => setTimeout(r, 50));
+    const stopped0 = FSFX._theme().stopped;   // startGame's deal already counted one stop
+    shade(true);
+    await new Promise(r => setTimeout(r, 250));
+    const t1 = FSFX._theme();
+    const hid = { paused: el.paused, held: t1.held, ct: el.currentTime, started: t1.started, stopped: t1.stopped - stopped0 };
+    await new Promise(r => setTimeout(r, 300));
+    const frozen = el.currentTime === hid.ct;
+    shade(false);
+    await new Promise(r => setTimeout(r, 250));
+    const t2 = FSFX._theme();
+    const back = { paused: el.paused, held: t2.held, ct: el.currentTime, started: t2.started };
+    await new Promise(r => setTimeout(r, 300));
+    const climbs = el.currentTime > back.ct;
+    delete document.hidden; delete document.visibilityState;
+    return { sang, hid, frozen, back, climbs, tags: document.getElementsByTagName('audio').length };
+  }, shadeSrc);
+  ok(pocket.hid.paused && pocket.hid.held === pocket.sang,
+    `put away → paused within 250 ms and held (paused=${pocket.hid.paused} held=${pocket.hid.held})`);
+  ok(pocket.frozen && (!pocket.sang || pocket.hid.ct > 0),
+    `the position freezes where it stood (${pocket.hid.ct.toFixed(2)}s), never rewound`);
+  ok(pocket.hid.started === 1 && pocket.hid.stopped === 0, 'a pocket is neither a stop nor a new pass');
+  ok(!pocket.sang || (!pocket.back.paused && pocket.back.ct >= pocket.hid.ct && pocket.climbs),
+    `come back → it plays on from the held second (${pocket.hid.ct.toFixed(2)} → ${pocket.back.ct.toFixed(2)})`);
+  ok(pocket.back.held === false && pocket.back.started === 1, 'the return spends the hold and starts no second pass');
+  ok(pocket.tags === 0, 'still no <audio> in the DOM after the pocket (918 stays true)');
+
+  // THE EFFECTS IN THE POCKET: a play attempted while hidden is counted,
+  // never voiced, and the context sleeps; visible, the next one voices.
+  // One trusted click at the title lockup lends the context (born of the
+  // synthetic gesture above) the activation its resume() needs.
+  {
+    const box = await (await page.$('.ts-title')).boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  }
+  const pocketSfx = await page.evaluate(async (shadeSrc) => {
+    const shade = eval(shadeSrc);
+    FSFX.init();
+    for (let i = 0; i < 50 && !FSFX.ready; i++) await new Promise(r => setTimeout(r, 100));
+    const c = () => ({ a: FSFX._attempted.tick || 0, v: FSFX._voiced.tick || 0 });
+    const c0 = c();
+    FSFX.play('tick'); const c1 = c();
+    await new Promise(r => setTimeout(r, 150));
+    const awake0 = FSFX._ctxState();
+    shade(true); await new Promise(r => setTimeout(r, 100));
+    FSFX.play('tick'); const c2 = c(); const asleep = FSFX._ctxState();
+    shade(false); await new Promise(r => setTimeout(r, 200));
+    FSFX.play('tick'); const c3 = c();
+    await new Promise(r => setTimeout(r, 150));
+    const awake = FSFX._ctxState();
+    delete document.hidden; delete document.visibilityState;
+    return { ready: FSFX.ready, c0, c1, c2, c3, awake0, asleep, awake };
+  }, shadeSrc);
+  ok(pocketSfx.ready && pocketSfx.c1.a === pocketSfx.c0.a + 1 && pocketSfx.c1.v === pocketSfx.c0.v + 1
+    && pocketSfx.awake0 === 'running', `visible: a tick voices, the context runs (${pocketSfx.awake0})`);
+  ok(pocketSfx.c2.a === pocketSfx.c1.a + 1 && pocketSfx.c2.v === pocketSfx.c1.v && pocketSfx.asleep === 'suspended',
+    `in the pocket: attempted grows, voiced does not, the context sleeps (${pocketSfx.c2.a}/${pocketSfx.c2.v}, ${pocketSfx.asleep})`);
+  ok(pocketSfx.c3.v === pocketSfx.c2.v + 1 && pocketSfx.awake === 'running',
+    `back: the next tick voices and the context runs (${pocketSfx.c3.a}/${pocketSfx.c3.v}, ${pocketSfx.awake})`);
+
   // A new deal: the game screen rises — the theme FADES to silence over
   // ~a second (Wyatt 8/4: a fade, never a cut), then rewinds, dial restored.
   const dealt = await page.evaluate(async () => {
@@ -8660,6 +8737,74 @@ console.log('── The menu theme: gesture starts it at the title only; any dea
   ok(dealt.paused && !dealt.fading, 'a beat later the theme is silent — the fade landed');
   ok(dealt.rewound, 'and rewinds it home for the next title visit');
   ok(dealt.vol === 0.55, 'with the dial restored for the next pass');
+
+  // THE DEAL IN THE POCKET (the 8/4 case: a queue match found while tabbed
+  // away). Road home → pass 2 sings → put away → held → the game screen
+  // rises in the pocket → the deal's stop wins over the hold: the return
+  // plays nothing, and the theme sits rewound for the next title visit.
+  const pocketDeal = await page.evaluate(async (shadeSrc) => {
+    const shade = eval(shadeSrc);
+    const gs = document.getElementById('game-screen'), ts = document.getElementById('title-screen');
+    // The deal above raised the table without hiding the title (the real
+    // road does both) — hide it first so the way home is a visible EDGE.
+    gs.classList.remove('active'); ts.classList.add('hidden');
+    await new Promise(r => setTimeout(r, 60));
+    ts.classList.remove('hidden'); ts.style.display = '';
+    await new Promise(r => setTimeout(r, 150));
+    const el = FSFX._theme().el;
+    const home = { started: FSFX._theme().started, sang: !el.paused };
+    shade(true);
+    await new Promise(r => setTimeout(r, 120));
+    const held = FSFX._theme().held, stopped0 = FSFX._theme().stopped;
+    ts.classList.add('hidden'); gs.classList.add('active');   // the deal, in the pocket
+    await new Promise(r => setTimeout(r, 120));
+    const t = FSFX._theme();
+    const dealt = { stopped: t.stopped - stopped0, held: t.held, fading: t.fading, paused: el.paused, ct: el.currentTime };
+    shade(false);
+    await new Promise(r => setTimeout(r, 250));
+    const u = FSFX._theme();
+    const back = { paused: el.paused, ct: el.currentTime, started: u.started, held: u.held };
+    delete document.hidden; delete document.visibilityState;
+    return { home, held, dealt, back };
+  }, shadeSrc);
+  ok(pocketDeal.home.started === 2, `the road home starts pass 2 (started=${pocketDeal.home.started})`);
+  ok(pocketDeal.held === pocketDeal.home.sang, 'put away at the title → held');
+  ok(pocketDeal.dealt.stopped === 1 && !pocketDeal.dealt.held && !pocketDeal.dealt.fading
+    && pocketDeal.dealt.paused && pocketDeal.dealt.ct === 0,
+    'the deal in the pocket: stopped, rewound, hold cleared, nothing fading');
+  ok(pocketDeal.back.paused && pocketDeal.back.ct === 0 && pocketDeal.back.started === 2 && !pocketDeal.back.held,
+    'back to a live table: nothing plays, no new pass');
+
+  // PUT AWAY MID-FADE: road home → pass 3 → the deal starts the 900 ms ramp
+  // → put away 200 ms in → the fade finishes as a STOP at once (paused,
+  // rewound, dial restored, nothing held) → the return resumes nothing.
+  const pocketFade = await page.evaluate(async (shadeSrc) => {
+    const shade = eval(shadeSrc);
+    const gs = document.getElementById('game-screen'), ts = document.getElementById('title-screen');
+    gs.classList.remove('active'); ts.classList.remove('hidden'); ts.style.display = '';
+    await new Promise(r => setTimeout(r, 150));
+    const el = FSFX._theme().el;
+    const sang = !el.paused;
+    ts.classList.add('hidden'); gs.classList.add('active');
+    await new Promise(r => setTimeout(r, 200));
+    const mid = { fading: FSFX._theme().fading, vol: el.volume };
+    shade(true);
+    await new Promise(r => setTimeout(r, 100));
+    const t = FSFX._theme();
+    const cut = { fading: t.fading, held: t.held, paused: el.paused, ct: el.currentTime, vol: el.volume };
+    shade(false);
+    await new Promise(r => setTimeout(r, 250));
+    const back = { paused: el.paused, ct: el.currentTime, started: FSFX._theme().started };
+    delete document.hidden; delete document.visibilityState;
+    return { sang, mid, cut, back };
+  }, shadeSrc);
+  ok(!pocketFade.sang || (pocketFade.mid.fading && pocketFade.mid.vol < 0.55),
+    `the deal is mid-fade as the app is put away (fading=${pocketFade.mid.fading}, vol ${pocketFade.mid.vol})`);
+  ok(!pocketFade.cut.fading && !pocketFade.cut.held && pocketFade.cut.paused && pocketFade.cut.ct === 0,
+    'put away mid-fade: the fade lands its stop at once — paused, rewound, nothing held');
+  ok(pocketFade.cut.vol === 0.55, 'with the dial restored');
+  ok(pocketFade.back.paused && pocketFade.back.ct === 0 && pocketFade.back.started === 3,
+    'and the return resumes nothing');
   await page.close();
 }
 

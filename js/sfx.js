@@ -40,6 +40,7 @@
     function play(name) {
         attempted[name] = (attempted[name] || 0) + 1;
         if (!ready || !ctx) return;
+        if (document.hidden) return;              // put away: a sound in the pocket is never voiced (Wyatt 9/2)
         const v = sfxVol();
         if (v <= 0) return;                       // mixer says silence
         const buf = buffers[name];
@@ -230,6 +231,7 @@
     const THEME_FADE_MS = 900; // the deal's ramp to silence
     let theme = null;
     let themeFade = null;      // interval handle while a fade-out is dying
+    let themeHeld = false;     // paused by the pocket, owed a resume (Wyatt 9/2)
     let themeStarted = 0, themeStopped = 0;    // seams for the audit
 
     function themeNode() {
@@ -278,13 +280,19 @@
         t.volume = themeVolume();
         try { t.currentTime = 0; } catch (e) { /* not seekable yet */ }
         themeStarted++;
+        // The title came back while the app was put away (a table that
+        // dissolved in the pocket): the pass belongs to the return — hold
+        // it at the top and let the visible edge sing it.
+        if (pocketed()) { themeHeld = true; return; }
+        themeHeld = false;
         const p = t.play();
         if (p && p.catch) p.catch(() => { /* autoplay veto = silence, not an error */ });
     }
     function themeStop() {
         themeStopped++;                      // counted even when already silent
         if (!theme || themeFade) return;     // nothing playing / already dying
-        if (theme.paused) {                  // the one pass already ended on its own
+        if (theme.paused) {                  // the one pass already ended on its own, or sits held in a pocket
+            themeHeld = false;               // the deal's stop wins over the hold, in either order
             try { theme.currentTime = 0; } catch (e) { /* best effort */ }
             return;
         }
@@ -338,6 +346,75 @@
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', armThemeWatchers, { once: true });
     } else { armThemeWatchers(); }
+
+    // ── Put away, it goes quiet (Wyatt, 9/2): the pocket ─────────────
+    // Browsers and WebViews keep an <audio> singing after the page hides
+    // (background music is a feature to them), and every shell loads this
+    // page live. The page's one word for the home swipe, the switcher, the
+    // lock screen, a hidden tab and a minimized window is document.hidden,
+    // so that edge is the law: hidden PAUSES the theme where it stands (a
+    // fade already dying lands its stop at once instead) and suspends the
+    // effects; visible RESUMES the theme from that very second if the
+    // title is still the screen. A pocket is never a new pass, and a deal
+    // that happened in the pocket keeps its silence.
+    function pocketed() { return !!document.hidden; }
+    function titleUp() {
+        const ts = document.getElementById('title-screen');
+        return !!ts && !ts.classList.contains('hidden') && ts.style.display !== 'none';
+    }
+    function themeHold() {
+        if (!theme) return;                  // never tapped: nothing to pause, nothing owed
+        if (themeFade) {                     // a fade in flight finishes as a STOP, right now
+            cancelThemeFade();
+            try { theme.pause(); } catch (e) { /* silence is the goal */ }
+            try { theme.currentTime = 0; } catch (e) { /* best effort */ }
+            try { theme.volume = themeVolume(); } catch (e) { /* ready anyway */ }
+            return;                          // the stop completed; nothing to release
+        }
+        if (themeHeld || theme.paused) return;   // one hide = one hold; silence stays silent
+        themeHeld = true;
+        try { theme.pause(); } catch (e) { /* the position is what matters */ }
+    }
+    function themeResume() {
+        if (!theme || themeFade || tableUp() || !titleUp()) return;   // the deal's stop wins
+        if (!theme.paused || theme.ended) return;   // already singing, or the one pass ran out
+        const p = theme.play();
+        // A veto on return is not an error: the theme waits, from this very
+        // second, for the next gesture (the first-gesture unlock was once).
+        if (p && p.catch) p.catch(armThemeRetry);
+    }
+    function themeRelease() {
+        if (!themeHeld) return;
+        themeHeld = false;
+        themeResume();
+    }
+    const GESTURES = ['pointerdown', 'touchstart', 'keydown'];
+    let themeRetry = null;
+    function armThemeRetry() {
+        if (themeRetry) return;
+        themeRetry = () => {
+            GESTURES.forEach((ev) => document.removeEventListener(ev, themeRetry, true));
+            themeRetry = null;
+            themeResume();
+        };
+        GESTURES.forEach((ev) =>
+            document.addEventListener(ev, themeRetry, { passive: true, capture: true }));
+    }
+    function pocketEnter() {
+        themeHold();
+        // Nothing already ringing carries into the pocket either.
+        if (ctx) { try { ctx.suspend().catch(() => {}); } catch (e) { /* best effort */ } }
+    }
+    function pocketLeave() {
+        themeRelease();
+        if (ctx && ctx.state !== 'running') {
+            try { ctx.resume().catch(() => {}); } catch (e) { /* the next play() asks again */ }
+        }
+    }
+    document.addEventListener('visibilitychange', () => (pocketed() ? pocketEnter() : pocketLeave()));
+    // The belt: an older WebKit words the same edge as pagehide / pageshow.
+    window.addEventListener('pagehide', pocketEnter);
+    window.addEventListener('pageshow', pocketLeave);
 
     // ── Hooks — wrap the ui.js globals ───────────────────────────────
     function wrap(name, makeWrapper) {
@@ -432,6 +509,7 @@
     window.FSFX = { play, init, applyVolume, _attempted: attempted, _voiced: voiced,
                     _themeVolume: themeVolume,
                     _theme: () => ({ started: themeStarted, stopped: themeStopped,
-                                     fading: !!themeFade, owed: themeOwed, el: theme }),
+                                     fading: !!themeFade, owed: themeOwed, held: themeHeld, el: theme }),
+                    _ctxState: () => (ctx ? ctx.state : null),
                     get ready() { return ready; } };
 })();
